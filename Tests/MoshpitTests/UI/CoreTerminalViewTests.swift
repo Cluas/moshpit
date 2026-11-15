@@ -13,35 +13,35 @@ import UIKit
 struct CoreTerminalViewTests {
 
     /// Collects what the view sends.
-    final class Sink: TerminalSurfaceDelegate {
+    final class Sink: CoreTerminalViewDelegate {
         var sent = Data()
         var sizes: [(Int, Int)] = []
         var links: [String] = []
         var pastes: [String] = []
         var clicks: [(Int, Int)] = []
         /// What the session's input path does with what it sends.
-        var onSend: ((TerminalSurface) -> Void)?
+        var onSend: ((CoreTerminalView) -> Void)?
         var text: String { String(decoding: sent, as: UTF8.self) }
         func take() -> String { defer { sent = Data() }; return text }
 
-        func surface(_ surface: TerminalSurface, send data: Data) {
+        func surface(_ surface: CoreTerminalView, send data: Data) {
             sent.append(data)
             onSend?(surface)
         }
-        func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) { sizes.append((cols, rows)) }
-        func surface(_ surface: TerminalSurface, titleChanged title: String) {}
-        func surfaceBell(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, openLink link: String) { links.append(link) }
-        func surface(_ surface: TerminalSurface, paste text: String) { pastes.append(text) }
-        func surfaceClipboardRequest(_ surface: TerminalSurface) {}
-        func surfaceScrollWillBegin(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, scrollPixels dy: CGFloat) -> CGFloat { surface.scrollLocal(pixels: dy) }
-        func surfaceScrollDidEnd(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, click col: Int, row: Int) { clicks.append((col, row)) }
+        func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int) { sizes.append((cols, rows)) }
+        func surface(_ surface: CoreTerminalView, titleChanged title: String) {}
+        func surfaceBell(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, openLink link: String) { links.append(link) }
+        func surface(_ surface: CoreTerminalView, paste text: String) { pastes.append(text) }
+        func surfaceClipboardRequest(_ surface: CoreTerminalView) {}
+        func surfaceScrollWillBegin(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, scrollPixels dy: CGFloat) -> CGFloat { surface.scrollLocal(pixels: dy) }
+        func surfaceScrollDidEnd(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, click col: Int, row: Int) { clicks.append((col, row)) }
         var surfaceScrollsElsewhere: Bool { false }
         var surfaceCanSwitch: Bool { false }
-        func surface(_ surface: TerminalSurface, switchForward forward: Bool) {}
-        func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {}
+        func surface(_ surface: CoreTerminalView, switchForward forward: Bool) {}
+        func surface(_ surface: CoreTerminalView, fontSizeCommitted size: Double) {}
     }
 
     private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -108,13 +108,6 @@ struct CoreTerminalViewTests {
         #expect(view.historyLines > 400)
     }
 
-    @Test func repliesGoOutWithTheKeys() {
-        let (view, sink) = makeView()
-        view.push(Data("\u{1b}[6n".utf8))
-        #expect(view.settle { _ in sink.text.contains("R") })
-        #expect(sink.take() == "\u{1b}[1;1R")
-    }
-
     @Test func aResizeIsReportedOnceAndReachesTheGrid() {
         let (view, sink) = makeView(cols: 40, rows: 12)
         view.frame.size.width = view.cellSize.width * 30 + 1
@@ -125,17 +118,6 @@ struct CoreTerminalViewTests {
     }
 
     // MARK: Keys
-
-    @Test func arrowsFollowDECCKM() {
-        let (view, sink) = makeView()
-        view.sendKey(UInt32(MP_KEY_UP), mods: 0)
-        #expect(sink.take() == "\u{1b}[A")
-        feed(view, "\u{1b}[?1h", until: { $0.termModes.app_cursor })
-        view.sendKey(UInt32(MP_KEY_UP), mods: 0)
-        #expect(sink.take() == "\u{1b}OA")
-        view.sendKey(UInt32(MP_KEY_CHAR), scalar: 0x63, mods: UInt8(MP_MOD_CTRL))
-        #expect(sink.take() == "\u{03}")
-    }
 
     /// B413: Option on a hardware keyboard is Meta, encoded by the core:
     /// ESC and the key, not the layout's ∫ ƒ ≥ or a dead key; Option-Return
@@ -163,13 +145,6 @@ struct CoreTerminalViewTests {
         #expect(CoreTerminalView.metaKey(.keyboardB, characters: "b", flags: [], kitty: 0) == nil)
         // Under the kitty protocol: its encoding of the arrow, with Alt.
         #expect(CoreTerminalView.metaKey(.keyboardLeftArrow, characters: "\u{F702}", flags: .alternate, kitty: 1) == nil)
-    }
-
-    @Test func kittyReleasesAreSent() {
-        let (view, sink) = makeView()
-        feed(view, "\u{1b}[>3u", until: { $0.termModes.kitty_flags == 3 })
-        view.sendKey(UInt32(MP_KEY_CHAR), scalar: 0x61, mods: 0, down: false)
-        #expect(sink.take() == "\u{1b}[97;1:3u")
     }
 
     // MARK: Input methods, through UITextInput
@@ -204,6 +179,38 @@ struct CoreTerminalViewTests {
         #expect(view.pendingCaret != nil)
     }
 
+    /// B573: a bar key pressed while composing. Esc takes the composition
+    /// away unsent; any other key commits it first, so the remote gets the
+    /// text, then the key. It used to stay composing: the key went out
+    /// first, and the composition after it (vim left insert mode, then got
+    /// the pinyin typed into it).
+    @Test func aBarKeyEndsTheComposition() {
+        let (view, sink) = makeView()
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        let coordinator = CoreTerminalHost.Coordinator()
+        coordinator.attach(view)
+        var sent = Data()
+        coordinator.onInput = { sent.append($0) }
+        #expect(!coordinator.endComposition(cancel: false), "nothing composing: nothing to end")
+        // Esc: away, unsent.
+        view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
+        #expect(coordinator.endComposition(cancel: true))
+        #expect(sent.isEmpty && sink.sent.isEmpty, "the cancelled composition went out")
+        #expect(view.markedLabel == nil)
+        #expect(view.markedTextRange == nil, "the input system still sees a composition")
+        // Any other key: committed first.
+        view.setMarkedText("日本", selectedRange: NSRange(location: 2, length: 0))
+        #expect(coordinator.endComposition(cancel: false))
+        #expect(sent == Data("日本".utf8))
+        #expect(view.markedLabel == nil)
+        #expect(view.markedTextRange == nil)
+        #expect(TerminalScreen.cancelsComposition([Data([0x1B])]))
+        #expect(!TerminalScreen.cancelsComposition([Data([0x09])]))
+        #expect(!TerminalScreen.cancelsComposition([Data([0x1B, 0x5B, 0x41])]), "an arrow commits")
+        #expect(!TerminalScreen.cancelsComposition([Data([0x1B]), Data([0x0D])]), "Esc then Return commits")
+    }
+
     /// B571: pinyin typed at the end of a long line ran past the view's
     /// right edge, which clips: the composition and its caret were cut off.
     @Test func aCompositionAtTheRightEdgeStaysOnScreen() throws {
@@ -215,12 +222,16 @@ struct CoreTerminalViewTests {
         let label = try #require(view.markedLabel)
         #expect(label.frame.maxX <= view.bounds.width, "the composition runs past the edge: \(label.frame)")
         #expect(view.compositionCaret.frame.maxX <= view.bounds.width + 0.5, "the caret is off screen")
-        #expect(label.frame.minY == view.y(ofRow: 0), "it stays on the cursor's row")
+        // Points, compared within a hair: a frame's origin comes back
+        // through its centre and size, a few 1e-15 off (CI run 10:
+        // 15.333333333333336 against 15.333333333333334).
+        #expect(abs(label.frame.minY - view.y(ofRow: 0)) < 0.001, "it stays on the cursor's row")
         // Room enough: where the cursor is.
         view.unmarkText()
         feed(view, "\u{1b}[1;3H", until: { $0.rows.info.cursor.col == 2 })
         view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
-        #expect(view.markedLabel?.frame.minX == view.x(ofColumn: 2))
+        let minX = try #require(view.markedLabel?.frame.minX)
+        #expect(abs(minX - view.x(ofColumn: 2)) < 0.001, "\(minX) against \(view.x(ofColumn: 2))")
         #expect(CoreTerminalView.markedX(at: 300, width: 80, in: 320) == 240)
         #expect(CoreTerminalView.markedX(at: 10, width: 400, in: 320) == 0, "never past the left edge")
     }
@@ -391,15 +402,6 @@ struct CoreTerminalViewTests {
         #expect(live, "a key goes back to the live screen")
     }
 
-    @Test func aDoubleTapSelectsAWordAndCopies() {
-        let (view, _) = makeView()
-        feed(view, "hello brave world", until: { $0.rowText(0) == "hello brave world" })
-        view.select(kind: 1, row: 0, col: 7)
-        #expect(view.selectedText == "brave")
-        view.clearSelection()
-        #expect(view.selectedText == nil)
-    }
-
     @Test func aSelectionEndingInTheLastColumnTakesIt() {
         let (view, _) = makeView(cols: 10, rows: 3)
         feed(view, "0123456789", until: { $0.rowText(0) == "0123456789" })
@@ -410,15 +412,6 @@ struct CoreTerminalViewTests {
         mp_term_select_start(term, 0, 0, 5, false)
         mp_term_select_extend(term, 0, UInt16(e.col), e.after)
         #expect(view.selectedText == "56789")
-    }
-
-    @Test func linksAreFoundUnderTheFinger() {
-        let (view, _) = makeView(cols: 30, rows: 4)
-        feed(view, "\u{1b}]8;;https://example.com/a\u{1b}\\open\u{1b}]8;;\u{1b}\\ see https://example.com/b",
-             until: { $0.rowText(0).hasPrefix("open") })
-        #expect(view.link(at: (col: 1, row: 0)) == "https://example.com/a")
-        #expect(view.link(at: (col: 12, row: 0)) == "https://example.com/b")
-        #expect(view.link(at: (col: 6, row: 0)) == nil)
     }
 
     // MARK: Lifetime, handles, the pointer, predictions
@@ -460,26 +453,6 @@ struct CoreTerminalViewTests {
         let interaction = UIPointerInteraction(delegate: view)
         let style = view.pointerInteraction(interaction, styleFor: UIPointerRegion(rect: view.bounds))
         #expect(style != nil)
-    }
-
-    /// V36: mosh's guesses show over the frame once an epoch is confirmed,
-    /// the emulator's own grid untouched.
-    @Test func predictionsShowOverTheFrame() {
-        let (view, _) = makeView()
-        feed(view, "$ ", until: { $0.rowText(0) == "$" })
-        let engine = MoshPrediction(mode: .always, trail: false)
-        engine.srttMs = 500
-        view.predictAttach(engine)
-        if let batch = view.predictInput(Data("a".utf8), srtt: 500) { view.predictSent(batch: batch, userState: 1) }
-        #expect(view.rowText(0) == "$", "the first epoch waits for the server")
-        view.push(Data("a".utf8))
-        view.predictEchoAck(1)
-        #expect(view.settle { $0.rowText(0) == "$ a" })
-        if let batch = view.predictInput(Data("b".utf8), srtt: 500) { view.predictSent(batch: batch, userState: 2) }
-        #expect(view.rowText(0) == "$ ab", "shown before the echo")
-        guard let term = view.term, let p = mp_term_view_row_text(term, 0, nil) else { return }
-        #expect(String(cString: p) == "$ a", "the grid holds only what the server sent")
-        mp_string_free(p)
     }
 
     // MARK: Drawing

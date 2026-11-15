@@ -213,7 +213,7 @@ pub enum Dots {
     Count { place: String, at: usize, of: usize },
 }
 
-fn stop(tree: &Control, window: &WindowInfo, pane: &PaneInfo, words: &Words) -> Stop {
+pub(crate) fn stop(tree: &Control, window: &WindowInfo, pane: &PaneInfo, words: &Words) -> Stop {
     let word = match tree.mux {
         Mux::Tmux => &words.window,
         Mux::Herdr => &words.tab,
@@ -289,12 +289,12 @@ pub fn state_line(stop: &Stop, now: f64, words: &Words) -> Option<(String, Statu
 // --- On the page ----------------------------------------------------------------
 
 /// The time now, in Unix seconds, on the engine's clock.
-fn unix_now() -> f64 {
+pub(crate) fn unix_now() -> f64 {
     nsh_core::time::unix_ms() / 1000.0
 }
 
 /// The pane is in view: the terminal shows, no cover over it.
-fn in_view(ctx: &Ctx) -> bool {
+pub(crate) fn in_view(ctx: &Ctx) -> bool {
     ctx.chrome
         .with(|c| c.content == Content::Terminal && c.cover.kind == CoverKind::None)
 }
@@ -331,7 +331,7 @@ pub(crate) fn tell_neighbours(ctx: &Ctx, order: Memo<Order>) {
 
 /// `make()` while `visible()`, fading in and out (instant under reduced
 /// motion), mounted only while it shows or fades out.
-fn appearing(
+pub(crate) fn appearing(
     visible: Memo<bool>,
     (enter, leave): (Duration, Duration),
     make: impl Fn() -> AnyElement + 'static,

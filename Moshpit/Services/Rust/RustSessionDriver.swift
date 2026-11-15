@@ -558,7 +558,7 @@ final class RustSessionDriver: RustSessionListener {
             Log.ssh.notice("rust session \(session, privacy: .public): herdr stream \(stream, privacy: .public) (\(pane, privacy: .public)) fed \(feeder.bytesFed, privacy: .public) bytes in its first 2 s")
         }
         // Among the frames' bytes, acted on once the bytes before each are
-        // on screen (``TerminalSurface/feed(mark:)``).
+        // on screen (``CoreTerminalView/feed(mark:)``).
         feeder.onMark = { [weak coordinator] mark in
             coordinator?.feed(mark: TerminalMark(code: mark.code, arg: mark.arg))
         }

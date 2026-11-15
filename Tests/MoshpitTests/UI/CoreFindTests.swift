@@ -87,7 +87,7 @@ struct CoreFindTests {
         while !core.isFinding, Date() < deadline { try? await Task.sleep(for: .milliseconds(20)) }
         #expect(core.isFinding, "⌘F's action opens the bar")
         #expect(!core.isFirstResponder, "the bar's field has the keyboard")
-        SwiftTerminalView.applyFocus(.take, to: core)
+        CoreTerminalHost.applyFocus(.take, to: core)
         try? await Task.sleep(for: .milliseconds(100))
         #expect(!core.isFirstResponder, "taken back from the bar")
         core.finder?.dismissFindNavigator()

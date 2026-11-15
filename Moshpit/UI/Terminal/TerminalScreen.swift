@@ -44,6 +44,9 @@ struct TerminalScreen: View {
     @State private var showWindowsSheet = false
     @State private var showSessionsSheet = false
     @State private var showPaneSheet = false
+    /// The NSH page's pane overview is up: the keyboard is away while it is,
+    /// as for a sheet (``anySheetOpen``).
+    @State private var nshOverviewOpen = false
     @State private var showError = false
     /// Confirmation dialog before switching SSH ⇄ Mosh — a reconnect isn't
     /// something a stray tap should trigger.
@@ -388,7 +391,7 @@ struct TerminalScreen: View {
     }
 
     /// Push theme + font + cursor into the tmux controller. The single-pane
-    /// path picks these up directly through SwiftTerminalView's bindings.
+    /// path picks these up directly through CoreTerminalHost's bindings.
     private func applyAppearance() {
         active?.tmuxController?.configureAppearance(
             theme: theme, fontSize: settings.fontSize, fontName: settings.fontName,
@@ -430,7 +433,7 @@ struct TerminalScreen: View {
     /// the keyboard's expand/collapse state ("图片插入的时候要保留键盘展开收起
     /// 状态").
     private var anySheetOpen: Bool {
-        showWindowsSheet || showSessionsSheet || showPaneSheet || showCamera
+        showWindowsSheet || showSessionsSheet || showPaneSheet || showCamera || nshOverviewOpen
             || quickLookURL != nil || remoteFolder != nil || remoteVideoOpen
     }
 
@@ -954,7 +957,7 @@ struct TerminalScreen: View {
         // presses the menu leaves; the menu's own come here and go there).
         let model = nshModel
         return ["k", "w"].map(Character.init) .map { key in
-            HardwareKeys.Command(title: key == "k" ? "Switch Window" : "Back to Home", key: key) {
+            HardwareKeys.Command(title: key == "k" ? "Show All Panes" : "Back to Home", key: key) {
                 model.post(["op": "key", "stroke": "mod+\(key)"])
             }
         } + (1..<10).map { number in
@@ -1165,7 +1168,7 @@ struct TerminalScreen: View {
 
     /// The coordinator receiving keyboard input right now (tmux active pane,
     /// or the single mosh/SSH coordinator).
-    private var typingCoordinator: SwiftTerminalView.Coordinator? {
+    private var typingCoordinator: CoreTerminalHost.Coordinator? {
         active?.tmuxController?.activeCoordinator ?? active?.coordinator
     }
 
@@ -1293,6 +1296,8 @@ struct TerminalScreen: View {
             return
         }
         if shortcut.kind == .paste {
+            // What is being composed goes first, then the paste (B573).
+            typingCoordinator?.endComposition(cancel: false)
             // UIPasteboard reads are synchronous and can block for well over a
             // second: a cross-app paste triggers iOS's "Allow Paste?" prompt,
             // and the property getter waits on that (plus the pasteboardd XPC
@@ -1339,6 +1344,14 @@ struct TerminalScreen: View {
         // dropped every shortcut).
         let stages = shortcut.encodedStages()
         guard let first = stages.first else { return }
+        // An input method composing: Esc takes it away, any other key
+        // commits it first (B573). Committed as it stands — the pinyin's
+        // letters when no candidate was picked — because that is what iOS
+        // itself does when something interrupts a composition, and what
+        // the people of other input methods expect kept (kana, Hangul,
+        // Zhuyin with a pick are their text). Only Esc, which means "leave"
+        // (vim's insert mode), throws it away.
+        typingCoordinator?.endComposition(cancel: Self.cancelsComposition(stages))
         active?.sendShortcutInput(first)
         guard stages.count > 1 else { return }
         let rest = stages.dropFirst()
@@ -1348,6 +1361,14 @@ struct TerminalScreen: View {
                 active?.sendShortcutInput(stage)
             }
         }
+    }
+
+    /// Whether a bar key that sends `stages` takes an input method's
+    /// composition away rather than committing it (B573): Esc alone, which
+    /// leaves vim's insert mode; leaving it with pinyin half typed inserted
+    /// the pinyin first.
+    nonisolated static func cancelsComposition(_ stages: [Data]) -> Bool {
+        stages == [Data([0x1B])]
     }
 
     /// Gap between the key presses of a multi-key shortcut (`⇥⏎`).
@@ -1365,6 +1386,8 @@ struct TerminalScreen: View {
     /// `SessionHub.ActiveSession.applicationCursorKeys`).
     private func sendArrow(_ direction: String) {
         disarmStickyCtrlIfNeeded()
+        // What is being composed goes first, then the arrow (B573).
+        typingCoordinator?.endComposition(cancel: false)
         // Over herdr these bytes are intercepted in sendInput and rerouted as
         // SEMANTIC keys (`pane send-keys`) — the local DECCKM below is stale
         // there (frames never carry mode changes), and sendInput is the one
@@ -1567,17 +1590,17 @@ struct TerminalScreen: View {
 /// transitions can freeze its frame (see that type's doc — this is the
 /// keyboard/IME-switch garble fix), same as the single-pane path.
 struct PaneTerminalHost: UIViewRepresentable {
-    let surface: TerminalSurface
+    let surface: CoreTerminalView
     /// The pane's coordinator — hooked to the container so the keyboard
     /// frame-lock covers tmux panes too. nil-safe for previews/tests.
-    var coordinator: SwiftTerminalView.Coordinator?
+    var coordinator: CoreTerminalHost.Coordinator?
     var focusPolicy: TerminalFocusPolicy = .take
     /// Hold this pane at the size it has — see
     /// ``TerminalHostContainer/geometryHeld``.
     var geometryHeld: Bool = false
     /// Where the pane's own Paste and ⌘V go: the session's paste path, which
     /// asks tmux to bracket (`paste-buffer -p`) from the pane's real mode.
-    /// Installed on the pane's coordinator (``SwiftTerminalView/Coordinator/onPaste``);
+    /// Installed on the pane's coordinator (``CoreTerminalHost/Coordinator/onPaste``);
     /// without it SwiftTerm brackets by the local flag, which a `-CC` attach
     /// never sets — a multi-line paste ran line by line.
     var onPaste: ((String) -> Void)?
@@ -1609,7 +1632,7 @@ struct PaneTerminalHost: UIViewRepresentable {
         guard let terminal = uiView.surface else { return }
         if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
         coordinator?.onPaste = onPaste
-        SwiftTerminalView.applyFocus(focusPolicy, to: terminal)
+        CoreTerminalHost.applyFocus(focusPolicy, to: terminal)
     }
 }
 
@@ -1804,6 +1827,16 @@ extension TerminalScreen {
             snapshot: snapshot, hooks: multiplexerAgentHooks,
             mux: connection.multiplexer == .herdr ? "herdr" : "tmux")
         return switcher
+    }
+
+    /// `act` on the session's multiplexer (tmux's controller, mosh's
+    /// sidecar, herdr's client), if it has one.
+    private func withMultiplexer(_ act: (any MultiplexerControlling) -> Void) {
+        if let control = active?.tmuxControl {
+            act(control)
+        } else if let herdr = active?.herdrControl {
+            act(herdr)
+        }
     }
 
     /// A swipe's (or VoiceOver's step's) pane, the page's neighbour: the
@@ -2042,6 +2075,27 @@ extension TerminalScreen {
             beginClipboardImageAttachment()
         case .imageCamera:
             if CameraCaptureView.isAvailable { presentSheet { showCamera = true } }
+        case .overview(let open):
+            if open {
+                if !nshOverviewOpen { presentSheet { nshOverviewOpen = true } }
+            } else {
+                nshOverviewOpen = false
+            }
+        case .selectPane(let pane):
+            Haptics.select()
+            selectSwipedPane(pane)
+        case .newPane(let window):
+            Haptics.tap()
+            withMultiplexer { $0.newPane(inWindow: window) }
+        case .newWindow(let name):
+            Haptics.tap()
+            withMultiplexer { $0.newWindow(named: name) }
+        case .renameWindow(let window, let name):
+            withMultiplexer { $0.renameWindow(window, to: name) }
+        case .killPane(let pane):
+            withMultiplexer { $0.killPane(pane) }
+        case .killWindow(let window):
+            withMultiplexer { $0.killWindow(window) }
         case .imageSent(let id):
             if let entry = active?.imageUploads.entries.first(where: { $0.id.uuidString == id }) {
                 insertUploadedImage(entry)
@@ -2085,14 +2139,14 @@ extension TerminalScreen {
 /// screen.
 @MainActor
 final class StickyCtrl {
-    private(set) weak var coordinator: SwiftTerminalView.Coordinator?
+    private(set) weak var coordinator: CoreTerminalHost.Coordinator?
     /// Whether it is armed, for the chip.
     var onChange: ((Bool) -> Void)?
 
     var isArmed: Bool { coordinator?.pendingCtrl == true }
 
     /// The next key typed into `coordinator` goes out as its control code.
-    func arm(_ coordinator: SwiftTerminalView.Coordinator) {
+    func arm(_ coordinator: CoreTerminalHost.Coordinator) {
         if let armed = self.coordinator, armed !== coordinator { armed.pendingCtrl = false }
         self.coordinator = coordinator
         coordinator.pendingCtrl = true

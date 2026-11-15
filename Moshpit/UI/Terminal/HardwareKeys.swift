@@ -61,7 +61,9 @@ struct TerminalCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Terminal") {
-            Button("Switch Window") { HardwareKeys.shared.perform("k") }
+            // The NSH terminal's pane overview (the SwiftUI fallback opens its
+            // windows list on the same chord).
+            Button("Show All Panes") { HardwareKeys.shared.perform("k") }
                 .keyboardShortcut("k", modifiers: .command)
             Button("Back to Home") { HardwareKeys.shared.perform("w") }
                 .keyboardShortcut("w", modifiers: .command)

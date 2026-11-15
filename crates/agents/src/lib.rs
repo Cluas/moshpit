@@ -413,9 +413,15 @@ impl Monitor {
     /// iOS's eight hours.
     pub fn set_settings(&mut self, settings: Settings) {
         let switched_off = self.settings.live_activity && !settings.live_activity;
+        let cards_on = !self.settings.notifications && settings.notifications;
         self.settings = settings;
         if switched_off {
             self.end_island_while_off();
+        }
+        // Connections are watched whatever the switches say (B590): cards
+        // switched on with some watched need the permission to post.
+        if cards_on && self.is_tracking() {
+            self.effects.push(Effect::RequestAuthorization);
         }
     }
 
@@ -441,12 +447,13 @@ impl Monitor {
 
     // MARK: - Connections
 
-    /// Watch a connection, `label` being what the user calls it. Nothing
-    /// when neither the island nor cards are on.
+    /// Watch a connection, `label` being what the user calls it, whatever
+    /// the switches say (B590): what reaches the phone is decided when it
+    /// would, from the settings as they are then. One tracked with both off
+    /// used to be dropped here — B538 made the app always track, and this
+    /// still let it go — so turning either on later did nothing for it
+    /// until it reconnected.
     pub fn track(&mut self, conn: &str, label: &str) {
-        if !(self.settings.live_activity || self.settings.notifications) {
-            return;
-        }
         self.conns.insert(conn.to_owned(), label.to_owned());
         if self.settings.notifications {
             self.effects.push(Effect::RequestAuthorization);
@@ -711,9 +718,19 @@ impl Monitor {
             // reconnect. One the record has, on a pane not seen to leave
             // attention since, is the episode it names. Seen to leave, the
             // record lets go, so the next question is a new one.
+            //
+            // A question the push recorded is dated by the push (B592): the
+            // host's own time, which the app's copy then shares, so it's
+            // the same question and doesn't ring again. Dated by the
+            // phone's clock, it counted as another.
             let since = match hook.since {
                 Some(since) => since,
-                None if new_state == AgentState::Attention => self.announced.get(&key).copied().unwrap_or(now),
+                None if new_state == AgentState::Attention => self
+                    .announced
+                    .get(&key)
+                    .copied()
+                    .or_else(|| self.pushed_since(&key, now))
+                    .unwrap_or(now),
                 None => {
                     if self.announced.remove(&key).is_some() {
                         self.save_announced();
@@ -721,10 +738,12 @@ impl Monitor {
                     now
                 }
             };
-            if new_state != AgentState::Attention
-                && let Some(stamped) = hook.since
-            {
-                answered.insert(hook.pane.clone(), stamped);
+            // A stamp out of attention answers what waited before it: dated
+            // by the host when it can be; herdr's, by now (B592) — its
+            // answers cleared nothing, and a question answered inside the
+            // grace left the push's card standing for good.
+            if new_state != AgentState::Attention {
+                answered.insert(hook.pane.clone(), hook.since.unwrap_or(now));
             }
             let previous = self
                 .panes
@@ -735,8 +754,14 @@ impl Monitor {
                     // Taking a pane over is a new episode when the stamp
                     // dates it; ownership regained by a stamp that doesn't
                     // (herdr's), in the state the pane is in, is the same
-                    // episode: its time doesn't restart (B346).
-                    let state_changed = p.state != new_state || (!p.hook_owned && hook.since.is_some());
+                    // episode: its time doesn't restart (B346). A question
+                    // dated later than the one waiting is a new one (B593):
+                    // the pane was answered and asked again between two
+                    // polls, and the second was never announced.
+                    let state_changed = p.state != new_state
+                        || (!p.hook_owned && hook.since.is_some())
+                        || (new_state == AgentState::Attention
+                            && hook.since.is_some_and(|stamped| stamped > p.since));
                     p.command = command.clone();
                     p.place = hook.place.clone();
                     p.detail = hook.title.clone();
@@ -955,6 +980,16 @@ impl Monitor {
         }
     }
 
+    /// When the push recorded `key`'s question, by the host's clock.
+    fn pushed_since(&self, key: &Key, now: f64) -> Option<f64> {
+        self.standing
+            .as_ref()?
+            .standing(&key.0, Date::from_unix(now))
+            .into_iter()
+            .find(|entry| entry.pane == key.1)
+            .map(|entry| entry.since as f64)
+    }
+
     // MARK: - Announcing
 
     fn schedule_announce(&mut self, key: Key, episode: f64, now: f64) {
@@ -1001,6 +1036,27 @@ impl Monitor {
             let (command, detail) = (p.command.clone(), p.detail.clone());
             self.announced.insert(key.clone(), episode);
             self.save_announced();
+            // On screen when its grace ran out (B591): the person is looking
+            // at the question. It used to be posted, banner and sound, and
+            // withdrawn by the same sweep as viewed; it's acknowledged now,
+            // and the record keeps it from being announced later.
+            if self
+                .on_screen
+                .as_ref()
+                .is_some_and(|v| v.conn == key.0 && v.pane.as_deref().is_none_or(|pane| pane == key.1))
+            {
+                self.effects.push(Effect::Note(format!("prompt on screen: pane {} — no card", key.1)));
+                // A copy the push recorded is seen too: it leaves the set,
+                // the card redrawn from what's left, or withdrawn.
+                let at = Date::from_unix(now);
+                if let Some(standing) = &self.standing
+                    && standing.standing(&key.0, at).iter().any(|entry| entry.pane == key.1)
+                {
+                    standing.clear(&key.0, &key.1, at);
+                    self.render_digest(&key.0, false, now);
+                }
+                continue;
+            }
             let detail = if self.settings.show_detail { detail } else { None };
             self.post_attention(&key, &command, detail, episode, now);
         }

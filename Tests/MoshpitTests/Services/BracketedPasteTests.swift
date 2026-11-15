@@ -100,18 +100,26 @@ struct BracketedPasteTests {
         }
     }
 
-    @Test("Text keeps every other byte: UTF-8, controls, newlines")
-    func everythingElseIsKept() {
-        let pasted = "中文😀\(Self.end)é\u{0}\r\n\t\u{1B}[31mred\u{1B}[0m"
-        #expect(BracketedPaste.sanitized(pasted) == "中文😀é\u{0}\r\n\t\u{1B}[31mred\u{1B}[0m")
-    }
-
     @Test("A payload is wrapped only when the program asked, and sanitized either way")
     func payload() {
         let pasted = "ls\(Self.end)\necho INJECTED\n"
         #expect(BracketedPaste.payload(pasted, bracketed: true)
                 == Data("\(Self.start)ls\necho INJECTED\n\(Self.end)".utf8))
-        #expect(BracketedPaste.payload(pasted, bracketed: false) == Data("ls\necho INJECTED\n".utf8))
+        #expect(BracketedPaste.payload(pasted, bracketed: false) == Data("ls\recho INJECTED\r".utf8),
+                "unbracketed, a line break is Return (B574)")
+    }
+
+    /// B574: a paste the program didn't ask to have bracketed is typed: its
+    /// line breaks go out as Return, CRLF and a lone LF as CR, as xterm,
+    /// iTerm and Terminal.app send them (a CRLF text sent as is doubled
+    /// every line break in a program that reads raw). Bracketed: as it is.
+    @Test("B574: an unbracketed paste's line breaks are Return; a bracketed one is byte for byte")
+    func unbracketedLineBreaksAreReturn() {
+        #expect(BracketedPaste.payload("a\r\nb\nc\rd", bracketed: false) == Data("a\rb\rc\rd".utf8))
+        #expect(BracketedPaste.payload("\r\n\r\n", bracketed: false) == Data("\r\r".utf8))
+        #expect(BracketedPaste.payload("中文 no breaks", bracketed: false) == Data("中文 no breaks".utf8))
+        #expect(BracketedPaste.payload("a\r\nb\nc", bracketed: true)
+                == Data("\(Self.start)a\r\nb\nc\(Self.end)".utf8))
     }
 
     @Test("Random pieces of markers come out as the repeated removal says, never leaving one")

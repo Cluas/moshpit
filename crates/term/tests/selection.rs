@@ -155,3 +155,117 @@ fn search_finds_and_scrolls_to_matches() {
     assert_eq!((first.start.1, first.end.1), (0, 4));
     assert!(t.search("[", true).is_none(), "a bad pattern finds nothing");
 }
+
+// --- B572: a column reflow keeps the selection on its text -------------------
+
+/// A rotation (or an iPad's split view) reflows the text to the new width:
+/// the selection used to go with it. It stays on the text it held,
+/// wherever that text flows, by its place in its logical line.
+#[test]
+fn b572_a_selection_keeps_its_text_across_a_reflow() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"abcdefghijklmnopqrst\r\nsecond line here\r\n");
+    t.select_start(SelectKind::Cells, 1, 0, false);
+    t.select_extend(1, 5, true);
+    assert_eq!(t.selection_text().as_deref(), Some("second"));
+    t.resize(10, 4);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("second"),
+        "narrower: {:?}",
+        rows(&t)
+    );
+    t.resize(30, 4);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("second"),
+        "wider again: {:?}",
+        rows(&t)
+    );
+}
+
+/// Across the wrap, through wide characters, a word's, a line's.
+#[test]
+fn b572_wrapped_wide_and_semantic_selections_follow_the_text() {
+    let mut t = term(10, 6, 100);
+    t.feed("0123456789abcdefghij\r\nab中文cd ef\r\n".as_bytes());
+    // "89ab" over the wrap.
+    t.select_start(SelectKind::Cells, 0, 8, false);
+    t.select_extend(1, 1, true);
+    assert_eq!(t.selection_text().as_deref(), Some("89ab"));
+    t.resize(7, 6);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("89ab"),
+        "{:?}",
+        rows(&t)
+    );
+    // A wide character, whole.
+    t.resize(10, 6);
+    let row = rows(&t).iter().position(|r| r.starts_with("ab中")).unwrap() as u16;
+    t.select_start(SelectKind::Cells, row, 2, false);
+    t.select_extend(row, 5, true);
+    assert_eq!(t.selection_text().as_deref(), Some("中文"));
+    t.resize(5, 6);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("中文"),
+        "{:?}",
+        rows(&t)
+    );
+    // A word, and a whole line.
+    t.resize(10, 6);
+    let row = rows(&t).iter().position(|r| r.starts_with("ab中")).unwrap() as u16;
+    t.select_start(SelectKind::Word, row, 0, false);
+    let word = t.selection_text();
+    t.resize(4, 6);
+    assert_eq!(t.selection_text(), word);
+    t.resize(10, 6);
+    t.select_start(SelectKind::Line, 0, 3, false);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("0123456789abcdefghij\n")
+    );
+    t.resize(6, 6);
+    assert_eq!(
+        t.selection_text().as_deref(),
+        Some("0123456789abcdefghij\n")
+    );
+}
+
+/// A drag that ended past the text (on the blanks after it) still ends
+/// there; a block's columns mean nothing after a reflow, and an end whose
+/// line the reflow pushed out of the history can't be placed: those go,
+/// as before.
+#[test]
+fn b572_past_the_end_stays_and_what_cannot_be_placed_goes() {
+    let mut t = term(20, 4, 100);
+    t.feed(b"short\r\nnext\r\n");
+    t.select_start(SelectKind::Cells, 0, 2, false);
+    t.select_extend(0, 15, true);
+    assert_eq!(t.selection_text().as_deref(), Some("ort"));
+    t.resize(4, 4);
+    assert_eq!(t.selection_text().as_deref(), Some("ort"), "{:?}", rows(&t));
+    // A block on text the reflow moves: goes, as before.
+    let mut b = term(20, 4, 100);
+    b.feed(b"abcdefghijklmnopqrstuvwxyz\r\n");
+    b.select_start(SelectKind::Block, 0, 0, false);
+    b.select_extend(1, 2, true);
+    assert_eq!(b.selection_text().as_deref(), Some("abc\nuvw"));
+    b.resize(10, 4);
+    assert_eq!(b.selection_text(), None);
+    // A line the history no longer holds: goes.
+    let mut u = term(20, 3, 2);
+    u.feed(b"keep this one\r\nb\r\nc\r\n");
+    let row = find_row(&mut u, "keep this one");
+    u.select_start(SelectKind::Cells, row, 0, false);
+    u.select_extend(row, 3, true);
+    assert_eq!(u.selection_text().as_deref(), Some("keep"));
+    u.resize(4, 3);
+    assert_ne!(
+        u.selection_text().as_deref(),
+        Some("b"),
+        "landed on other text"
+    );
+    assert!(matches!(u.selection_text().as_deref(), None | Some("keep")));
+}

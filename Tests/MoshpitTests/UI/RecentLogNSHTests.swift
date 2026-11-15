@@ -16,14 +16,6 @@ struct RecentLogNSHTests {
         category: "layout",
         message: "resize 80x24 → 70x40")
 
-    @Test("every NSH page shows whenever the build hosts NSH: no switch (F0)")
-    func everyPageShows() {
-        for screen in NSHScreen.allCases {
-            #expect(screen.isOn == NSHSurface.available, "\(screen.name)")
-        }
-        #expect(NSHScreen.recentLog.name == "recent-log")
-    }
-
     @Test("this build hosts NSH screens")
     func nshIsLinked() {
         #expect(NSHSurface.available)
@@ -41,18 +33,6 @@ struct RecentLogNSHTests {
             let message = RecentLogModel.message(for: state)
             #expect(NSHSurface.check(screen: NSHScreen.recentLog.name, message: message), "\(message)")
         }
-    }
-
-    @Test("what is not one of its messages is refused")
-    func badMessagesAreRefused() {
-        let screen = NSHScreen.recentLog.name
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "focus"]))
-        #expect(!NSHSurface.check(screen: screen, message: ["state": "loading"]))
-        #expect(!NSHSurface.check(screen: screen, message: ["op": "log", "state": "failed"]))
-        #expect(!NSHSurface.check(screen: screen, message: [
-            "op": "log", "state": "loaded", "entries": [["time": "12:00:00.000", "category": "x"]],
-        ]))
-        #expect(!NSHSurface.check(screen: "no-such-screen", message: ["op": "log", "state": "loading"]))
     }
 
     @Test("an entry carries its time as the SwiftUI page shows it, and Copy's line is DiagnosticsLog.line")

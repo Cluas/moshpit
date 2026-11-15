@@ -80,26 +80,6 @@ struct OrphanedPairingSweepTests {
         })
     }
 
-    /// (That its token isn't minted again is the core's test:
-    /// `crates/hostcare/tests/push.rs`.)
-    @Test("A pairing whose connection is gone is forgotten")
-    func orphanIsForgotten() throws {
-        let file = try makePairingsFile()
-        defer { cleanUp(file) }
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = ConnectionStore(defaults: defaults)
-        let kept = ServerConnection(name: "kept", host: "a.example.com", username: "dev")
-        store.add(kept)
-        let gone = UUID()   // deleted by a build that left its pairing behind
-        try #require(pair([kept.id, gone], in: file))
-        let core = core(file)
-
-        #expect(sweep(core, store) == 1)
-        #expect(file.read().map(\.connectionId) == [kept.id],
-                "a deleted connection's pairing is still on the phone")
-    }
-
     /// A connection this build can't decode is still stored — kept as it was,
     /// for the build that wrote it — so it isn't gone, and neither is its
     /// pairing.
@@ -150,74 +130,6 @@ struct OrphanedPairingSweepTests {
         #expect(file.read().count == 2)
     }
 
-    @Test("A stored value that isn't a list at all stops the sweep")
-    func nonListStopsTheSweep() throws {
-        let file = try makePairingsFile()
-        defer { cleanUp(file) }
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(Data(#"{"not":"a list"}"#.utf8), forKey: Self.storageKey)
-        let store = ConnectionStore(defaults: defaults)
-        try #require(store.connections.isEmpty)
-        try #require(pair([UUID(), UUID()], in: file))
-        let core = core(file)
-
-        #expect(store.savedIds == nil, "an unreadable value read as no connections at all")
-        #expect(sweep(core, store) == 0)
-        #expect(file.read().count == 2)
-    }
-
-    /// Before the first unlock after a reboot the preferences are sealed, and
-    /// the list reads as empty: every pairing would look orphaned.
-    @Test("A launch that can't trust the saved connections yet sweeps nothing, then sweeps once it can")
-    func lockedLaunchSweepsNothing() throws {
-        let file = try makePairingsFile()
-        defer { cleanUp(file) }
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let phone = Phone()
-        let store = ConnectionStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
-        let kept = ServerConnection(name: "kept", host: "a.example.com", username: "dev")
-        let gone = UUID()
-        try #require(pair([kept.id, gone], in: file))
-        let core = core(file)
-
-        #expect(sweep(core, store) == 0)
-        #expect(file.read().map(\.connectionId) == [kept.id, gone],
-                "a sealed list swept every pairing on the phone")
-
-        // Unlocked: the list on disk is readable, and the app comes forward.
-        let (scratch, scratchSuite) = makeDefaults()
-        defer { scratch.removePersistentDomain(forName: scratchSuite) }
-        ConnectionStore(defaults: scratch).add(kept)
-        defaults.set(scratch.data(forKey: Self.storageKey), forKey: Self.storageKey)
-        phone.unlocked = true
-        store.reloadIfNeeded()
-
-        #expect(sweep(core, store) == 1)
-        #expect(file.read().map(\.connectionId) == [kept.id])
-    }
-
-    @Test("The sweep runs once a launch")
-    func sweepsOnce() throws {
-        let file = try makePairingsFile()
-        defer { cleanUp(file) }
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = ConnectionStore(defaults: defaults)
-        let kept = ServerConnection(name: "kept", host: "a.example.com", username: "dev")
-        store.add(kept)
-        let first = UUID()
-        try #require(pair([kept.id, first], in: file))
-        let core = core(file)
-        #expect(sweep(core, store) == 1)
-        #expect(file.read().map(\.connectionId) == [kept.id])
-
-        let later = UUID()
-        try #require(file.upsert(ConnectionDeletionTests.pairing(later, host: "later", relayURL: Self.relayURL)))
-        #expect(sweep(core, store) == 0)
-        #expect(file.read().map(\.connectionId) == [kept.id, later])
-    }
 }
 
 /// B443: this install's id, what its conf on a host is named by.

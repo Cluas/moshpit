@@ -755,7 +755,9 @@ fn new_window_in_another_session_names_it() {
     let mut rig = attached();
     discover(&mut rig, TWO_SESSIONS);
     rig.with(|c, now| c.new_window_in_session("$1", Some("api"), now));
-    assert!(rig.has("new-window -t $1: -P -F '#{window_id}' -n"));
+    // B580: made without becoming `$1`'s current window (a desktop there
+    // stays put); the phone picks it in its own view.
+    assert!(rig.has("new-window -d -t $1: -P -F '#{window_id}' -n"));
     let before = rig.commands.len();
     rig.with(|c, now| c.new_window_in_session("$0", None, now));
     assert!(

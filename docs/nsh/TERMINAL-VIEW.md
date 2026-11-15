@@ -22,9 +22,8 @@
 | 字节通道 `pane` | `crates/term/src/pane.rs` | 解析在 pane 线程；视图自己喂的本地通道（`Pane::local`），尺寸和重置按序走在字节中间 |
 | C 接口 | `crates/term/src/ffi.rs`、`include/moshpit_term.h` | 上面每一层的 `mp_term_*`，iOS 走 Swift，Android 走 JNI |
 | iOS 适配层 | `Moshpit/UI/Terminal/Core/` | Metal 画帧（Metal 不可用才用 CoreGraphics）；`UITextInput` 转给 `ime`；手势只发意图；UIKit 的菜单、把手、指针；VoiceOver 元素读 `a11y` |
-| 接缝 `TerminalSurface` | `Moshpit/UI/Terminal/TerminalSurface.swift` | App 代码问终端的一切：字节和夹在字节里的标记、格子和网格、光标和程序的模式、本地历史和拖动的去向、程序的鼠标、粘贴字节、行文字、快照、外观、mosh 预测。终端回话走 `TerminalSurfaceDelegate`。两个视图都实现它；`TerminalSurfaces.make` 按开关造 |
-| SwiftTerm 适配层 | `Moshpit/UI/Terminal/SwiftTerm/` | `SwiftTermSurface` 包着分叉的 `TerminalView`，以及只属于 SwiftTerm 的事：读历史时扣住输出、每次喂完重设用户光标、给格子打链接标、预测写进格子、滚动和捏合手势。**App 里只有这个目录 import SwiftTerm** |
-| 宿主 | `SwiftTerminalView.Coordinator` 等 | 拥有一个 `TerminalSurface`，会话级的去向：tmux/herdr 的滚动和点击、粘贴走哪条路、键盘起落的冻结、遮罩、标记到点要做的事。不知道是哪个视图在画 |
+| App 用到的视图接口 | `Moshpit/UI/Terminal/Core/CoreTerminalView+Surface.swift`、`TerminalViewTypes.swift` | App 代码直接问 `CoreTerminalView`：字节和夹在字节里的标记、格子和网格、光标和程序的模式、本地历史和拖动的去向、程序的鼠标、粘贴字节、行文字、快照、外观、mosh 预测。视图回话走 `CoreTerminalViewDelegate`；`TerminalSurfaces.make` 造终端。原来让 SwiftTerm 的视图也能顶上的 `TerminalSurface` 协议，在只剩内核这一个实现之后去掉了（E6a） |
+| 宿主 | `CoreTerminalHost.Coordinator` 等 | 拥有一个 `CoreTerminalView`，会话级的去向：tmux/herdr 的滚动和点击、粘贴走哪条路、键盘起落的冻结、遮罩、标记到点要做的事 |
 
 不放进 Rust 的：画图本身、系统输入法的协议（`UITextInput` 的位置和区间对象）、手势识别、菜单和把手的 UIKit 控件、VoiceOver 元素对象、键盘的系统连发计时（iPadOS 不给设置，Mac 读系统值）。这些平台各写各的，但每个只把系统事件翻成对内核的一次调用。
 
@@ -43,7 +42,7 @@
 - **主线程只做**：取帧（拷贝）、重编码变了的行、提交 Metal。解析永远不在主线程。帧的节奏：按键回显那种孤立的唤醒立刻取帧立刻画；整屏连着来时（主线程歇的还没有上一帧花的时间长）等到下一次刷新，每次刷新最多套一帧；便宜的帧（回显、提示符）随到随取（T4）；GPU 手里已有两帧就等下一次刷新，主线程从不等可画的缓冲。
 - **帧由 pane 线程做**（T4）：它本来就拿着锁，每次解析完一段、以及长段解析（积压）中每 16 ms，把变了的行做成一帧放进一格的槽、叫醒视图；视图取槽里的帧不拿锁（`mp_term_take_frame`）。槽里的帧没被取走就不做新的，伤痕留在终端里，下一帧一起带上；视图取走时解析已经往前走了，就叫 pane 线程把剩下的也做出来。视图自己引起的变化（滚动、选区、换外观）当场做帧（`mp_term_frame`）：先给槽里那帧，自己的这帧放回槽里，按序。事件（标题、响铃、OSC 7、剪贴板）也由 pane 线程边解析边挪出终端，视图取的时候不拿锁。
 - **锁**：内核的 `Terminal` 一把锁。pane 线程每读 64 KB 放一次锁。主线程平常取帧、取事件、取回复都不拿它；只有视图自己的操作（按键编码、滚动、选区、自己做帧）要拿，最多等一次 64 KB 的解析。
-- **标记随帧走**（T3）：会话通道里的标记（切 pane 的遮罩、揭幕、读历史的扣放）由协调器推进视图的字节队列（`TerminalSurface.feed(mark:)`），解析走到它时记下，下一帧带回来（`mp_frame_mark`），视图取到这一帧、画之前交给协调器。所以揭幕一定和带着它之前那次重画的帧一起，不会揭开在还没解析完的重画上；遮罩一定不晚于带着它之后字节的第一帧。帧和它的标记在同一把锁下取。同步更新（2026）里的标记等更新结束（或超时）才走，和那些字节一样。SwiftTerm 喂的时候就解析完，标记当场交回。
+- **标记随帧走**（T3）：会话通道里的标记（切 pane 的遮罩、揭幕、读历史的扣放）由协调器推进视图的字节队列（`CoreTerminalView.feed(mark:)`），解析走到它时记下，下一帧带回来（`mp_frame_mark`），视图取到这一帧、画之前交给协调器。所以揭幕一定和带着它之前那次重画的帧一起，不会揭开在还没解析完的重画上；遮罩一定不晚于带着它之后字节的第一帧。帧和它的标记在同一把锁下取。同步更新（2026）里的标记等更新结束（或超时）才走，和那些字节一样。SwiftTerm 喂的时候就解析完，标记当场交回。
 - **留着等重画的尺寸**（`applyDeferredResize`）不进队列：协调器读到它就改视图的 frame，内核视图在 frame 改的当下 `mp_term_resize`（本地通道里按序），所以新尺寸落在重画字节之前，和 SwiftTerm 在 frame setter 里改尺寸一样。
 - Rust 会话路径现在仍经协调器（主线程拷一次再推给内核）。让 pane 线程直接读会话的通道见 §7。
 
@@ -104,7 +103,7 @@
 | V34 | 识别出的网址（http/https，含折行）可点、有下划线，和 OSC 8 一样 | `PlainLinkDetector` | Rust | `links.rs` |
 | V35 | OSC 52 读剪贴板要用户允许，否则回空 | App 规则 | 宿主 | 真机 |
 | V36 | mosh 预测回显：确认过的纪元才显示、错了整批撤掉、密码提示不显示、回车和末列等服务器、宽字符不猜；猜测只叠在帧上，模拟器的格子永远是服务器发来的 | `MoshPrediction`（mosh 的 `PredictionEngine`） | Rust `predict` | `predict.rs` |
-| V37 | App 代码只经 `TerminalSurface` 碰终端；只有 `UI/Terminal/SwiftTerm/` import SwiftTerm；两个视图对同样的字节答出同样的模式、网格、光标、格子、粘贴字节 | T3，`getTerminal()` 调用方 | iOS 接缝 | `CorePaneTests.seamParity`（两个视图各跑一遍）；`grep -l 'import SwiftTerm' Moshpit` 只出那个目录 |
+| V37 | App 代码只经 `TerminalSurface` 碰终端；只有 `UI/Terminal/SwiftTerm/` import SwiftTerm；两个视图对同样的字节答出同样的模式、网格、光标、格子、粘贴字节 | T3，`getTerminal()` 调用方 | iOS 接缝 | `CorePaneTests.seamParity`（两个视图各跑一遍）；`grep -l 'import SwiftTerm' Moshpit` 只出那个目录。SwiftTerm 随批次 B 去掉、协议在 E6a 并进 `CoreTerminalView` 之后，这一条只剩“App 代码只经 `CoreTerminalView` 和它的委托碰终端” |
 | V38 | tmux pane（两条会话路径）：开关开时是内核视图，关时是 SwiftTerm；一个 pane 一生一个终端，生在客户端的网格 | T3 | iOS | `CorePaneTests.paneViewFollowsTheSwitch`、`swiftControllerPanesFollowTheSwitch`、`RustSessionTests.tmuxSurface` |
 | V39 | 切 pane 的揭幕和带着它之前那次重画的帧一起，不早；遮罩不晚于它之后字节的第一帧；标记按序、不丢（Rust 会话的标记、Swift 控制器和 SSH + herdr 的 `revealWhenShown` 都是） | T3，`project_diff_peer_contract` | Rust `pane` + iOS | `local.rs a_pushed_mark_comes_back_with_the_frame_of_the_bytes_before_it`、`a_mark_inside_a_synchronized_update_waits_for_its_end`；真机 `revealWaitsForTheRepaint`、`revealWhenShownFollowsTheBytes`、`marksRideTheirFrames` |
 | V40 | 留着等重画的尺寸在重画字节之前生效（缩小不先丢底下的行） | `TerminalHostContainer.shouldDeferResize` | iOS | 真机 `heldResizeLandsBeforeTheCapture` |
@@ -440,7 +439,7 @@ Debug 包，只用启动参数，私有 sshd（临时钥匙和配置、`SetEnv T
 
 ## 6. T3 的决定（2026-11-12）
 
-- **接缝是一个协议加一个委托**（`TerminalSurface` / `TerminalSurfaceDelegate`），不是按调用方拆成几个小协议。调用方要的东西大多一起要（协调器一个就用了七成），拆开只多出类型、不少依赖；Android 的视图将来对着同一张清单实现。视图特有的东西（SwiftTerm 的扣住输出、打链接标、往格子里写预测；内核的帧、Metal）留在各自的适配层里。
+- **接缝是一个协议加一个委托**（`TerminalSurface` / `TerminalSurfaceDelegate`），不是按调用方拆成几个小协议。调用方要的东西大多一起要（协调器一个就用了七成），拆开只多出类型、不少依赖；Android 的视图将来对着同一张清单实现。视图特有的东西（SwiftTerm 的扣住输出、打链接标、往格子里写预测；内核的帧、Metal）留在各自的适配层里。（E6a：只剩内核这一个实现以后，协议并进了 `CoreTerminalView`，委托改名 `CoreTerminalViewDelegate`。）
 - **两条会话路径的 tmux pane 都跟开关走**（Rust 路径是主线，必须；Swift 路径的 `TmuxSessionController` 原以为改起来贵、打算留在 SwiftTerm，查下来不贵就一起换了）。前提是「喂完不等于已经解析」：查了 Swift 控制器里所有喂字节、挂遮罩、揭幕、应用延迟尺寸的地方（7 处喂、5 处遮罩、2 处延迟尺寸、1 处揭幕），只有 capture 喂完同一轮揭幕这 1 处依赖同步解析，改成 `Coordinator.revealWhenShown()`（协调器自己的标记，跟在字节后面，到点才揭幕）。同一个毛病在 Swift 会话的 SSH + herdr 上也有（整帧喂完马上揭幕，内核视图上会揭在没画完的帧上，T2 留下的），一并改了。控制器在造出来时读一次开关（一个 attach 里的 pane 视图一致）。
 - **标记随帧走，不随推送走**，遮罩也一样（不提前）：提前做遮罩看着更保险，但 A→B→A 快切时，A 上一轮还在队列里的揭幕会揭开 A 这一轮刚提前挂上的遮罩，露出半截重画。全按队列顺序，每个标记只在它前面的字节上屏时生效，就没有这种交错。代价是遮罩比 SwiftTerm 晚一次 pane 线程到主线程的跳转（< 1 帧）。
 - **留着等重画的尺寸读到就做**（不进队列）：它要求「新尺寸在重画字节之前」，协调器读到标记时重画字节还没推，当场改 frame 就满足；内核视图在 frame setter 里立刻把 resize 放进字节队列，和 SwiftTerm 一致。

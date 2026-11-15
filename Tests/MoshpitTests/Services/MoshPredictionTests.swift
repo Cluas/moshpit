@@ -14,9 +14,9 @@ import UIKit
 struct MoshPredictionTests {
     private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
-    private func terminal() -> (CoreTerminalView, SwiftTerminalView.Coordinator) {
+    private func terminal() -> (CoreTerminalView, CoreTerminalHost.Coordinator) {
         let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: 20, rows: 3))
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(surface)
         return (surface as! CoreTerminalView, coordinator)
     }

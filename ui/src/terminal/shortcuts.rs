@@ -1,6 +1,7 @@
 //! The hardware keyboard's ⌘ shortcuts on the terminal screen
-//! (`TerminalCommands`): ⌘K the windows, ⌘W back home (the session stays),
-//! ⌘1–⌘9 the n-th window in the picker's order.
+//! (`TerminalCommands`): ⌘K the pane overview (open, or closed again), ⌘W
+//! back home (the session stays), ⌘1–⌘9 the n-th window in the picker's
+//! order.
 //!
 //! One handler, reached two ways:
 //!
@@ -23,7 +24,7 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 
 use nsh_core::prelude::*;
 
-use super::{Crumb, Ctx, Intent};
+use super::{Ctx, Intent};
 
 /// The keystrokes, as NSH's keymap writes them (`mod` is ⌘ on Apple
 /// platforms, Control elsewhere).
@@ -44,17 +45,26 @@ pub enum Via {
     Host,
 }
 
-/// What a keystroke asks, on a screen where `tree` says whether the
-/// multiplexer's tree is live (its pickers and windows are reachable).
-pub fn intent(stroke: &str, tree: bool) -> Option<Intent> {
+/// What a keystroke does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// Asks the host.
+    Ask(Intent),
+    /// Opens the pane overview, or closes it (the page's own).
+    Overview,
+}
+
+/// What a keystroke does, on a screen where `tree` says whether the
+/// multiplexer's tree is live (its windows and panes are reachable).
+pub fn action(stroke: &str, tree: bool) -> Option<Action> {
     match stroke {
-        // A plain shell has no windows to switch: nothing (SwiftUI opened
-        // an empty sheet), as the crumbs of a tree coming back are inert.
-        "mod+k" => tree.then_some(Intent::Crumb(Crumb::Window)),
-        "mod+w" => Some(Intent::Back),
+        // A plain shell has no panes to show: nothing, as the crumbs of a
+        // tree coming back are inert.
+        "mod+k" => tree.then_some(Action::Overview),
+        "mod+w" => Some(Action::Ask(Intent::Back)),
         _ => {
             let number = stroke.strip_prefix("mod+")?.parse::<u8>().ok()?;
-            ((1..=9).contains(&number) && tree).then_some(Intent::Window(number))
+            ((1..=9).contains(&number) && tree).then_some(Action::Ask(Intent::Window(number)))
         }
     }
 }
@@ -107,8 +117,15 @@ impl Shortcuts {
         let tree = ctx
             .chrome
             .with_untracked(|c| c.crumbs.as_ref().is_some_and(|c| c.live));
-        if let Some(intent) = intent(stroke, tree) {
-            ctx.ask(intent);
+        match action(stroke, tree) {
+            Some(Action::Ask(intent)) => ctx.ask(intent),
+            // The overview needs the session's tree; before it has come,
+            // the windows list, as ⌘K always opened.
+            Some(Action::Overview) if ctx.switcher.with_untracked(|s| s.tree.is_some()) => {
+                ctx.overview.update(|open| *open = !*open)
+            }
+            Some(Action::Overview) => ctx.ask(Intent::Crumb(super::Crumb::Window)),
+            None => {}
         }
     }
 }
@@ -127,14 +144,18 @@ mod tests {
     use std::time::Instant;
 
     #[test]
-    fn a_keystroke_asks_what_the_menu_says() {
-        assert_eq!(intent("mod+k", true), Some(Intent::Crumb(Crumb::Window)));
-        assert_eq!(intent("mod+k", false), None, "no windows to switch");
-        assert_eq!(intent("mod+w", false), Some(Intent::Back));
-        assert_eq!(intent("mod+3", true), Some(Intent::Window(3)));
-        assert_eq!(intent("mod+3", false), None);
-        assert_eq!(intent("mod+0", true), None);
-        assert_eq!(intent("mod+x", true), None);
+    fn a_keystroke_does_what_the_menu_says() {
+        assert_eq!(
+            action("mod+k", true),
+            Some(Action::Overview),
+            "⌘K: the pane overview, not the windows list"
+        );
+        assert_eq!(action("mod+k", false), None, "no panes to show");
+        assert_eq!(action("mod+w", false), Some(Action::Ask(Intent::Back)));
+        assert_eq!(action("mod+3", true), Some(Action::Ask(Intent::Window(3))));
+        assert_eq!(action("mod+3", false), None);
+        assert_eq!(action("mod+0", true), None);
+        assert_eq!(action("mod+x", true), None);
     }
 
     #[test]

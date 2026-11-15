@@ -8,16 +8,12 @@ struct TestFixturesTests {
 
     /// Every fixture a suite reads, relative to `Fixtures/`.
     static let used = [
-        "herdr-snapshot.json",
-        "herdr-socket-snapshot.json",
-        "herdr-socket-events.jsonl",
+        "agents/rust-transcripts.txt",
+        "agents/scripts.json",
         "home-acceptance.json",
-        "mosh-switch/meta.json",
-        "mosh-switch/reference.bin",
+        "keys-written-by-rust/manifest.tsv",
         "mosh-switch/phase0.bin", "mosh-switch/phase1.bin",
         "mosh-switch/phase2.bin", "mosh-switch/phase3.bin",
-        "mosh-switch/truth0.txt", "mosh-switch/truth1.txt",
-        "mosh-switch/truth2.txt", "mosh-switch/truth3.txt",
     ]
 
     @Test("The fixtures ship inside the test bundle, folder layout and all")

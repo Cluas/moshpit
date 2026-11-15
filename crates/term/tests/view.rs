@@ -1079,7 +1079,7 @@ fn v19_a_search_moves_the_view_on_whole_rows() {
 #[test]
 fn v30_a_paste_is_bracketed_as_the_program_asked_without_markers() {
     let mut t = term(20, 4, 10);
-    assert_eq!(t.paste("a\nb", false), b"a\nb");
+    assert_eq!(t.paste("a\nb", false), b"a\rb", "a line break is Return (B574)");
     t.feed(b"\x1b[?2004h");
     assert_eq!(t.paste("a\x1b[201~b", false), b"\x1b[200~ab\x1b[201~");
     t.feed(b"\x1b[?2004l");
@@ -1087,6 +1087,26 @@ fn v30_a_paste_is_bracketed_as_the_program_asked_without_markers() {
         t.paste("x", true),
         b"\x1b[200~x\x1b[201~",
         "the host forces it (herdr)"
+    );
+}
+
+/// B574: a paste the program didn't ask to have bracketed is typed: its
+/// line breaks go out as Return, as xterm, iTerm and Terminal.app send
+/// them — CRLF and a lone LF as CR. Sent as LF, a CRLF text from elsewhere
+/// doubled every line break in a program that reads raw (`cat > file`
+/// through the tty's ICRNL, an old REPL). A bracketed paste is the
+/// program's to read: byte for byte.
+#[test]
+fn b574_a_plain_paste_sends_its_line_breaks_as_return() {
+    let mut t = term(20, 4, 10);
+    assert_eq!(t.paste("a\r\nb\nc\rd", false), b"a\rb\rc\rd");
+    assert_eq!(t.paste("\r\n\r\n", false), b"\r\r", "a blank line stays one");
+    assert_eq!(t.paste("no breaks", false), b"no breaks");
+    t.feed(b"\x1b[?2004h");
+    assert_eq!(
+        t.paste("a\r\nb\nc", false),
+        b"\x1b[200~a\r\nb\nc\x1b[201~",
+        "bracketed: as it is"
     );
 }
 

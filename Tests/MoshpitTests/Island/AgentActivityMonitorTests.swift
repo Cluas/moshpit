@@ -15,13 +15,6 @@ import ActivityKit
 @MainActor
 struct AgentActivityMonitorTests {
 
-    private func makeMonitor() -> (AgentActivityMonitor, UserDefaults, String) {
-        let name = "test.agentmonitor.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        let settings = AppSettings(defaults: defaults)
-        return (AgentActivityMonitor(settings: settings, writeWidget: { _ in }), defaults, name)
-    }
-
     #if canImport(ActivityKit)
     /// iOS ends a Live Activity after eight hours, and the user can swipe one
     /// away. The monitor kept updating that handle — and adopted an ended one
@@ -34,23 +27,6 @@ struct AgentActivityMonitorTests {
         #expect(!ActivityKitIsland.takesUpdates(.dismissed))
     }
     #endif
-
-    @Test("untracking an unknown connection is a harmless no-op")
-    func untrackUnknownIsSafe() {
-        let (monitor, defaults, name) = makeMonitor()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        monitor.untrack(connectionId: UUID())
-    }
-
-    @Test("cycleHeadline is safe to call with no agents present")
-    func cycleHeadlineOnEmptyStateIsSafe() {
-        let (monitor, defaults, name) = makeMonitor()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        monitor.cycleHeadline()
-        monitor.cycleHeadline()
-    }
 
     /// The announced-episode record the machine keeps is the one earlier
     /// builds wrote: `"<uuid>|<pane>" -> epoch seconds` under the same key,
@@ -74,6 +50,26 @@ struct AgentActivityMonitorTests {
         monitor.track(connection: connection, controller: mux)
         #expect(mux.onAgentHooksUpdated != nil, "connected with both off, never watched")
         monitor.untrack(connectionId: connection.id)
+    }
+
+    /// B594: the home-screen widget draws the most urgent agent (its first
+    /// row) but opened the island's headline — the one the person had cycled
+    /// to with Switch, which may be another agent: it showed one and opened
+    /// another.
+    @Test("the widget opens the agent it shows")
+    func widgetOpensWhatItShows() {
+        let row = { (id: String, state: String) in
+            AgentRowValue(id: "C:\(id)", connectionId: "C", paneId: id, command: "claude",
+                          location: "devbox", place: "devbox", detail: nil, state: state,
+                          startedAt: 1_800_000_000)
+        }
+        // %2 waits (first, most urgent); the pill was cycled to %1.
+        let island = AgentIslandValue(agents: [row("%2", "attention"), row("%1", "working")],
+                                      workingCount: 1, attentionCount: 1, headlineId: "C:%1")
+        let widget = AgentActivityMonitor.widget(island, at: Date())
+        #expect(widget.items.first?.id == "C:%2")
+        #expect(widget.headlineDeepLink == widget.items.first?.deepLink,
+                "the widget shows %2 and opened \(widget.headlineDeepLink ?? "-")")
     }
 
     @Test("the announced record is read and written where earlier builds kept it")

@@ -79,6 +79,36 @@ fn at_mentions_prefix_clean_paths_and_fall_back_on_quoted_ones() {
     );
 }
 
+/// An apostrophe a mark is attached to (one Character to Swift) is still
+/// quoted, in each style (the Swift `ShellQuoteCallSiteTests.imagePaths`
+/// case, kept when it went).
+#[test]
+fn a_marked_apostrophe_is_quoted_in_every_style() {
+    for mark in ["\u{301}", "\u{FE0F}", "\u{1F3FB}", "\u{200D}", "\u{903}"] {
+        let path = format!("/home/o'{mark}b/.moshpit/uploads/IMG-1.jpg");
+        let quoted = format!("'/home/o'\\''{mark}b/.moshpit/uploads/IMG-1.jpg'");
+        let one = paths(&[path.as_str()]);
+        assert_eq!(
+            insert_text(&one, InsertStyle::BarePath),
+            format!(" {quoted} ")
+        );
+        assert_eq!(
+            insert_text(&one, InsertStyle::AtMention),
+            format!(" {quoted} ")
+        );
+        assert_eq!(
+            insert_text(&one, InsertStyle::AiderAdd),
+            format!("/add {quoted}")
+        );
+    }
+    // A space with a mark on it still needs the quotes.
+    let spaced = "/home/a \u{301}b/IMG-1.jpg";
+    assert_eq!(
+        insert_text(&paths(&[spaced]), InsertStyle::BarePath),
+        format!(" '{spaced}' ")
+    );
+}
+
 #[test]
 fn the_upload_log_numbers_from_one_in_order() {
     let mut log = UploadLog::default();

@@ -45,6 +45,16 @@ final class NSHContextMenus: NSObject, UIContextMenuInteractionDelegate {
         self.surface = surface
     }
 
+    /// Takes the menus off their surface (a screen whose menus are up only
+    /// for a while: the terminal's pane overview, whose long press must not
+    /// wait on the terminal's own).
+    func uninstall() {
+        if let interaction { interaction.view?.removeInteraction(interaction) }
+        interaction = nil
+        surface = nil
+        openedPart = nil
+    }
+
     /// The part with a menu at `point` (in the surface): its identifier and
     /// view.
     func part(at point: CGPoint) -> (id: String, view: UIView)? {

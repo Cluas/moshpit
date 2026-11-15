@@ -541,6 +541,28 @@ add("Swipe sideways to switch panes", "左右滑动，切换窗格", "左右に�
 add("Pane %lld of %lld, %@", "第 %lld 个窗格，共 %lld 个，%@", "ペイン %lld/%lld、%@")
 add("Next pane", "下一个窗格", "次のペイン")
 add("Previous pane", "上一个窗格", "前のペイン")
+# The pane overview (ui/src/terminal/overview.rs, the terminal's long-press menus,
+# VoiceOver's action and ⌘K's title).
+plural("%lld windows", "%lld window", "%lld 个窗口", "%lld 個のウィンドウ")
+plural("%lld tabs", "%lld tab", "%lld 个标签页", "%lld 個のタブ")
+add("Rename window…", "重命名窗口…", "ウィンドウ名を変更…")
+add("Rename tab…", "重命名标签页…", "タブ名を変更…")
+add("Kill pane…", "终止窗格…", "ペインを強制終了…")
+add("Close pane…", "关闭窗格…", "ペインを閉じる…")
+add("Kill window…", "终止窗口…", "ウィンドウを強制終了…")
+add("Close tab…", "关闭标签页…", "タブを閉じる…")
+add("Kill pane “%1$@” in %2$@? What runs in it stops.",
+    "终止 %2$@ 里的窗格「%1$@」？里面正在跑的程序会停掉。",
+    "%2$@ のペイン「%1$@」を強制終了しますか？中で動いているものは止まります。")
+add("Close pane “%1$@” in %2$@? What runs in it stops.",
+    "关闭 %2$@ 里的窗格「%1$@」？里面正在跑的程序会停掉。",
+    "%2$@ のペイン「%1$@」を閉じますか？中で動いているものは止まります。")
+add("Kill pane", "终止窗格", "ペインを強制終了")
+add("Close pane", "关闭窗格", "ペインを閉じる")
+add("New window", "新建窗口", "新しいウィンドウ")
+add("New tab", "新建标签页", "新しいタブ")
+add("Show all panes", "显示全部窗格", "すべてのペインを表示")
+add("Show All Panes", "显示全部窗格", "すべてのペインを表示")
 add("attached", "已附加", "アタッチ済み")
 add("detached", "已分离", "デタッチ済み")
 
@@ -1204,7 +1226,6 @@ add("Tap ＋ in the top right to create a custom shortcut — key combos, text s
     "右上の ＋ でカスタムショートカットを作成できます。キーの組み合わせ、テキスト、コマンドの連鎖。タップすると編集できます。")
 # Hardware keys / terminal chrome
 add("Back to Home", "回到主页", "ホームに戻る")
-add("Switch Window", "切换窗口", "ウインドウを切り替え")
 add("Terminal", "终端", "ターミナル")
 add("Window %@", "窗口 %@", "ウインドウ %@")
 add("PREPARING…", "准备中…", "準備中…")

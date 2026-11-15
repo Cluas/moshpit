@@ -169,15 +169,46 @@ struct TerminalNSHTests {
             (["ev": "dictation", "action": "send"], .dictation(.send)),
             (["ev": "attachment", "action": "retry"], .attachment(.retry)),
             (["ev": "preview", "action": "confirm"], .preview(.confirm)),
+            (["ev": "overview", "open": true], .overview(true)),
+            (["ev": "overview", "open": false], .overview(false)),
+            (["ev": "select-pane", "id": "%3"], .selectPane("%3")),
+            (["ev": "new-pane", "window": "@2"], .newPane("@2")),
+            (["ev": "new-window", "name": "build"], .newWindow("build")),
+            (["ev": "new-window", "name": NSNull()], .newWindow(nil)),
+            (["ev": "rename-window", "id": "@2", "name": "trainer"], .renameWindow("@2", "trainer")),
+            (["ev": "kill-pane", "id": "%6"], .killPane("%6")),
+            (["ev": "kill-window", "id": "@5"], .killWindow("@5")),
         ]
         for (message, intent) in cases {
             #expect(TerminalNSHIntent(message) == intent, "\(message)")
         }
         // The pill's tap alone never switches: the page asks first.
         for bad: [String: Any] in [["ev": "crumb"], ["ev": "arrow", "dir": "sideways"], ["ev": "fly"], [:],
-                                   ["ev": "transport"], ["ev": "window", "number": 0], ["ev": "window"]] {
+                                   ["ev": "transport"], ["ev": "window", "number": 0], ["ev": "window"],
+                                   ["ev": "select-pane"], ["ev": "new-pane"], ["ev": "rename-window", "id": "@2"]] {
             #expect(TerminalNSHIntent(bad) == nil, "\(bad)")
         }
+    }
+
+    @Test("the overview's long-press menus cover the session's panes in the multiplexer's words")
+    func overviewMenus() {
+        var tree = TmuxSnapshot()
+        tree.panes = ["%1": PaneInfo(id: "%1", windowId: "@1", index: 0, command: "zsh", width: 80, height: 24,
+                                     isActive: true),
+                      "%2": PaneInfo(id: "%2", windowId: "@1", index: 1, command: "vim", width: 80, height: 24,
+                                     isActive: false)]
+        var picked: [(String, String)] = []
+        for (mux, kill) in [("tmux", String(localized: "Kill pane…")), ("herdr", String(localized: "Close pane…"))] {
+            let switcher = TerminalNSHSwitcher(
+                tree: BreadcrumbPlan.Tree(mux: mux, attached: true, snapshot: tree, hooks: [:]))
+            let menus = TerminalNSHModel.overviewMenus(for: switcher) { picked.append(($0, $1)) }
+            #expect(Set(menus.keys) == ["overview-pane-%1", "overview-pane-%2"])
+            let items = menus["overview-pane-%2"]?() ?? []
+            #expect(items.compactMap { ($0 as? UIAction)?.title }.last == kill)
+            #expect((items.last as? UIAction)?.attributes.contains(.destructive) == true)
+        }
+        #expect(TerminalNSHModel.overviewMenus(for: TerminalNSHSwitcher()) { _, _ in }.isEmpty)
+        _ = picked
     }
 
     @Test("the model keeps the handover and the anchors, and hands on the rest")
@@ -444,6 +475,11 @@ struct TerminalNSHTests {
 
     // MARK: On a real surface
 
+    /// What the terminal's chrome tells the host without a press
+    /// (`ui/src/terminal/mod.rs`'s `Intent::Anchor`, `Neighbours` and the
+    /// one-time `SwipeHint`).
+    static let reports: Set<String> = ["anchor", "neighbours", "swipe-hint"]
+
     @Test("on a real surface: the chrome draws, its slot is the stage's, and a press reaches the host")
     func realSurface() async throws {
         let (surface, heard, done) = try SettingsNSHTests.surface(running: .terminal)
@@ -451,9 +487,11 @@ struct TerminalNSHTests {
         #expect(surface.post(Self.chrome().message))
         let back = try #require(await SettingsNSHTests.view(identified: "terminal-back", in: surface))
         #expect(back.accessibilityActivate())
-        // Skip the anchors the bar reports as it lays out.
+        // Skip what the chrome reports by itself as it lays out: its
+        // anchors, the panes either side of this one (`neighbours`, which
+        // came first on CI run 10), the swipe hint.
         var message = await heard.next()
-        while message?["ev"] as? String == "anchor" { message = await heard.next() }
+        while let ev = message?["ev"] as? String, Self.reports.contains(ev) { message = await heard.next() }
         #expect(message?["ev"] as? String == "back")
         #expect(await SettingsNSHTests.view(identified: "terminal-breadcrumb", in: surface) != nil)
         await NSHTouchAudit.pressablesTakeTouches(in: surface)

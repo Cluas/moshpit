@@ -125,6 +125,7 @@ final class TerminalNSHModel {
     init() {
         stage.onGround = { [weak self] ground in self?.ground = ground }
         stage.onSwiping = { [weak self] active in self?.surface?.post(["op": "swipe", "active": active]) }
+        stage.onShowAll = { [weak self] in self?.surface?.post(["op": "overview", "open": true]) }
     }
     @ObservationIgnored private weak var surface: NSHSurface?
     @ObservationIgnored private(set) var chrome: TerminalNSHChrome?
@@ -143,6 +144,11 @@ final class TerminalNSHModel {
     @ObservationIgnored private weak var preview: RemotePreviewModel?
     @ObservationIgnored private var panels: [String: TerminalNSHPanel] = [:]
     @ObservationIgnored private var level: Float?
+    /// The pane overview's long-press menus (`overview-pane-<id>`): on the
+    /// surface only while the overview is up, so the terminal's own long
+    /// press never waits on them.
+    @ObservationIgnored private let overviewMenus = NSHContextMenus()
+    @ObservationIgnored private var overviewOpen = false
 
     /// Where the screen's breadcrumb and transport pill are, in the page's
     /// points: the host's popovers hang from them.
@@ -220,6 +226,7 @@ final class TerminalNSHModel {
         guard switcher != self.switcher else { return }
         self.switcher = switcher
         surface?.post(switcher.message)
+        if overviewOpen { armOverviewMenus() }
     }
 
     func update(_ diagnostics: TerminalNSHDiagnostics) {
@@ -315,6 +322,50 @@ final class TerminalNSHModel {
         show("preview", panel)
     }
 
+    /// The overview's long-press menus while it is up, for the panes of the
+    /// tree the switcher has: Open, New Pane, Rename window…, Kill pane…
+    /// (herdr: tab, Close). A pick goes back to the page, which asks before
+    /// the host acts (`{"op": "overview-act"}`).
+    private func armOverviewMenus() {
+        guard overviewOpen, let surface else {
+            overviewMenus.uninstall()
+            overviewMenus.menus = [:]
+            return
+        }
+        overviewMenus.menus = Self.overviewMenus(for: switcher) { [weak self] action, pane in
+            self?.post(["op": "overview-act", "action": action, "pane": pane])
+        }
+        overviewMenus.install(on: surface)
+    }
+
+    static func overviewMenus(for switcher: TerminalNSHSwitcher?,
+                              perform: @escaping (String, String) -> Void) -> [String: () -> [UIMenuElement]] {
+        guard let tree = switcher?.tree else { return [:] }
+        let herdr = tree.mux == "herdr"
+        var menus: [String: () -> [UIMenuElement]] = [:]
+        for pane in tree.snapshot.panes.keys {
+            menus["overview-pane-\(pane)"] = {
+                [
+                    UIAction(title: String(localized: "Open"), image: UIImage(systemName: "arrow.up.right.square")) { _ in
+                        perform("open", pane)
+                    },
+                    UIAction(title: String(localized: "New Pane"), image: UIImage(systemName: "rectangle.split.2x1")) { _ in
+                        perform("new-pane", pane)
+                    },
+                    UIAction(title: herdr ? String(localized: "Rename tab…") : String(localized: "Rename window…"),
+                             image: UIImage(systemName: "pencil")) { _ in
+                        perform("rename", pane)
+                    },
+                    UIAction(title: herdr ? String(localized: "Close pane…") : String(localized: "Kill pane…"),
+                             image: UIImage(systemName: "xmark.square"), attributes: .destructive) { _ in
+                        perform("kill", pane)
+                    },
+                ]
+            }
+        }
+        return menus
+    }
+
     /// What the screen told the host: the stage's and the anchors' are
     /// kept here, the rest is the screen's to perform.
     func handle(_ message: [String: Any]) -> TerminalNSHIntent? {
@@ -334,6 +385,17 @@ final class TerminalNSHModel {
             // what the stage's swipe rubber-bands against and switches to.
             stage.setNeighbours(previous: message["previous"] as? String, next: message["next"] as? String)
             return nil
+        case "prompt":
+            // The overview's rename and new window ask for a name.
+            guard let surface, let question = NSHTextPrompt.Question(message) else { return nil }
+            NSHTextPrompt.present(question, from: surface) { [weak self] answer in
+                self?.post(answer)
+            }
+            return nil
+        case "overview":
+            overviewOpen = message["open"] as? Bool ?? false
+            armOverviewMenus()
+            return TerminalNSHIntent(message)
         case "swipe-hint":
             // Shown once on this device; the terminal leans toward the pane
             // a swipe would go to.
@@ -381,6 +443,16 @@ enum TerminalNSHIntent: Equatable {
     case scroll(String)
     case keyboard, mic, image, imagePaste, imageCamera
     case imageSent(String)
+    /// The pane overview opened (closed).
+    case overview(Bool)
+    /// The overview's: switch to a pane, split a window, a new window,
+    /// rename a window, kill a pane or a window.
+    case selectPane(String)
+    case newPane(String)
+    case newWindow(String?)
+    case renameWindow(String, String)
+    case killPane(String)
+    case killWindow(String)
     case dictation(Panel)
     case attachment(Panel)
     case preview(Panel)
@@ -432,6 +504,19 @@ enum TerminalNSHIntent: Equatable {
         case "preview":
             guard let panel else { return nil }
             self = .preview(panel)
+        case "overview":
+            self = .overview(message["open"] as? Bool ?? false)
+        case "select-pane", "kill-pane", "kill-window":
+            guard let id = message["id"] as? String else { return nil }
+            self = ev == "select-pane" ? .selectPane(id) : ev == "kill-pane" ? .killPane(id) : .killWindow(id)
+        case "new-pane":
+            guard let window = message["window"] as? String else { return nil }
+            self = .newPane(window)
+        case "new-window":
+            self = .newWindow(message["name"] as? String)
+        case "rename-window":
+            guard let id = message["id"] as? String, let name = message["name"] as? String else { return nil }
+            self = .renameWindow(id, name)
         default: return nil
         }
     }

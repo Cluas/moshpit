@@ -38,8 +38,8 @@ import UIKit
 /// the pane's whole life, and its coordinator (``RustTmuxController``).
 @MainActor
 protocol PaneTerminalSource: AnyObject {
-    func surface(for paneId: String) -> TerminalSurface
-    func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator?
+    func surface(for paneId: String) -> CoreTerminalView
+    func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator?
 }
 
 extension RustTmuxController: PaneTerminalSource {}
@@ -95,14 +95,14 @@ final class TerminalNSHStage {
         let key: String
         let container = TerminalHostContainer()
         /// The terminal (the core's view).
-        let surface: TerminalSurface
+        let surface: CoreTerminalView
         /// Its view.
         let terminal: UIView
-        let coordinator: SwiftTerminalView.Coordinator?
+        let coordinator: CoreTerminalHost.Coordinator?
         var inset: CGFloat
 
         @MainActor
-        init(key: String, surface: TerminalSurface, coordinator: SwiftTerminalView.Coordinator?, inset: CGFloat) {
+        init(key: String, surface: CoreTerminalView, coordinator: CoreTerminalHost.Coordinator?, inset: CGFloat) {
             self.key = key
             self.surface = surface
             self.terminal = surface.view
@@ -375,7 +375,7 @@ final class TerminalNSHStage {
     }
 
     /// Whether any row of `surface`'s screen has text.
-    static func hasText(_ surface: TerminalSurface) -> Bool {
+    static func hasText(_ surface: CoreTerminalView) -> Bool {
         (0..<min(surface.grid.rows, 300)).contains { !surface.rowText($0).isEmpty }
     }
 
@@ -461,7 +461,7 @@ final class TerminalNSHStage {
     /// terminal that has nothing on it yet: the pane's last picture stays
     /// in the slot, over whatever the new session shows, under the page's
     /// veil, until ``releaseStill()`` (the new session has painted). Drawn
-    /// from the terminal's own rows (``TerminalSurface/snapshotView()``),
+    /// from the terminal's own rows (``CoreTerminalView/snapshotView()``),
     /// not the screen's, which a Metal layer may not give. Nothing to hold
     /// without a terminal on screen.
     func holdStill() {
@@ -621,6 +621,7 @@ final class TerminalNSHStage {
         if old.coordinator !== next.coordinator {
             old.coordinator?.onSwipe = nil
             old.coordinator?.onStep = nil
+            old.coordinator?.onShowAll = nil
         }
         UIView.animate(withDuration: duration, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
             next.container.alpha = 1
@@ -640,8 +641,8 @@ final class TerminalNSHStage {
 
     /// A host for `target`'s terminal, in the slot when there is one.
     private func host(_ target: Target) -> Hosted? {
-        let surface: TerminalSurface
-        let coordinator: SwiftTerminalView.Coordinator?
+        let surface: CoreTerminalView
+        let coordinator: CoreTerminalHost.Coordinator?
         switch target.source {
         case .plain(let session):
             coordinator = session.coordinator
@@ -666,6 +667,7 @@ final class TerminalNSHStage {
             self.swipe(phase, on: hosted)
         }
         coordinator?.onStep = { [weak self] forward in _ = self?.step(forward: forward) }
+        coordinator?.onShowAll = { [weak self] in self?.onShowAll?() }
         hosted.container.geometryHeld = geometryHeld
         hosted.container.isUserInteractionEnabled = !target.frozen
         if let slot {
@@ -686,10 +688,10 @@ final class TerminalNSHStage {
     }
 
     /// The plain path's terminal: the coordinator's own, re-wired, or a new
-    /// one (as `SwiftTerminalView.makeUIView` does).
-    private func plainSurface(_ coordinator: SwiftTerminalView.Coordinator) -> TerminalSurface {
+    /// one (as `CoreTerminalHost.makeUIView` does).
+    private func plainSurface(_ coordinator: CoreTerminalHost.Coordinator) -> CoreTerminalView {
         let look = appearance
-        let surface = SwiftTerminalView.mintOwnedSurface(
+        let surface = CoreTerminalHost.mintOwnedSurface(
             coordinator: coordinator, fontName: look?.fontName ?? "system",
             fontSize: look?.fontSize ?? AppSettings.shared.fontSize)
         style(surface)
@@ -765,6 +767,8 @@ final class TerminalNSHStage {
     /// A swipe began (true) or settled (false): the page shows its dots
     /// while it lasts.
     var onSwiping: ((Bool) -> Void)?
+    /// VoiceOver asked for every pane: the page's overview.
+    var onShowAll: (() -> Void)?
 
     /// The drag under way: on which host, how far, and whether past the
     /// threshold (its haptic says each crossing).
@@ -993,7 +997,7 @@ final class TerminalNSHStage {
         }
     }
 
-    /// The plain path's look, as `SwiftTerminalView.updateUIView` keeps it.
+    /// The plain path's look, as `CoreTerminalHost.updateUIView` keeps it.
     func apply(appearance: Appearance) {
         guard appearance != self.appearance else { return }
         self.appearance = appearance
@@ -1004,7 +1008,7 @@ final class TerminalNSHStage {
         style(hosted.surface)
     }
 
-    private func style(_ surface: TerminalSurface) {
+    private func style(_ surface: CoreTerminalView) {
         guard let look = appearance else { return }
         surface.apply(look: TerminalLook(theme: look.theme, cursorShape: look.cursorShape,
                                          cursorColorId: look.cursorColorId, cursorBlink: look.cursorBlink))

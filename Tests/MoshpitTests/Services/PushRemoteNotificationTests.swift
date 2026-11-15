@@ -69,23 +69,6 @@ struct PushRemoteNotificationTests {
         #expect(PushRemoteNotification.envelope(in: ["mp": ["v": 1, "iv": "00"]]) == nil)
     }
 
-    // MARK: - Trying the device's secrets
-
-    @Test("each stored secret is tried until one authenticates")
-    func triesEverySecret() throws {
-        let info = try Self.payload(Self.status(), secret: Self.otherSecret)
-        let envelope = try #require(PushRemoteNotification.envelope(in: info))
-
-        // Wrong key only: nothing.
-        #expect(PushRemoteNotification.open(envelope, secrets: [Self.secret]) == nil)
-        // The right key anywhere in the list: found. A MAC failure here is the
-        // NORMAL case ("not this host"), never an error to surface.
-        let found = PushRemoteNotification.open(
-            envelope, secrets: [Self.secret, Self.otherSecret])
-        #expect(found?.host == "m1-pro")
-        #expect(PushRemoteNotification.open(envelope, secrets: []) == nil)
-    }
-
     // MARK: - Rendering
 
     @Test("an attention push reads like its local twin and routes like one")

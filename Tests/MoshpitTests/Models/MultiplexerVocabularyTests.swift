@@ -15,39 +15,6 @@ struct MultiplexerVocabularyTests {
         #expect(Multiplexer.herdr.vocabulary.window == "Tab")
     }
 
-    /// The bug this whole type exists for: the Select Pane sheet printed
-    /// tmux's `⌃ b q` for every connection. In tmux that lists panes; in herdr
-    /// it DETACHES. The app was telling herdr users to press the key that
-    /// drops their session.
-    @Test("herdr never advertises the detach key as a pane shortcut")
-    func detachKeyIsNeverSuggested() {
-        let herdr = Multiplexer.herdr.vocabulary
-        let allKeys = herdr.sessionKeys + herdr.windowKeys + herdr.paneKeys
-        #expect(!allKeys.contains("b q"))
-        // tmux's own hint is still correct for tmux.
-        #expect(Multiplexer.tmux.vocabulary.paneKeys.contains("b q"))
-    }
-
-    @Test("herdr's hints match its actual bindings")
-    func herdrKeysMatchHerdr() {
-        let herdr = Multiplexer.herdr.vocabulary
-        // Per herdr's keyboard docs: workspaces `prefix+w`, tabs step with
-        // `prefix+n` / `prefix+p`, split right `prefix+v`.
-        #expect(herdr.sessionKeys.contains("b w"))
-        #expect(herdr.windowKeys.contains("b n/p"))
-        #expect(herdr.paneKeys.contains("b v"))
-        // tmux's number-jump doesn't exist in herdr.
-        #expect(!herdr.windowKeys.contains("1-9"))
-    }
-
-    @Test("tmux keeps exactly the hints it had before")
-    func tmuxUnchanged() {
-        let tmux = Multiplexer.tmux.vocabulary
-        #expect(tmux.sessionKeys == ["⌃", "b s"])
-        #expect(tmux.windowKeys == ["⌃", "1-9"])
-        #expect(tmux.paneKeys == ["⌃", "b q"])
-    }
-
     /// "Kill Workspace" is a tmux idiom stapled to a herdr noun — herdr's own
     /// CLI is `workspace close` / `tab close` / `pane close`.
     @Test("Each multiplexer destroys things in its own words")

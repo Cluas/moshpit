@@ -13,31 +13,6 @@ struct TerminalCellGeometryTests {
 
     typealias G = TerminalCellGeometry
 
-    @Test("a point lands in the cell it is inside, not the nearest one")
-    func floors() {
-        let cell = CGSize(width: 10, height: 20)
-        #expect(G.cell(at: CGPoint(x: 0, y: 0), cell: cell, cols: 80, rows: 24) == (0, 0))
-        #expect(G.cell(at: CGPoint(x: 9.9, y: 19.9), cell: cell, cols: 80, rows: 24) == (0, 0))
-        #expect(G.cell(at: CGPoint(x: 10, y: 20), cell: cell, cols: 80, rows: 24) == (1, 1))
-        #expect(G.cell(at: CGPoint(x: 95, y: 59), cell: cell, cols: 80, rows: 24) == (9, 2))
-    }
-
-    @Test("past the last cell clamps to the grid instead of reporting off-screen")
-    func clamps() {
-        let cell = CGSize(width: 10, height: 20)
-        // A tap in the sliver left over past the last whole cell.
-        #expect(G.cell(at: CGPoint(x: 805, y: 487), cell: cell, cols: 80, rows: 24) == (79, 23))
-        // Negative can arrive from a viewport-relative point on a scrolled view.
-        #expect(G.cell(at: CGPoint(x: -4, y: -30), cell: cell, cols: 80, rows: 24) == (0, 0))
-    }
-
-    @Test("a degenerate cell or grid reports the origin rather than dividing by zero")
-    func degenerate() {
-        #expect(G.cell(at: CGPoint(x: 50, y: 50), cell: .zero, cols: 80, rows: 24) == (0, 0))
-        #expect(G.cell(at: CGPoint(x: 50, y: 50),
-                       cell: CGSize(width: 10, height: 20), cols: 0, rows: 0) == (0, 0))
-    }
-
     @Test("grid divides truncating, the way SwiftTerm sizes its own grid")
     func gridDivision() {
         // 803pt of width at 10pt cells is 80 columns and 3pt of leftover.

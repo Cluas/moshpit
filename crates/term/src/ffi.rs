@@ -1725,6 +1725,75 @@ mod tests {
 
     unsafe extern "C" fn no_wake(_: *mut c_void) {}
 
+    /// Viewport row `row` as the frames show it (predictions included),
+    /// from the C ABI: frames carry changed rows, so the last text each row
+    /// had is kept in `seen`.
+    unsafe fn shown(t: *const MpTerm, row: u16, seen: &mut Vec<String>) -> String {
+        // SAFETY: the caller's `t` is live.
+        unsafe {
+            let f = mp_term_frame(t);
+            let mut out = MpFrameRow {
+                row: 0,
+                wrapped: false,
+                cells: std::ptr::null(),
+                ncells: 0,
+                extra: std::ptr::null(),
+                nextra: 0,
+                images: std::ptr::null(),
+                nimages: 0,
+            };
+            let mut i = 0;
+            while mp_frame_row(f, i, &mut out) {
+                let cells = std::slice::from_raw_parts(out.cells, out.ncells as usize);
+                let text: String = cells
+                    .iter()
+                    .filter(|c| c.flags & crate::cell_flags::SPACER == 0)
+                    .map(|c| char::from_u32(c.ch).filter(|_| c.ch != 0).unwrap_or(' '))
+                    .collect();
+                let r = out.row as usize;
+                if seen.len() <= r {
+                    seen.resize(r + 1, String::new());
+                }
+                seen[r] = text.trim_end().to_owned();
+                i += 1;
+            }
+            mp_frame_free(f);
+        }
+        seen.get(row as usize).cloned().unwrap_or_default()
+    }
+
+    /// Predictive echo through the C ABI the view calls: the first epoch
+    /// waits for the server, a confirmed one shows the next keystroke at
+    /// once, and the grid holds only what the server sent (the Swift
+    /// `CoreTerminalViewTests.predictionsShowOverTheFrame`, kept when it
+    /// went).
+    #[test]
+    fn predictive_echo_through_the_c_abi() {
+        let t = mp_term_new(20, 3, 0);
+        let mut seen = Vec::new();
+        // SAFETY: `t` is live until the close; the strings are freed.
+        unsafe {
+            mp_term_feed(t, b"$ ".as_ptr(), 2);
+            assert_eq!(shown(t, 0, &mut seen), "$");
+            mp_term_predict_attach(t, 2, false);
+            mp_term_predict_srtt(t, 500.0);
+            let a = mp_term_predict_input(t, b"a".as_ptr(), 1);
+            assert_ne!(a, 0, "a guess");
+            mp_term_predict_sent(t, a, 1, true);
+            assert_eq!(shown(t, 0, &mut seen), "$", "the first epoch waits");
+            mp_term_feed(t, b"a".as_ptr(), 1);
+            mp_term_predict_echo_ack(t, 1);
+            assert_eq!(shown(t, 0, &mut seen), "$ a");
+            let b = mp_term_predict_input(t, b"b".as_ptr(), 1);
+            mp_term_predict_sent(t, b, 2, true);
+            assert_eq!(shown(t, 0, &mut seen), "$ ab", "shown before the echo");
+            let grid = mp_term_view_row_text(t, 0, std::ptr::null_mut());
+            assert_eq!(std::ffi::CStr::from_ptr(grid).to_str().unwrap(), "$ a");
+            mp_string_free(grid);
+            mp_term_close(t);
+        }
+    }
+
     #[test]
     fn a_pushed_mark_rides_back_on_a_frame() {
         // SAFETY: a no-op waker; the terminal is closed below.

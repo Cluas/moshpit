@@ -194,7 +194,7 @@ struct CoreTermForegroundTests {
     @Test("A pane-switch veil long past its cap comes off; a fresh one stays")
     func staleVeilIsLifted() {
         let view = makeView()
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(view)
         coordinator.veilForSwitch()
         #expect(coordinator.isCoverPresented)
@@ -209,10 +209,10 @@ struct CoreTermForegroundTests {
     @Test("A veil no coordinator holds is taken out of the terminal")
     func orphanVeilIsRemoved() {
         let view = makeView()
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(view)
         let orphan = UIView(frame: view.bounds)
-        orphan.accessibilityIdentifier = SwiftTerminalView.Coordinator.veilIdentifier
+        orphan.accessibilityIdentifier = CoreTerminalHost.Coordinator.veilIdentifier
         view.addSubview(orphan)
         let lifted = coordinator.liftStaleVeil(olderThan: 5)
         #expect(lifted)

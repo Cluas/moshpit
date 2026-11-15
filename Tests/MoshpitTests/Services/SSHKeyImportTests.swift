@@ -7,6 +7,8 @@ import Testing
 /// whatever was pasted, so PEM keys and every key behind a
 /// passphrase imported fine and then failed each connection. Import now
 /// converts to that form, asking for the passphrase, and refuses what it can't.
+/// Each form's conversion is the core's (crates/ssh `keyfile/tests.rs`);
+/// here, what the Swift side says when import refuses.
 @Suite("SSH key import: what imports, connects")
 struct SSHKeyImportTests {
 
@@ -30,58 +32,7 @@ struct SSHKeyImportTests {
         SSHKeyFixtures.all.first { $0.name == name }!
     }
 
-    // MARK: Every form converts to one that connects
-
-    @Test("Every form ssh-keygen and OpenSSL write imports into a key the connect path loads",
-          arguments: SSHKeyFixtures.all)
-    func importedKeyConnects(_ key: SSHKeyFixtures.Key) async throws {
-        let imported = try SSHKeyFactory.importKey(
-            privatePEM: key.privateKey, passphrase: key.passphrase, publicKeyLine: nil, comment: "")
-
-        #expect(imported.algorithm == key.algorithm)
-        #expect(imported.fingerprint == key.fingerprint, "not the key ssh-keygen made")
-        #expect(imported.publicKeyLine.split(separator: " ").prefix(2) == key.publicKey.split(separator: " ").prefix(2))
-        let stored = String(decoding: imported.privateBlob, as: UTF8.self)
-        #expect(stored.hasPrefix("-----BEGIN OPENSSH PRIVATE KEY-----\n"))
-        #expect(!SSHKeyFactory.isEncrypted(stored), "stored still behind its passphrase")
-        #expect(try await Self.connectPathAccepts(imported.privateBlob),
-                "the connect path can't load the imported \(key.name)")
-    }
-
-    /// Before B125 none of these reached the server. The connect path now
-    /// converts a key stored as pasted on its first use (StoredKey), as
-    /// import does — but not one behind a passphrase nobody gives.
-    @Test("Stored as pasted — what import used to do — the connect path's reader can't read these",
-          arguments: SSHKeyFixtures.all.filter { $0.isEncrypted || !$0.privateKey.contains("OPENSSH PRIVATE KEY") })
-    func pastedAsIsIsNotWhatTheConnectPathReads(_ key: SSHKeyFixtures.Key) async throws {
-        // An encrypted openssh-key-v1 file reads up to its public half.
-        #expect(!StoredKey.connectPathReads(key.privateKey) || key.isEncrypted)
-        #expect(try await Self.connectPathAccepts(Data(key.privateKey.utf8)) == !key.isEncrypted)
-    }
-
-    @Test("A key whose line breaks didn't survive the paste imports into one that loads")
-    func mangledPasteStillConnects() async throws {
-        let key = Self.fixture("Ed25519 · OpenSSH")
-        let crlf = key.privateKey.replacingOccurrences(of: "\n", with: "\r\n")
-        let oneLine = key.privateKey.replacingOccurrences(of: "\n", with: " ")
-        for pasted in [crlf, oneLine, "\n  " + key.privateKey + "  \n\n"] {
-            let imported = try SSHKeyFactory.importKey(privatePEM: pasted, publicKeyLine: nil, comment: "")
-            #expect(imported.fingerprint == key.fingerprint)
-            #expect(try await Self.connectPathAccepts(imported.privateBlob))
-        }
-        // Stored as pasted, the connect path's reader can't read the first
-        // two; the connect converts them before it signs in (B125).
-        #expect(!StoredKey.connectPathReads(crlf))
-        #expect(!StoredKey.connectPathReads(oneLine))
-        #expect(try await Self.connectPathAccepts(Data(crlf.utf8)))
-    }
-
     // MARK: Passphrases
-
-    @Test("Import knows which pasted keys need a passphrase", arguments: SSHKeyFixtures.all)
-    func knowsWhenToAsk(_ key: SSHKeyFixtures.Key) {
-        #expect(SSHKeyFactory.isEncrypted(key.privateKey) == key.isEncrypted)
-    }
 
     @Test("A key behind a passphrase isn't imported without it", arguments: SSHKeyFixtures.encrypted)
     func passphraseRequired(_ key: SSHKeyFixtures.Key) {
@@ -90,17 +41,6 @@ struct SSHKeyImportTests {
         }
         #expect(throws: SSHKeyImportError.passphraseRequired) {
             _ = try SSHKeyFactory.importKey(privatePEM: key.privateKey, passphrase: "", publicKeyLine: nil, comment: "")
-        }
-    }
-
-    @Test("A wrong passphrase is refused as wrong, in each encryption scheme",
-          arguments: ["Ed25519 · OpenSSH · passphrase",
-                      "RSA 2048 · PEM (ssh-keygen -m PEM) · passphrase",
-                      "ECDSA P-256 · PKCS #8 (ssh-keygen -m PKCS8) · passphrase"])
-    func wrongPassphrase(_ name: String) {
-        #expect(throws: SSHKeyImportError.wrongPassphrase) {
-            _ = try SSHKeyFactory.importKey(privatePEM: Self.fixture(name).privateKey, passphrase: "correct horse",
-                                        publicKeyLine: nil, comment: "")
         }
     }
 
@@ -148,26 +88,6 @@ struct SSHKeyImportTests {
         for refusal in [SSHKeyImportError.securityKey, .unsupportedType("DSA"), .passphraseRequired] {
             #expect(!(refusal.errorDescription ?? "").isEmpty)
         }
-    }
-
-    // MARK: The public half
-
-    @Test("The public key line carries the comment typed, else the pasted .pub's, else the key's own")
-    func publicLineComment() throws {
-        let key = Self.fixture("Ed25519 · OpenSSH")
-        let typeAndBlob = key.publicKey.split(separator: " ").prefix(2).joined(separator: " ")
-
-        let typed = try SSHKeyFactory.importKey(privatePEM: key.privateKey, publicKeyLine: key.publicKey,
-                                                comment: "work laptop")
-        #expect(typed.publicKeyLine == typeAndBlob + " work laptop")
-
-        let pasted = try SSHKeyFactory.importKey(privatePEM: key.privateKey,
-                                                 publicKeyLine: typeAndBlob + " from-the-pub\n", comment: "")
-        #expect(pasted.publicKeyLine == typeAndBlob + " from-the-pub")
-
-        // Nothing typed, no .pub: the comment ssh-keygen wrote into the key.
-        let own = try SSHKeyFactory.importKey(privatePEM: key.privateKey, publicKeyLine: nil, comment: "")
-        #expect(own.publicKeyLine == key.publicKey)
     }
 
     // MARK: Helpers

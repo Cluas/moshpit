@@ -21,23 +21,23 @@ struct CoreTerminalBenchTests {
     private static let font = UIFont.monospacedSystemFont(ofSize: 9, weight: .regular)
 
     /// Sink for what a view sends.
-    final class Loop: TerminalSurfaceDelegate {
+    final class Loop: CoreTerminalViewDelegate {
         var onSend: ((Data) -> Void)?
-        func surface(_ surface: TerminalSurface, send data: Data) { onSend?(data) }
-        func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {}
-        func surface(_ surface: TerminalSurface, titleChanged title: String) {}
-        func surfaceBell(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, openLink link: String) {}
-        func surface(_ surface: TerminalSurface, paste text: String) {}
-        func surfaceClipboardRequest(_ surface: TerminalSurface) {}
-        func surfaceScrollWillBegin(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, scrollPixels dy: CGFloat) -> CGFloat { surface.scrollLocal(pixels: dy) }
-        func surfaceScrollDidEnd(_ surface: TerminalSurface) {}
-        func surface(_ surface: TerminalSurface, click col: Int, row: Int) {}
+        func surface(_ surface: CoreTerminalView, send data: Data) { onSend?(data) }
+        func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int) {}
+        func surface(_ surface: CoreTerminalView, titleChanged title: String) {}
+        func surfaceBell(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, openLink link: String) {}
+        func surface(_ surface: CoreTerminalView, paste text: String) {}
+        func surfaceClipboardRequest(_ surface: CoreTerminalView) {}
+        func surfaceScrollWillBegin(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, scrollPixels dy: CGFloat) -> CGFloat { surface.scrollLocal(pixels: dy) }
+        func surfaceScrollDidEnd(_ surface: CoreTerminalView) {}
+        func surface(_ surface: CoreTerminalView, click col: Int, row: Int) {}
         var surfaceScrollsElsewhere: Bool { false }
         var surfaceCanSwitch: Bool { false }
-        func surface(_ surface: TerminalSurface, switchForward forward: Bool) {}
-        func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {}
+        func surface(_ surface: CoreTerminalView, switchForward forward: Bool) {}
+        func surface(_ surface: CoreTerminalView, fontSizeCommitted size: Double) {}
     }
 
     // MARK: Workloads

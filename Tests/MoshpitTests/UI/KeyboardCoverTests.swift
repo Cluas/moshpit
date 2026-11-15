@@ -21,14 +21,14 @@ struct KeyboardCoverTests {
     private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     /// A terminal filling 320×480 (the core's view).
-    private func makeTerminal() -> TerminalSurface {
+    private func makeTerminal() -> CoreTerminalView {
         let cell = TerminalCellGeometry.measuredCell(font: Self.font, scale: UITraitCollection.current.displayScale)
         return TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: Int(320 / cell.width),
                                                                           rows: Int(480 / cell.height)))
     }
 
-    private func makeCoordinator() -> SwiftTerminalView.Coordinator {
-        let coordinator = SwiftTerminalView.Coordinator()
+    private func makeCoordinator() -> CoreTerminalHost.Coordinator {
+        let coordinator = CoreTerminalHost.Coordinator()
         let terminal = makeTerminal()
         let container = TerminalHostContainer(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         container.host(terminal)
@@ -78,8 +78,8 @@ struct KeyboardCoverTests {
     /// raise pass it by.
     /// The cover is a picture of the pane, which the core's view draws from
     /// its own rows (a view never drawn, as a test host's, has one too).
-    private func makeHostedPane() -> (SwiftTerminalView.Coordinator, TerminalHostContainer, UIView) {
-        let coordinator = SwiftTerminalView.Coordinator()
+    private func makeHostedPane() -> (CoreTerminalHost.Coordinator, TerminalHostContainer, UIView) {
+        let coordinator = CoreTerminalHost.Coordinator()
         let terminal = makeTerminal()
         let container = TerminalHostContainer(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         container.host(terminal)

@@ -468,7 +468,7 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
         match &ctx {
             Some(ctx) => {
                 let ask = ctx.asking(Intent::Crumb(crumb));
-                target
+                let target = target
                     .role(AccessibilityRole::Button)
                     .label(label)
                     .test_id(match crumb {
@@ -477,8 +477,34 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
                         Crumb::Pane => "terminal-crumb-pane",
                     })
                     .disabled(!live)
-                    .active(|s| s.opacity(0.5))
+                    .active(|s| s.opacity(0.5));
+                if crumb == Crumb::Session {
+                    return target
+                        .on_press(move || {
+                            if live {
+                                ask()
+                            }
+                        })
+                        .into_element();
+                }
+                // The window and the pane open the pane overview (the old
+                // lists before the session's tree has come); held, the old
+                // lists (until the owner has tried the overview).
+                let overview = ctx.overview;
+                let switcher = ctx.switcher;
+                let list = ctx.asking(Intent::Crumb(crumb));
+                target
                     .on_press(move || {
+                        if !live {
+                            return;
+                        }
+                        if switcher.with_untracked(|s| s.tree.is_some()) {
+                            overview.set(true)
+                        } else {
+                            list()
+                        }
+                    })
+                    .on_long_press(move || {
                         if live {
                             ask()
                         }

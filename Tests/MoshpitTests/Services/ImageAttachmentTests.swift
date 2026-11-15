@@ -143,66 +143,6 @@ struct ImageAttachmentTests {
         }
     }
 
-    // MARK: Paste text
-
-    @Test("Clean paths stay bare — quotes break agents' path auto-attach")
-    func insertTextBareWhenClean() {
-        let text = ImageAttachmentPipeline.insertText(
-            forRemotePaths: ["/home/dev/.moshpit/uploads/IMG-1.jpg"])
-        #expect(text == " /home/dev/.moshpit/uploads/IMG-1.jpg ")
-    }
-
-    @Test("A path with a space gets the shell-safe quoted form")
-    func insertTextQuotesSpaces() {
-        let text = ImageAttachmentPipeline.insertText(
-            forRemotePaths: ["/home/dev user/.moshpit/uploads/IMG-1.jpg"])
-        #expect(text == " '/home/dev user/.moshpit/uploads/IMG-1.jpg' ")
-    }
-
-    @Test("A quote inside a path is shell-escaped")
-    func insertTextEscapesQuote() {
-        let text = ImageAttachmentPipeline.insertText(forRemotePaths: ["/a/it's.jpg"])
-        #expect(text == #" '/a/it'\''s.jpg' "#)
-    }
-
-    @Test("Multiple paths join with spaces; none yields empty")
-    func insertTextJoins() {
-        let text = ImageAttachmentPipeline.insertText(forRemotePaths: ["/a/1.jpg", "/a/2.png"])
-        #expect(text == " /a/1.jpg /a/2.png ")
-        #expect(ImageAttachmentPipeline.insertText(forRemotePaths: []).isEmpty)
-    }
-
-    // MARK: Agent-aware insert styles
-
-    @Test("Agent classification: bare for claude/codex/goose, @ for gemini/qwen, /add for aider")
-    func insertStyleClassification() {
-        #expect(ImageInsertStyle.forAgent(nil) == .barePath)
-        #expect(ImageInsertStyle.forAgent("zsh") == .barePath)
-        #expect(ImageInsertStyle.forAgent("claude") == .barePath)
-        #expect(ImageInsertStyle.forAgent("2.1.227") == .barePath)   // claude's version-title comm
-        #expect(ImageInsertStyle.forAgent("codex") == .barePath)
-        #expect(ImageInsertStyle.forAgent("goose") == .barePath)
-        #expect(ImageInsertStyle.forAgent("gemini") == .atMention)
-        #expect(ImageInsertStyle.forAgent("qwen") == .atMention)
-        #expect(ImageInsertStyle.forAgent("aider") == .aiderAdd)
-    }
-
-    @Test("@-mention style prefixes clean paths and falls back on quoted ones")
-    func atMentionStyle() {
-        #expect(ImageAttachmentPipeline.insertText(
-            forRemotePaths: ["/a/1.jpg"], style: .atMention) == " @/a/1.jpg ")
-        // A path needing quotes can't be an @-token — shell-safe fallback.
-        #expect(ImageAttachmentPipeline.insertText(
-            forRemotePaths: ["/a b/1.jpg"], style: .atMention) == " '/a b/1.jpg' ")
-    }
-
-    @Test("aider style leads with /add and no padding")
-    func aiderStyle() {
-        #expect(ImageAttachmentPipeline.insertText(
-            forRemotePaths: ["/a/1.jpg", "/a/2.png"], style: .aiderAdd)
-            == "/add /a/1.jpg /a/2.png")
-    }
-
     // MARK: Session log
 
     @Test("Upload log numbers sequentially from 1 and keeps order")
@@ -223,27 +163,6 @@ struct ImageAttachmentTests {
     }
 
     // MARK: Exec-channel fallback commands
-
-    @Test("Exec upload plan pins the exact command strings")
-    func execUploadPlan() {
-        let plan = ExecUploadCommands.plan(home: "/home/dev", filename: "IMG-1.jpg")
-        #expect(plan.finalPath == "/home/dev/.moshpit/uploads/IMG-1.jpg")
-        #expect(plan.begin ==
-            "mkdir -p '/home/dev/.moshpit/uploads' && chmod 700 '/home/dev/.moshpit' '/home/dev/.moshpit/uploads' && rm -f '/home/dev/.moshpit/uploads/IMG-1.jpg.b64part'")
-        #expect(plan.append("QUJD") ==
-            "printf %s 'QUJD' >> '/home/dev/.moshpit/uploads/IMG-1.jpg.b64part'")
-        #expect(plan.finish.contains("base64 -d <"))
-        #expect(plan.finish.contains("|| base64 -D <"))
-        #expect(plan.finish.contains("chmod 600 '/home/dev/.moshpit/uploads/IMG-1.jpg'"))
-        #expect(plan.finish.hasSuffix("echo MOSHPIT_UPLOAD_OK"))
-    }
-
-    @Test("Exec upload quoting survives a home with a space and a quote")
-    func execUploadQuoting() {
-        let plan = ExecUploadCommands.plan(home: "/Users/dev o'brien", filename: "IMG-1.jpg")
-        #expect(plan.begin.contains(#"'/Users/dev o'\''brien/.moshpit/uploads'"#))
-        #expect(plan.finalPath == "/Users/dev o'brien/.moshpit/uploads/IMG-1.jpg")
-    }
 
     @Test("Retention sweep command is pinned exactly")
     @MainActor

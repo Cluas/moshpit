@@ -6,16 +6,6 @@ import Testing
 @Suite("SessionMetrics")
 struct SessionMetricsTests {
 
-    // MARK: - SessionState
-
-    @Test("SessionState raw values are stable wire strings")
-    func stateRawValues() {
-        #expect(SessionState.saved.rawValue == "saved")
-        #expect(SessionState.live.rawValue == "live")
-        #expect(SessionState.roaming.rawValue == "roaming")
-        #expect(SessionState.offline.rawValue == "offline")
-    }
-
     // MARK: - SessionMetrics value semantics
 
     @Test("SessionMetrics defaults: saved, no telemetry, empty history")

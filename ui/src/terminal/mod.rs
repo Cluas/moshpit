@@ -39,6 +39,7 @@ pub mod folder;
 pub mod install;
 mod keys;
 pub mod model;
+pub mod overview;
 mod panels;
 pub mod picker;
 pub mod prompt;
@@ -88,6 +89,14 @@ pub enum Message {
     /// `{"op": "swipe", "active": bool}`: a sideways swipe began (the
     /// terminal follows the finger) or settled.
     Swipe(bool),
+    /// `{"op": "overview", "open": bool}`: the host opens (or closes) the
+    /// pane overview: ⌘K's twin, VoiceOver's Show all panes.
+    Overview(bool),
+    /// `{"op": "overview-act", "action", "pane"}`: a pane's long-press menu
+    /// (the host's) picked `action` (`open`, `new-pane`, `rename`, `kill`).
+    OverviewAct { action: String, pane: String },
+    /// `{"op": "prompted", "id", "text"}`: the host's answer to a prompt.
+    Prompted(prompt::Answer),
 }
 
 #[derive(serde::Deserialize)]
@@ -150,6 +159,18 @@ impl Message {
                 .map_err(error),
             "swipe" => serde_json::from_value::<SwipeFields>(fields)
                 .map(|f| Message::Swipe(f.active))
+                .map_err(error),
+            "overview" => serde_json::from_value::<overview::OpenFields>(fields)
+                .map(|f| Message::Overview(f.open))
+                .map_err(error),
+            "overview-act" => serde_json::from_value::<overview::ActFields>(fields)
+                .map(|f| Message::OverviewAct {
+                    action: f.action,
+                    pane: f.pane,
+                })
+                .map_err(error),
+            "prompted" => serde_json::from_value(fields)
+                .map(Message::Prompted)
                 .map_err(error),
             "rekey" if fields.as_object().is_some_and(|f| f.is_empty()) => Ok(Message::Rekey),
             "rekey" => Err("terminal: rekey: takes no fields".to_owned()),
@@ -291,6 +312,23 @@ pub enum Intent {
     SwipeHint {
         forward: bool,
     },
+    /// The pane overview opened (closed): the host puts the keyboard away
+    /// while it is up, and back after.
+    Overview(bool),
+    /// The overview picked pane `id`: the host switches to it.
+    SelectPane(String),
+    /// Split window `id` (`newPane(inWindow:)`).
+    NewPane(String),
+    /// A new window, named so (none: the program names it).
+    NewWindow(Option<String>),
+    RenameWindow {
+        id: String,
+        name: String,
+    },
+    KillPane(String),
+    KillWindow(String),
+    /// Ask the host's text prompt (`prompt::event`'s message).
+    Prompt(serde_json::Value),
 }
 
 impl Intent {
@@ -336,6 +374,16 @@ impl Intent {
                 json!({"ev": "neighbours", "previous": previous, "next": next})
             }
             Intent::SwipeHint { forward } => json!({"ev": "swipe-hint", "forward": forward}),
+            Intent::Overview(open) => json!({"ev": "overview", "open": open}),
+            Intent::SelectPane(id) => json!({"ev": "select-pane", "id": id}),
+            Intent::NewPane(window) => json!({"ev": "new-pane", "window": window}),
+            Intent::NewWindow(name) => json!({"ev": "new-window", "name": name}),
+            Intent::RenameWindow { id, name } => {
+                json!({"ev": "rename-window", "id": id, "name": name})
+            }
+            Intent::KillPane(id) => json!({"ev": "kill-pane", "id": id}),
+            Intent::KillWindow(id) => json!({"ev": "kill-window", "id": id}),
+            Intent::Prompt(event) => event.clone(),
         }
     }
 }
@@ -371,6 +419,8 @@ pub(crate) struct Ctx {
     pub switcher: Signal<Switcher>,
     /// A sideways swipe is under way (the host's).
     pub swiping: Signal<bool>,
+    /// The pane overview is open.
+    pub overview: Signal<bool>,
 }
 
 impl Ctx {
@@ -500,12 +550,17 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
         pill_rect: signal(None),
         switcher: signal(Switcher::default()),
         swiping: signal(false),
+        overview: signal(false),
     };
+    let prompts = prompt::Prompts::default();
     shortcuts::bind(&ctx, &keys);
     let order = switcher::order(&ctx);
     switcher::tell_neighbours(&ctx, order);
+    let panes = overview::model(&ctx);
+    overview::tell_open(&ctx);
     {
         let ctx = ctx.clone();
+        let prompts = prompts.clone();
         channel::hear(
             channel.as_ref(),
             Screen::Terminal,
@@ -546,6 +601,15 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                         ctx.swiping.set(active);
                     }
                 }
+                Message::Overview(open) => {
+                    // Only with a live tree to show (⌘K's rule).
+                    let live = ctx.switcher.with_untracked(|s| s.tree.is_some());
+                    ctx.overview.set(open && live);
+                }
+                Message::OverviewAct { action, pane } => {
+                    overview::hear_act(&ctx, &prompts, panes, &action, &pane)
+                }
+                Message::Prompted(answer) => prompts.answer(answer),
                 Message::Rekey => {
                     // The host hears this before the batch that takes the
                     // old element out of the window: it moves the terminal
@@ -576,7 +640,9 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                 .child(keys::shortcut_bar(ctx.clone())),
         )
         .child(chrome::over_pane(ctx.clone(), order))
-        .child(diagnostics::popover(ctx))
+        .child(diagnostics::popover(ctx.clone()))
+        // Over everything while it is open.
+        .child(overview::overview(ctx, panes, prompts))
 }
 
 /// What tells the host `intent`, if the page has a channel.

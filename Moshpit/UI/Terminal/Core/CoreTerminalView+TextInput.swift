@@ -391,6 +391,26 @@ extension CoreTerminalView: UITextInput {
         bringSubviewToFront(caret)
     }
 
+    /// Ends the composition from outside the input system (B573: a bar key
+    /// pressed while composing): `cancel` takes it away unsent, else it is
+    /// committed as it stands — what shows inline, the pinyin itself when
+    /// no candidate was picked. The input system hears that the text
+    /// changed under it, and lets go of its own composition.
+    @discardableResult
+    func endComposition(cancel: Bool) -> Bool {
+        guard composing else { return false }
+        inputDelegate?.textWillChange(self)
+        if cancel {
+            ime { mp_term_ime_set_marked($0, nil, 0, 0) }
+        } else {
+            let anchor = markedLabel?.frame
+            ime { mp_term_ime_unmark($0) }
+            if let anchor { holdCaretAfterCommit(at: anchor) }
+        }
+        inputDelegate?.textDidChange(self)
+        return true
+    }
+
     /// Where a composition `width` points wide (its caret too) starts, put
     /// at `x` in a view `viewWidth` wide: at `x` while it fits, else moved
     /// left to end at the view's edge (never past its left one).

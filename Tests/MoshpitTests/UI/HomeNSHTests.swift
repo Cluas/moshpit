@@ -275,6 +275,9 @@ struct HomeNSHTests {
 
     // MARK: On the device
 
+    /// What the companion tells on its own, not the user (`ui/src/home/pet.rs`).
+    static let companionEvents: Set<String> = ["pet-seen"]
+
     /// A surface in a window of the test host's scene, running Home with
     /// its own components registered.
     static func surface() throws -> (NSHSurface, SettingsNSHTests.Heard, () -> Void) {
@@ -286,7 +289,12 @@ struct HomeNSHTests {
         window.addSubview(surface)
         window.isHidden = false
         let heard = SettingsNSHTests.Heard()
-        surface.onMessage = { heard.append($0) }
+        // The companion's own events (it tells `pet-seen` as Home shows, and
+        // every ten minutes) aren't what the user did: not heard here.
+        surface.onMessage = { message in
+            guard !Self.companionEvents.contains(message["ev"] as? String ?? "") else { return }
+            heard.append(message)
+        }
         #expect(surface.run(screen: NSHScreen.home.name, params: NSHScreenParams.current()))
         return (surface, heard, {
             surface.removeFromSuperview()

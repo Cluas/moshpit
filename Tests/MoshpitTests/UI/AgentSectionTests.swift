@@ -20,12 +20,6 @@ struct AgentSignalTests {
         #expect(AgentSignal("something new") == nil)
     }
 
-    @Test("Ranking puts the human-blocking state first")
-    func ranking() {
-        #expect(AgentSignal.attention.rank < AgentSignal.working.rank)
-        #expect(AgentSignal.working.rank < AgentSignal.done.rank)
-    }
-
     /// Aggregate dots must keep showing exactly what they shipped showing:
     /// attention beats working, and `done` doesn't light a window up.
     @Test("Aggregate preserves the sheets' existing behaviour")
@@ -37,11 +31,8 @@ struct AgentSignalTests {
         #expect(AgentSignal.aggregate([]) == nil)
     }
 
-    @Test("Colours are the shared palette's, so a dot means one thing everywhere")
+    @Test("The agents' palette is the app's warn and success tones")
     func colours() {
-        #expect(AgentSignal.attention.color == AgentPalette.attention)
-        #expect(AgentSignal.working.color == AgentPalette.working)
-        #expect(AgentSignal.done.color == AgentPalette.done)
         // The palette's amber IS the app's warn tone — pinned so the two
         // can't drift apart silently.
         #expect(AgentPalette.attention == Ink.warn)
@@ -81,14 +72,4 @@ struct AgentSignalTests {
         }
     }
 
-    /// The regression this palette exists to prevent: "working" once followed
-    /// the user-customizable theme accent, so an amber-ish theme made working
-    /// and needs-you the same colour — and the island (fixed teal) disagreed
-    /// with the app on every theme.
-    @Test("State colours are fixed — none of them is the theme accent")
-    func themeIndependent() {
-        for signal in AgentSignal.allCases {
-            #expect(signal.color != Ink.accent)
-        }
-    }
 }

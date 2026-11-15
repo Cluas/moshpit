@@ -7,7 +7,7 @@ import UIKit
 /// the session's ``RemotePathLinks`` asks the host about them, and the ones
 /// it confirmed go back to the core, which draws them as links on exactly
 /// their own cells and opens them on a tap (`moshpit-preview://`, to
-/// ``SwiftTerminalView/Coordinator/openLink(_:)``).
+/// ``CoreTerminalHost/Coordinator/openLink(_:)``).
 ///
 /// The pass runs when SwiftTerm's does: 0.15 s after output goes quiet, at
 /// once when the host answers, when the pane comes on screen; only for a

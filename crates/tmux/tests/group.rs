@@ -627,6 +627,67 @@ fn killing_the_session_kills_the_phones_group() {
     assert!(rig.has(&format!("kill-session -t '{group}'")));
 }
 
+/// B582: tmux detaches a client whose session is destroyed
+/// (`detach-on-destroy`): the phone moves into a group of the session it
+/// falls back to before the kill goes out (the live proof is
+/// `live_group.rs`).
+#[test]
+fn killing_the_session_on_screen_moves_the_phone_first() {
+    let tmux = Tmux::new();
+    tmux.borrow_mut().sessions.push(Session {
+        id: "$1".into(),
+        name: "dev".into(),
+        current: "@1".into(),
+        desktops: 0,
+        group_of: None,
+        destroy_unattached: false,
+    });
+    let mut rig = phone(&tmux, "ttys003", "iPhone", None);
+    let group = group_of(&tmux.borrow(), "ttys003").id.clone();
+    let from = rig.since(0).len();
+    rig.with(|c, now| c.kill_session("$0", now));
+    let sent = rig.since(from).to_vec();
+    let at = |prefix: &str| sent.iter().position(|c| c.starts_with(prefix));
+    let moved = at("new-session -t '$1'").expect("into a group of dev");
+    assert!(moved < at("kill-session -t $0").unwrap(), "{sent:?}");
+    assert!(
+        moved < at(&format!("kill-session -t '{group}'")).unwrap(),
+        "{sent:?}"
+    );
+}
+
+/// B582: the same when a desktop killed it: onto the session left, then
+/// the group goes.
+#[test]
+fn a_session_killed_elsewhere_moves_the_phone_before_its_group_goes() {
+    let tmux = Tmux::new();
+    tmux.borrow_mut().sessions.push(Session {
+        id: "$1".into(),
+        name: "dev".into(),
+        current: "@1".into(),
+        desktops: 1,
+        group_of: None,
+        destroy_unattached: false,
+    });
+    let mut rig = phone(&tmux, "ttys003", "iPhone", None);
+    let group = group_of(&tmux.borrow(), "ttys003").id.clone();
+    let from = rig.since(0).len();
+    tmux.borrow_mut().sessions.retain(|s| s.id != "$0");
+    rig.push("%sessions-changed\n");
+    rig.settle();
+    let sent = rig.since(from).to_vec();
+    let at = |prefix: &str| sent.iter().position(|c| c.starts_with(prefix));
+    let moved = at("new-session -t '$1'").expect("into a group of dev");
+    assert!(
+        moved < at(&format!("kill-session -t '{group}'")).unwrap(),
+        "{sent:?}"
+    );
+    assert_eq!(
+        rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$1")
+    );
+}
+
 /// A desktop killed the session under the phone: its group goes too.
 #[test]
 fn a_session_killed_elsewhere_takes_the_phones_group() {
@@ -789,5 +850,60 @@ fn a_mosh_sidecar_puts_itself_on_moshpits_list() {
     assert!(
         !rig.has("new-session -t "),
         "mosh stays on the session (B457)"
+    );
+}
+
+/// B581: the attach asks who is on the session before it makes the group
+/// (the foreign -CC check), and makes it once the answer is in. A session
+/// picked in that round trip (a tap on the Home tree as the phone connects)
+/// went into its own group first; then the late answer made the first
+/// session's group too, and tmux moved the phone back there: it showed the
+/// session it attached to, not the one picked.
+fn picked_while_the_attach_asks(picks: &[&str]) -> (Rc<RefCell<Tmux>>, Rig) {
+    let tmux = Tmux::new();
+    tmux.borrow_mut().sessions.push(Session {
+        id: "$1".into(),
+        name: "dev".into(),
+        current: "@1".into(),
+        desktops: 0,
+        group_of: None,
+        destroy_unattached: false,
+    });
+    let mut rig = Rig::new(Config::default());
+    let model = tmux.clone();
+    rig.respond(Box::new(move |command, _| {
+        model.borrow_mut().answer("ttys003", command)
+    }));
+    rig.with(|c, now| c.begin_control_mode(now));
+    tmux.borrow_mut()
+        .clients
+        .push(("ttys003".into(), "$0".into()));
+    rig.push("%begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n");
+    // Picked before tmux has answered the attach's check.
+    for pick in picks {
+        rig.with(|c, now| c.select_session(pick, now));
+    }
+    rig.settle();
+    (tmux, rig)
+}
+
+#[test]
+fn back_on_the_first_session_while_the_attach_asks_makes_one_group_of_it() {
+    let (tmux, rig) = picked_while_the_attach_asks(&["$1", "$0"]);
+    let model = tmux.borrow();
+    let on = group_of(&model, "ttys003");
+    assert_eq!(on.group_of.as_deref(), Some("$0"), "on {}", on.name);
+    assert_eq!(rig.count("new-session -t '$0'"), 1, "{:?}", rig.since(0));
+}
+
+#[test]
+fn a_session_picked_while_the_attach_asks_stays_picked() {
+    let (tmux, rig) = picked_while_the_attach_asks(&["$1"]);
+    let model = tmux.borrow();
+    let on = group_of(&model, "ttys003");
+    assert_eq!(on.group_of.as_deref(), Some("$1"), "on {}", on.name);
+    assert_eq!(
+        rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$1")
     );
 }

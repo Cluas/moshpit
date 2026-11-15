@@ -14,10 +14,10 @@ struct CorePathLinkTests {
 
     /// The core's view in a window (the pass runs only for one on screen),
     /// attached to a coordinator as the session's is.
-    private func makeCore(cols: Int = 40, rows: Int = 6) -> (CoreTerminalView, SwiftTerminalView.Coordinator, UIWindow) {
+    private func makeCore(cols: Int = 40, rows: Int = 6) -> (CoreTerminalView, CoreTerminalHost.Coordinator, UIWindow) {
         let surface = TerminalSurfaces.make(font: Self.font, grid: TerminalGrid(cols: cols, rows: rows))
         let core = surface as! CoreTerminalView
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(surface)
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()

@@ -57,11 +57,31 @@ enum BracketedPaste {
     }
 
     /// What a paste of `text` sends: one bracketed paste when the program
-    /// asked for them, the bare text when it didn't — markers taken out either
+    /// asked for them, byte for byte; the text as typed when it didn't, its
+    /// line breaks as Return (``returns(_:)``) — markers taken out either
     /// way, since that answer is only the local emulator's last reading of
     /// the program's mode.
     static func payload(_ text: String, bracketed: Bool) -> Data {
-        bracketed ? wrapped(text) : body(text)
+        bracketed ? wrapped(text) : returns(body(text))
+    }
+
+    /// A paste's line breaks as Return, as xterm, iTerm and Terminal.app
+    /// send a paste a program didn't ask to have bracketed (B574, the core's
+    /// `input::returns`): CRLF and a lone LF as CR. Sent as LF, a CRLF text
+    /// doubled every line break in a program that reads the tty raw.
+    static func returns(_ bytes: Data) -> Data {
+        var out = Data()
+        out.reserveCapacity(bytes.count)
+        var afterCR = false
+        for byte in bytes {
+            if byte == 0x0A {
+                if !afterCR { out.append(0x0D) }
+            } else {
+                out.append(byte)
+            }
+            afterCR = byte == 0x0D
+        }
+        return out
     }
 
     /// Whether `bytes` ends with a start or an end marker.

@@ -203,8 +203,6 @@ AGENTS	random-41-4	widget [%1:attention:claude:devbox · work · 1: api:Claude i
 AGENTS	random-41-4	island [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:699] w=0 a=1 h=%1
 AGENTS	random-41-4	widget [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:699;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:703] w=0 a=1 h=%1
 AGENTS	random-41-4	island [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:699;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:703] w=0 a=1 h=%1
-AGENTS	random-41-4	post moshpit.attention.C %1 | claude needs you | Claude is waiting for your input — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-4	withdraw moshpit.attention.C
 AGENTS	random-41-4	widget [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:749.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:703] w=0 a=1 h=%1
 AGENTS	random-41-4	island [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:749.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:703] w=0 a=1 h=%1
 AGENTS	random-41-4	widget [] w=0 a=0 h=-
@@ -249,8 +247,6 @@ AGENTS	random-41-6	widget [%2:working:codex:devbox · work · 1: api:Claude is w
 AGENTS	random-41-6	island [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:123] w=1 a=0 h=%2
 AGENTS	random-41-6	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:7.5;%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:123] w=1 a=1 h=%2
 AGENTS	random-41-6	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:7.5;%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:123] w=1 a=1 h=%2
-AGENTS	random-41-6	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-6	withdraw moshpit.attention.C
 AGENTS	random-41-6	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:7.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:1046] w=0 a=1 h=%2
 AGENTS	random-41-6	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:7.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:1046] w=0 a=1 h=%2
 AGENTS	random-41-6	standing 
@@ -291,12 +287,12 @@ AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Bash: np
 AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:919.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%2
 AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:919.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
 AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:919.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
-AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
-AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
-AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5] w=0 a=1 h=%1
-AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5] w=0 a=1 h=%1
-AGENTS	random-41-8	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:935;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5] w=0 a=2 h=%2
-AGENTS	random-41-8	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:935;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:919.5] w=0 a=2 h=%2
+AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
+AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932;%2:done:codex:devbox · work · 1: api:Bash: npm test:876] w=0 a=1 h=%1
+AGENTS	random-41-8	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932] w=0 a=1 h=%1
+AGENTS	random-41-8	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932] w=0 a=1 h=%1
+AGENTS	random-41-8	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:935;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932] w=0 a=2 h=%2
+AGENTS	random-41-8	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:935;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:932] w=0 a=2 h=%2
 AGENTS	random-41-8	widget [] w=0 a=0 h=-
 AGENTS	random-41-8	end-island
 AGENTS	random-41-8	standing 
@@ -438,8 +434,6 @@ AGENTS	random-41-15	widget [] w=0 a=0 h=-
 AGENTS	random-41-15	end-island
 AGENTS	random-41-15	widget [%1:attention:claude:devbox · work · 1: api:-:15.5] w=0 a=1 h=%1
 AGENTS	random-41-15	island [%1:attention:claude:devbox · work · 1: api:-:15.5] w=0 a=1 h=%1
-AGENTS	random-41-15	post moshpit.attention.C %1 | claude +1 needs you | devbox · work | sound=false | passive
-AGENTS	random-41-15	post moshpit.attention.C %2 | claude needs you | Bash: npm test — devbox · work | sound=false | passive
 AGENTS	random-41-15	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1358.5] w=0 a=1 h=%1
 AGENTS	random-41-15	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1358.5] w=0 a=1 h=%1
 AGENTS	random-41-15	widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1366] w=0 a=0 h=%1
@@ -456,6 +450,8 @@ AGENTS	random-41-15	widget [%1:working:claude:devbox · work · 1: api:Edit: src
 AGENTS	random-41-15	island [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:2113] w=1 a=0 h=%1
 AGENTS	random-41-15	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2123.5] w=0 a=1 h=%1
 AGENTS	random-41-15	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2123.5] w=0 a=1 h=%1
+AGENTS	random-41-15	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2127] w=0 a=1 h=%1
+AGENTS	random-41-15	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2127] w=0 a=1 h=%1
 AGENTS	random-41-15	standing %1@2111,%2@1370
 AGENTS	random-41-15	announced 
 AGENTS	random-41-16	auth
@@ -594,8 +590,6 @@ AGENTS	random-41-22	island [%2:attention:codex:devbox · work · 1: api:Edit: sr
 AGENTS	random-41-22	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%1
 AGENTS	random-41-22	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%1
 AGENTS	random-41-22	post moshpit.attention.C %2 | codex needs you | Edit: src/main.rs — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-22	post moshpit.attention.C %2 | codex +1 needs you | Edit: src/main.rs — devbox · work | sound=false | passive
-AGENTS	random-41-22	post moshpit.attention.C %2 | codex needs you | Edit: src/main.rs — devbox · work | sound=false | passive
 AGENTS	random-41-22	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%2
 AGENTS	random-41-22	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-175] w=0 a=2 h=%2
 AGENTS	random-41-22	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:21;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:101.5] w=0 a=1 h=%2
@@ -1015,8 +1009,8 @@ AGENTS	random-41-44	widget [] w=0 a=0 h=-
 AGENTS	random-41-44	end-island
 AGENTS	random-41-44	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-182] w=0 a=1 h=%1
 AGENTS	random-41-44	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-182] w=0 a=1 h=%1
-AGENTS	random-41-44	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-182] w=0 a=1 h=%1
-AGENTS	random-41-44	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-182] w=0 a=1 h=%1
+AGENTS	random-41-44	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-176.5] w=0 a=1 h=%1
+AGENTS	random-41-44	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-176.5] w=0 a=1 h=%1
 AGENTS	random-41-44	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:29] w=0 a=1 h=%1
 AGENTS	random-41-44	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:29] w=0 a=1 h=%1
 AGENTS	random-41-44	widget [%2:attention:codex:devbox · work · 1: api:-:39;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:29] w=0 a=2 h=%1
@@ -1255,7 +1249,6 @@ AGENTS	random-41-54	widget [%2:working:codex:devbox · work · 1: api:Bash: npm 
 AGENTS	random-41-54	island [%2:working:codex:devbox · work · 1: api:Bash: npm test:110.5] w=1 a=0 h=%2
 AGENTS	random-41-54	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:5.5;%2:working:codex:devbox · work · 1: api:Bash: npm test:110.5] w=1 a=1 h=%2
 AGENTS	random-41-54	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:5.5;%2:working:codex:devbox · work · 1: api:Bash: npm test:110.5] w=1 a=1 h=%2
-AGENTS	random-41-54	post moshpit.attention.C %1 | claude needs you | Edit: src/main.rs — devbox · work | sound=true | time-sensitive
 AGENTS	random-41-54	withdraw moshpit.attention.C
 AGENTS	random-41-54	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:5.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:177.5] w=0 a=1 h=%2
 AGENTS	random-41-54	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:5.5;%2:done:codex:devbox · work · 1: api:Bash: npm test:177.5] w=0 a=1 h=%2
@@ -1285,15 +1278,17 @@ AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: s
 AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1596.5] w=0 a=1 h=%1
 AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=1 h=%1
 AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=1 h=%1
+AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=1 h=%1
+AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=1 h=%1
 AGENTS	random-41-55	post moshpit.attention.C %1 | claude +1 needs you | Edit: src/main.rs — devbox · work | sound=false | passive
-AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=1 h=%1
-AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=1 h=%1
-AGENTS	random-41-55	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:2102.5;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=2 h=%1
-AGENTS	random-41-55	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:2102.5;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5] w=0 a=2 h=%1
+AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=1 h=%1
+AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=1 h=%1
+AGENTS	random-41-55	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:2102.5;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=2 h=%1
+AGENTS	random-41-55	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:2102.5;%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608] w=0 a=2 h=%1
 AGENTS	random-41-55	post moshpit.done.C.%2 %2 | ✓ codex finished · 3 min | Edit: src/main.rs — devbox · work | sound=true | active
 AGENTS	random-41-55	post moshpit.attention.C %1 | claude needs you | Edit: src/main.rs — devbox · work | sound=false | passive
-AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=0 a=1 h=%2
-AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1605.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=0 a=1 h=%2
+AGENTS	random-41-55	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=0 a=1 h=%2
+AGENTS	random-41-55	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1608;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=0 a=1 h=%2
 AGENTS	random-41-55	withdraw moshpit.attention.C
 AGENTS	random-41-55	widget [%1:working:claude:devbox · work · 1: api:Bash: npm test:2124.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=1 a=0 h=%2
 AGENTS	random-41-55	island [%1:working:claude:devbox · work · 1: api:Bash: npm test:2124.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:2303] w=1 a=0 h=%2
@@ -1637,6 +1632,8 @@ AGENTS	random-41-72	widget [%2:working:codex:devbox · work · 1: api:Claude is 
 AGENTS	random-41-72	island [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:-162;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=1 a=0 h=%2
 AGENTS	random-41-72	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:40.5;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=0 a=1 h=%2
 AGENTS	random-41-72	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:40.5;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=0 a=1 h=%2
+AGENTS	random-41-72	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:50;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=0 a=1 h=%2
+AGENTS	random-41-72	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:50;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=0 a=1 h=%2
 AGENTS	random-41-72	widget [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:-144.5;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=1 a=0 h=%2
 AGENTS	random-41-72	island [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:-144.5;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:-161.5] w=1 a=0 h=%2
 AGENTS	random-41-72	widget [%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:93.5;%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:-144.5] w=2 a=0 h=%1
@@ -2158,8 +2155,8 @@ AGENTS	random-41-95	widget [%1:working:claude:devbox · work · 1: api:Bash: npm
 AGENTS	random-41-95	island [%1:working:claude:devbox · work · 1: api:Bash: npm test:-195] w=1 a=0 h=%1
 AGENTS	random-41-95	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-195] w=0 a=1 h=%1
 AGENTS	random-41-95	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-195] w=0 a=1 h=%1
-AGENTS	random-41-95	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-195] w=0 a=1 h=%1
-AGENTS	random-41-95	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-195] w=0 a=1 h=%1
+AGENTS	random-41-95	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-188.5] w=0 a=1 h=%1
+AGENTS	random-41-95	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-188.5] w=0 a=1 h=%1
 AGENTS	random-41-95	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:622.5] w=0 a=1 h=%1
 AGENTS	random-41-95	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:622.5] w=0 a=1 h=%1
 AGENTS	random-41-95	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:626.5] w=0 a=1 h=%1
@@ -2730,8 +2727,10 @@ AGENTS	random-41-121	widget [%1:done:claude:devbox · work · 1: api:Edit: src/m
 AGENTS	random-41-121	island [%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:-154] w=0 a=0 h=%1
 AGENTS	random-41-121	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:48] w=0 a=1 h=%1
 AGENTS	random-41-121	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:48] w=0 a=1 h=%1
-AGENTS	random-41-121	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:48;%2:working:codex:devbox · work · 1: api:Bash: npm test:54] w=1 a=1 h=%2
-AGENTS	random-41-121	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:48;%2:working:codex:devbox · work · 1: api:Bash: npm test:54] w=1 a=1 h=%2
+AGENTS	random-41-121	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:52] w=0 a=1 h=%1
+AGENTS	random-41-121	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:52] w=0 a=1 h=%1
+AGENTS	random-41-121	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:52;%2:working:codex:devbox · work · 1: api:Bash: npm test:54] w=1 a=1 h=%2
+AGENTS	random-41-121	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:52;%2:working:codex:devbox · work · 1: api:Bash: npm test:54] w=1 a=1 h=%2
 AGENTS	random-41-121	post moshpit.done.C.%1 %1 | ✓ claude finished | Claude is waiting for your input — devbox · work | sound=false | passive
 AGENTS	random-41-121	widget [%2:working:codex:devbox · work · 1: api:Bash: npm test:54;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:56] w=1 a=0 h=%1
 AGENTS	random-41-121	island [%2:working:codex:devbox · work · 1: api:Bash: npm test:54;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:56] w=1 a=0 h=%1
@@ -3068,8 +3067,6 @@ AGENTS	random-41-138	end-island
 AGENTS	random-41-138	auth
 AGENTS	random-41-138	widget [%2:attention:codex:devbox · work · 1: api:-:1019.5] w=0 a=1 h=%2
 AGENTS	random-41-138	island [%2:attention:codex:devbox · work · 1: api:-:1019.5] w=0 a=1 h=%2
-AGENTS	random-41-138	post moshpit.attention.C %2 | codex needs you | devbox · work | sound=true | time-sensitive
-AGENTS	random-41-138	withdraw moshpit.attention.C
 AGENTS	random-41-138	widget [%2:attention:codex:devbox · work · 1: api:-:1019.5;%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:860] w=0 a=1 h=%1
 AGENTS	random-41-138	island [%2:attention:codex:devbox · work · 1: api:-:1019.5;%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:860] w=0 a=1 h=%1
 AGENTS	random-41-138	widget [%2:attention:codex:devbox · work · 1: api:-:1019.5;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:1060.5] w=1 a=1 h=%1
@@ -3720,8 +3717,8 @@ AGENTS	random-41-169	widget [%2:attention:codex:devbox · work · 1: api:Edit: s
 AGENTS	random-41-169	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:163.5;%1:done:claude:devbox · work · 1: api:Bash: npm test:891.5] w=0 a=1 h=%2
 AGENTS	random-41-169	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:163.5;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
 AGENTS	random-41-169	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:163.5;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
-AGENTS	random-41-169	widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:163.5;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
-AGENTS	random-41-169	island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:163.5;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
+AGENTS	random-41-169	widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:1512;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
+AGENTS	random-41-169	island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:1512;%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700] w=1 a=1 h=%2
 AGENTS	random-41-169	widget [%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700;%2:done:codex:devbox · work · 1: api:Bash: npm test:1318.5] w=1 a=0 h=%1
 AGENTS	random-41-169	island [%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:700;%2:done:codex:devbox · work · 1: api:Bash: npm test:1318.5] w=1 a=0 h=%1
 AGENTS	random-41-169	widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1325;%2:done:codex:devbox · work · 1: api:Bash: npm test:1318.5] w=0 a=0 h=%1
@@ -3815,9 +3812,8 @@ AGENTS	random-41-173	widget [%1:working:claude:devbox · work · 1: api:Edit: sr
 AGENTS	random-41-173	island [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:30;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=1 a=0 h=%1
 AGENTS	random-41-173	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:74.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
 AGENTS	random-41-173	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:74.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
-AGENTS	random-41-173	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:74.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
-AGENTS	random-41-173	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:74.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
-AGENTS	random-41-173	post moshpit.attention.C %1 | claude needs you | Edit: src/main.rs — devbox · work | sound=true | time-sensitive
+AGENTS	random-41-173	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:907.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
+AGENTS	random-41-173	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:907.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:68] w=0 a=1 h=%1
 AGENTS	random-41-173	widget [] w=0 a=0 h=-
 AGENTS	random-41-173	end-island
 AGENTS	random-41-173	auth
@@ -3826,7 +3822,7 @@ AGENTS	random-41-173	island [%1:attention:claude:devbox · work · 1: api:Edit: 
 AGENTS	random-41-173	widget [] w=0 a=0 h=-
 AGENTS	random-41-173	end-island
 AGENTS	random-41-173	standing %1@1860
-AGENTS	random-41-173	announced %1=74.5
+AGENTS	random-41-173	announced 
 AGENTS	random-41-174	auth
 AGENTS	random-41-174	widget [] w=0 a=0 h=-
 AGENTS	random-41-174	end-island
@@ -3872,12 +3868,13 @@ AGENTS	random-41-175	widget [%1:attention:claude:devbox · work · 1: api:Bash: 
 AGENTS	random-41-175	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:995.5] w=0 a=1 h=%1
 AGENTS	random-41-175	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:995.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%1
 AGENTS	random-41-175	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:995.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%1
-AGENTS	random-41-175	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=true | time-sensitive
+AGENTS	random-41-175	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:998;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%1
+AGENTS	random-41-175	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:998;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%1
 AGENTS	random-41-175	withdraw moshpit.attention.C
-AGENTS	random-41-175	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:995.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%2
-AGENTS	random-41-175	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:995.5;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%2
+AGENTS	random-41-175	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:998;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%2
+AGENTS	random-41-175	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:998;%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:996] w=0 a=1 h=%2
 AGENTS	random-41-175	standing 
-AGENTS	random-41-175	announced %1=995.5
+AGENTS	random-41-175	announced %1=998
 AGENTS	random-41-176	auth
 AGENTS	random-41-176	widget [] w=0 a=0 h=-
 AGENTS	random-41-176	end-island
@@ -4210,13 +4207,13 @@ AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Edit: 
 AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:8] w=0 a=1 h=%1
 AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:8;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
 AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:8;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
-AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
-AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
+AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
+AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=1 a=1 h=%2
 AGENTS	random-41-195	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=0 a=1 h=%2
-AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=0 a=1 h=%2
-AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:852] w=0 a=1 h=%2
-AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:8;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:852] w=0 a=1 h=%2
+AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=0 a=1 h=%2
+AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:15.5] w=0 a=1 h=%2
+AGENTS	random-41-195	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:852] w=0 a=1 h=%2
+AGENTS	random-41-195	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:772.5;%2:done:codex:devbox · work · 1: api:Edit: src/main.rs:852] w=0 a=1 h=%2
 AGENTS	random-41-195	withdraw moshpit.attention.C
 AGENTS	random-41-195	widget [] w=0 a=0 h=-
 AGENTS	random-41-195	end-island
@@ -4484,8 +4481,8 @@ AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Edit: 
 AGENTS	random-41-205	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:104] w=0 a=1 h=%1
 AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:104;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
 AGENTS	random-41-205	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:104;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
-AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:104;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
-AGENTS	random-41-205	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:104;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
+AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:119;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
+AGENTS	random-41-205	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:119;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
 AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:125.5;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
 AGENTS	random-41-205	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:125.5;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%1
 AGENTS	random-41-205	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:125.5;%2:working:codex:devbox · work · 1: api:Bash: npm test:-195.5] w=1 a=1 h=%2
@@ -4821,7 +4818,6 @@ AGENTS	random-41-218	widget [%2:attention:codex:devbox · work · 1: api:Edit: s
 AGENTS	random-41-218	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:927.5] w=0 a=1 h=%2
 AGENTS	random-41-218	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1815;%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:927.5] w=0 a=2 h=%1
 AGENTS	random-41-218	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1815;%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:927.5] w=0 a=2 h=%1
-AGENTS	random-41-218	post moshpit.attention.C %2 | codex +1 needs you | Edit: src/main.rs — devbox · work | sound=false | passive
 AGENTS	random-41-218	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=false | passive
 AGENTS	random-41-218	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:927.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:1624.5] w=1 a=1 h=%2
 AGENTS	random-41-218	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:927.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:1624.5] w=1 a=1 h=%2
@@ -4941,8 +4937,8 @@ AGENTS	random-41-225	widget [%1:attention:claude:devbox · work · 1: api:Bash: 
 AGENTS	random-41-225	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:47] w=0 a=1 h=%1
 AGENTS	random-41-225	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:47;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
 AGENTS	random-41-225	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:47;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
-AGENTS	random-41-225	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:47;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
-AGENTS	random-41-225	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:47;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
+AGENTS	random-41-225	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:57;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
+AGENTS	random-41-225	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:57;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145] w=1 a=1 h=%1
 AGENTS	random-41-225	post moshpit.done.C.%1 %1 | ✓ claude finished | Bash: npm test — devbox · work | sound=false | passive
 AGENTS	random-41-225	withdraw moshpit.attention.C
 AGENTS	random-41-225	widget [%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:-145;%1:done:claude:devbox · work · 1: api:Bash: npm test:59] w=1 a=0 h=%2
@@ -5101,8 +5097,8 @@ AGENTS	random-41-233	widget [%1:done:claude:devbox · work · 1: api:Bash: npm t
 AGENTS	random-41-233	island [%1:done:claude:devbox · work · 1: api:Bash: npm test:5.5] w=0 a=0 h=%1
 AGENTS	random-41-233	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:525.5] w=0 a=1 h=%1
 AGENTS	random-41-233	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:525.5] w=0 a=1 h=%1
-AGENTS	random-41-233	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:525.5] w=0 a=1 h=%1
-AGENTS	random-41-233	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:525.5] w=0 a=1 h=%1
+AGENTS	random-41-233	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:736.5] w=0 a=1 h=%1
+AGENTS	random-41-233	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:736.5] w=0 a=1 h=%1
 AGENTS	random-41-233	widget [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:738.5] w=1 a=0 h=%1
 AGENTS	random-41-233	island [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:738.5] w=1 a=0 h=%1
 AGENTS	random-41-233	widget [%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:757] w=0 a=0 h=%1
@@ -5152,9 +5148,9 @@ AGENTS	random-41-235	widget [%1:working:claude:devbox · work · 1: api:Edit: sr
 AGENTS	random-41-235	island [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:78] w=1 a=0 h=%1
 AGENTS	random-41-235	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1111] w=0 a=1 h=%1
 AGENTS	random-41-235	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1111] w=0 a=1 h=%1
-AGENTS	random-41-235	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1111] w=0 a=1 h=%1
-AGENTS	random-41-235	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1111] w=0 a=1 h=%1
-AGENTS	random-41-235	post moshpit.done.C.%1 %1 | ✓ claude finished · 14 min | Claude is waiting for your input — devbox · work | sound=true | active
+AGENTS	random-41-235	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1786] w=0 a=1 h=%1
+AGENTS	random-41-235	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1786] w=0 a=1 h=%1
+AGENTS	random-41-235	post moshpit.done.C.%1 %1 | ✓ claude finished · 3 min | Claude is waiting for your input — devbox · work | sound=true | active
 AGENTS	random-41-235	widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=0 a=0 h=%1
 AGENTS	random-41-235	island [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=0 a=0 h=%1
 AGENTS	random-41-235	widget [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:1990;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=1 a=0 h=%2
@@ -5179,6 +5175,8 @@ AGENTS	random-41-236	widget [%1:done:claude:devbox · work · 1: api:Edit: src/m
 AGENTS	random-41-236	island [%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:705] w=0 a=0 h=%1
 AGENTS	random-41-236	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1587] w=0 a=1 h=%1
 AGENTS	random-41-236	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1587] w=0 a=1 h=%1
+AGENTS	random-41-236	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1591.5] w=0 a=1 h=%1
+AGENTS	random-41-236	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1591.5] w=0 a=1 h=%1
 AGENTS	random-41-236	standing %1@1589
 AGENTS	random-41-236	announced 
 AGENTS	random-41-237	auth
@@ -5319,8 +5317,6 @@ AGENTS	random-41-243	widget [%1:attention:claude:devbox · work · 1: api:Bash: 
 AGENTS	random-41-243	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:46.5] w=0 a=1 h=%1
 AGENTS	random-41-243	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:46.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:705.5] w=1 a=1 h=%1
 AGENTS	random-41-243	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:46.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:705.5] w=1 a=1 h=%1
-AGENTS	random-41-243	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-243	withdraw moshpit.attention.C
 AGENTS	random-41-243	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:46.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:705.5] w=1 a=1 h=%2
 AGENTS	random-41-243	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:46.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:705.5] w=1 a=1 h=%2
 AGENTS	random-41-243	widget [%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:705.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:554.5] w=2 a=0 h=%1
@@ -5767,8 +5763,6 @@ AGENTS	random-41-267	widget [%1:working:claude:devbox · work · 1: api:Bash: np
 AGENTS	random-41-267	island [%1:working:claude:devbox · work · 1: api:Bash: npm test:926.5] w=1 a=0 h=%1
 AGENTS	random-41-267	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1863] w=0 a=1 h=%1
 AGENTS	random-41-267	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1863] w=0 a=1 h=%1
-AGENTS	random-41-267	post moshpit.attention.C %1 | claude needs you | Bash: npm test — devbox · work | sound=true | time-sensitive
-AGENTS	random-41-267	withdraw moshpit.attention.C
 AGENTS	random-41-267	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1863] w=0 a=1 h=%1
 AGENTS	random-41-267	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1863] w=0 a=1 h=%1
 AGENTS	random-41-267	withdraw moshpit.attention.C
@@ -5934,13 +5928,13 @@ AGENTS	random-41-276	announced
 AGENTS	random-41-277	auth
 AGENTS	random-41-277	widget [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-192.5] w=0 a=1 h=%1
 AGENTS	random-41-277	island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:-192.5] w=0 a=1 h=%1
-AGENTS	random-41-277	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=1 h=%1
-AGENTS	random-41-277	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=1 h=%1
+AGENTS	random-41-277	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=1 h=%1
+AGENTS	random-41-277	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=1 h=%1
 AGENTS	random-41-277	post moshpit.attention.C %1 | claude +1 needs you | Bash: npm test — devbox · work | sound=false | passive
-AGENTS	random-41-277	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=1 h=%1
-AGENTS	random-41-277	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=1 h=%1
-AGENTS	random-41-277	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=2 h=%1
-AGENTS	random-41-277	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192.5] w=0 a=2 h=%1
+AGENTS	random-41-277	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=1 h=%1
+AGENTS	random-41-277	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=1 h=%1
+AGENTS	random-41-277	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=2 h=%1
+AGENTS	random-41-277	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:attention:claude:devbox · work · 1: api:Bash: npm test:-192] w=0 a=2 h=%1
 AGENTS	random-41-277	post moshpit.attention.C %2 | claude needs you | Bash: npm test — devbox · work | sound=false | passive
 AGENTS	random-41-277	widget [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:547.5] w=0 a=1 h=%1
 AGENTS	random-41-277	island [%2:attention:codex:devbox · work · 1: api:Edit: src/main.rs:734;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:547.5] w=0 a=1 h=%1
@@ -5961,7 +5955,7 @@ AGENTS	random-41-277	island [%1:done:claude:devbox · work · 1: api:Bash: npm t
 AGENTS	random-41-277	widget [%1:done:claude:devbox · work · 1: api:Bash: npm test:3431.5] w=0 a=0 h=%1
 AGENTS	random-41-277	island [%1:done:claude:devbox · work · 1: api:Bash: npm test:3431.5] w=0 a=0 h=%1
 AGENTS	random-41-277	standing 
-AGENTS	random-41-277	announced %1=-192.5
+AGENTS	random-41-277	announced %1=-192
 AGENTS	random-41-278	auth
 AGENTS	random-41-278	widget [%2:attention:codex:devbox · work · 1: api:-:5.5] w=0 a=1 h=%2
 AGENTS	random-41-278	island [%2:attention:codex:devbox · work · 1: api:-:5.5] w=0 a=1 h=%2
@@ -6267,8 +6261,6 @@ AGENTS	random-41-293	widget [%1:attention:claude:devbox · work · 1: api:-:1.5]
 AGENTS	random-41-293	island [%1:attention:claude:devbox · work · 1: api:-:1.5] w=0 a=1 h=%1
 AGENTS	random-41-293	widget [%1:attention:claude:devbox · work · 1: api:-:1.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:731.5] w=1 a=1 h=%1
 AGENTS	random-41-293	island [%1:attention:claude:devbox · work · 1: api:-:1.5;%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:731.5] w=1 a=1 h=%1
-AGENTS	random-41-293	post moshpit.attention.C %1 | claude needs you | devbox · work | sound=true | time-sensitive
-AGENTS	random-41-293	withdraw moshpit.attention.C
 AGENTS	random-41-293	widget [%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:731.5;%1:done:claude:devbox · work · 1: api:Bash: npm test:738.5] w=1 a=0 h=%2
 AGENTS	random-41-293	island [%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:731.5;%1:done:claude:devbox · work · 1: api:Bash: npm test:738.5] w=1 a=0 h=%2
 AGENTS	random-41-293	widget [%2:working:codex:devbox · work · 1: api:Edit: src/main.rs:731.5;%1:done:claude:devbox · work · 1: api:Bash: npm test:738.5] w=1 a=0 h=%1
@@ -6363,8 +6355,8 @@ AGENTS	random-41-297	widget [%2:attention:codex:devbox · work · 1: api:Bash: n
 AGENTS	random-41-297	island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:2318.5] w=0 a=1 h=%1
 AGENTS	random-41-297	widget [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:2325.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
 AGENTS	random-41-297	island [%1:attention:claude:devbox · work · 1: api:Claude is waiting for your input:2325.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
-AGENTS	random-41-297	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2325.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
-AGENTS	random-41-297	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2325.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
+AGENTS	random-41-297	widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2327.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
+AGENTS	random-41-297	island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:2327.5;%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5] w=0 a=2 h=%2
 AGENTS	random-41-297	widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:2330] w=1 a=1 h=%1
 AGENTS	random-41-297	island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:2330] w=1 a=1 h=%1
 AGENTS	random-41-297	widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:2308.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:2330] w=1 a=1 h=%2

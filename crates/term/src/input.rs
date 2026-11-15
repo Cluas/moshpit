@@ -382,20 +382,39 @@ pub fn paste_body(text: &str) -> Vec<u8> {
 }
 
 /// What a paste sends: one bracketed paste when the program asked for
-/// them (or the host says the remote end re-encodes one, `force`), the
-/// bare text otherwise; never a marker inside.
+/// them (or the host says the remote end re-encodes one, `force`), byte for
+/// byte; the text as typed otherwise, its line breaks as Return
+/// ([`returns`]); never a marker inside.
 pub fn paste(text: &str, bracketed: bool) -> Vec<u8> {
     let body = paste_body(text);
     if body.is_empty() {
         return body;
     }
     if !bracketed {
-        return body;
+        return returns(&body);
     }
     let mut out = Vec::with_capacity(body.len() + 12);
     out.extend_from_slice(PASTE_START);
     out.extend_from_slice(&body);
     out.extend_from_slice(PASTE_END);
+    out
+}
+
+/// A paste's line breaks as Return, as xterm, iTerm and Terminal.app send
+/// a paste a program didn't ask to have bracketed (B574): CRLF and a lone
+/// LF as CR. Sent as LF, a CRLF text doubled every line break in a program
+/// that reads the tty raw or through ICRNL.
+pub fn returns(body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len());
+    let mut after_cr = false;
+    for &b in body {
+        match b {
+            b'\n' if after_cr => {}
+            b'\n' => out.push(b'\r'),
+            _ => out.push(b),
+        }
+        after_cr = b == b'\r';
+    }
     out
 }
 
@@ -414,6 +433,30 @@ mod tests {
         assert_eq!(paste_body("\x1b[20\x1b[201~1~x"), b"x");
         assert_eq!(paste("plain", false), b"plain");
         assert_eq!(paste("\x1b[200~", true), b"", "nothing left: nothing sent");
+    }
+
+    /// The Swift `PastePathTests` cases, kept when they went: a marker with
+    /// a combining mark after its `~` (one Character to Swift, bytes here)
+    /// goes, the mark stays; markers leave an unbracketed paste too, whose
+    /// breaks then go as Return (B574).
+    #[test]
+    fn markers_leave_whatever_follows_them_and_whatever_the_mode() {
+        let combining = "ls\x1b[201~\u{301}\ntouch INJECTED\n";
+        let assembled = "\x1b[20\x1b[201~1~\ntouch INJECTED\n";
+        let bare = "ls\x1b[201~\ntouch INJECTED\n";
+        let bracketed = |body: &str| [PASTE_START, body.as_bytes(), PASTE_END].concat();
+        assert_eq!(
+            paste(combining, true),
+            bracketed("ls\u{301}\ntouch INJECTED\n")
+        );
+        assert_eq!(paste(assembled, true), bracketed("\ntouch INJECTED\n"));
+        assert_eq!(paste(bare, true), bracketed("ls\ntouch INJECTED\n"));
+        assert_eq!(
+            paste(combining, false),
+            "ls\u{301}\rtouch INJECTED\r".as_bytes()
+        );
+        assert_eq!(paste(assembled, false), b"\rtouch INJECTED\r");
+        assert_eq!(paste(bare, false), b"ls\rtouch INJECTED\r");
     }
 
     #[test]

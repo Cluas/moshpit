@@ -522,6 +522,17 @@ type SpanRun = (StableRowIndex, usize, usize);
 /// width; the runaway stop).
 const MAX_LINK_ROWS: usize = 4;
 
+/// Where a point stands in what a reflow keeps ([`Terminal::text_place`]).
+#[derive(Debug, Clone, Copy)]
+struct TextPlace {
+    /// Its logical line, counted back from the last one with text.
+    lines_back: usize,
+    /// The cell of the line's text it is in (its length: past the text).
+    cell: usize,
+    /// The column within that cell, or past the text the columns past it.
+    sub: usize,
+}
+
 /// One cell as the link rules read it.
 #[derive(Debug, Clone)]
 struct Cell {
@@ -929,9 +940,18 @@ impl Terminal {
     /// stays on the line it was reading (B425): the reflow gives row
     /// numbers to other text, so the view's row number alone threw it far
     /// back (narrower) or onto the live screen (wider).
+    ///
+    /// A selection stays on its text when the columns change (B572), by
+    /// each end's place in its logical line; one with an end that can't be
+    /// placed (its line left the history) goes, as a block's does.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         let reading = self.reading_place();
         let found = self.found_place();
+        let selected = if cols != self.size().0 {
+            self.selection_places()
+        } else {
+            None
+        };
         self.term.resize(term_size(cols, rows, &self.options));
         if let Some(place) = reading {
             self.go_to_reading_place(place);
@@ -939,7 +959,126 @@ impl Terminal {
         if let Some(place) = found {
             self.go_to_found_place(place);
         }
+        if let Some(places) = selected {
+            self.restore_selection(places);
+        }
         self.full_damage = true;
+    }
+
+    /// Where point `p` stands in what a reflow keeps (B572): its logical
+    /// line, counted back from the last one with text (as
+    /// [`Terminal::reading_place`]), then in the cell of that line's text
+    /// it is in (a wide character one cell) and the column within it, or
+    /// past the text, the columns past its end. None below the last line
+    /// with text (blank rows come and go) or off the kept rows.
+    fn text_place(&self, (row, col): select::Point) -> Option<TextPlace> {
+        let (cells, first, _) = self.line_cells(row);
+        let last = self.last_text_line();
+        if first > last || row < self.first_row() {
+            return None;
+        }
+        let mut lines_back = 0;
+        let mut at = last;
+        while at > first {
+            at = self.line_start(at - 1);
+            lines_back += 1;
+        }
+        if at != first {
+            return None;
+        }
+        let text = Self::text_cells(&cells);
+        if let Some(k) = text
+            .iter()
+            .position(|x| x.row == row && (x.col..x.col + x.width).contains(&col))
+        {
+            return Some(TextPlace {
+                lines_back,
+                cell: k,
+                sub: col - text[k].col,
+            });
+        }
+        let cols = self.size().0.max(1) as usize;
+        let linear = |r: StableRowIndex, c: usize| (r - first) as usize * cols + c;
+        let end = text.last().map_or(0, |x| linear(x.row, x.col + x.width));
+        let here = linear(row, col);
+        if here < end {
+            // Inside the text but on no cell of it (a wrap's gap): nowhere.
+            return None;
+        }
+        Some(TextPlace {
+            lines_back,
+            cell: text.len(),
+            sub: here - end,
+        })
+    }
+
+    /// A line's cells up to its last with text or a link (its trailing
+    /// blanks are the width's, not the text's: a reflow may keep or drop
+    /// them).
+    fn text_cells(cells: &[Cell]) -> &[Cell] {
+        let n = cells.iter().rposition(|x| !x.blank).map_or(0, |k| k + 1);
+        &cells[..n]
+    }
+
+    /// The point [`Terminal::text_place`] read, where the lines flow now.
+    fn place_point(&self, place: TextPlace) -> Option<select::Point> {
+        let mut first = self.last_text_line();
+        for _ in 0..place.lines_back {
+            if first <= self.first_row() {
+                return None;
+            }
+            first = self.line_start(first - 1);
+        }
+        let (cells, first, last) = self.line_cells(first);
+        let text = Self::text_cells(&cells);
+        if place.cell < text.len() {
+            let x = &text[place.cell];
+            return Some((x.row, x.col + place.sub.min(x.width - 1)));
+        }
+        if place.cell > text.len() {
+            return None;
+        }
+        let cols = self.size().0.max(1) as usize;
+        let end = text
+            .last()
+            .map_or(0, |x| (x.row - first) as usize * cols + x.col + x.width)
+            + place.sub;
+        let row = first + (end / cols) as StableRowIndex;
+        Some(if row > last {
+            (last, cols - 1)
+        } else {
+            (row, end % cols)
+        })
+    }
+
+    /// Where the selection's ends stand in what a column reflow keeps
+    /// (B572). None: no selection standing, a block's (its columns mean
+    /// nothing after a reflow), on the alternate screen, or an end that
+    /// can't be placed: it goes with the reflow, as before.
+    fn selection_places(&mut self) -> Option<Vec<TextPlace>> {
+        self.selection_range()?;
+        if self.term.is_alt_screen_active() {
+            return None;
+        }
+        let sel = self.selection.as_ref()?;
+        if sel.kind == SelectKind::Block {
+            return None;
+        }
+        sel.ends().into_iter().map(|p| self.text_place(p)).collect()
+    }
+
+    /// The selection on the text [`Terminal::selection_places`] read, where
+    /// it flows now; gone when an end can't be placed.
+    fn restore_selection(&mut self, places: Vec<TextPlace>) {
+        let ends: Option<Vec<select::Point>> =
+            places.into_iter().map(|p| self.place_point(p)).collect();
+        match (ends, self.selection.as_ref()) {
+            (Some(ends), Some(sel)) => {
+                self.selection = Some(sel.moved(&ends));
+                self.stamp_selection();
+            }
+            _ => self.selection = None,
+        }
     }
 
     /// The first row of the logical line holding stable row `row`.

@@ -5,7 +5,7 @@ import QuartzCore
 
 /// One pane's byte channel from the Rust core into the app's terminal
 /// coordinator (crates/stream; the G1/G5 spike's glue, PaneTerminal.swift,
-/// moved onto ``SwiftTerminalView/Coordinator``).
+/// moved onto ``CoreTerminalHost/Coordinator``).
 ///
 /// The core pushes the host's bytes into the channel as it reads them; the
 /// channel calls the waker at most once until the queue is drained, on a
@@ -26,7 +26,7 @@ import QuartzCore
 @MainActor
 final class RustPaneFeeder {
     let stream: UInt64
-    private weak var coordinator: SwiftTerminalView.Coordinator?
+    private weak var coordinator: CoreTerminalHost.Coordinator?
     /// A mark read from the channel, before the bytes after it are fed.
     var onMark: ((MpStreamMark) -> Void)?
     /// When bytes were last fed: the scroll routing's "is this pane
@@ -46,7 +46,7 @@ final class RustPaneFeeder {
 
     /// Starts reading `stream` into `coordinator`; whatever is queued
     /// already is read right away.
-    init(stream: UInt64, coordinator: SwiftTerminalView.Coordinator) {
+    init(stream: UInt64, coordinator: CoreTerminalHost.Coordinator) {
         self.stream = stream
         self.coordinator = coordinator
         let box = Unmanaged.passRetained(WakerBox(self))

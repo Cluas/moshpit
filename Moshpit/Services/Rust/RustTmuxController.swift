@@ -40,7 +40,7 @@ import UIKit
 /// resize is applied as it is read (the terminal must take the new size
 /// before the capture's bytes); every other mark goes into the pane's
 /// terminal among its bytes and is acted on once the bytes before it are on
-/// screen (``TerminalSurface/feed(mark:)``) — with the frame that has them,
+/// screen (``CoreTerminalView/feed(mark:)``) — with the frame that has them,
 /// the core parsing on a thread of its own: a reveal never lifts the veil
 /// off a repaint not yet drawn.
 ///
@@ -118,14 +118,14 @@ final class RustTmuxController: MultiplexerControlling {
 
     /// A pane's persistent terminal and what feeds it.
     private final class PaneTerminal {
-        let terminal: TerminalSurface
-        let coordinator: SwiftTerminalView.Coordinator
+        let terminal: CoreTerminalView
+        let coordinator: CoreTerminalHost.Coordinator
         var feeder: RustPaneFeeder?
         /// The grid its view last reported, sent when its channel arrives.
         var grid: (cols: Int, rows: Int)?
         var deferSafety: Task<Void, Never>?
 
-        init(terminal: TerminalSurface, coordinator: SwiftTerminalView.Coordinator) {
+        init(terminal: CoreTerminalView, coordinator: CoreTerminalHost.Coordinator) {
             self.terminal = terminal
             self.coordinator = coordinator
         }
@@ -360,7 +360,7 @@ final class RustTmuxController: MultiplexerControlling {
                                              grid: TerminalGrid(cols: birthGrid.cols, rows: birthGrid.rows))
         terminal.followTmuxClears()
         terminal.apply(look: look.terminalLook)
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         let pane = PaneTerminal(terminal: terminal, coordinator: coordinator)
         wire(coordinator, for: paneId)
         coordinator.attach(terminal)
@@ -368,7 +368,7 @@ final class RustTmuxController: MultiplexerControlling {
         return pane
     }
 
-    private func wire(_ coordinator: SwiftTerminalView.Coordinator, for paneId: String) {
+    private func wire(_ coordinator: CoreTerminalHost.Coordinator, for paneId: String) {
         // Keys go straight into the pane's channel, synchronously: no hop on
         // the byte path. The core drops what is typed while not live.
         coordinator.onInput = { [weak self] data in
@@ -482,15 +482,15 @@ final class RustTmuxController: MultiplexerControlling {
         }
     }
 
-    func surface(for paneId: String) -> TerminalSurface {
+    func surface(for paneId: String) -> CoreTerminalView {
         paneTerminal(paneId).terminal
     }
 
-    func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
+    func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator? {
         panes[paneId]?.coordinator
     }
 
-    var activeCoordinator: SwiftTerminalView.Coordinator? {
+    var activeCoordinator: CoreTerminalHost.Coordinator? {
         inputPaneId.flatMap { panes[$0]?.coordinator }
     }
 

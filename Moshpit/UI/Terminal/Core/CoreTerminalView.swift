@@ -7,7 +7,7 @@ import UIKit
 /// A terminal view on the shared Rust terminal core (crates/term, our
 /// wezterm-term fork; docs/nsh/TERMINAL-CORE.md): the T2 replacement for
 /// the SwiftTerm fork's `TerminalView` (gone with batch B). App code
-/// reaches it as a ``TerminalSurface`` (CoreTerminalView+Surface) and hears
+/// reaches it as a ``CoreTerminalView`` (CoreTerminalView+Surface) and hears
 /// from it as the surface's delegate.
 ///
 /// - **Bytes** are pushed (``push(_:)``) into a byte channel of the core's,
@@ -27,7 +27,7 @@ import UIKit
 /// - **Accessibility** (+Accessibility): each row an element.
 @MainActor
 final class CoreTerminalView: UIView {
-    weak var surfaceDelegate: TerminalSurfaceDelegate?
+    weak var surfaceDelegate: CoreTerminalViewDelegate?
 
     /// The core's terminal (`MpTerm *`); nil only if the library failed.
     private(set) var term: OpaquePointer?

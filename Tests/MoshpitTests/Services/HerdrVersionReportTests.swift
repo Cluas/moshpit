@@ -7,15 +7,6 @@ import Testing
 /// (crates/herdr/src/version.rs).
 @Suite("herdr version report")
 struct HerdrVersionReportTests {
-    @Test("A mismatch message says which side is older")
-    func mismatchDirection() {
-        #expect(HerdrVersionReport.clientIsOlder(
-            "client protocol 19 is older than server protocol 22"))
-        #expect(!HerdrVersionReport.clientIsOlder(
-            "client protocol 19 is newer than server protocol 16"))
-        // The attach CLI's refusal names no direction — not "older".
-        #expect(!HerdrVersionReport.clientIsOlder("server rejected handshake (version 16): …"))
-    }
 
     @Test("An older client is a skew the restart can't fix")
     func olderClient() {

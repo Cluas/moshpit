@@ -177,6 +177,15 @@ struct SwitchStillTests {
         stage.show(.init(source: .pane(controller, "%1"), inset: 0))
         #expect(said == [nil], "the theme's, nothing painted")
         let terminal = try #require(controller.surface(for: "%1") as? CoreTerminalView)
+        // The terminal takes the slot's size before it is painted, as a
+        // live pane has long before its program paints. Left to the next
+        // layout pass, the grid grew from 80×24 after the paint (CI run 10:
+        // its new cells kept the theme's background, and the edges had no
+        // majority).
+        window.layoutIfNeeded()
+        #expect(terminal.cols == Int(terminal.bounds.width / terminal.metrics.width)
+                && terminal.gridRows == Int(terminal.bounds.height / terminal.metrics.height),
+                "the grid is the slot's: \(terminal.cols)×\(terminal.gridRows) in \(terminal.bounds.size)")
         terminal.feed(Data("\u{1b}[48;2;58;58;58m\u{1b}[2J".utf8))
         #expect(terminal.settle { _ in said.last == .some(0x3A3A3A) }, "said: \(said)")
         stage.show(.init(source: .pane(controller, "%2"), inset: 0))

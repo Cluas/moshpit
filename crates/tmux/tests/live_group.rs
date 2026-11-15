@@ -133,8 +133,11 @@ impl Phone {
             self.controller.tick(now);
             for output in self.controller.drain_outputs() {
                 if let Output::Command(command) = output {
-                    self.stdin.write_all(command.as_bytes()).unwrap();
-                    self.stdin.write_all(b"\n").unwrap();
+                    let line = format!("{command}\n");
+                    if self.stdin.write_all(line.as_bytes()).is_err() {
+                        // tmux's client is gone: the test says so.
+                        return;
+                    }
                     moved = true;
                 }
             }
@@ -291,4 +294,165 @@ fn a_real_tmux_keeps_the_phone_off_a_group_with_a_desktops_control_client() {
         me.lines().any(|name| listed.split(' ').any(|n| n == name)),
         "the phone is on Moshpit's list: {listed:?} of {me:?}"
     );
+}
+
+impl Server {
+    /// The phone's controller on a `-C` client of `target`, attached and
+    /// settled in its own group.
+    fn phone(&self, target: &str) -> Phone {
+        let (child, stdin, rx) = self.client(target);
+        let mut phone = Phone {
+            controller: Controller::new(Config::default()),
+            child,
+            stdin,
+            rx,
+            start: Instant::now(),
+        };
+        let now = phone.now();
+        phone.controller.begin_control_mode(now);
+        let attached = phone.pump_until(15, |c| {
+            c.phone_group().is_some() && c.snapshot().active_window_id.is_some()
+        });
+        assert!(attached, "{:?}", phone.controller.snapshot());
+        phone.pump(300);
+        phone
+    }
+
+    /// A desktop's terminal on `target`, attached.
+    fn desktop_on(&self, target: &str) -> Child {
+        let before = self
+            .tmux(&["list-clients", "-F", "#{client_name}"])
+            .lines()
+            .count();
+        let desk = self.desktop(target);
+        assert!(
+            eventually(10, || self
+                .tmux(&["list-clients", "-F", "#{client_name}"])
+                .lines()
+                .count()
+                > before),
+            "the desktop attached"
+        );
+        desk
+    }
+
+    fn window_of(&self, target: &str) -> String {
+        self.tmux(&["display-message", "-p", "-t", target, "#{window_id}"])
+    }
+}
+
+/// B580: "New window" on another session's row (the Home tree) made it
+/// with `new-window -t '$T:'`, which makes the new window that session's
+/// current one: a desktop on that session was switched to it.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_new_window_in_another_session_leaves_its_desktop_where_it_is() {
+    let server = Server::start("newwin");
+    server.tmux(&["new-session", "-d", "-s", "dev", "-x", "120", "-y", "40"]);
+    server.tmux(&["new-window", "-t", "dev"]);
+    server.tmux(&["select-window", "-t", "dev:0"]);
+    let mut desk = server.desktop_on("dev");
+    let dev = server.tmux(&["display-message", "-p", "-t", "dev", "#{session_id}"]);
+    let desk_window = server.window_of("dev");
+    let mut phone = server.phone("main");
+    let before: Vec<String> = server
+        .tmux(&["list-windows", "-t", "dev", "-F", "#{window_id}"])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let now = phone.now();
+    phone
+        .controller
+        .new_window_in_session(&dev, Some("made"), now);
+    let landed = phone.pump_until(15, |c| {
+        c.snapshot().active_session_id.as_deref() == Some(dev.as_str())
+            && c.snapshot()
+                .active_window_id
+                .as_deref()
+                .is_some_and(|w| !before.iter().any(|b| b == w))
+    });
+    assert!(landed, "{:?}", phone.controller.snapshot());
+    phone.pump(300);
+    assert_eq!(server.window_of("dev"), desk_window, "the desktop's window");
+    let _ = desk.kill();
+    let _ = desk.wait();
+}
+
+impl Server {
+    /// Each client's session, `name session` per line.
+    fn clients(&self) -> String {
+        self.tmux(&["list-clients", "-F", "#{client_name} #{session_name}"])
+    }
+}
+
+/// B582: tmux detaches a client whose session is destroyed
+/// (`detach-on-destroy`, on by default): the phone killing the session it
+/// was on — its group with it — ended control mode, and the phone sat on a
+/// dead attach though another session was there.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn killing_the_session_on_screen_leaves_the_phone_on_another() {
+    let server = Server::start("killown");
+    server.tmux(&["new-session", "-d", "-s", "dev", "-x", "80", "-y", "24"]);
+    let mut phone = server.phone("main");
+    let main = phone
+        .controller
+        .snapshot()
+        .active_session_id
+        .clone()
+        .unwrap();
+    let dev = server.tmux(&["display-message", "-p", "-t", "=dev:", "#{session_id}"]);
+    let now = phone.now();
+    phone.controller.kill_session(&main, now);
+    let moved = phone.pump_until(10, |c| {
+        c.phone_group().is_some() && c.snapshot().active_window_id.is_some()
+    });
+    assert_eq!(
+        phone.child.try_wait().unwrap(),
+        None,
+        "the phone's client exited"
+    );
+    assert!(moved, "{:?}", phone.controller.snapshot());
+    let clients = server.clients();
+    assert!(clients.contains(" dev~mp-"), "clients: {clients}");
+    assert_eq!(
+        phone.controller.snapshot().active_session_id.as_deref(),
+        Some(dev.as_str())
+    );
+    assert!(
+        !server
+            .tmux(&["ls", "-F", "#{session_name}"])
+            .contains("main")
+    );
+}
+
+/// B582: a desktop killed the session the phone was on; the phone drops
+/// its group (it alone would keep the windows alive) — and with it, by
+/// tmux's `detach-on-destroy`, its own control client.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_session_killed_under_the_phone_leaves_it_on_another() {
+    let server = Server::start("killunder");
+    server.tmux(&["new-session", "-d", "-s", "dev", "-x", "80", "-y", "24"]);
+    let mut phone = server.phone("main");
+    server.tmux(&["kill-session", "-t", "=main"]);
+    let moved = phone.pump_until(10, |c| {
+        c.phone_group().is_some_and(|g| g.starts_with("dev~mp-"))
+            && c.snapshot().active_window_id.is_some()
+    });
+    assert_eq!(
+        phone.child.try_wait().unwrap(),
+        None,
+        "the phone's client exited"
+    );
+    assert!(moved, "{:?}", phone.controller.snapshot());
+    let clients = server.clients();
+    assert!(clients.contains(" dev~mp-"), "clients: {clients}");
+    let dev = server.tmux(&["display-message", "-p", "-t", "=dev:", "#{session_id}"]);
+    assert_eq!(
+        phone.controller.snapshot().active_session_id.as_deref(),
+        Some(dev.as_str())
+    );
+    let names = server.tmux(&["ls", "-F", "#{session_name}"]);
+    assert!(!names.contains("main"), "the old group went: {names}");
 }

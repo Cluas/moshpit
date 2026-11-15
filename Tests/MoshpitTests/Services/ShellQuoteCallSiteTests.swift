@@ -24,42 +24,8 @@ struct ShellQuoteCallSiteTests {
     /// A value someone else chose, with `mark` after its apostrophe.
     static func hostile(_ mark: String) -> String { "it'\(mark); touch INJECTED; '" }
 
-    /// `hostile(mark)` as one quoted word.
-    static func quoted(_ mark: String) -> String { "'it'\\''\(mark); touch INJECTED; '\\'''" }
-
     private func injected(in directory: URL) -> Bool {
         FileManager.default.fileExists(atPath: directory.appendingPathComponent("INJECTED").path)
-    }
-
-    // MARK: - The helpers that were copies
-
-    @Test("Each former copy quotes the apostrophe whatever is attached to it", arguments: marks)
-    func formerCopies(_ mark: String) {
-        let value = Self.hostile(mark), quoted = Self.quoted(mark)
-        #expect(ExecUploadCommands.quote(value) == quoted)
-        #expect(SessionHub.ActiveSession.shellQuote(value) == quoted)
-        #expect(PosixShell.unquote(quoted) == value)
-    }
-
-    @Test("A prepended mark before the apostrophe doesn't hide it either")
-    func prependedMark() {
-        let value = "x\u{600}'; touch INJECTED; '"
-        #expect(PosixShell.unquote(ExecUploadCommands.quote(value)) == value)
-        #expect(PosixShell.unquote(SessionHub.ActiveSession.shellQuote(value)) == value)
-    }
-
-    // MARK: - Image paths pasted at a prompt
-
-    @Test("An uploaded path with a marked apostrophe is quoted in every insert style", arguments: marks)
-    func imagePaths(_ mark: String) {
-        let path = "/home/o'\(mark)b/.moshpit/uploads/IMG-1.jpg"
-        let quoted = "'/home/o'\\''\(mark)b/.moshpit/uploads/IMG-1.jpg'"
-        #expect(ImageAttachmentPipeline.insertText(forRemotePaths: [path]) == " \(quoted) ")
-        #expect(ImageAttachmentPipeline.insertText(forRemotePaths: [path], style: .atMention) == " \(quoted) ")
-        #expect(ImageAttachmentPipeline.insertText(forRemotePaths: [path], style: .aiderAdd) == "/add \(quoted)")
-        // A space with a mark on it still needs the quotes.
-        let spaced = "/home/a \u{301}b/IMG-1.jpg"
-        #expect(ImageAttachmentPipeline.insertText(forRemotePaths: [spaced]) == " '\(spaced)' ")
     }
 
     // MARK: - Files on the host

@@ -49,20 +49,35 @@ final class RustPreferencesHost: PreferencesHost, @unchecked Sendable {
 /// `UIApplication.isProtectedDataAvailable`, readable from any thread: the
 /// core asks from its own threads, and a hop to the main queue there could
 /// wait on a main thread that waits on the core.
+///
+/// Read when made, kept by the system's two notifications, and read again
+/// each time the app becomes active. 1.0.8's readiness asked the system on
+/// every read; a flag read once, at `MoshpitApp.init`, kept an early
+/// "unavailable" until the phone was locked and unlocked again, and with no
+/// sentinel yet (a first launch) no store could be trusted all that time.
+/// CI's test host showed it: its preferences stayed untrusted the whole run.
 final class ProtectedDataFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var available: Bool
     private var observers: [NSObjectProtocol] = []
 
+    /// `read` is the system's word, asked on the main thread (a test's own).
     @MainActor
-    init(center: NotificationCenter = .default) {
-        available = UIApplication.shared.isProtectedDataAvailable
+    init(center: NotificationCenter = .default,
+         read: @escaping @MainActor () -> Bool = { UIApplication.shared.isProtectedDataAvailable }) {
+        available = read()
         observers.append(center.addObserver(
             forName: UIApplication.protectedDataDidBecomeAvailableNotification,
             object: nil, queue: nil) { [weak self] _ in self?.set(true) })
         observers.append(center.addObserver(
             forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
             object: nil, queue: nil) { [weak self] _ in self?.set(false) })
+        // Posted on the main thread, where `read` asks.
+        observers.append(center.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated { self?.set(read()) }
+            })
     }
 
     /// A fixed answer, for tests.

@@ -332,7 +332,7 @@ struct KeychainReferencesTests {
         s.connections.load()
 
         let recovered = await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                                    keychain: service)
+                                                                    keychain: service, preferences: Self.preferences(s))
 
         #expect(recovered.map(\.keychainRef) == [orphan], "\(recovered.map(\.name))")
         #expect(keychain.accountsNow == Set(items.keys), "recovery deleted something")
@@ -361,16 +361,16 @@ struct KeychainReferencesTests {
                                      Self.ref(): Data("a password".utf8)])
         let service = KeychainService(backend: keychain)
         #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service).count == 1)
+                                                            keychain: service, preferences: Self.preferences(s)).count == 1)
         // The same launch looks once.
         #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service).isEmpty)
+                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
         // The next launch: fresh stores over the same defaults and keychain.
         KeychainReferences.resetForTesting()
         let connections = ConnectionStore(defaults: s.defaults)
         let keys = SSHKeyStore(defaults: s.defaults)
         #expect(await KeychainReferences.recoverOrphansOnce(connections: connections, keys: keys,
-                                                            keychain: service).isEmpty)
+                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
         #expect(keys.keys.filter { $0.keychainRef == orphan }.count == 1)
         #expect(keychain.accountsNow.count == 2)
     }
@@ -384,7 +384,7 @@ struct KeychainReferencesTests {
         let keychain = SlowKeychain([orphan: try Self.privateKey("lost").privateBlob])
         let service = KeychainService(backend: keychain)
         let record = try #require(await KeychainReferences.recoverOrphansOnce(
-            connections: s.connections, keys: s.keys, keychain: service).first)
+            connections: s.connections, keys: s.keys, keychain: service, preferences: Self.preferences(s)).first)
 
         try await SSHKeyDeletion.delete(record, from: s.keys, connections: s.connections) {
             try await service.delete(forRef: $0)
@@ -393,7 +393,7 @@ struct KeychainReferencesTests {
         #expect(!keychain.accountsNow.contains(orphan))
         KeychainReferences.resetForTesting()
         #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service).isEmpty)
+                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
     }
 
     @Test("an item made this launch is no orphan, though its record isn't saved yet")
@@ -413,7 +413,7 @@ struct KeychainReferencesTests {
         }
 
         let recovered = await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                                    keychain: service)
+                                                                    keychain: service, preferences: Self.preferences(s))
 
         #expect(recovered.isEmpty)
         try await Task.sleep(for: .milliseconds(20))
@@ -431,14 +431,14 @@ struct KeychainReferencesTests {
         let service = KeychainService(backend: keychain)
         // What a sealed launch reads: nothing at all.
         #expect(await KeychainReferences.recoverOrphansOnce(connections: sealed.connections, keys: sealed.keys,
-                                                            keychain: service).isEmpty)
+                                                            keychain: service, preferences: Self.preferences(sealed)).isEmpty)
         // Unlocked: the stores read what they hold — a connection names the
         // item — and the look runs.
         let open = Self.stores()
         defer { open.defaults.removePersistentDomain(forName: open.suite) }
         open.connections.add(Self.connection("pi", ownRef: named))
         #expect(await KeychainReferences.recoverOrphansOnce(connections: open.connections, keys: open.keys,
-                                                            keychain: service).isEmpty)
+                                                            keychain: service, preferences: Self.preferences(open)).isEmpty)
         #expect(open.keys.keys.isEmpty, "a connection's own key was listed as an orphan")
         #expect(keychain.accountsNow == [named])
     }

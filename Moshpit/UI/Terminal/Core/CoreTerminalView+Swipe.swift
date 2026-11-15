@@ -5,7 +5,8 @@ import UIKit
 // past the axis lock to the lift, instead of one switch on the lift. A drag
 // that starts at the leading edge toward the trailing side is the system's
 // back gesture, and is left to it. VoiceOver can't swipe through its own
-// gestures: every row offers Next pane and Previous pane instead.
+// gestures: every row offers Next pane, Previous pane and Show all panes
+// instead.
 
 extension CoreTerminalView {
     /// The strip along the leading edge the system's back gesture owns.
@@ -47,17 +48,28 @@ extension CoreTerminalView {
         return true
     }
 
-    /// Next pane and Previous pane, on every row VoiceOver reads (empty
-    /// where nothing switches).
+    /// Next pane, Previous pane and Show all panes, on every row VoiceOver
+    /// reads (none where nothing switches).
     func paneSwitchActions() -> [UIAccessibilityCustomAction] {
-        guard surfaceDelegate?.surfaceCanSwitch == true else { return [] }
-        return [(String(localized: "Next pane"), true), (String(localized: "Previous pane"), false)]
-            .map { name, forward in
-                UIAccessibilityCustomAction(name: name) { [weak self] _ in
-                    guard let self, let delegate = self.surfaceDelegate, delegate.surfaceCanSwitch else { return false }
-                    delegate.surface(self, switchForward: forward)
-                    return true
+        guard let delegate = surfaceDelegate else { return [] }
+        var actions: [UIAccessibilityCustomAction] = []
+        if delegate.surfaceCanSwitch {
+            actions += [(String(localized: "Next pane"), true), (String(localized: "Previous pane"), false)]
+                .map { name, forward in
+                    UIAccessibilityCustomAction(name: name) { [weak self] _ in
+                        guard let self, let delegate = self.surfaceDelegate, delegate.surfaceCanSwitch else { return false }
+                        delegate.surface(self, switchForward: forward)
+                        return true
+                    }
                 }
-            }
+        }
+        if delegate.surfaceCanShowAll {
+            actions.append(UIAccessibilityCustomAction(name: String(localized: "Show all panes")) { [weak self] _ in
+                guard let self, let delegate = self.surfaceDelegate, delegate.surfaceCanShowAll else { return false }
+                delegate.surfaceShowAll(self)
+                return true
+            })
+        }
+        return actions
     }
 }

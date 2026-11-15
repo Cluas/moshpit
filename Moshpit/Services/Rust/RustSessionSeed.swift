@@ -190,8 +190,7 @@ enum RustSessionSeed {
 
     private static func probe(_ session: SessionHub.ActiveSession, count: Int) async {
         let path = (session.rust == nil ? "swift" : "rust")
-            + ((session.tmuxController?.activeCoordinator ?? session.coordinator).surface is CoreTerminalView
-               ? "+core" : "")
+            + ((session.tmuxController?.activeCoordinator ?? session.coordinator).surface != nil ? "+core" : "")
         let transport = "\(session.connection.connectionProtocol.rawValue)+\(session.connection.multiplexer.rawValue)"
         /// From the keystroke to its echo fed to the terminal (a terminal
         /// fed by the coordinator; the core reading its channel itself is
@@ -216,7 +215,7 @@ enum RustSessionSeed {
             let byte = letters[index % letters.count]
             typed.append(Character(UnicodeScalar(byte)))
             let expected = typed
-            let core = surface as? CoreTerminalView
+            let core: CoreTerminalView? = surface
             let echoed = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 MainActor.assumeIsolated {
                     var finished = false
@@ -225,11 +224,11 @@ enum RustSessionSeed {
                     @MainActor func finish(_ ok: Bool) {
                         guard !finished else { return }
                         finished = true
-                        SwiftTerminalView.Coordinator.debugFeedTap = nil
+                        CoreTerminalHost.Coordinator.debugFeedTap = nil
                         core?.onFrame = nil
                         continuation.resume(returning: ok)
                     }
-                    SwiftTerminalView.Coordinator.debugFeedTap = { into, data in
+                    CoreTerminalHost.Coordinator.debugFeedTap = { into, data in
                         MainActor.assumeIsolated {
                             guard !sawFeed, into === coordinator, data.contains(byte) else { return }
                             sawFeed = true

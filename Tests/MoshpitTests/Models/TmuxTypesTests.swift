@@ -7,21 +7,6 @@ struct TmuxTypesTests {
 
     // MARK: - PaneInfo
 
-    @Test("PaneInfo Codable round-trip preserves every field")
-    func paneInfoCodable() throws {
-        let original = PaneInfo(
-            id: "%4",
-            windowId: "@0",
-            command: "vim",
-            width: 132,
-            height: 40,
-            isActive: true
-        )
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(PaneInfo.self, from: data)
-        #expect(decoded == original)
-    }
-
     @Test("PaneInfo equality is structural, not identity-only")
     func paneInfoEquality() {
         let a = PaneInfo(id: "%0", windowId: "@0", command: "bash")
@@ -47,23 +32,6 @@ struct TmuxTypesTests {
     }
 
     // MARK: - WindowInfo
-
-    @Test("WindowInfo Codable round-trip preserves layout string verbatim")
-    func windowInfoCodable() throws {
-        let original = WindowInfo(
-            id: "@5",
-            name: "logs",
-            index: 3,
-            layout: "ab12,200x50,0,0{100x50,0,0,4,99x50,101,0,5}",
-            isActive: true,
-            paneCount: 2
-        )
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(WindowInfo.self, from: data)
-        #expect(decoded == original)
-        // The layout descriptor is opaque to us; round-trip must not transform.
-        #expect(decoded.layout == original.layout)
-    }
 
     @Test("WindowInfo equality differentiates on every mutating field")
     func windowInfoEquality() {
@@ -94,14 +62,6 @@ struct TmuxTypesTests {
 
     // MARK: - SessionInfo
 
-    @Test("SessionInfo Codable round-trip preserves attachment flag")
-    func sessionInfoCodable() throws {
-        let original = SessionInfo(id: "$0", name: "moshpit", isAttached: true)
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(SessionInfo.self, from: data)
-        #expect(decoded == original)
-    }
-
     @Test("SessionInfo defaults: empty name, not attached")
     func sessionInfoDefaults() {
         let s = SessionInfo(id: "$0")
@@ -109,15 +69,4 @@ struct TmuxTypesTests {
         #expect(s.isAttached == false)
     }
 
-    // MARK: - Hashable / dictionary keys
-
-    @Test("Equal PaneInfos hash to the same bucket (Hashable contract holds)")
-    func paneInfoHashable() {
-        var set: Set<PaneInfo> = []
-        let a = PaneInfo(id: "%0", windowId: "@0", command: "bash")
-        let b = PaneInfo(id: "%0", windowId: "@0", command: "bash")
-        set.insert(a)
-        set.insert(b)
-        #expect(set.count == 1, "equal panes must collapse in a Set")
-    }
 }

@@ -50,24 +50,14 @@ private struct TerminalDirectorHooks: ViewModifier {
 ///   to its resynced frame revealed.
 /// - `shots`: holds the keyboard down, then up, announcing each hold
 ///   (`HOLD <name>`) for a screenshot.
-/// - `rekey` (NSH): with the keyboard up, the screen makes the terminal's
-///   element again: the same view, still first responder, the keyboard
-///   still.
+/// - `sheets`: presents the screen's sheets one after another, each held
+///   for a screenshot.
 /// - `wait`: nothing for a while (`-MOSHPIT_ECHO_PROBE n` times the echo).
-/// - `suite`: shots, keyboard, switch and (NSH) rekey in one launch.
-/// - `burst` (T3): `cat`s a big file in the pane (`-MOSHPIT_DIRECTOR_BURST
-///   burst.txt`, relative to its directory) n times and measures, per
-///   display frame until the end marker shows, the main thread's longest
-///   gap (the stall a person feels) and how long the burst took; on the
-///   core's view also the frames that changed what shows and the longest
-///   gap between two (a frozen screen). `-MOSHPIT_DIRECTOR_BACKLOG s` (T4)
-///   blocks the main thread s seconds after the command, so the session's
-///   channel fills as it does while the app is busy or away, and measures
-///   the catch-up from the moment the main thread is free again.
-/// - `paths` (T3): prints a path to a file the host has
-///   (`-MOSHPIT_DIRECTOR_PATH out/a.png`, relative to the pane's directory)
-///   and one it hasn't, and times until the first is a link on the terminal
-///   on screen (the core's view) while the second stays text.
+/// - `suite`: shots, keyboard and switch in one launch.
+///
+/// The one-off investigations it also ran (rekey, burst, paths, images,
+/// imagerepeat, foldertap, imagepanes) went with E6a; their findings are in
+/// the bugs they settled.
 @MainActor
 enum TerminalDirector {
     static let keyboardRequest = Notification.Name("MoshpitTerminalDirectorKeyboard")
@@ -109,7 +99,7 @@ enum TerminalDirector {
     private static var session: SessionHub.ActiveSession? { RustCore.visibleSession }
 
     /// The terminal on screen and its coordinator.
-    fileprivate static var shown: (TerminalSurface, SwiftTerminalView.Coordinator)? {
+    fileprivate static var shown: (CoreTerminalView, CoreTerminalHost.Coordinator)? {
         guard let session else { return nil }
         let coordinator = session.tmuxController?.activeCoordinator ?? session.coordinator
         guard let surface = coordinator.surface, surface.view.window != nil else { return nil }
@@ -136,21 +126,13 @@ enum TerminalDirector {
         case "switch": await switches(ui: "nsh")
         case "shots": await shots()
         case "sheets": await sheets()
-        case "rekey": await rekey()
-        case "paths": await paths()
-        case "burst": await bursts()
-        case "images": await images()
-        case "imagerepeat": await imageRepeats()
-        case "foldertap": await folderTap()
-        case "imagepanes": await imagePanes()
         case "wait": await sleep(Double(arg("-MOSHPIT_DIRECTOR_HOLD") ?? "60") ?? 60)
         case "suite":
-            // One launch, one connect: the shots, the keyboard, the switches,
-            // and on the NSH screen the rekey.
+            // One launch, one connect: the shots, the keyboard and the
+            // switches.
             await shots()
             await keyboardCycles(ui: "nsh")
             if session.tmuxControl != nil { await switches(ui: "nsh") }
-            if TerminalNSHModel.current != nil { await rekey() }
         default: say("FAIL unknown director mode \(mode)")
         }
         say("director \(mode) done")
@@ -200,7 +182,7 @@ enum TerminalDirector {
         var shownMs: [Double] = []
         var revealedMs: [Double] = []
         var repaints: [Int] = []
-        let view = shown.map { $0.0 is CoreTerminalView ? "core" : "other" } ?? "-"
+        let view = shown == nil ? "-" : "core"
         for cycle in 0..<(cycles * 2) {
             let target = windows[cycle % 2]
             let before = shown?.0
@@ -328,507 +310,6 @@ enum TerminalDirector {
 
     // MARK: Bursts (T3)
 
-    private static func bursts() async {
-        let file = arg("-MOSHPIT_DIRECTOR_BURST") ?? "burst.txt"
-        let cycles = Int(arg("-MOSHPIT_DIRECTOR_CYCLES") ?? "3") ?? 3
-        let backlog = Double(arg("-MOSHPIT_DIRECTOR_BACKLOG") ?? "0") ?? 0
-        guard let session, let (surface, _) = shown else { return say("FAIL burst: no terminal") }
-        let core = surface as? CoreTerminalView
-        var gaps: [Double] = []
-        var durations: [Double] = []
-        var frozen: [Double] = []
-        var rates: [Double] = []
-        // Where the main thread's time went: the view's longest apply and
-        // turn, and this probe's own longest look at the screen.
-        var applies: [Double] = []
-        var turns: [Int] = []
-        var looks: [Double] = []
-        // Whether the atlas's common CJK is in before the first screen.
-        if let core { say("before the first: " + core.atlasSummary) }
-        for cycle in 1...cycles {
-            let marker = "BURST-\(cycle)-END"
-            // The marker as printed, never as typed (`%s`).
-            session.sendInput(Data("cat \(file); printf 'BURST-%s-END\\n' \(cycle)\r".utf8))
-            if backlog > 0 {
-                // Busy (or away): the session's channel fills meanwhile.
-                Thread.sleep(forTimeInterval: backlog)
-            }
-            let probe = FrameGapProbe()
-            let start = CACurrentMediaTime()
-            // The frames that changed what shows, while it runs.
-            var shown: [CFTimeInterval] = []
-            var encoded = core?.rowsEncoded ?? 0
-            core?.resetFrameCosts()
-            core?.onFrame = { [weak core] in
-                guard let core, core.rowsEncoded != encoded else { return }
-                encoded = core.rowsEncoded
-                shown.append(CACurrentMediaTime())
-            }
-            var look = 0.0
-            let done = await wait(120) {
-                let at = CACurrentMediaTime()
-                defer { look = max(look, (CACurrentMediaTime() - at) * 1000) }
-                // Where the marker lands: just above the prompt. (Every row
-                // every 20 ms cost the main thread up to 20 ms a look in a
-                // debug build, inside the gaps this measures.)
-                let bottom = min(surface.cursor.row, surface.grid.rows - 1)
-                return (max(0, bottom - 3)...max(0, bottom)).contains { surface.rowText($0) == marker }
-            }
-            core?.onFrame = nil
-            probe.stop()
-            let end = CACurrentMediaTime()
-            let ms = (end - start) * 1000
-            guard done else { say("burst \(cycle): never ended"); continue }
-            gaps.append(probe.longest)
-            durations.append(ms)
-            // The longest the screen stood still: from the start to the
-            // first new frame, between two, to the end.
-            let marks = [start] + shown + [end]
-            let still = zip(marks.dropFirst(), marks).map { ($0 - $1) * 1000 }.max() ?? 0
-            let fps = Double(shown.count) / max(end - start, 0.001)
-            looks.append(look)
-            var costs = ""
-            if let core {
-                frozen.append(still)
-                rates.append(fps)
-                applies.append(core.frameCosts.apply)
-                turns.append(core.frameCosts.framesInTurn)
-                costs = "; main thread per frame: " + core.frameCosts.summary
-            }
-            say(String(format: "burst %d: %.0f ms, main thread longest gap %.1f ms, p99 %.1f ms over %d frames;"
-                       + " %d frames changed the screen (%.0f/s), longest still %.0f ms",
-                       cycle, ms, probe.longest, probe.p99, probe.count, shown.count, fps, still)
-                + costs + String(format: "; the probe's look %.1f ms", look))
-            await sleep(1.5)
-        }
-        let view = surface is CoreTerminalView ? "core" : "other"
-        if let core { say(core.atlasSummary) }
-        say("RESULT burst view=\(view) backlog=\(backlog)s: n=\(gaps.count) longest gap max \(fmt(gaps.max())) median \(fmt(percentile(gaps, 0.5))) ms;"
-            + " duration median \(fmt(percentile(durations, 0.5))) ms;"
-            + " screen frames/s median \(fmt(percentile(rates, 0.5))), longest still max \(fmt(frozen.max())) ms;"
-            + " apply max \(fmt(applies.max())) ms, frames a turn max \(turns.max() ?? 0), probe look max \(fmt(looks.max())) ms")
-    }
-
-    /// The main thread's display-frame gaps while it runs.
-    @MainActor
-    private final class FrameGapProbe {
-        private var link: CADisplayLink?
-        private var last: CFTimeInterval = 0
-        private var gaps: [Double] = []
-
-        init() {
-            let link = CADisplayLink(target: Target(self), selector: #selector(Target.frame(_:)))
-            link.add(to: .main, forMode: .common)
-            self.link = link
-            // From now: work done before the first tick (the first frame
-            // after a backlog's wait) is a gap too.
-            last = CACurrentMediaTime()
-        }
-
-        func stop() {
-            link?.invalidate()
-            link = nil
-        }
-
-        var longest: Double { gaps.max() ?? 0 }
-        var count: Int { gaps.count }
-        var p99: Double { TerminalDirector.percentile(gaps, 0.99) ?? 0 }
-
-        fileprivate func frame(_ link: CADisplayLink) {
-            if last > 0 { gaps.append((link.timestamp - last) * 1000) }
-            last = link.timestamp
-        }
-
-        private final class Target: NSObject {
-            weak var probe: FrameGapProbe?
-            init(_ probe: FrameGapProbe) { self.probe = probe }
-            @objc func frame(_ link: CADisplayLink) { MainActor.assumeIsolated { probe?.frame(link) } }
-        }
-    }
-
-    // MARK: Images (T6)
-
-    /// Kitty, sixel and iTerm2 images from the rig (`-MOSHPIT_DIRECTOR_IMAGES`
-    /// names the folder of mkimages.py's files: four quadrants, red, green /
-    /// blue, yellow), each on a cleared screen and checked by its pixels;
-    /// then a 1200 x 3000 image, scrolled past and back, and what it costs
-    /// in memory until the screen and the history are cleared.
-    private static func images() async {
-        guard let session, let (surface, _) = shown, let core = surface as? CoreTerminalView else {
-            return say("FAIL images: not the core's view")
-        }
-        let dir = arg("-MOSHPIT_DIRECTOR_IMAGES") ?? "."
-        let red = (255, 0, 0), green = (0, 255, 0), blue = (0, 0, 255), yellow = (255, 255, 0)
-        var failed = 0
-        for p in ["kitty", "sixel", "iterm2"] {
-            guard await shell(session, core, "cat \(dir)/img-\(p).txt", tag: p) else {
-                say("FAIL images \(p): never ended")
-                failed += 1
-                continue
-            }
-            await sleep(0.5)
-            let v = checkImage(core, name: p, at: [(0.25, 0.25, red), (0.75, 0.25, green),
-                                                   (0.25, 0.75, blue), (0.75, 0.75, yellow)])
-            if !v.ok { failed += 1 }
-            say("images \(p): \(v.text)")
-        }
-        // The large one, and 300 lines after it.
-        let before = footprint()
-        guard await shell(session, core, "cat \(dir)/img-big.txt; seq 1 300 | sed 's/^/after big /'", tag: "big") else {
-            return say("FAIL images big: never ended")
-        }
-        await sleep(1)
-        let onScreen = footprint()
-        // Back to the top of the history, where it starts: its upper half.
-        core.scrollLines(core.historyLines)
-        await sleep(0.5)
-        let top = checkImage(core, name: "big-top", at: [(0.25, 0.25, red), (0.75, 0.25, green)])
-        // Back down until only its last rows show, at the top: its lower half.
-        core.scrollToBottom()
-        await sleep(0.3)
-        core.scrollLines(300 + 2 + core.grid.rows / 3)
-        await sleep(0.5)
-        let bottom = checkImage(core, name: "big-bottom", at: [(0.25, 0.5, blue), (0.75, 0.5, yellow)])
-        core.scrollToBottom()
-        if !top.ok { failed += 1 }
-        if !bottom.ok { failed += 1 }
-        say("images big, scrolled to its top: \(top.text)")
-        say("images big, scrolled to its end: \(bottom.text)")
-        // Gone: the screen and the history cleared.
-        _ = await shell(session, core, "printf '\\033[3J'", tag: "gone")
-        await sleep(1.5)
-        let after = footprint()
-        say(String(format: "images big: memory %.1f MB before, %.1f with it on screen and in the history (+%.1f), %.1f once both are cleared",
-                   before, onScreen, onScreen - before, after))
-        say("RESULT images: " + (failed == 0 ? "PASS" : "FAIL \(failed)"))
-    }
-
-    /// Whether an image's memory comes back: the rig's 1200 x 3000 image in
-    /// each protocol (img-big-<protocol>.txt) shown, then the screen and the
-    /// history cleared, `-MOSHPIT_DIRECTOR_CYCLES` times (10), the app's
-    /// footprint after each: flat is a cache filled once, rising a leak.
-    private static func imageRepeats() async {
-        guard let session, let (surface, _) = shown, let core = surface as? CoreTerminalView else {
-            return say("FAIL imagerepeat: not the core's view")
-        }
-        let dir = arg("-MOSHPIT_DIRECTOR_IMAGES") ?? "."
-        let repeats = Int(arg("-MOSHPIT_DIRECTOR_CYCLES") ?? "10") ?? 10
-        _ = await shell(session, core, "printf '\\033[3J'", tag: "start")
-        await sleep(1.5)
-        say(String(format: "imagerepeat: %.1f MB at the start", footprint()))
-        for p in ["kitty", "sixel", "iterm2"] {
-            var withIt: [Double] = []
-            var cleared: [Double] = []
-            for i in 1...repeats {
-                guard await shell(session, core, "cat \(dir)/img-big-\(p).txt", tag: "\(p)\(i)") else {
-                    say("FAIL imagerepeat \(p) \(i): never ended")
-                    break
-                }
-                await sleep(0.8)
-                withIt.append(footprint())
-                _ = await shell(session, core, "printf '\\033[3J'", tag: "\(p)\(i)gone")
-                await sleep(1.5)
-                cleared.append(footprint())
-            }
-            func list(_ v: [Double]) -> String { v.map { String(format: "%.1f", $0) }.joined(separator: " ") }
-            say("imagerepeat \(p): shown \(list(withIt)) MB; cleared \(list(cleared)) MB")
-        }
-        say(String(format: "RESULT imagerepeat: %.1f MB at the end", footprint()))
-    }
-
-    /// Images' memory across panes: each of the session's first three tmux
-    /// windows shows the rig's 1200 x 3000 image in every protocol, cleared
-    /// after each, `-MOSHPIT_DIRECTOR_CYCLES` times (3), the footprint after
-    /// each pane; then a memory warning, as the system sends it.
-    private static func imagePanes() async {
-        guard let session, let control = session.tmuxControl else { return say("FAIL imagepanes needs tmux") }
-        let windows = Array(control.snapshot.sortedWindows.prefix(3))
-        guard windows.count == 3 else { return say("FAIL imagepanes needs three windows, has \(windows.count)") }
-        let dir = arg("-MOSHPIT_DIRECTOR_IMAGES") ?? "."
-        let repeats = Int(arg("-MOSHPIT_DIRECTOR_CYCLES") ?? "3") ?? 3
-        say(String(format: "imagepanes: %.1f MB at the start; ", footprint()) + CoreTermMemory.summary)
-        for (n, window) in windows.enumerated() {
-            let before = shown?.0
-            control.selectWindow(window.id)
-            _ = await wait(3) { shown.map { $0.0 !== before } ?? false }
-            await sleep(1)
-            guard let (surface, _) = shown, let core = surface as? CoreTerminalView else {
-                return say("FAIL imagepanes: pane \(n + 1) is not the core's view")
-            }
-            for p in ["kitty", "sixel", "iterm2"] {
-                for i in 1...repeats {
-                    guard await shell(session, core, "cat \(dir)/img-big-\(p).txt", tag: "w\(n)\(p)\(i)") else {
-                        say("FAIL imagepanes pane \(n + 1) \(p) \(i): never ended")
-                        continue
-                    }
-                    await sleep(0.8)
-                    _ = await shell(session, core, "printf '\\033[3J'", tag: "w\(n)\(p)\(i)gone")
-                    await sleep(1)
-                }
-            }
-            say(String(format: "imagepanes pane %d (%@): %.1f MB once its images are cleared; ", n + 1, window.id, footprint())
-                + CoreTermMemory.summary)
-        }
-        await sleep(1.5)
-        let before = footprint()
-        say("imagepanes before the warning: " + CoreTermMemory.summary)
-        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: UIApplication.shared)
-        await sleep(2)
-        say("imagepanes after the warning: " + CoreTermMemory.summary)
-        let after = footprint()
-        // Whether what is left comes back by itself: ten seconds on, then a
-        // second warning.
-        await sleep(10)
-        say(String(format: "imagepanes 10 s later: %.1f MB; ", footprint()) + CoreTermMemory.summary)
-        NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: UIApplication.shared)
-        await sleep(3)
-        say(String(format: "imagepanes after a second warning: %.1f MB; ", footprint()) + CoreTermMemory.summary)
-        // Back to the first pane, its drawables let go: it draws again.
-        let before1 = shown?.0
-        control.selectWindow(windows[0].id)
-        _ = await wait(3) { shown.map { $0.0 !== before1 } ?? false }
-        let rendersBefore = (shown?.0 as? CoreTerminalView)?.renders ?? 0
-        await sleep(1.5)
-        if let back = shown?.0 as? CoreTerminalView {
-            say(String(format: "imagepanes back on pane 1: %.1f MB; renders %d → %d, rows %@; ", footprint(), rendersBefore,
-                       back.renders, (0..<back.grid.rows).contains { !back.rowText($0).isEmpty } ? "with text" : "empty")
-                + CoreTermMemory.summary)
-        }
-        say(String(format: "RESULT imagepanes: %.1f MB before a memory warning, %.1f after", before, after))
-    }
-
-    /// `script` on a cleared screen, then a marker printed (never typed);
-    /// whether the marker showed.
-    private static func shell(_ session: SessionHub.ActiveSession, _ core: CoreTerminalView, _ script: String,
-                              tag: String) async -> Bool {
-        let marker = "IMG-\(tag)-END"
-        session.sendInput(Data("clear; \(script); printf 'IMG-%s-END\\n' \(tag)\r".utf8))
-        return await wait(30) {
-            let bottom = min(core.cursor.row, core.grid.rows - 1)
-            return (max(0, bottom - 3)...max(0, bottom)).contains { core.rowText($0) == marker }
-        }
-    }
-
-    /// The picture as the view draws it: the box of its strongly coloured
-    /// pixels (the images; text and the prompt are not), the colour at each
-    /// `(x, y)` fraction of that box against what it should be. Saves the
-    /// picture as tmp/director-<name>.png.
-    private static func checkImage(_ core: CoreTerminalView, name: String,
-                                   at points: [(Double, Double, (Int, Int, Int))]) -> (ok: Bool, text: String) {
-        guard let (px, w, h) = core.renderedPixels() else { return (false, "no pixels") }
-        // BGRA.
-        func color(_ x: Int, _ y: Int) -> (Int, Int, Int) {
-            let i = (y * w + x) * 4
-            return (Int(px[i + 2]), Int(px[i + 1]), Int(px[i]))
-        }
-        var minX = w, minY = h, maxX = -1, maxY = -1
-        for y in stride(from: 0, to: h, by: 2) {
-            for x in stride(from: 0, to: w, by: 2) {
-                let (r, g, b) = color(x, y)
-                guard max(r, g, b) > 200, min(r, g, b) < 60 else { continue }
-                minX = min(minX, x); maxX = max(maxX, x)
-                minY = min(minY, y); maxY = max(maxY, y)
-            }
-        }
-        let path = savePNG(px, w, h, name: name)
-        guard maxX >= 0 else { return (false, "no image on screen; \(path)") }
-        let bw = maxX - minX + 1, bh = maxY - minY + 1
-        var ok = true
-        var seen: [String] = []
-        for (fx, fy, want) in points {
-            let x = minX + Int(Double(bw) * fx), y = minY + Int(Double(bh) * fy)
-            let c = color(x, y)
-            let good = abs(c.0 - want.0) < 40 && abs(c.1 - want.1) < 40 && abs(c.2 - want.2) < 40
-            if !good { ok = false }
-            seen.append("(\(c.0),\(c.1),\(c.2))\(good ? "" : "≠(\(want.0),\(want.1),\(want.2))")")
-        }
-        return (ok, "\(ok ? "PASS" : "FAIL") box \(minX),\(minY) \(bw)x\(bh) px of \(w)x\(h); " + seen.joined(separator: " ") + "; \(path)")
-    }
-
-    private static func savePNG(_ px: [UInt8], _ w: Int, _ h: Int, name: String) -> String {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("director-\(name).png")
-        var data = px
-        let made: CGImage? = data.withUnsafeMutableBytes { raw in
-            CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                      space: CGColorSpaceCreateDeviceRGB(),
-                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)?
-                .makeImage()
-        }
-        guard let image = made, let png = UIImage(cgImage: image).pngData(), (try? png.write(to: url)) != nil else {
-            return "not saved"
-        }
-        return "tmp/" + url.lastPathComponent
-    }
-
-    /// The app's memory footprint (MB), as the jetsam limit counts it.
-    private static func footprint() -> Double {
-        var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-        let kr = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-            }
-        }
-        return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1e6 : 0
-    }
-
-    // MARK: Folder taps (T10)
-
-    /// B302: the host folder sheet's rows do not answer taps. Opens the
-    /// sheet as the Files key does, finds the row of `-MOSHPIT_DIRECTOR_PATH`
-    /// by its identifier, and says what a touch at its centre reaches:
-    /// UIKit's hit test, and every gesture recognizer on the way from the
-    /// hit view to its window (what could take or hold the touch).
-    private static func folderTap() async {
-        guard let path = arg("-MOSHPIT_DIRECTOR_PATH") else { return say("FAIL foldertap: no -MOSHPIT_DIRECTOR_PATH") }
-        present("folder")
-        let id = "remote-folder-item-\(path)"
-        var row: UIView?
-        let found = await wait(30) {
-            for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-                for window in scene.windows {
-                    if let v = AccentRowMenus.view(identified: id, in: window), v.window != nil { row = v; return true }
-                }
-            }
-            return false
-        }
-        guard found, let row, let window = row.window else {
-            // What there is instead.
-            var ids: [String] = []
-            func walk(_ v: UIView) {
-                if let i = v.accessibilityIdentifier, i.hasPrefix("remote-folder") { ids.append(i) }
-                v.subviews.forEach(walk)
-            }
-            for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-                for w in scene.windows { walk(w) }
-            }
-            return say("FAIL foldertap: \(id) never showed; there are \(ids.prefix(12))")
-        }
-        await sleep(1.5)
-        let center = row.convert(CGPoint(x: row.bounds.midX, y: row.bounds.midY), to: window)
-        say("foldertap row \(type(of: row)) frame \(row.convert(row.bounds, to: window)) in window \(type(of: window)) level \(window.windowLevel.rawValue)")
-        let hit = window.hitTest(center, with: nil)
-        say("foldertap hit \(hit.map { "\(type(of: $0))" } ?? "nothing") id \(hit?.accessibilityIdentifier ?? "-"); inside the row: \(hit?.isDescendant(of: row) ?? false)")
-        if let hit {
-            let local = hit.convert(center, from: window)
-            let again = hit.hitTest(local, with: nil)
-            say("foldertap the hit view's own hitTest: \(again.map { $0 === hit ? "itself" : "\(type(of: $0))" } ?? "nil"); "
-                + "pointInside \(hit.point(inside: local, with: nil)); responds to hitTest override: "
-                + "\(type(of: hit).instanceMethod(for: #selector(UIView.hitTest(_:with:))) != UIView.instanceMethod(for: #selector(UIView.hitTest(_:with:))))")
-            if let parent = hit.superview {
-                let p = parent.convert(center, from: window)
-                say("foldertap its parent's hitTest: \(parent.hitTest(p, with: nil).map { "\(type(of: $0)) id \($0.accessibilityIdentifier ?? "-")" } ?? "nil")")
-            }
-        }
-        // Every window above, at that point (an overlay window takes it first).
-        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-            for w in scene.windows where w !== window && !w.isHidden && w.windowLevel >= window.windowLevel {
-                let p = w.convert(center, from: window)
-                say("foldertap other window \(type(of: w)) level \(w.windowLevel.rawValue) hit \(w.hitTest(p, with: nil).map { "\(type(of: $0))" } ?? "nothing")")
-            }
-        }
-        // The views from the hit one up to the list, as NSH made them.
-        var up: UIView? = hit
-        for depth in 0..<7 {
-            guard let v = up else { break }
-            let f = v.convert(v.bounds, to: window)
-            say("foldertap up \(depth) \(type(of: v)) id \(v.accessibilityIdentifier ?? "-") label \(v.accessibilityLabel ?? "-") tag \(v.tag) "
-                + "frame \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) alpha \(v.alpha) hidden \(v.isHidden) "
-                + "subviews \(v.subviews.count) bg \(v.backgroundColor.map { "\($0)" } ?? "-")")
-            up = v.superview
-        }
-        // The list's children that cover the row's centre, front to back.
-        if let list = AccentRowMenus.view(identified: "remote-folder-list", in: window) {
-            func covering(_ v: UIView, _ depth: Int) {
-                guard depth < 8 else { return }
-                for child in v.subviews.reversed() {
-                    let p = child.convert(center, from: window)
-                    guard child.bounds.contains(p), !child.isHidden, child.alpha > 0.01 else { continue }
-                    let f = child.convert(child.bounds, to: window)
-                    say("foldertap covers \(depth) \(type(of: child)) id \(child.accessibilityIdentifier ?? "-") "
-                        + "frame \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) interaction \(child.isUserInteractionEnabled) "
-                        + "row-inside \(row.isDescendant(of: child))")
-                    covering(child, depth + 1)
-                }
-            }
-            covering(list, 0)
-        }
-        var view: UIView? = hit
-        var depth = 0
-        while let v = view {
-            let recognizers = (v.gestureRecognizers ?? []).map { r in
-                "\(type(of: r))\(r.isEnabled ? "" : " off")\(r.cancelsTouchesInView ? " cancels" : "")\(r.delaysTouchesBegan ? " delaysBegan" : "")"
-            }
-            let interactions = v.interactions.map { "\(type(of: $0))" }
-            if !recognizers.isEmpty || !interactions.isEmpty || v === row {
-                say("foldertap \(depth) \(type(of: v))\(v === row ? " (the row)" : "")\(v.isUserInteractionEnabled ? "" : " NO-INTERACTION"): "
-                    + recognizers.joined(separator: ", ") + (interactions.isEmpty ? "" : "; interactions " + interactions.joined(separator: ", ")))
-            }
-            view = v.superview
-            depth += 1
-        }
-        say("RESULT foldertap done")
-    }
-
-    // MARK: Paths (T3)
-
-    private static func paths() async {
-        let real = arg("-MOSHPIT_DIRECTOR_PATH") ?? "out/a.png"
-        let fake = "out/nope-\(Int.random(in: 1000...9999)).png"
-        guard let session, let (surface, _) = shown else { return say("FAIL paths: no terminal") }
-        guard let core = surface as? CoreTerminalView else { return say("FAIL paths: not the core's view") }
-        let line = "see \(real) and \(fake)"
-        let start = CACurrentMediaTime()
-        session.sendInput(Data("printf '%s\\n' '\(line)'\r".utf8))
-        var place: (row: Int, col: Int, fakeCol: Int)?
-        let linked = await wait(15) {
-            for row in 0..<core.grid.rows {
-                let text = core.rowText(row)
-                guard text == line, let a = text.range(of: real), let b = text.range(of: fake) else { continue }
-                // Columns: the row is ASCII here.
-                place = (row, text.distance(from: text.startIndex, to: a.lowerBound),
-                         text.distance(from: text.startIndex, to: b.lowerBound))
-                return core.link(at: (col: place!.col, row: row)) != nil
-            }
-            return false
-        }
-        let ms = (CACurrentMediaTime() - start) * 1000
-        guard let place, linked else { return say("FAIL paths: \(real) never became a link (printed: \(place != nil))") }
-        let link = core.link(at: (col: place.col, row: place.row)) ?? ""
-        let last = core.link(at: (col: place.col + real.count - 1, row: place.row)) ?? ""
-        let after = core.link(at: (col: place.col + real.count, row: place.row))
-        let other = core.link(at: (col: place.fakeCol, row: place.row))
-        let path = RemotePathLink.path(from: link) ?? ""
-        let ok = path.hasSuffix("/" + real) && last == link && after == nil && other == nil
-        say("\(ok ? "PASS" : "FAIL") paths: \(real) a link after \(String(format: "%.0f", ms)) ms, opens \(path),"
-            + " last cell \(last == link), the cell after \(after == nil ? "plain" : "linked"),"
-            + " the missing file \(other == nil ? "plain" : "linked")")
-    }
-
-    // MARK: Rekey
-
-    private static func rekey() async {
-        guard let model = TerminalNSHModel.current else { return say("FAIL rekey needs the NSH screen") }
-        keyboard(true)
-        guard await wait(3, { shown?.0.view.isFirstResponder == true }) else { return say("FAIL no keyboard") }
-        await sleep(1.5)
-        guard let (surface, coordinator) = shown, let container = coordinator.hostContainer,
-              let window = surface.view.window else { return }
-        let lines = surface.historyLines
-        let probe = KeyboardProbe(surface: surface, container: container, window: window)
-        let record = await probe.measure(kind: "rekey") { model.post(["op": "rekey"]) }
-        await sleep(1)
-        let same = shown?.0 === surface
-        let first = surface.view.isFirstResponder
-        let after = surface.historyLines
-        say("\(same && first && record.kbMax - record.kbMin < 1 && after >= lines ? "PASS" : "FAIL") rekey:"
-            + " same view \(same), first responder \(first), keyboard top \(fmt(record.kbMin))…\(fmt(record.kbMax)),"
-            + " history \(lines) → \(after) lines, visible jumps \(record.visibleJumps)")
-        keyboard(false)
-    }
-
-    // MARK: Numbers
-
     static func percentile(_ values: [Double], _ q: Double) -> Double? {
         guard !values.isEmpty else { return nil }
         let sorted = values.sorted()
@@ -894,7 +375,7 @@ final class KeyboardProbe {
         }
     }
 
-    private let surface: TerminalSurface
+    private let surface: CoreTerminalView
     private let terminal: UIView
     private let container: UIView
     private let window: UIWindow
@@ -905,7 +386,7 @@ final class KeyboardProbe {
     private var lastChange: CFTimeInterval = 0
     private var samples: [(t: CFTimeInterval, edge: CGFloat, kb: CGFloat?)] = []
 
-    init(surface: TerminalSurface, container: UIView, window: UIWindow) {
+    init(surface: CoreTerminalView, container: UIView, window: UIWindow) {
         self.surface = surface
         self.terminal = surface.view
         self.container = container

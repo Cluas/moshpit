@@ -14,7 +14,7 @@ struct StickyCtrlTests {
 
     /// A coordinator and what it sends.
     private final class Pane {
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         var sent = Data()
         init() { coordinator.onInput = { [unowned self] in self.sent.append($0) } }
         /// What the person types (a key, a character, a commit).
@@ -98,13 +98,13 @@ struct StickyCtrlTests {
 
     @Test("B570: Ctrl-Space is NUL, Ctrl-/ is ^_, Ctrl-? is DEL")
     func foldsTheOtherControlKeys() {
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded([0x20]) == [0x00])
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded([0x2f]) == [0x1f])
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded([0x3f]) == [0x7f])
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded(Array("a".utf8)) == [0x01])
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded(Array("[".utf8)) == [0x1b])
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded(Array("1".utf8)) == Array("1".utf8))
-        #expect(SwiftTerminalView.Coordinator.ctrlFolded(Array("ab".utf8)) == Array("ab".utf8))
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded([0x20]) == [0x00])
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded([0x2f]) == [0x1f])
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded([0x3f]) == [0x7f])
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded(Array("a".utf8)) == [0x01])
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded(Array("[".utf8)) == [0x1b])
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded(Array("1".utf8)) == Array("1".utf8))
+        #expect(CoreTerminalHost.Coordinator.ctrlFolded(Array("ab".utf8)) == Array("ab".utf8))
         let a = Pane()
         let ctrl = StickyCtrl()
         ctrl.arm(a.coordinator)
@@ -129,7 +129,7 @@ struct StickyCtrlTests {
         let surface = TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                                             grid: TerminalGrid(cols: 20, rows: 3))
         let core = try #require(surface as? CoreTerminalView)
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(surface)
         var sent = Data()
         coordinator.onInput = { sent.append($0) }

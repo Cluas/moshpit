@@ -112,7 +112,7 @@ final class SessionHub {
         private(set) var awaitingFirstFrame = false
 
         /// Single-pane data path (non-tmux).
-        @ObservationIgnored let coordinator = SwiftTerminalView.Coordinator()
+        @ObservationIgnored let coordinator = CoreTerminalHost.Coordinator()
         /// The session on the Rust core, made when it first starts
         /// (``startOnRustCore``): the transport methods below hand over to it.
         @ObservationIgnored var rust: RustSessionDriver?
@@ -431,7 +431,7 @@ final class SessionHub {
         /// The terminal backing whichever pane is on screen right now — tmux
         /// resolves the zoomed active pane's; mosh/plain SSH have just the one
         /// coordinator's.
-        private var activeTerminal: TerminalSurface? {
+        private var activeTerminal: CoreTerminalView? {
             if let controller = tmuxController,
                let paneId = controller.snapshot.activePaneId
                     ?? controller.snapshot.activePanes.first?.id {

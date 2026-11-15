@@ -17,7 +17,7 @@ import UIKit
 struct TerminalHostContainerTests {
 
     @MainActor
-    private func makeTerminal(_ grid: TerminalGrid = TerminalGrid(cols: 40, rows: 12)) -> TerminalSurface {
+    private func makeTerminal(_ grid: TerminalGrid = TerminalGrid(cols: 40, rows: 12)) -> CoreTerminalView {
         TerminalSurfaces.make(font: UIFont.monospacedSystemFont(ofSize: 12, weight: .regular), grid: grid)
     }
 
@@ -57,7 +57,7 @@ struct TerminalHostContainerTests {
     @Test("a layout pass alone never writes lastReportedSize")
     @MainActor
     func layoutAloneDoesNotWriteLastReportedSize() {
-        let coordinator = SwiftTerminalView.Coordinator()
+        let coordinator = CoreTerminalHost.Coordinator()
         let container = TerminalHostContainer()
         let terminal = makeTerminal()
         container.host(terminal)

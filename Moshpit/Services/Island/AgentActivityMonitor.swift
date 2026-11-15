@@ -418,17 +418,21 @@ final class AgentActivityMonitor {
 
     static func widget(_ state: AgentIslandValue, at now: Date) -> AgentWidgetState {
         let content = content(state)
+        let items = content.agents.map {
+            AgentWidgetState.Item(id: $0.id, command: $0.command, location: $0.location,
+                                  detail: $0.detail, state: $0.state.rawValue,
+                                  startedAt: $0.startedAt,
+                                  deepLink: AgentDeepLink.string(connectionId: $0.connectionId,
+                                                                 paneId: $0.paneId))
+        }
+        // The widget draws the most urgent agent, its first row, and opens
+        // that one (B594): it used to open the island's headline, which
+        // Switch may have cycled to another agent.
         return AgentWidgetState(
-            items: content.agents.map {
-                AgentWidgetState.Item(id: $0.id, command: $0.command, location: $0.location,
-                                      detail: $0.detail, state: $0.state.rawValue,
-                                      startedAt: $0.startedAt,
-                                      deepLink: AgentDeepLink.string(connectionId: $0.connectionId,
-                                                                     paneId: $0.paneId))
-            },
+            items: items,
             attentionCount: content.attentionCount,
             workingCount: content.workingCount,
-            headlineDeepLink: content.headlineDeepLink,
+            headlineDeepLink: items.first?.deepLink,
             updatedAt: now)
     }
 

@@ -1687,7 +1687,7 @@ impl Controller {
             info.is_attached = true;
         }
         let listed: BTreeSet<String> = sessions.keys().cloned().collect();
-        self.drop_orphaned_group(&listed);
+        let orphan = self.drop_orphaned_group(&listed);
         if self.config.renders_output {
             // Our session is what tmux told US (%session-changed, or our own
             // switch); `session_attached` counts every client, so it only
@@ -1702,6 +1702,15 @@ impl Controller {
             snapshot.sessions = sessions;
             if !keep {
                 snapshot.active_session_id = last_attached.or(first);
+            }
+            if let Some(id) = orphan {
+                // Fix (B582): onto the session left on screen first — tmux
+                // detaches a client whose session is destroyed
+                // (`detach-on-destroy`) — then the group goes.
+                if let Some(next) = self.snapshot.active_session_id.clone() {
+                    self.select_session_now(&next);
+                }
+                self.send(format!("kill-session -t '{id}'"));
             }
         } else {
             self.snap().sessions = sessions;
@@ -2550,7 +2559,11 @@ impl Controller {
         } else {
             format!(" -n {}", name_argument(trimmed))
         };
-        let target_part = session.map(|s| format!(" -t {s}:")).unwrap_or_default();
+        // Fix (B580): made in another session (the Home tree's row), the
+        // window became that session's current one: a desktop on it was
+        // switched to it. `-d` makes it without; the phone then picks it in
+        // its own view of that session (its group, B459), as a tap does.
+        let target_part = session.map(|s| format!(" -d -t {s}:")).unwrap_or_default();
         self.pending_window_focus = None;
         self.send_command(
             format!("new-window{target_part} -P -F '#{{window_id}}'{name_part}"),
@@ -2697,15 +2710,29 @@ impl Controller {
             self.finish_input();
             return;
         }
-        self.send_surfacing_errors(format!("kill-session -t {session_id}"), "kill session");
-        // B459: our group would keep the windows alive; it goes with it, and
-        // tmux moves this client on.
-        if let Some(group) = self
+        // B459: our group would keep the windows alive; it goes with it.
+        let group = self
             .group
             .current
-            .take_if(|group| group.session == session_id)
-            && let Some(id) = group.id
+            .take_if(|group| group.session == session_id);
+        // Fix (B582): tmux detaches a client whose session is destroyed
+        // (`detach-on-destroy`, on by default): killing the session on
+        // screen ended control mode. The phone moves first, to the session
+        // it falls back to (into a group of it), and the kill follows.
+        if self.config.renders_output
+            && self.snapshot.active_session_id.as_deref() == Some(session_id)
+            && let Some(next) = self
+                .snapshot
+                .sessions
+                .keys()
+                .filter(|id| id.as_str() != session_id)
+                .min_by(|a, b| id_cmp(a, b))
+                .cloned()
         {
+            self.select_session_now(&next);
+        }
+        self.send_surfacing_errors(format!("kill-session -t {session_id}"), "kill session");
+        if let Some(id) = group.and_then(|group| group.id) {
             self.send(format!("kill-session -t '{id}'"));
         }
         let windows: Vec<String> = self

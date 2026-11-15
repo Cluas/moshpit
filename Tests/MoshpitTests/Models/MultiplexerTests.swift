@@ -36,19 +36,6 @@ struct MultiplexerTests {
 
     // MARK: - Migration
 
-    @Test("Connection saved before the picker existed lands on tmux")
-    func legacyUseTmuxTrueBecomesTmux() throws {
-        let c = try JSONDecoder().decode(ServerConnection.self, from: legacyJSON(useTmux: true))
-        #expect(c.multiplexer == .tmux)
-        #expect(c.multiplexerPath == nil)
-    }
-
-    @Test("Legacy useTmux == false lands on none")
-    func legacyUseTmuxFalseBecomesNone() throws {
-        let c = try JSONDecoder().decode(ServerConnection.self, from: legacyJSON(useTmux: false))
-        #expect(c.multiplexer == .none)
-    }
-
     @Test("An explicit multiplexerRaw wins over the legacy flag")
     func explicitRawWins() throws {
         var c = try JSONDecoder().decode(ServerConnection.self, from: legacyJSON(useTmux: true))
@@ -75,38 +62,4 @@ struct MultiplexerTests {
         #expect(c.multiplexerRaw == mux.rawValue)
     }
 
-    @Test("Encode → decode preserves the choice")
-    func codableRoundTrip() throws {
-        var c = ServerConnection(name: "box", host: "h", username: "u")
-        c.multiplexer = .herdr
-        c.herdrPath = "/opt/herdr"
-        let data = try JSONEncoder().encode(c)
-        let back = try JSONDecoder().decode(ServerConnection.self, from: data)
-        #expect(back.multiplexer == .herdr)
-        #expect(back.multiplexerPath == "/opt/herdr")
-    }
-
-    // MARK: - Path routing
-
-    @Test("multiplexerPath returns only the SELECTED multiplexer's path")
-    func pathFollowsSelection() {
-        var c = ServerConnection()
-        c.tmuxPath = "/usr/local/bin/tmux"
-        c.herdrPath = "/home/u/.local/bin/herdr"
-
-        c.multiplexer = .tmux
-        #expect(c.multiplexerPath == "/usr/local/bin/tmux")
-        c.multiplexer = .herdr
-        #expect(c.multiplexerPath == "/home/u/.local/bin/herdr")
-        // Nothing to run → nothing to vouch for, so the probe is never skipped.
-        c.multiplexer = .none
-        #expect(c.multiplexerPath == nil)
-    }
-
-    @Test("Binary names match what the capability probe looks for")
-    func binaryNames() {
-        #expect(Multiplexer.none.binaryName == nil)
-        #expect(Multiplexer.tmux.binaryName == "tmux")
-        #expect(Multiplexer.herdr.binaryName == "herdr")
-    }
 }

@@ -24,11 +24,11 @@ struct StageSwapTests {
     /// value, names a new terminal.
     final class RemintingController: PaneTerminalSource {
         let panes = TerminalNSHTests.paneController()
-        var reminted: TerminalSurface?
-        func surface(for paneId: String) -> TerminalSurface {
+        var reminted: CoreTerminalView?
+        func surface(for paneId: String) -> CoreTerminalView {
             reminted ?? panes.surface(for: paneId)
         }
-        func coordinator(for paneId: String) -> SwiftTerminalView.Coordinator? {
+        func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator? {
             panes.coordinator(for: paneId)
         }
     }

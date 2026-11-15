@@ -9,7 +9,8 @@ import MoshpitKit
 /// prompt rings: only the 0→1 edge does. The app and the notification service
 /// extension share it, and the app — the one of the two that can see a prompt
 /// being answered — has to take answered prompts out of it, whoever put them
-/// there.
+/// there. What it decides is the core's (crates/agents `tests.rs`); here, the
+/// Swift side: the island asked for once, and a launch's leftovers ended.
 @Suite("Agent standing set", .serialized)
 @MainActor
 struct AgentStandingTests {
@@ -143,13 +144,6 @@ struct AgentStandingTests {
                   command: "claude", title: "Bash: npm test")
     }
 
-    /// What the notification service extension records when a push opens.
-    private func pushed(_ bench: Bench, pane: String, sentAt: Int) -> Bool {
-        bench.file.noteStanding(conn: bench.conn, entry: .init(
-            pane: pane, agent: "claude", title: "Bash: npm test",
-            since: sentAt, recordedAt: Date()))
-    }
-
     /// The flow the push exists for: away from the desk, the push rings; the
     /// user opens the app and answers inside the announce grace (so the app
     /// never announced it itself); the agent carries on and asks again a few
@@ -163,53 +157,6 @@ struct AgentStandingTests {
         let bench = try bench()
         defer { bench.finish() }
         #expect(bench.island.leftoversEnded == 1)
-    }
-
-    @Test("a pushed prompt answered while the app polls leaves the set: the next question rings")
-    func answeredPushedPromptLeaves() throws {
-        let bench = try bench()
-        defer { bench.finish() }
-        let asked: TimeInterval = 1_790_000_000
-
-        #expect(pushed(bench, pane: "%1", sentAt: Int(asked) + 31), "the first push is the edge")
-        bench.mux.poll(["%1": hook("attention", since: asked)])
-        #expect(bench.file.standing(conn: bench.conn).map(\.pane) == ["%1"])
-
-        // Answered in the app.
-        bench.mux.poll(["%1": hook("working", since: asked + 40)])
-        #expect(bench.file.standing(conn: bench.conn).isEmpty,
-                "the answered prompt still stands: \(bench.file.standing(conn: bench.conn).map(\.pane))")
-
-        // The same turn's next question, pushed while the app is away again.
-        #expect(pushed(bench, pane: "%1", sentAt: Int(asked) + 240),
-                "the next question was no edge: it would ring nobody")
-    }
-
-    @Test("answering one of two waiting prompts leaves the other standing")
-    func onlyTheAnsweredOneLeaves() throws {
-        let bench = try bench()
-        defer { bench.finish() }
-        let asked: TimeInterval = 1_790_000_000
-
-        #expect(pushed(bench, pane: "%1", sentAt: Int(asked) + 31))
-        #expect(!pushed(bench, pane: "%2", sentAt: Int(asked) + 35))
-        bench.mux.poll(["%1": hook("working", since: asked + 50),
-                        "%2": hook("attention", since: asked + 4)])
-        #expect(bench.file.standing(conn: bench.conn).map(\.pane) == ["%2"])
-    }
-
-    /// A poll reply that sat in the socket while the app was suspended says
-    /// what the pane was doing BEFORE the question was asked; it answers
-    /// nothing.
-    @Test("a poll older than the question leaves it standing")
-    func stalePollAnswersNothing() throws {
-        let bench = try bench()
-        defer { bench.finish() }
-        let asked: TimeInterval = 1_790_000_000
-
-        #expect(pushed(bench, pane: "%1", sentAt: Int(asked) + 31))
-        bench.mux.poll(["%1": hook("working", since: asked - 120)])
-        #expect(bench.file.standing(conn: bench.conn).map(\.pane) == ["%1"])
     }
 
     /// Every sync sent the island and the widget what they already had, and
@@ -240,99 +187,4 @@ struct AgentStandingTests {
         #expect(bench.island.updates.count == 1)
     }
 
-    // MARK: - A long finish rings once
-
-    /// A long turn's finish reaches a phone twice when the app is awake: the
-    /// host pushes it the moment the turn stops, and the app's poll sees it a
-    /// second later. Both rang — two chimes for one build.
-    @Test("a long turn's finish the push already rang is a silent card here")
-    func pushedFinishRingsOnce() throws {
-        let bench = try bench(notifications: true)
-        defer { bench.finish() }
-        let ended: TimeInterval = 1_790_000_600
-
-        // The push landed first; the extension rang it.
-        #expect(bench.finishes.noteRing(conn: bench.conn, pane: "%1", endedAt: Int(ended) + 1))
-
-        bench.mux.poll(["%1": hook("working", since: ended - 600)])
-        bench.mux.poll(["%1": hook("done", since: ended)])
-        let done = try #require(bench.cards.added.last { $0.identifier.hasPrefix("moshpit.done.") })
-        #expect(done.content.sound == nil, "one turn's finish rang twice")
-        #expect(done.content.interruptionLevel == .passive)
-        #expect(done.content.title.contains("10"), "the card still says how long it ran: \(done.content.title)")
-    }
-
-    @Test("a long finish nobody rang rings here, and the push after it doesn't")
-    func localFinishRingsFirst() throws {
-        let bench = try bench(notifications: true)
-        defer { bench.finish() }
-        let ended: TimeInterval = 1_790_000_600
-
-        bench.mux.poll(["%1": hook("working", since: ended - 600)])
-        bench.mux.poll(["%1": hook("done", since: ended)])
-        let done = try #require(bench.cards.added.last { $0.identifier.hasPrefix("moshpit.done.") })
-        #expect(done.content.sound != nil)
-        #expect(done.content.interruptionLevel == .active)
-        // The extension, a moment later, for the same turn.
-        #expect(!bench.finishes.noteRing(conn: bench.conn, pane: "%1", endedAt: Int(ended) + 1))
-        // A later long turn on the same pane rings again.
-        #expect(bench.finishes.noteRing(conn: bench.conn, pane: "%1", endedAt: Int(ended) + 900))
-    }
-
-    // MARK: - Disconnecting
-
-    /// The agents on a host the user disconnects from are still waiting. The
-    /// card saying so was withdrawn with the panes, as if every prompt had
-    /// been answered — the lock screen's only reminder, gone.
-    @Test("disconnecting leaves a waiting prompt's card up; answering it, seen later, takes it down")
-    func disconnectKeepsTheCard() throws {
-        // Recent: an announced record older than a day is not read back.
-        let asked = Date().timeIntervalSince1970.rounded() - 120
-        let bench = try bench(notifications: true, announced: ["%1": asked])
-        defer { bench.finish() }
-        // Announced in an earlier session, still standing.
-        _ = bench.file.noteStanding(conn: bench.conn, entry: .init(
-            pane: "%1", agent: "claude", title: nil, location: "devbox",
-            since: Int(asked), recordedAt: Date()))
-        bench.mux.poll(["%1": hook("attention", since: asked)])
-        let card = "moshpit.attention.\(bench.conn)"
-
-        bench.monitor.untrack(connectionId: bench.connection.id, keepWaitingCards: true)
-        #expect(!bench.cards.withdrawn.contains(card), "disconnecting withdrew a prompt still waiting")
-        #expect(bench.file.standing(conn: bench.conn).map(\.pane) == ["%1"])
-
-        // Connected again, the prompt answered meanwhile: now it goes.
-        bench.monitor.track(connection: bench.connection, controller: bench.mux)
-        bench.mux.poll(["%1": hook("attention", since: asked)])
-        bench.mux.poll(["%1": hook("working", since: asked + 300)])
-        #expect(bench.cards.withdrawn.contains(card))
-        #expect(bench.file.standing(conn: bench.conn).isEmpty)
-    }
-
-    /// Past the standing set's fifteen minutes only the app remembers it put
-    /// the card up; after a relaunch or a disconnect it forgot, and an
-    /// answered prompt's card stayed on the lock screen for good.
-    @Test("a card announced before a relaunch is withdrawn once its prompt is answered")
-    func relaunchedCardIsWithdrawn() throws {
-        // Recent: an announced record older than a day is not read back.
-        let asked = Date().timeIntervalSince1970.rounded() - 120
-        let bench = try bench(notifications: true, announced: ["%1": asked])
-        defer { bench.finish() }
-        bench.mux.poll(["%1": hook("attention", since: asked)])
-        bench.mux.poll(["%1": hook("working", since: asked + 3600)])
-        #expect(bench.cards.withdrawn.contains("moshpit.attention.\(bench.conn)"))
-    }
-
-    @Test("deleting a connection takes its cards with it")
-    func deleteWithdraws() throws {
-        // Recent: an announced record older than a day is not read back.
-        let asked = Date().timeIntervalSince1970.rounded() - 120
-        let bench = try bench(notifications: true, announced: ["%1": asked])
-        defer { bench.finish() }
-        _ = bench.file.noteStanding(conn: bench.conn, entry: .init(
-            pane: "%1", agent: "claude", since: Int(asked), recordedAt: Date()))
-        bench.mux.poll(["%1": hook("attention", since: asked)])
-        bench.monitor.untrack(connectionId: bench.connection.id)
-        #expect(bench.cards.withdrawn.contains("moshpit.attention.\(bench.conn)"))
-    }
 }

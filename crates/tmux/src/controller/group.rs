@@ -333,6 +333,20 @@ impl Controller {
             }
             None => self.register_as_moshpit(),
         }
+        // Fix (B581): a session picked while the check was out (a tap on
+        // the Home tree as the phone connects) went into its own group
+        // then — even S again, after another; making one now moved the
+        // phone back, or made a second. The pick stands.
+        let picked = self.snapshot.active_session_id.as_deref() != Some(session)
+            || self.group.current.is_some();
+        if picked {
+            log::info!(
+                "tmux: another session was picked while the attach asked: no group of {session} (B581)"
+            );
+            self.group.deciding = false;
+            self.apply_pending_restore_if_ready();
+            return;
+        }
         if self.group.foreign.contains(session) {
             log::info!(
                 "tmux: a control client that isn't Moshpit's is on {session}: the phone stays on the session, no group (B459; B457 guards the restore)"
@@ -477,20 +491,17 @@ impl Controller {
     }
 
     /// The session listing found our group's session gone: the group alone
-    /// would keep its windows alive. It goes too; tmux moves this client on.
-    pub(super) fn drop_orphaned_group(&mut self, listed: &BTreeSet<String>) {
-        let Some(group) = self.group.current.clone() else {
-            return;
-        };
-        let Some(id) = group.id else {
-            return;
-        };
+    /// would keep its windows alive. It goes too — its id, for the caller
+    /// to kill once this client has moved off it (B582).
+    pub(super) fn drop_orphaned_group(&mut self, listed: &BTreeSet<String>) -> Option<String> {
+        let group = self.group.current.clone()?;
+        let id = group.id?;
         if listed.contains(&group.session) || !self.group.group_ids.contains(&id) {
-            return;
+            return None;
         }
         self.group.current = None;
         self.group.entering = false;
         self.group.landing = false;
-        self.send(format!("kill-session -t '{id}'"));
+        Some(id)
     }
 }

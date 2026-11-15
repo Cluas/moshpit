@@ -2,6 +2,7 @@ import Foundation
 import MoshpitFFI
 import MoshpitKit
 import Testing
+import UIKit
 @testable import Moshpit
 
 /// The app's stores on the Rust store (Services/Rust/RustStores.swift), on
@@ -184,6 +185,25 @@ struct RustStoreAdapterTests {
         bar.restoreDefaults()
         bar.remove(id: Self.ids[1])
         #expect(Self.canonical(suite.contents) == before)
+    }
+
+    /// An early "unavailable" (a flag read once, at `MoshpitApp.init`)
+    /// corrects itself the next time the app becomes active: with no
+    /// sentinel yet, nothing could be trusted until a lock and unlock.
+    @Test("the protected-data flag asks the system again each time the app becomes active")
+    @MainActor
+    func protectedDataFlagRereadsOnActivation() {
+        let center = NotificationCenter()
+        var system = false
+        let flag = ProtectedDataFlag(center: center, read: { system })
+        #expect(!flag.isAvailable)
+        system = true
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        #expect(flag.isAvailable, "the early read stood")
+        center.post(name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        #expect(!flag.isAvailable, "locked")
+        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        #expect(flag.isAvailable, "unlocked")
     }
 
     // MARK: - Pairings

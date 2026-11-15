@@ -365,6 +365,62 @@ fn the_island_says_where_as_home_does_and_drops_a_title_that_only_names_the_agen
     }
 }
 
+// MARK: - Watched whatever the switches say
+
+/// B590: a connection tracked while notifications and the Live Activity
+/// were both off was dropped by the machine (B538 fixed only the app's
+/// side, which now always tracks): turning either on later did nothing for
+/// it until it reconnected — no island, no "needs you".
+#[test]
+fn a_connection_tracked_with_both_switches_off_is_watched_once_one_is_on() {
+    let off = Settings { notifications: false, live_activity: false, ..Settings::default() };
+    let mut bench = Bench::new(off, &[]);
+    assert!(islands(&bench.poll("%1", "working", T0, T0 + 1.0)) == 0, "both off: no island");
+    bench.monitor.set_settings(Settings::default());
+    assert!(
+        bench.monitor.take_effects().contains(&Effect::RequestAuthorization),
+        "notifications on: ask to post"
+    );
+    let effects = bench.poll("%1", "attention", T0 + 10.0, T0 + 11.0);
+    assert!(islands(&effects) >= 1, "the island once it's on: {effects:?}");
+    bench.monitor.sweep(None, T0 + 42.0);
+    let effects = bench.monitor.take_effects();
+    assert!(
+        posts(&effects).iter().any(|c| c.id.starts_with(ATTENTION_CARD)),
+        "a needs-you once notifications are on: {effects:?}"
+    );
+}
+
+/// B593: a second question on a pane, asked within one poll of the first
+/// being answered (a quick approved tool, then the next permission
+/// prompt), showed as the same state with a newer `since`. The episode kept
+/// the first one's date, so the second was never announced — only a
+/// paired phone heard it, through the push. A newer stamp is a new episode.
+#[test]
+fn a_second_question_inside_one_poll_is_announced_too() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    // Polled every 2 s, as the sweep polls tmux: what each poll and sweep
+    // posted, until `to`, the stamp dated `since`.
+    let mut t = 1.0;
+    let mut run = |bench: &mut Bench, since: f64, to: f64| {
+        let mut cards = 0;
+        while t <= to {
+            let mut effects = bench.poll("%1", "attention", T0 + since, T0 + t);
+            bench.monitor.sweep(None, T0 + t);
+            effects.extend(bench.monitor.take_effects());
+            cards += posts(&effects).iter().filter(|c| c.id.starts_with(ATTENTION_CARD)).count();
+            t += 2.0;
+        }
+        cards
+    };
+    assert_eq!(run(&mut bench, 0.0, 39.0), 1, "the first question");
+    // Answered, a tool ran for a second, and it asks again: the next poll
+    // sees attention again, dated later.
+    assert_eq!(run(&mut bench, 40.0, 75.0), 1, "the second question went unannounced");
+    // The same stamp again is the same question: nothing more.
+    assert_eq!(run(&mut bench, 40.0, 120.0), 0);
+}
+
 // MARK: - A long finish rings once
 
 #[test]
@@ -510,6 +566,42 @@ fn looking_at_a_prompt_acknowledges_it() {
     bench.monitor.sweep(Some(&visible), T0 + 33.0);
     assert!(withdrawn(&bench.monitor.take_effects()).contains(&format!("moshpit.attention.{CONN}").as_str()));
     assert!(bench.standing_panes(T0 + 33.0).is_empty());
+}
+
+/// B591: a prompt whose grace ran out while its pane was on screen was
+/// posted, banner and sound, and withdrawn by the same sweep: a "needs
+/// you" rang for the question the person was looking at. Seen on screen,
+/// it's acknowledged, and not announced later either.
+#[test]
+fn a_prompt_on_screen_when_its_grace_ends_rings_nothing() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let visible = Visible { conn: CONN.into(), pane: Some("%1".into()) };
+    bench.monitor.sweep(Some(&visible), T0);
+    bench.monitor.take_effects();
+    bench.poll("%1", "attention", T0, T0 + 1.0);
+    bench.monitor.sweep(Some(&visible), T0 + 31.0);
+    let effects = bench.monitor.take_effects();
+    assert!(
+        posts(&effects).iter().all(|c| !c.id.starts_with(ATTENTION_CARD)),
+        "a banner for the prompt on screen: {effects:?}"
+    );
+    assert!(bench.standing_panes(T0 + 31.0).is_empty());
+    // Looking away, the same question isn't announced after all.
+    bench.monitor.sweep(None, T0 + 40.0);
+    bench.monitor.sweep(None, T0 + 80.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty());
+    // A copy the push recorded for the prompt on screen is seen too.
+    let mut pushed = Bench::new(Settings::default(), &[]);
+    pushed.monitor.sweep(Some(&visible), T0);
+    assert!(pushed.pushed("%1", T0 as i64, T0 + 1.0));
+    pushed.poll("%1", "attention", T0, T0 + 1.0);
+    pushed.monitor.sweep(Some(&visible), T0 + 31.0);
+    assert!(pushed.standing_panes(T0 + 31.0).is_empty(), "the pushed copy stood");
+    assert!(withdrawn(&pushed.monitor.take_effects()).contains(&format!("{ATTENTION_CARD}{CONN}").as_str()));
+    // Another pane's question still is.
+    bench.poll("%2", "attention", T0 + 90.0, T0 + 91.0);
+    bench.monitor.sweep(Some(&visible), T0 + 122.0);
+    assert!(posts(&bench.monitor.take_effects()).iter().any(|c| c.id.starts_with(ATTENTION_CARD)));
 }
 
 // MARK: - The output heuristic
@@ -798,6 +890,35 @@ fn a_herdr_question_after_the_pane_left_attention_is_announced_across_a_reconnec
 const TMUX: f64 = crate::harness::POLL_INTERVAL;
 /// herdr's poll once nothing has changed, and while its push channel is up
 /// (`crates/herdr` control.rs).
+/// B592: herdr's stamps carry no `since`, so the app dated a question by
+/// the phone's clock while the push named the host's time. The app's card
+/// for a question the push had already rung counted as a new one and rang
+/// again; and a question answered inside the grace (no card of the app's)
+/// left the push's entry, and its card, standing for good — the next
+/// question on that host came in silent. The pushed entry dates the
+/// question; a stamp out of attention answers it.
+#[test]
+fn a_herdr_question_the_push_rang_rings_once_and_its_answer_takes_the_card() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    // The host asked at T0 - 5 (its clock); the push recorded it.
+    assert!(bench.pushed("%1", (T0 - 5.0) as i64, T0));
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 1.0, HERDR_IDLE);
+    bench.monitor.sweep(None, T0 + 32.0);
+    let effects = bench.monitor.take_effects();
+    let card = posts(&effects).into_iter().find(|c| c.id.starts_with(ATTENTION_CARD)).expect("the app's card");
+    assert!(!card.text.sound, "the push rang this question already: {card:?}");
+
+    let mut bench = Bench::new(Settings::default(), &[]);
+    assert!(bench.pushed("%1", (T0 - 5.0) as i64, T0));
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 1.0, HERDR_IDLE);
+    bench.monitor.take_effects();
+    // Answered at the desk inside the grace.
+    bench.monitor.hooks(CONN, vec![herdr("%1", "working")], T0 + 9.0, HERDR_IDLE);
+    let effects = bench.monitor.take_effects();
+    assert!(bench.standing_panes(T0 + 9.0).is_empty(), "the pushed entry stood");
+    assert!(withdrawn(&effects).contains(&format!("{ATTENTION_CARD}{CONN}").as_str()), "{effects:?}");
+}
+
 const HERDR_IDLE: f64 = 8.0;
 const HERDR_PUSHED: f64 = 45.0;
 

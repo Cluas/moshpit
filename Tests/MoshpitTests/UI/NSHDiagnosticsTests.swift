@@ -238,7 +238,9 @@ struct NSHDiagnosticsTests {
         let record = HomeRecord(message: #"{"connections":[],"op":"home","version":"v1"}"#)
         model.attach(surface, current: record)
         let counts = try #require(surface.counts)
-        #expect(counts.posted == 1)
+        // The record, and whether Home is seen (`{"op": "visible"}`, the
+        // companion's: it talks only while Home shows).
+        #expect(counts.posted == 2)
         #expect(model.record == record)
     }
 }

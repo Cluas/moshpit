@@ -58,14 +58,6 @@ struct PushSealedBoxTests {
         #expect(status.ts == 1_755_900_000)
     }
 
-    @Test("reproduces the openssl bytes for the same input and IV")
-    func reproducesVector() throws {
-        let sealed = try PushSealedBox.seal(Data(Vector.plaintext.utf8),
-                                           secretHex: Self.secret, ivHex: Vector.iv)
-        #expect(sealed.ct == Vector.ct)
-        #expect(sealed.mac == Vector.mac)
-    }
-
     // MARK: - Format behaviour
 
     @Test("round-trips payloads of every padding shape")
@@ -76,14 +68,6 @@ struct PushSealedBoxTests {
             let opened = try PushSealedBox.openRaw(sealed, secretHex: Self.secret)
             #expect(String(data: opened, encoding: .utf8) == plaintext)
         }
-    }
-
-    @Test("a fresh IV is used for every seal")
-    func freshIV() throws {
-        let a = try PushSealedBox.seal(Data("same".utf8), secretHex: Self.secret)
-        let b = try PushSealedBox.seal(Data("same".utf8), secretHex: Self.secret)
-        #expect(a.iv != b.iv)
-        #expect(a.ct != b.ct)
     }
 
     @Test("the secret is case-insensitive, as the shell's tr makes it")

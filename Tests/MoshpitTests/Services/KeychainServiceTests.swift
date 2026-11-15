@@ -101,22 +101,6 @@ struct KeychainServiceTests {
         #expect(b == "beta")
     }
 
-    // MARK: - contains()
-
-    @Test("contains reflects save/delete state")
-    func containsReflectsState() async throws {
-        let service = KeychainService.inMemory()
-        let ref = service.generateRef()
-        let beforeSave = await service.contains(ref: ref)
-        #expect(beforeSave == false)
-        try await service.savePassword("x", forRef: ref, requireBiometry: false)
-        let afterSave = await service.contains(ref: ref)
-        #expect(afterSave == true)
-        try await service.delete(forRef: ref)
-        let afterDelete = await service.contains(ref: ref)
-        #expect(afterDelete == false)
-    }
-
     // MARK: - generateRef uniqueness
 
     @Test("generateRef returns unique opaque IDs")

@@ -1,10 +1,10 @@
 import MoshpitFFI
 import UIKit
 
-/// The core's view as the app's terminal (``TerminalSurface``): what the
+/// The core's view as the app's terminal (``CoreTerminalView``): what the
 /// session's coordinator, the tmux controllers and the hub ask of a
 /// terminal, answered by the core.
-extension CoreTerminalView: TerminalSurface {
+extension CoreTerminalView {
     var view: UIView { self }
 
     // MARK: Bytes

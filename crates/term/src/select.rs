@@ -87,6 +87,32 @@ impl Selection {
         self.head = (to, right_half);
     }
 
+    /// Its ends, in order: where it began, where it reaches, and the two of
+    /// the span a long press kept.
+    pub fn ends(&self) -> Vec<Point> {
+        let mut ends = vec![self.anchor.0, self.head.0];
+        if let Some((a, b)) = self.span {
+            ends.extend([a.0, b.0]);
+        }
+        ends
+    }
+
+    /// The same selection with its ends at `ends` (in [`Selection::ends`]'
+    /// order), each keeping the half of its cell it was in: where a reflow
+    /// put its text (B572).
+    pub fn moved(&self, ends: &[Point]) -> Selection {
+        let mut moved = self.clone();
+        if let [anchor, head, rest @ ..] = ends {
+            moved.anchor.0 = *anchor;
+            moved.head.0 = *head;
+            if let (Some(span), [a, b]) = (moved.span.as_mut(), rest) {
+                span.0.0 = *a;
+                span.1.0 = *b;
+            }
+        }
+        moved
+    }
+
     /// Keeps what is selected now whole from here on: a finger resting on
     /// it (a long press reports its small moves) leaves it as it is, and one
     /// that slides past either end grows the selection from the far end.

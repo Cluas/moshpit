@@ -22,7 +22,7 @@ enum TerminalFocusPolicy {
     case resign
 }
 
-/// Hosts a terminal (a ``TerminalSurface``'s view) and owns the ONLY code
+/// Hosts a terminal (a ``CoreTerminalView``'s view) and owns the ONLY code
 /// allowed to set its frame.
 ///
 /// ### Why the terminal's frame is managed manually
@@ -38,7 +38,7 @@ enum TerminalFocusPolicy {
 /// notification handler it *captures the garble* (see git history).
 ///
 /// So instead of masking the garble, prevent it: while a keyboard transition
-/// is in flight (``SwiftTerminalView/Coordinator/lockFrame(for:)``) the
+/// is in flight (``CoreTerminalHost/Coordinator/lockFrame(for:)``) the
 /// terminal keeps its pre-transition frame — content stays pixel-stable,
 /// merely clipped by this container — and when the keyboard settles the
 /// terminal is resized ONCE to the final bounds. One resize, one reflow, one
@@ -47,7 +47,7 @@ final class TerminalHostContainer: UIView {
     /// The hosted terminal, whichever view draws it. Weak: terminals are
     /// persistent objects owned by the session (tmux panes outlive any single
     /// host container).
-    private(set) weak var surface: TerminalSurface?
+    private(set) weak var surface: CoreTerminalView?
 
     /// The hosted terminal's view.
     var hostedView: UIView? { surface?.view }
@@ -113,7 +113,7 @@ final class TerminalHostContainer: UIView {
     /// keyboard cover stays up until it has.
     var resizePending: Bool { frameLocked || deferredResize != nil }
 
-    func host(_ surface: TerminalSurface) {
+    func host(_ surface: CoreTerminalView) {
         let terminal = surface.view
         guard terminal.superview !== self else { return }
         self.surface = surface
@@ -141,7 +141,7 @@ final class TerminalHostContainer: UIView {
     /// when the grid *changes* (`processSizeChange` returns early otherwise), so
     /// a terminal that was minted at the right grid never reports at all — and
     /// the owner is left believing whatever it estimated before connecting.
-    /// Installed by the ``SwiftTerminalView/Coordinator`` that owns this
+    /// Installed by the ``CoreTerminalHost/Coordinator`` that owns this
     /// container.
     var onTerminalLaidOut: ((UIView) -> Void)?
 
@@ -167,7 +167,7 @@ final class TerminalHostContainer: UIView {
     }
 }
 
-/// SwiftUI host of the session's terminal (a ``TerminalSurface``: the
+/// SwiftUI host of the session's terminal (a ``CoreTerminalView``: the
 /// core's view, ``CoreTerminalView``).
 ///
 /// ### Persistence contract (DO NOT BREAK)
@@ -185,7 +185,7 @@ final class TerminalHostContainer: UIView {
 /// view holds the coordinator instance (e.g. as ``@State``) and calls
 /// ``Coordinator/feed(data:)`` whenever new output arrives from SSH or the
 /// tmux control client.
-struct SwiftTerminalView: UIViewRepresentable {
+struct CoreTerminalHost: UIViewRepresentable {
     /// Active theme. Re-applied on every `updateUIView` (cheap, idempotent).
     var theme: TerminalTheme
 
@@ -272,7 +272,7 @@ struct SwiftTerminalView: UIViewRepresentable {
     /// forever.
     @MainActor
     static func mintOwnedSurface(coordinator: Coordinator, fontName: String,
-                                 fontSize: Double) -> TerminalSurface {
+                                 fontSize: Double) -> CoreTerminalView {
         if let existing = coordinator.surface {
             coordinator.attach(existing)   // idempotent
             return existing
@@ -302,7 +302,7 @@ struct SwiftTerminalView: UIViewRepresentable {
     /// back if something stole it — not from its own find bar), leave it,
     /// or give it up.
     @MainActor
-    static func applyFocus(_ policy: TerminalFocusPolicy, to surface: TerminalSurface) {
+    static func applyFocus(_ policy: TerminalFocusPolicy, to surface: CoreTerminalView) {
         let view = surface.view
         switch policy {
         case .take:
@@ -323,7 +323,7 @@ struct SwiftTerminalView: UIViewRepresentable {
 
     // MARK: - Coordinator
 
-    /// The session's terminal host: owns its terminal (a ``TerminalSurface``,
+    /// The session's terminal host: owns its terminal (a ``CoreTerminalView``,
     /// whichever view draws it), owns the data-input path (``feed(data:)``),
     /// routes what the terminal and its gestures ask for (input upstream,
     /// size changes, scrolling, clicks, pane switches) to the closures its
@@ -346,7 +346,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// continue while unmounted), so a remount re-parents a fully
         /// painted, up-to-date screen. A tmux pane's coordinator is owned by
         /// its controller, and the pane's terminal with it.
-        private(set) var surface: TerminalSurface?
+        private(set) var surface: CoreTerminalView?
 
         /// Output that arrived before the terminal attached (e.g. mosh's
         /// first screen diffs land within ~50ms, before `makeUIView` runs).
@@ -408,7 +408,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         var onGround: (() -> Void)?
 
         /// A mark fed with ``feed(mark:)`` is due: every byte fed before it
-        /// is on screen, none after it is (``TerminalSurface``).
+        /// is on screen, none after it is (``CoreTerminalView``).
         var onMark: ((TerminalMark) -> Void)?
 
         /// Set for tmux panes: scroll requests (swipe / thumb) drive tmux
@@ -457,6 +457,9 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// (``TerminalSwipe``); nil: a lift switches, as ``onSwitch`` does.
         var onSwipe: ((TerminalSwipe) -> Void)?
 
+        /// The NSH stage's pane overview (VoiceOver's Show all panes).
+        var onShowAll: (() -> Void)?
+
         /// Set for tmux panes: a tap asked for the cursor to move to a cell, and
         /// the controller forwards a click to the pane's program when that
         /// program wants the mouse. nil for a plain shell / local terminal,
@@ -485,7 +488,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// `body` with the terminal, on the main actor (every caller is on the
         /// main thread; the coordinator itself predates the annotations).
         @discardableResult
-        func withSurface<R>(_ body: @MainActor (TerminalSurface) -> R) -> R? {
+        func withSurface<R>(_ body: @MainActor (CoreTerminalView) -> R) -> R? {
             guard let surface else { return nil }
             return MainActor.assumeIsolated { body(surface) }
         }
@@ -817,7 +820,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         // MARK: Keyboard-transition frame lock
 
         /// The container whose layout we may freeze. Set by whichever host
-        /// embeds the terminal (`SwiftTerminalView.makeUIView` /
+        /// embeds the terminal (`CoreTerminalHost.makeUIView` /
         /// `PaneTerminalHost.makeUIView`). Assigning it also wires
         /// ``onGridReport``.
         weak var hostContainer: TerminalHostContainer? {
@@ -1157,7 +1160,7 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// before it, in order. Idempotent: a remount re-wires the same one.
         /// The representable and the NSH stage attach the plain path's; the
         /// tmux controllers attach each pane's when they mint it.
-        func attach(_ surface: TerminalSurface) {
+        func attach(_ surface: CoreTerminalView) {
             let isNew = self.surface !== surface
             self.surface = surface
             MainActor.assumeIsolated {
@@ -1267,6 +1270,15 @@ struct SwiftTerminalView: UIViewRepresentable {
         /// input box) is where local cells most often diverge — "the text I
         /// sent is still sitting in the input bar".
         var onReturnSend: (() -> Void)?
+
+        /// A bar key while an input method composes (B573): Esc takes the
+        /// composition away unsent (leaving vim's insert mode with pinyin
+        /// half typed inserts nothing), any other key commits it first, so
+        /// the remote gets the text, then the key. Whether there was one.
+        @discardableResult
+        func endComposition(cancel: Bool) -> Bool {
+            withSurface { $0.endComposition(cancel: cancel) } ?? false
+        }
 
         /// What the person typed — a key, a character, an input method's
         /// commit — as the terminal encoded it: an armed sticky Ctrl takes it
@@ -1434,64 +1446,64 @@ struct SwiftTerminalView: UIViewRepresentable {
 
 /// The terminal's events, routed as the session wants them.
 @MainActor
-extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
-    func surface(_ surface: TerminalSurface, send data: Data) {
+extension CoreTerminalHost.Coordinator: CoreTerminalViewDelegate {
+    func surface(_ surface: CoreTerminalView, send data: Data) {
         sendInput(ArraySlice([UInt8](data)))
     }
 
-    func surface(_ surface: TerminalSurface, typed data: Data) {
+    func surface(_ surface: CoreTerminalView, typed data: Data) {
         sendTyped(ArraySlice([UInt8](data)))
     }
 
-    func surface(_ surface: TerminalSurface, sizeChanged cols: Int, rows: Int) {
+    func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int) {
         gridChanged(cols: cols, rows: rows)
     }
 
-    func surface(_ surface: TerminalSurface, titleChanged title: String) {
+    func surface(_ surface: CoreTerminalView, titleChanged title: String) {
         onTitleChange?(title)
     }
 
-    func surface(_ surface: TerminalSurface, directoryChanged directory: String?) {
+    func surface(_ surface: CoreTerminalView, directoryChanged directory: String?) {
         onHostDirectoryChange?(directory)
     }
 
-    func surfaceBell(_ surface: TerminalSurface) {
+    func surfaceBell(_ surface: CoreTerminalView) {
         onBell?()
     }
 
-    func surfaceGroundChanged(_ surface: TerminalSurface) {
+    func surfaceGroundChanged(_ surface: CoreTerminalView) {
         onGround?()
     }
 
-    func surface(_ surface: TerminalSurface, openLink link: String) {
+    func surface(_ surface: CoreTerminalView, openLink link: String) {
         openLink(link)
     }
 
-    func surface(_ surface: TerminalSurface, paste text: String) {
+    func surface(_ surface: CoreTerminalView, paste text: String) {
         paste(text)
     }
 
-    func surfaceClipboardRequest(_ surface: TerminalSurface) {
+    func surfaceClipboardRequest(_ surface: CoreTerminalView) {
         answerClipboardRequest()
     }
 
-    func surface(_ surface: TerminalSurface, reached mark: TerminalMark) {
+    func surface(_ surface: CoreTerminalView, reached mark: TerminalMark) {
         reached(mark)
     }
 
-    func surfaceScrollWillBegin(_ surface: TerminalSurface) {
+    func surfaceScrollWillBegin(_ surface: CoreTerminalView) {
         scrollWillBegin()
     }
 
-    func surface(_ surface: TerminalSurface, scrollPixels dy: CGFloat) -> CGFloat {
+    func surface(_ surface: CoreTerminalView, scrollPixels dy: CGFloat) -> CGFloat {
         scroll(pixels: dy)
     }
 
-    func surfaceScrollDidEnd(_ surface: TerminalSurface) {
+    func surfaceScrollDidEnd(_ surface: CoreTerminalView) {
         scrollDidEnd()
     }
 
-    func surface(_ surface: TerminalSurface, click col: Int, row: Int) {
+    func surface(_ surface: CoreTerminalView, click col: Int, row: Int) {
         click(col: col, row: row)
     }
 
@@ -1503,17 +1515,23 @@ extension SwiftTerminalView.Coordinator: TerminalSurfaceDelegate {
 
     var surfaceCanSwitch: Bool { onSwitch != nil || onStep != nil || onSwipe != nil }
 
-    func surface(_ surface: TerminalSurface, switchForward forward: Bool) {
+    func surface(_ surface: CoreTerminalView, switchForward forward: Bool) {
         if let onStep { onStep(forward) } else { onSwitch?(forward) }
     }
 
     var surfaceTracksSwipe: Bool { onSwipe != nil }
 
-    func surface(_ surface: TerminalSurface, swipe: TerminalSwipe) {
+    var surfaceCanShowAll: Bool { onShowAll != nil }
+
+    func surfaceShowAll(_ surface: CoreTerminalView) {
+        onShowAll?()
+    }
+
+    func surface(_ surface: CoreTerminalView, swipe: TerminalSwipe) {
         onSwipe?(swipe)
     }
 
-    func surface(_ surface: TerminalSurface, fontSizeCommitted size: Double) {
+    func surface(_ surface: CoreTerminalView, fontSizeCommitted size: Double) {
         onFontSizeCommit?(size)
     }
 }
