@@ -7,9 +7,11 @@
 #   reaches main and main is pushed;
 # - only as a fast-forward: no force push, ever;
 # - only once scripts/oss-scan.py passes on every commit it would publish,
-#   with the private lists of the ops checkout (MOSHPIT_OPS, or
-#   ../moshpit-ops). MOSHPIT_SCAN_PUBLIC_ONLY=1 runs the public rules alone,
-#   for a contributor outside the team; the team never sets it.
+#   with the private lists of the ops checkout (`git config moshpit.opsDir`,
+#   else MOSHPIT_OPS, else ../moshpit-ops). The read-only clone
+#   setup-hooks.sh makes is fast-forwarded first; if that fails, nothing
+#   goes out. MOSHPIT_SCAN_PUBLIC_ONLY=1 runs the public rules alone, for a
+#   contributor outside the team; the team never sets it.
 #
 # git gives the hook its remote and URL as arguments, and one line per ref
 # on stdin: <local ref> <local sha> <remote ref> <remote sha>.
@@ -26,7 +28,22 @@ esac
 zero=0000000000000000000000000000000000000000
 root="$(git rev-parse --show-toplevel)"
 scan=(python3 -I "$root/scripts/oss-scan.py")
-[ "${MOSHPIT_SCAN_PUBLIC_ONLY:-}" = 1 ] && scan+=(--public)
+if [ "${MOSHPIT_SCAN_PUBLIC_ONLY:-}" = 1 ]; then
+    scan+=(--public)
+else
+    # The gate's own copy of the private lists, brought up to date; a
+    # person's ops checkout (MOSHPIT_OPS, ../moshpit-ops) is read as it is.
+    ops="$(git config --get moshpit.opsDir || true)"
+    ops="${ops:-${MOSHPIT_OPS:-$(dirname "$root")/moshpit-ops}}"
+    if [ "$(git -C "$ops" config --get moshpit.gateClone 2>/dev/null)" = true ]; then
+        # shellcheck disable=SC2046 # one name per word, as unset wants them
+        if ! (unset $(git rev-parse --local-env-vars)
+            git -C "$ops" fetch -q origin main && git -C "$ops" merge -q --ff-only origin/main) > /dev/null 2>&1; then
+            echo "pre-push: couldn't bring the private lists in $ops up to date: nothing goes out" >&2
+            exit 1
+        fi
+    fi
+fi
 status=0
 
 while read -r local_ref local_sha remote_ref remote_sha; do

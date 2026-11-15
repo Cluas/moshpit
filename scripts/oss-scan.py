@@ -19,10 +19,11 @@ Two sets of rules:
   fixtures' 100.64.0.0/24.
 - Private ones, never in this repository: the maintainer's denylist of
   literal strings and the team's agent names (in messages, and in what a
-  commit adds outside vendor/), read
-  from a checkout of the private ops repository ($MOSHPIT_OPS, default
-  ../moshpit-ops next to this checkout: app/oss/denylist.txt,
-  app/oss/agent-names.txt), and the signing Team ID of the local
+  commit adds outside vendor/), read from a checkout of the private ops
+  repository (app/oss/denylist.txt, app/oss/agent-names.txt): the one
+  `git config moshpit.opsDir` names (scripts/setup-hooks.sh's read-only
+  clone), else $MOSHPIT_OPS, else ../moshpit-ops; and the signing Team ID
+  of the local
   Signing.xcconfig. Without them the scan fails closed; --public runs the
   public rules alone (CI, contributors outside the team).
 
@@ -79,10 +80,17 @@ def git(*args, check=True):
     return out.stdout
 
 
+def ops_dir(root):
+    """The ops checkout the private lists come from."""
+    configured = git("config", "--get", "moshpit.opsDir", check=False).strip()
+    return os.path.expanduser(configured or os.environ.get("MOSHPIT_OPS")
+                              or os.path.join(os.path.dirname(root), "moshpit-ops"))
+
+
 def private_lists(root):
     """The denylist and the agent names, from the ops checkout; None when it
     isn't there."""
-    ops = os.environ.get("MOSHPIT_OPS") or os.path.join(os.path.dirname(root), "moshpit-ops")
+    ops = ops_dir(root)
     deny, names = (os.path.join(ops, "app", "oss", f) for f in ("denylist.txt", "agent-names.txt"))
     if not (os.path.isfile(deny) and os.path.isfile(names)):
         return None
@@ -176,9 +184,9 @@ def main():
 
     lists = None if args.public else private_lists(root)
     if not args.public and lists is None:
-        print("oss-scan: the private lists aren't here (MOSHPIT_OPS, or ../moshpit-ops: "
-              "app/oss/denylist.txt, agent-names.txt). A team member checks out the ops "
-              "repository there; anyone else runs with --public.", file=sys.stderr)
+        print(f"oss-scan: the private lists aren't in {ops_dir(root)} (app/oss/denylist.txt, "
+              "agent-names.txt). A team member runs scripts/setup-hooks.sh, which clones the "
+              "ops repository for the gate; anyone else runs with --public.", file=sys.stderr)
         return 2
     deny, names = lists if lists else ([], [])
     team = None if args.public else team_id(root)
