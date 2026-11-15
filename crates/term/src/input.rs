@@ -370,6 +370,12 @@ pub const PASTE_END: &[u8] = b"\x1b[201~";
 /// follows as typed keys. Removing a marker the moment its last byte is
 /// read gets there in one pass: the bytes kept never hold a marker, so the
 /// only one a new byte can complete ends at that byte.
+///
+/// No control character goes out either but tab, line feed and carriage
+/// return (xterm's default; B738): an escape sequence in a paste ran as
+/// keys where the program hadn't asked for bracketed paste, and a ^C or ^D
+/// reached the tty as an interrupt or an end of file, bracketed or not.
+/// C1 controls and DEL go too; with no ESC left, no marker can be either.
 pub fn paste_body(text: &str) -> Vec<u8> {
     let mut kept: Vec<u8> = Vec::with_capacity(text.len());
     for &b in text.as_bytes() {
@@ -378,7 +384,12 @@ pub fn paste_body(text: &str) -> Vec<u8> {
             kept.truncate(kept.len() - PASTE_END.len());
         }
     }
-    kept
+    String::from_utf8(kept)
+        .expect("removing ASCII markers keeps UTF-8 valid")
+        .chars()
+        .filter(|&c| !c.is_control() || matches!(c, '\t' | '\n' | '\r'))
+        .collect::<String>()
+        .into_bytes()
 }
 
 /// What a paste sends: one bracketed paste when the program asked for

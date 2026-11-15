@@ -31,7 +31,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use moshpit_seal::copy::{self, CardText, Language};
-use moshpit_seal::standing::Entry;
+use moshpit_seal::standing::{Entry, LIFETIME_SECONDS};
 use moshpit_seal::{Date, PushFinishesFile, PushStandingFile};
 use serde::Serialize;
 
@@ -1236,6 +1236,7 @@ impl Monitor {
                     location: Some(self.place(key)),
                     since: episode as i64,
                     recorded_at: Date::from_unix(now),
+                    lifetime: Some(LIFETIME_SECONDS),
                 },
                 Date::from_unix(now),
             ),

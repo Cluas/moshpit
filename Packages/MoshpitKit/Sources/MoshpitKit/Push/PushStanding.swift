@@ -37,11 +37,25 @@ public enum PushStanding {
         public var since: Int
         /// When this entry was recorded on the phone, for expiry.
         public var recordedAt: Date
+        /// How long it stands, in seconds: ``PushStanding/lifetime``, set
+        /// when this build records it (``PushStanding/noteStanding(conn:entry:now:)``).
+        /// None on one 1.0.8 recorded, which keeps that build's
+        /// ``PushStanding/olderLifetime`` (B727).
+        public var lifetime: TimeInterval?
 
         public init(pane: String, agent: String? = nil, title: String? = nil, location: String? = nil,
-                    since: Int, recordedAt: Date) {
+                    since: Int, recordedAt: Date, lifetime: TimeInterval? = PushStanding.lifetime) {
             self.pane = pane; self.agent = agent; self.title = title; self.location = location
-            self.since = since; self.recordedAt = recordedAt
+            self.since = since; self.recordedAt = recordedAt; self.lifetime = lifetime
+        }
+
+        /// Whether it still counts at `now`: younger than its own lifetime
+        /// (never past this build's), and not from more than a minute in
+        /// the future.
+        public func isLive(now: Date) -> Bool {
+            let lasts = min(lifetime ?? PushStanding.olderLifetime, PushStanding.lifetime)
+            return now.timeIntervalSince(recordedAt) < lasts
+                && recordedAt < now.addingTimeInterval(60)   // clock jumped? drop it
         }
     }
 
@@ -50,6 +64,13 @@ public enum PushStanding {
     /// answered or resolved, or its pane or agent ends; it used to expire at
     /// fifteen minutes, taking down a card for a question still waiting.
     public static let lifetime: TimeInterval = 6 * 60 * 60
+
+    /// How long an entry 1.0.8 recorded stands — one without a
+    /// ``Entry/lifetime``: that build's fifteen minutes (B727). It took a
+    /// question unanswered that long for answered at the desk; read with
+    /// six hours, one answered there while no app ran held the edge, and
+    /// the next prompt came in silent.
+    public static let olderLifetime: TimeInterval = 15 * 60
 
     private static let filename = "standing-attention.json"
 
@@ -72,12 +93,14 @@ public enum PushStanding {
 
     public static func prune(_ raw: [String: [Entry]], now: Date) -> [String: [Entry]] {
         raw.compactMapValues { entries in
-            let live = entries.filter { isLive(recordedAt: $0.recordedAt, now: now) }
+            let live = entries.filter { $0.isLive(now: now) }
             return live.isEmpty ? nil : live
         }
     }
 
-    /// Whether something recorded at `recordedAt` still counts.
+    /// Whether something recorded at `recordedAt` still counts under the
+    /// longest lifetime any build gives it: what an entry this build can't
+    /// read is held to.
     static func isLive(recordedAt: Date, now: Date) -> Bool {
         now.timeIntervalSince(recordedAt) < lifetime
             && recordedAt < now.addingTimeInterval(60)   // clock jumped? drop it
@@ -106,6 +129,14 @@ public enum PushStanding {
     /// Everything standing for a connection, newest first.
     public static func standing(conn: String, now: Date = Date()) -> [Entry] {
         file?.standing(conn: conn, now: now) ?? []
+    }
+
+    /// The host said `pane`'s turn ended at `endedAt` (its clock, B636): the
+    /// question it asked up to then stops waiting — not one the pane asked
+    /// after, which a `done` that came again used to clear.
+    @discardableResult
+    public static func clearEnded(conn: String, pane: String, endedAt: Int, now: Date = Date()) -> [Entry] {
+        file?.clearEnded(conn: conn, pane: pane, endedAt: endedAt, now: now) ?? []
     }
 
     public static func clearAll(conn: String) {
@@ -183,7 +214,10 @@ public struct PushStandingFile {
     /// ``PushStanding/noteStanding(conn:entry:now:)``, on this file.
     @discardableResult
     public func noteStanding(conn: String, entry: PushStanding.Entry, now: Date = Date()) -> Bool {
-        AppGroupFileLock.around(url) {
+        // Recorded by this build: it stands this build's lifetime (B727).
+        var entry = entry
+        entry.lifetime = PushStanding.lifetime
+        return AppGroupFileLock.around(url) {
             let contents = contents()
             var all = PushStanding.prune(contents.entries, now: now)
             var entries = all[conn] ?? []
@@ -216,6 +250,25 @@ public struct PushStandingFile {
             all[conn] = entries.isEmpty ? nil : entries
             var carried = contents.carried
             carried[conn]?.removeAll { Self.pane(of: $0) == pane }
+            save(all, carrying: carried, odd: contents.odd, over: contents, now: now)
+            return entries
+        }
+    }
+
+    /// ``PushStanding/clearEnded(conn:pane:endedAt:now:)``, on this file.
+    @discardableResult
+    public func clearEnded(conn: String, pane: String, endedAt: Int, now: Date = Date()) -> [PushStanding.Entry] {
+        AppGroupFileLock.around(url) {
+            let contents = contents()
+            var all = PushStanding.prune(contents.entries, now: now)
+            var entries = all[conn] ?? []
+            let before = entries.count
+            entries.removeAll { $0.pane == pane && $0.since <= endedAt }
+            all[conn] = entries.isEmpty ? nil : entries
+            var carried = contents.carried
+            if entries.count != before {
+                carried[conn]?.removeAll { Self.pane(of: $0) == pane }
+            }
             save(all, carrying: carried, odd: contents.odd, over: contents, now: now)
             return entries
         }

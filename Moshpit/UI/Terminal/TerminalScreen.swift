@@ -228,6 +228,8 @@ struct TerminalScreen: View {
         router.clear(token: request.token)
         pendingPaneSelection = request.paneId
         pendingPaneAttachedAt = nil
+        // Its terminal stays while the landing waits, listed or not (B736).
+        active?.tmuxController?.holdPane(request.paneId)
         Log.island.info("land: claimed #\(request.token, privacy: .public) pane=\(request.paneId ?? "-", privacy: .public)")
     }
 
@@ -271,6 +273,7 @@ struct TerminalScreen: View {
             // after a restart) pulled the screen there out of nowhere.
             pendingPaneSelection = nil
             pendingPaneAttachedAt = nil
+            active?.tmuxController?.holdPane(nil)
             Log.island.notice("land: pane \(paneId, privacy: .public) is not on the server \(Int(Self.landingPatience), privacy: .public) s after attach; dropped")
             // Said, for a moment (B492): landing on another pane without a
             // word read as the notification having taken the person
@@ -283,6 +286,7 @@ struct TerminalScreen: View {
         guard let snapshot = tmuxSnapshot else { return }
         pendingPaneSelection = nil
         pendingPaneAttachedAt = nil
+        active?.tmuxController?.holdPane(nil)
         Log.island.info("land: selecting pane=\(paneId, privacy: .public) from=\(snapshot.activePaneId ?? "-", privacy: .public) phase=\(String(describing: scenePhase), privacy: .public)")
         if let controller = active?.tmuxController {
             controller.selectPane(paneId)

@@ -271,6 +271,9 @@ pub enum SessionEventKind {
         /// `ssh-rsa` when the server offers no better host-key algorithm
         /// (B564).
         older_algorithm: Option<String>,
+        /// An earlier version stored two different keys for the host, and it
+        /// presents one of them (B725).
+        conflicting: bool,
     },
     /// The connection had to use an older host-key algorithm (B564).
     OlderHostKeyAlgorithm {
@@ -1302,6 +1305,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
             fingerprint,
             previous,
             older_algorithm,
+            conflicting,
         } => SessionEventKind::HostKeyPrompt {
             prompt,
             host,
@@ -1309,6 +1313,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
             fingerprint,
             previous,
             older_algorithm,
+            conflicting,
         },
         EventKind::OlderHostKeyAlgorithm { algorithm } => {
             SessionEventKind::OlderHostKeyAlgorithm { algorithm }

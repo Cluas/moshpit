@@ -337,6 +337,13 @@ final class RustCredentialHost: CredentialHost, @unchecked Sendable {
     /// retries on its own (B201).
     private let protectedData: () -> Bool
 
+    /// Told each managed key a sign-in reads — its connection, and the key
+    /// as read — so a key 1.0.8 imported without its public half shows what
+    /// it is from its first sign-in on (B726,
+    /// ``SSHKeyStore/learnFacts(for:privateKey:)``): one behind Face ID
+    /// can't be read at launch. Set once, at launch.
+    nonisolated(unsafe) static var keyRead: (@Sendable (ServerConnection, String) -> Void)?
+
     init(service: SSHService = .shared, protectedData: @escaping @Sendable () -> Bool = { true }) {
         self.service = service
         self.protectedData = protectedData
@@ -368,6 +375,7 @@ final class RustCredentialHost: CredentialHost, @unchecked Sendable {
             case .password(let password):
                 return .password(password: password)
             case .key(let text):
+                Self.keyRead?(connection, text)
                 return .key(openssh: text)
             case .secureEnclave(let publicKey, let ref):
                 lock.withLock { hardware[ref] = connection }

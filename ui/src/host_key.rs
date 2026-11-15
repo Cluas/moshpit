@@ -63,12 +63,22 @@ pub struct HostKey {
     /// The algorithm the key came by, when it is the older one (`ssh-rsa`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub older_algorithm: Option<String>,
+    /// An earlier version stored two different keys for the host, and the
+    /// one offered now is one of them (B725): asked about, warned as a
+    /// changed key is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub conflicting: bool,
 }
 
 impl HostKey {
     /// Whether the stored key no longer matches.
     pub fn changed(&self) -> bool {
         self.previous.is_some()
+    }
+
+    /// Whether the sheet warns: a changed key, or two stored ones (B725).
+    pub fn warns(&self) -> bool {
+        self.changed() || self.conflicting
     }
 
     /// The command that prints the key's fingerprint on the server: the
@@ -123,7 +133,7 @@ pub struct ScreenProps {
 
 /// The sheet's title.
 pub fn title(key: &HostKey) -> String {
-    if key.changed() {
+    if key.warns() {
         t!("Host Key Changed")
     } else {
         t!("New Host")
@@ -133,7 +143,14 @@ pub fn title(key: &HostKey) -> String {
 /// What the page says first: what this key is, what to do with it.
 pub fn message(key: &HostKey) -> String {
     let port = key.port.to_string();
-    if key.changed() {
+    if key.conflicting {
+        t!(
+            "Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?",
+            arg1 = key.host,
+            arg2 = port,
+            arg3 = key.fingerprint
+        )
+    } else if key.changed() {
         t!(
             "The key for %@:%@ does **not** match what's stored here. The server may have been reinstalled — or the connection is being intercepted.",
             arg1 = key.host,
@@ -267,6 +284,8 @@ fn content(key: &HostKey, tell: Tell) -> AnyElement {
     }
     let trust = if key.changed() {
         button(t!("Trust New Key")).variant(Variant::Destructive)
+    } else if key.conflicting {
+        button(t!("Trust")).variant(Variant::Destructive)
     } else {
         button(t!("Trust")).variant(Variant::Primary)
     };
@@ -281,7 +300,7 @@ fn content(key: &HostKey, tell: Tell) -> AnyElement {
 
 /// The kind's mark and what the page says first.
 fn intro(key: &HostKey) -> AnyElement {
-    let (symbol, tone) = if key.changed() {
+    let (symbol, tone) = if key.warns() {
         ("exclamationmark.triangle.fill", Tone::Destructive)
     } else {
         ("lock.shield.fill", Tone::Primary)
@@ -405,6 +424,7 @@ mod tests {
             fingerprint: "SHA256:x".into(),
             previous: None,
             older_algorithm: None,
+            conflicting: false,
         }
     }
 

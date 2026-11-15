@@ -23,13 +23,24 @@
 //!   [ A` typed through the attach reaches a pane in application cursor
 //!   mode as `ESC [ A`), the start line typed again, a reply's bytes. A key
 //!   and a retarget (which kills the attach the typing before it went to)
-//!   wait — bounded — for mosh-server to have acknowledged everything sent
-//!   before them ([`PlaneOut::Barrier`]): mosh's datagrams and the sidecar's
-//!   exec are two networks, and a keystroke still in flight when the attach
-//!   is bounced reached the pane switched to.
+//!   wait for mosh-server to have acknowledged everything sent before them
+//!   ([`PlaneOut::Barrier`]), however long that takes — mosh keeps what it
+//!   sends until the server has it (B618), and the leg's end answers the
+//!   barrier: mosh's datagrams and the sidecar's exec are two networks, and
+//!   a keystroke still in flight when the attach is bounced reached the
+//!   pane switched to (B686: on a path slower than the 1.5 s the wait was
+//!   bounded by, or across a roam). The typing behind a key waits for the
+//!   key's exec; a key that can't go in its bound (the control connection
+//!   being redialled) is dropped with the typing behind it, and said —
+//!   never run late, after what followed it. What the lane still holds when
+//!   the leg goes is said too ([`Plane::close`]).
 //! - **Typing** goes only while the pane asked for is on screen by the
 //!   host's word ([`Renderer::typed`]); otherwise it is dropped and said —
 //!   never into the pane being left, never into a login shell.
+//! - **herdr's own TUI** (a herdr without `terminal attach`) types into the
+//!   server's focused pane: a focus change the person asks for, and a
+//!   reply's, go once mosh-server has the typing before them (B688), and
+//!   typing waits the switch out from the tap on.
 //! - **Content for one pane** (a notification's reply, a share): waits
 //!   (bounded) for the tree to list the pane (B248), focuses it on the
 //!   server and waits for the server to confirm it, puts the loop on it
@@ -72,6 +83,14 @@ use crate::herdr::{HerdrAction, HerdrAnswer, HerdrView, unanswered};
 use crate::mosh_udp::MoshCommand;
 use crate::tmux_leg::mark;
 
+/// An arrow's bytes as typed (`ESC [ A`), as dropped typing counts them.
+const ARROW: usize = 3;
+
+/// How long typing may wait behind mosh-server's acknowledgement unseen
+/// (B689): past it the plane says so ([`PlaneOut::InputHeld`]), and the
+/// session shows mosh's "reconnecting" state.
+pub const HELD_SHOWN: u64 = 1_000;
+
 /// Every wait the plane adds to the client's and the renderer's, in
 /// milliseconds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,11 +105,9 @@ pub struct PlaneBudgets {
     /// How long a reply's bytes wait for mosh-server's acknowledgement
     /// before they count as not sent.
     pub ack: u64,
-    /// How long a key or a retarget waits for the typing before it to be
-    /// acknowledged before it goes anyway (`moshLandingBudget`, 1.5 s).
-    pub landing: u64,
-    /// How long one key's exec holds the typing behind it
-    /// (`keySendBudget`, 3 s).
+    /// How long one key's exec may hold the typing behind it
+    /// (`keySendBudget`, 3 s): past it the key and that typing are dropped
+    /// and said, and the exec abandoned (B686).
     pub key_hold: u64,
     /// A one-off notice's life (4 s, `flashHerdrNotice`).
     pub flash: u64,
@@ -104,7 +121,6 @@ impl Default for PlaneBudgets {
             tree: 10_000,
             focus: 5_000,
             ack: 3_000,
-            landing: 1_500,
             key_hold: 3_000,
             flash: 4_000,
             cover_cap: RendererBudgets::default().cover_cap,
@@ -208,6 +224,17 @@ pub enum PlaneOut {
     InputDropped {
         bytes: usize,
     },
+    /// Typing (a key, a Return) has waited [`HELD_SHOWN`] behind
+    /// mosh-server's acknowledgement of what was sent before it (`true`),
+    /// or no longer waits (B689): an unbounded wait is never invisible.
+    InputHeld(bool),
+    /// A paste asked about ([`Plane::paste_then`]): in the tty, by
+    /// mosh-server's acknowledgement (`landed`), or never going to be —
+    /// dropped and said, or its loop gone.
+    Landed {
+        token: u64,
+        landed: bool,
+    },
     AgentHooksUpdated,
 }
 
@@ -215,6 +242,12 @@ pub enum PlaneOut {
 #[derive(Debug, Clone, PartialEq)]
 enum Write {
     Text {
+        bytes: Vec<u8>,
+        end: u64,
+    },
+    /// What the person typed (or pasted): dropped with a key that couldn't
+    /// go before it.
+    Typed {
         bytes: Vec<u8>,
         end: u64,
     },
@@ -241,11 +274,21 @@ enum Fenced {
         keys: Vec<&'static str>,
         end: u64,
     },
+    /// herdr's own TUI: a focus change the person asked for (B688).
+    Act {
+        action: HerdrAction,
+        token: Option<u64>,
+    },
+    /// herdr's own TUI: a delivery's focus asked for (B688); `switching`:
+    /// its pane wasn't the focused one, so typing waits it out.
+    Focus { key: u64, switching: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AckFor {
     Delivery(u64),
+    /// A paste the session waits on before what follows it (B687).
+    Paste(u64),
     /// A retyped start line: the renderer asks about the loop once it is in
     /// the tty.
     Retype,
@@ -260,9 +303,9 @@ struct Blocked {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    /// The acknowledgement of what was sent before.
-    Landing { barrier: u64, deadline: u64 },
-    /// The keys' exec.
+    /// The acknowledgement of what was sent before: no bound (B686).
+    Landing { barrier: u64 },
+    /// The keys' exec, until `deadline`.
     Keys { exec: u64, deadline: u64 },
 }
 
@@ -281,6 +324,9 @@ struct Pending {
 enum Stage {
     /// For the tree to list the pane, until then.
     Tree { until: u64 },
+    /// herdr's own TUI: for the typing before it to be in the tty, before
+    /// its focus is asked for (B688).
+    Fenced,
     /// For the server's focus. `again`: the pane looked focused already, so
     /// nothing was asked; asked once more if the server says otherwise.
     Focus { request: RequestId, again: bool },
@@ -325,6 +371,14 @@ pub struct Plane {
     next_key: u64,
     /// The view's offset after the last typing it handed over.
     end: u64,
+    /// herdr's own TUI: focus changes waiting in the lane (B688).
+    tui_switches: usize,
+    /// Since when typing waits behind an unacknowledged barrier, and
+    /// whether that was said (B689).
+    held_since: Option<u64>,
+    held_said: bool,
+    /// How many times typing was dropped as it came.
+    dropped_so_far: u64,
     said: Option<Said>,
     /// The paint stamp last given to the renderer.
     painted: u64,
@@ -359,6 +413,10 @@ impl Plane {
             next_barrier: 0,
             next_key: 0,
             end: 0,
+            tui_switches: 0,
+            held_since: None,
+            held_said: false,
+            dropped_so_far: 0,
             said: None,
             painted: 0,
             dirty: true,
@@ -390,6 +448,7 @@ impl Plane {
     /// panes its loop is asked to show and shows.
     pub fn view(&self) -> HerdrView {
         let mut view = HerdrView::of(&self.client);
+        view.pane_switch_in_flight |= self.tui_switches > 0;
         if let Some(said) = self.shown() {
             view.notice = Some((said.notice.clone(), said.action));
         }
@@ -422,14 +481,23 @@ impl Plane {
         if let Some(renderer) = &self.renderer {
             deadlines.push(renderer.next_deadline());
         }
-        deadlines.push(self.blocked.as_ref().map(|blocked| match blocked.phase {
-            Phase::Landing { deadline, .. } | Phase::Keys { deadline, .. } => deadline,
-        }));
+        deadlines.push(
+            self.blocked
+                .as_ref()
+                .and_then(|blocked| match blocked.phase {
+                    Phase::Landing { .. } => None,
+                    Phase::Keys { deadline, .. } => Some(deadline),
+                }),
+        );
         deadlines.push(self.said.as_ref().and_then(|said| said.until));
+        if !self.held_said {
+            deadlines.push(self.held_since.map(|since| since + HELD_SHOWN));
+        }
         // A delivery the client or the renderer holds is theirs to bound:
         // given up here, it could still go out after its "not sent".
         deadlines.extend(self.pending.values().map(|pending| match pending.stage {
             Stage::Tree { until } | Stage::Ack { until, .. } => Some(until.min(pending.deadline)),
+            Stage::Fenced => Some(pending.deadline),
             Stage::Focus { .. } | Stage::Renderer(_) => None,
         }));
         deadlines.into_iter().flatten().min()
@@ -497,16 +565,18 @@ impl Plane {
             renderer.tick(self.now);
         }
         self.drain_renderer();
-        // The lane's head: a fence that waited its bound goes anyway; a key
-        // run that held the typing its bound lets it go.
-        if let Some(blocked) = &self.blocked {
-            match blocked.phase {
-                Phase::Landing { deadline, .. } if self.now >= deadline => self.fence_landed(),
-                Phase::Keys { deadline, .. } if self.now >= deadline => {
-                    self.keys_done();
-                }
-                _ => {}
-            }
+        // The lane's head: a key run that held the typing its bound never
+        // runs late — it and that typing are dropped, and said.
+        if let Some(Blocked {
+            phase: Phase::Keys { exec, deadline },
+            ..
+        }) = self.blocked
+            && self.now >= deadline
+        {
+            self.outputs.push_back(PlaneOut::Abandon {
+                tag: ExecTag::Key(exec),
+            });
+            self.keys_lost();
         }
         if self
             .said
@@ -543,7 +613,12 @@ impl Plane {
                     self.blocked,
                     Some(Blocked { phase: Phase::Keys { exec, .. }, .. }) if exec == id
                 ) {
-                    self.keys_done();
+                    // Failed (its connection gone): whether herdr typed it is
+                    // anyone's guess, so what is behind it doesn't go.
+                    match output {
+                        Some(_) => self.keys_done(),
+                        None => self.keys_lost(),
+                    }
                 }
             }
         }
@@ -584,9 +659,19 @@ impl Plane {
         }) = &self.blocked
             && *barrier == id
         {
-            self.fence_landed();
+            // Not acknowledged, the loop is gone and the leg with it: the
+            // lane stays as it is, said by close().
+            if acked {
+                self.fence_landed();
+            }
         } else if let Some(what) = self.acks.remove(&id) {
             match what {
+                AckFor::Paste(token) => {
+                    self.outputs.push_back(PlaneOut::Landed {
+                        token,
+                        landed: acked,
+                    });
+                }
                 AckFor::Retype => {
                     if acked && let Some(renderer) = &mut self.renderer {
                         renderer.retyped(self.now);
@@ -638,7 +723,7 @@ impl Plane {
                 // herdr's own TUI types into the server's focused pane: not
                 // while a switch hasn't landed (it would reach the pane being
                 // left).
-                if self.client.pane_switch_in_flight() {
+                if self.client.pane_switch_in_flight() || self.tui_switches > 0 {
                     self.flash(Notice::InputDropped);
                     false
                 } else {
@@ -649,6 +734,7 @@ impl Plane {
             }
         };
         if !sent {
+            self.dropped_so_far += 1;
             self.lane.push_back(Write::Skip { end });
             self.outputs
                 .push_back(PlaneOut::InputDropped { bytes: bytes.len() });
@@ -667,9 +753,56 @@ impl Plane {
         self.typed(&payload, end, now);
     }
 
+    /// A paste whose landing is said ([`PlaneOut::Landed`] under `token`):
+    /// what the person sends after it (an image path's Return) waits for
+    /// mosh-server to have it, as over plain mosh (B525, B687) — a paste
+    /// state lost on the way goes again as one diff with the Return, and
+    /// Claude Code drops the Return. Dropped (typing doesn't go now, or a
+    /// key before it couldn't go), it is said not landed, so nothing sent
+    /// after it goes on its own: a bare Return submitted the prompt without
+    /// the image.
+    pub fn paste_then(&mut self, text: &str, end: u64, token: u64, now: u64) {
+        self.begin(now);
+        let dropped = self.dropped_so_far;
+        self.paste(text, end, now);
+        if text.is_empty() || self.dropped_so_far != dropped {
+            self.outputs.push_back(PlaneOut::Landed {
+                token,
+                landed: text.is_empty(),
+            });
+            return;
+        }
+        let barrier = self.barrier_id();
+        self.acks.insert(barrier, AckFor::Paste(token));
+        self.lane.push_back(Write::Ack(barrier));
+        self.settle();
+    }
+
     /// The person's (or the UI's) intent; `token` names its answer.
     pub fn act(&mut self, action: HerdrAction, token: Option<u64>, now: u64) {
         self.begin(now);
+        // herdr's own TUI types into the server's focused pane: a focus
+        // change goes once the typing before it is in the tty, and typing
+        // waits it out from the tap on (B688).
+        if self.renderer.is_none() && moves_focus(&action) {
+            let token = if matches!(action, Action::SelectPane(_)) {
+                self.answered(token, HerdrAnswer::Done);
+                None
+            } else {
+                token
+            };
+            self.tui_switches += 1;
+            self.dirty = true;
+            self.lane
+                .push_back(Write::Fence(Fenced::Act { action, token }));
+            self.settle();
+            return;
+        }
+        self.act_now(action, token);
+        self.settle();
+    }
+
+    fn act_now(&mut self, action: HerdrAction, token: Option<u64>) {
         match action {
             Action::NoticeAction if self.shown().is_some_and(|s| s.action.is_some()) => {
                 self.take_back();
@@ -719,7 +852,6 @@ impl Plane {
                 }
             }
         }
-        self.settle();
     }
 
     /// The New agent task form went away: the task asked for under `token`
@@ -778,8 +910,11 @@ impl Plane {
         self.settle();
     }
 
-    /// Everything waited on is answered no; nothing more is asked.
-    pub fn close(&mut self, now: u64) {
+    /// Everything waited on is answered no; nothing more is asked. Says
+    /// how many bytes of typing the lane still held — keys at three — which
+    /// never reached mosh (B686): the leg's end says them with what mosh
+    /// itself never delivered, never drops them in silence.
+    pub fn close(&mut self, now: u64) -> usize {
         self.begin(now);
         self.client.close(false, self.now);
         let keys: Vec<u64> = self.pending.keys().copied().collect();
@@ -787,6 +922,36 @@ impl Plane {
             self.answer(key, false);
         }
         self.drain_client();
+        // herdr's own TUI: a focus change still waiting is answered as one
+        // that couldn't run (B688).
+        let blocked = self.blocked.take().map(|blocked| blocked.then);
+        let waiting: Vec<(HerdrAction, u64)> = blocked
+            .iter()
+            .chain(self.lane.iter().filter_map(|write| match write {
+                Write::Fence(fenced) => Some(fenced),
+                _ => None,
+            }))
+            .filter_map(|fenced| match fenced {
+                Fenced::Act {
+                    action,
+                    token: Some(token),
+                } => Some((action.clone(), *token)),
+                _ => None,
+            })
+            .collect();
+        for (action, token) in waiting {
+            self.outputs.push_back(PlaneOut::Answer {
+                token,
+                answer: unanswered(&action),
+            });
+        }
+        let blocked = match blocked {
+            Some(Fenced::Keys { keys, .. }) => keys.len() * ARROW,
+            _ => 0,
+        };
+        let held = blocked + self.drop_typing();
+        self.note_held();
+        held
     }
 
     // MARK: - Carrying out
@@ -796,6 +961,44 @@ impl Plane {
         self.drain_client();
         self.drain_renderer();
         self.pump_lane();
+        self.note_held();
+    }
+
+    /// Typing waits behind mosh-server's acknowledgement: the lane's head is
+    /// a barrier not yet answered, and a key or typing is behind it (or is
+    /// it).
+    fn holding(&self) -> bool {
+        let Some(Blocked {
+            then,
+            phase: Phase::Landing { .. },
+        }) = &self.blocked
+        else {
+            return false;
+        };
+        matches!(then, Fenced::Keys { .. })
+            || self.lane.iter().any(|write| {
+                matches!(
+                    write,
+                    Write::Typed { .. } | Write::Fence(Fenced::Keys { .. })
+                )
+            })
+    }
+
+    /// Says when typing has waited [`HELD_SHOWN`] unseen, and when it no
+    /// longer waits (B689).
+    fn note_held(&mut self) {
+        if !self.holding() {
+            self.held_since = None;
+            if std::mem::take(&mut self.held_said) {
+                self.outputs.push_back(PlaneOut::InputHeld(false));
+            }
+            return;
+        }
+        let since = *self.held_since.get_or_insert(self.now);
+        if !self.held_said && self.now >= since + HELD_SHOWN {
+            self.held_said = true;
+            self.outputs.push_back(PlaneOut::InputHeld(true));
+        }
     }
 
     fn drain_client(&mut self) {
@@ -928,7 +1131,11 @@ impl Plane {
                 let tag = ExecTag::Renderer(id.0);
                 if command.contains(launch::RETARGET_LANDED_MARKER) {
                     // A retarget kills the attach the typing before it went
-                    // to: it goes once that typing is in the tty.
+                    // to: it goes once that typing is in the tty, its budget
+                    // counted from then.
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer.exec_held(id);
+                    }
                     self.lane
                         .push_back(Write::Fence(Fenced::Exec { tag, command }));
                 } else {
@@ -1092,7 +1299,7 @@ impl Plane {
     /// pane to name, all of it as text.
     fn queue_typed(&mut self, pane: Option<String>, bytes: &[u8], end: u64) {
         let Some(pane) = pane else {
-            self.lane.push_back(Write::Text {
+            self.lane.push_back(Write::Typed {
                 bytes: bytes.to_vec(),
                 end,
             });
@@ -1101,14 +1308,14 @@ impl Plane {
         let mut left = bytes.len() as u64;
         for piece in frame::split_arrows(bytes) {
             let len = match piece {
-                frame::Piece::Arrow(_) => 3,
+                frame::Piece::Arrow(_) => ARROW,
                 frame::Piece::Bytes(run) => run.len(),
             };
             left -= len as u64;
             let piece_end = end.saturating_sub(left);
             match piece {
                 frame::Piece::Arrow(key) => self.queue_key(pane.clone(), key, piece_end),
-                frame::Piece::Bytes(run) => self.lane.push_back(Write::Text {
+                frame::Piece::Bytes(run) => self.lane.push_back(Write::Typed {
                     bytes: run.to_vec(),
                     end: piece_end,
                 }),
@@ -1143,7 +1350,9 @@ impl Plane {
                 return;
             };
             match write {
-                Write::Text { bytes, end } => self.outputs.push_back(PlaneOut::Mosh { bytes, end }),
+                Write::Text { bytes, end } | Write::Typed { bytes, end } => {
+                    self.outputs.push_back(PlaneOut::Mosh { bytes, end })
+                }
                 Write::Skip { end } => self.outputs.push_back(PlaneOut::Mosh {
                     bytes: Vec::new(),
                     end,
@@ -1160,24 +1369,47 @@ impl Plane {
                     self.outputs.push_back(PlaneOut::Barrier(barrier));
                     self.blocked = Some(Blocked {
                         then,
-                        phase: Phase::Landing {
-                            barrier,
-                            deadline: self.now + self.budgets.landing,
-                        },
+                        phase: Phase::Landing { barrier },
                     });
                 }
             }
         }
     }
 
-    /// The fence at the lane's head was acknowledged (or waited its bound).
+    /// The fence at the lane's head was acknowledged.
     fn fence_landed(&mut self) {
         let Some(blocked) = self.blocked.take() else {
             return;
         };
         match blocked.then {
             Fenced::Exec { tag, command } => {
+                if let (ExecTag::Renderer(id), Some(renderer)) = (tag, &mut self.renderer) {
+                    renderer.exec_sent(RendererExecId(id), self.now);
+                }
                 self.outputs.push_back(PlaneOut::Exec { tag, command });
+                self.pump_lane();
+            }
+            Fenced::Act { action, token } => {
+                self.tui_switches = self.tui_switches.saturating_sub(1);
+                self.dirty = true;
+                self.act_now(action, token);
+                self.drain_client();
+                self.pump_lane();
+            }
+            Fenced::Focus { key, switching } => {
+                if switching {
+                    self.tui_switches = self.tui_switches.saturating_sub(1);
+                    self.dirty = true;
+                }
+                let pane = self
+                    .pending
+                    .get(&key)
+                    .filter(|pending| pending.stage == Stage::Fenced)
+                    .map(|pending| pending.pane.clone());
+                if let Some(pane) = pane {
+                    self.ask_focus(key, &pane);
+                }
+                self.drain_client();
                 self.pump_lane();
             }
             Fenced::Keys { pane, keys, end } => match control::send_keys(&keys, &pane) {
@@ -1211,8 +1443,69 @@ impl Plane {
         }
     }
 
-    /// The key run answered (or held the lane its bound): the typing behind
-    /// it goes.
+    /// The key run couldn't go in its bound, or its exec failed: the typing
+    /// behind it would reach the pane without it (Down then Return in a menu
+    /// picked the default), so it is dropped with the keys, and said.
+    fn keys_lost(&mut self) {
+        let Some(Blocked {
+            then: Fenced::Keys { keys, end, .. },
+            ..
+        }) = self.blocked.take()
+        else {
+            return;
+        };
+        log::info!(
+            "herdr over mosh: {} key(s) never went — dropped, and what followed",
+            keys.len()
+        );
+        self.outputs.push_back(PlaneOut::Mosh {
+            bytes: Vec::new(),
+            end,
+        });
+        let bytes = keys.len() * ARROW + self.drop_typing();
+        self.outputs.push_back(PlaneOut::InputDropped { bytes });
+        self.flash(Notice::InputDropped);
+        self.pump_lane();
+    }
+
+    /// The typing (and keys) the lane holds, taken out — each still says
+    /// where the view's writes end, for mosh's echo — and how many bytes.
+    fn drop_typing(&mut self) -> usize {
+        let mut dropped = 0;
+        let mut pastes = Vec::new();
+        for write in &mut self.lane {
+            let end = match write {
+                // A paste's ask comes right behind its bytes, nothing
+                // between: its bytes are being dropped too.
+                Write::Ack(barrier) => {
+                    if let Some(&AckFor::Paste(token)) = self.acks.get(barrier) {
+                        self.acks.remove(barrier);
+                        pastes.push(token);
+                    }
+                    continue;
+                }
+                Write::Typed { bytes, end } => {
+                    dropped += bytes.len();
+                    *end
+                }
+                Write::Fence(Fenced::Keys { keys, end, .. }) => {
+                    dropped += keys.len() * ARROW;
+                    *end
+                }
+                _ => continue,
+            };
+            *write = Write::Skip { end };
+        }
+        for token in pastes {
+            self.outputs.push_back(PlaneOut::Landed {
+                token,
+                landed: false,
+            });
+        }
+        dropped
+    }
+
+    /// The key run answered: the typing behind it goes.
     fn keys_done(&mut self) {
         if let Some(Blocked {
             then: Fenced::Keys { end, .. },
@@ -1259,7 +1552,19 @@ impl Plane {
             let pane = pending.pane.clone();
             let known = self.client.snapshot().panes.contains_key(&pane)
                 && (self.renderer.is_none() || self.client.terminal_ids().contains_key(&pane));
-            if known {
+            if known && self.renderer.is_none() {
+                let switching =
+                    self.client.snapshot().active_pane_id.as_deref() != Some(pane.as_str());
+                if switching {
+                    self.tui_switches += 1;
+                    self.dirty = true;
+                }
+                if let Some(pending) = self.pending.get_mut(&key) {
+                    pending.stage = Stage::Fenced;
+                }
+                self.lane
+                    .push_back(Write::Fence(Fenced::Focus { key, switching }));
+            } else if known {
                 self.ask_focus(key, &pane);
             } else if read {
                 // The server is read and has no such pane (or no server).
@@ -1389,6 +1694,7 @@ impl Plane {
                 Stage::Tree { until } | Stage::Ack { until, .. } => {
                     self.now >= until.min(p.deadline)
                 }
+                Stage::Fenced => self.now >= p.deadline,
                 Stage::Focus { .. } | Stage::Renderer(_) => false,
             })
             .map(|(key, _)| *key)
@@ -1416,6 +1722,21 @@ impl Plane {
             sent,
         });
     }
+}
+
+/// An action that moves the server's focus (B683's list, and a pick).
+fn moves_focus(action: &HerdrAction) -> bool {
+    matches!(
+        action,
+        Action::SelectPane(_)
+            | Action::SelectSession(_)
+            | Action::SelectWindow(_)
+            | Action::NewSession { .. }
+            | Action::NewWindow { .. }
+            | Action::NewPane
+            | Action::NewWindowInSession { .. }
+            | Action::NewPaneInWindow(_)
+    )
 }
 
 /// The pane on screen (the loop's, by the host's word), for a key.
@@ -1471,6 +1792,9 @@ pub(crate) enum HerdrMoshCommand {
     Paste {
         text: String,
         end: u64,
+        /// Answered once the paste is in the tty (true) or never will be
+        /// ([`Plane::paste_then`]).
+        landed: Option<oneshot::Sender<bool>>,
     },
     Action {
         action: HerdrAction,
@@ -1491,7 +1815,9 @@ pub(crate) enum HerdrMoshCommand {
     Connection(Ssh),
     Background,
     Foreground,
-    Close(oneshot::Sender<()>),
+    /// Answered with the bytes of typing the plane held that never reached
+    /// mosh ([`Plane::close`]).
+    Close(oneshot::Sender<usize>),
 }
 
 /// What the leg tells the session.
@@ -1505,6 +1831,9 @@ pub(crate) enum HerdrMoshNote {
     InputDropped {
         bytes: usize,
     },
+    /// Typing waits behind mosh-server's acknowledgement past
+    /// [`HELD_SHOWN`], or no longer (B689).
+    InputHeld(bool),
     /// The control connection is gone: the session dials another
     /// ([`HerdrMoshCommand::Connection`]); mosh carries on.
     ConnectionLost,
@@ -1533,6 +1862,15 @@ impl HerdrMoshLeg {
         let (commands, rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(run(start, rx, Box::new(clock), notes));
         Self { commands, task }
+    }
+
+    /// A leg whose commands a test reads.
+    #[cfg(test)]
+    pub fn fake(commands: mpsc::UnboundedSender<HerdrMoshCommand>) -> Self {
+        Self {
+            commands,
+            task: tokio::spawn(async {}),
+        }
     }
 
     pub fn abort(&self) {
@@ -1579,6 +1917,8 @@ struct Task {
     channels: Arc<Semaphore>,
     push: Option<PushChannel>,
     deliveries: HashMap<u64, oneshot::Sender<bool>>,
+    /// Pastes the session waits on, by token.
+    landings: HashMap<u64, oneshot::Sender<bool>>,
     next_token: u64,
     view_sent: Option<HerdrView>,
     /// Requests made of the control connection the host has not said a
@@ -1630,6 +1970,7 @@ async fn run(
         channels: Arc::new(Semaphore::new(EXEC_CHANNELS)),
         push: None,
         deliveries: HashMap::new(),
+        landings: HashMap::new(),
         next_token: 1 << 48,
         view_sent: None,
         asked: None,
@@ -1654,9 +1995,9 @@ async fn run(
             command = commands.recv() => match command {
                 Some(HerdrMoshCommand::Close(done)) => {
                     let now = task.now();
-                    task.plane.close(now);
+                    let held = task.plane.close(now);
                     task.pump();
-                    let _ = done.send(());
+                    let _ = done.send(held);
                     break;
                 }
                 Some(command) => task.command(command),
@@ -1748,6 +2089,12 @@ impl Task {
                 }
                 PlaneOut::InputDropped { bytes } => {
                     (self.notes)(HerdrMoshNote::InputDropped { bytes })
+                }
+                PlaneOut::InputHeld(held) => (self.notes)(HerdrMoshNote::InputHeld(held)),
+                PlaneOut::Landed { token, landed } => {
+                    if let Some(reply) = self.landings.remove(&token) {
+                        let _ = reply.send(landed);
+                    }
                 }
                 PlaneOut::AgentHooksUpdated => (self.notes)(HerdrMoshNote::AgentHooksUpdated),
             }
@@ -1954,7 +2301,21 @@ impl Task {
         let now = self.now();
         match command {
             HerdrMoshCommand::Typed { bytes, end } => self.plane.typed(&bytes, end, now),
-            HerdrMoshCommand::Paste { text, end } => self.plane.paste(&text, end, now),
+            HerdrMoshCommand::Paste {
+                text,
+                end,
+                landed: None,
+            } => self.plane.paste(&text, end, now),
+            HerdrMoshCommand::Paste {
+                text,
+                end,
+                landed: Some(reply),
+            } => {
+                self.next_token += 1;
+                let token = self.next_token;
+                self.landings.insert(token, reply);
+                self.plane.paste_then(&text, end, token, now);
+            }
             HerdrMoshCommand::Action { action, token } => self.plane.act(action, token, now),
             HerdrMoshCommand::CancelTask { token } => self.plane.cancel_task(token, now),
             HerdrMoshCommand::Deliver {

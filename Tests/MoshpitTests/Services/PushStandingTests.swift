@@ -146,6 +146,39 @@ struct PushStandingFileTests {
         .init(pane: pane, agent: "claude", title: "may I", location: "m1 · work", since: since, recordedAt: at)
     }
 
+    /// B727: an entry 1.0.8 recorded says nothing of how long it stands, and
+    /// keeps that build's fifteen minutes: one twenty minutes old was
+    /// answered at the desk long since and must not hold the edge for six
+    /// hours. One this build records stands six hours (B660) and says so.
+    /// The Rust set's `an_entry_1_0_8_recorded_keeps_its_fifteen_minutes`.
+    @Test("an entry 1.0.8 recorded keeps its fifteen minutes")
+    func olderEntryKeepsFifteenMinutes() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        // As 1.0.8's PushStanding wrote one (JSONEncoder: the date as
+        // seconds since 2001, a nil field left out), `minutes` old.
+        func older(_ pane: String, minutes: Double) -> String {
+            let at = now.addingTimeInterval(-minutes * 60).timeIntervalSinceReferenceDate
+            return #"{"pane":"\#(pane)","agent":"claude","title":"may I","since":1789990000,"recordedAt":\#(at)}"#
+        }
+        let text = #"{"\#(Self.conn)":[\#(older("%1", minutes: 20))],"\#(Self.other)":[\#(older("%2", minutes: 10))]}"#
+        try Data(text.utf8).write(to: file.url)
+        #expect(file.standing(conn: Self.conn, now: now).isEmpty, "20 minutes old: past 1.0.8's fifteen")
+        #expect(file.standing(conn: Self.other, now: now).count == 1, "10 minutes old")
+        #expect(file.noteStanding(conn: Self.conn, entry: entry("%3", since: 1, at: now), now: now),
+                "nobody waits on conn: the next prompt rings")
+        #expect(!file.noteStanding(conn: Self.other, entry: entry("%4", since: 1, at: now), now: now),
+                "%2 still waits")
+        let later = now.addingTimeInterval(PushStanding.lifetime - 60)
+        #expect(file.standing(conn: Self.conn, now: later).map(\.pane) == ["%3"])
+        #expect(file.standing(conn: Self.other, now: later).map(\.pane) == ["%4"], "1.0.8's %2 is gone")
+        #expect(file.standing(conn: Self.conn, now: now.addingTimeInterval(PushStanding.lifetime + 1)).isEmpty)
+        let stored = try JSONSerialization.jsonObject(with: Data(contentsOf: file.url)) as? [String: Any]
+        let first = (stored?[Self.conn] as? [[String: Any]])?.first
+        #expect(first?["lifetime"] as? Double == PushStanding.lifetime, "the file says how long it stands")
+    }
+
     /// B347: the app and the notification service write the file at the same
     /// time. One writer notes and at once clears its prompts, the other notes
     /// its own, each through its own open: nothing either wrote is lost, and
@@ -270,6 +303,100 @@ struct PushStandingFileTests {
 
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.url.path)
         #expect(try Data(contentsOf: file.url) == before)
+    }
+
+    /// B636: a `done` that comes again (a relay can send an envelope twice)
+    /// clears only the question its pane asked up to its own time — the one
+    /// asked after it stands. It used to clear that one too.
+    @Test("a done clears what was asked up to it, not after")
+    func clearEndedLeavesALaterQuestion() throws {
+        let file = try makeFile()
+        defer { cleanUp(file) }
+        _ = file.noteStanding(conn: Self.conn, entry: entry("%3", since: 1_790_000_700))
+        let left = file.clearEnded(conn: Self.conn, pane: "%3", endedAt: 1_790_000_600)
+        #expect(left.map(\.pane) == ["%3"])
+        #expect(file.clearEnded(conn: Self.conn, pane: "%3", endedAt: 1_790_000_800).isEmpty)
+    }
+
+    private func makeClosedFile() throws -> PushClosedFile {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("closed-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return PushClosedFile(url: dir.appendingPathComponent("closed-turns.json"))
+    }
+
+    private func storedKeys(_ file: PushClosedFile) throws -> [String] {
+        let data = try Data(contentsOf: file.url)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        return object.keys.sorted()
+    }
+
+    /// B636: the newest ending the host pushed for a pane is kept — an older
+    /// one arriving after doesn't move it back — and forgotten with the
+    /// standing set's lifetime.
+    @Test("the newest ending of a pane is kept, and expires")
+    func newestEndingKept() throws {
+        let file = try makeClosedFile()
+        defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
+        let now = Date()
+        #expect(try file.closedAt(conn: Self.conn, pane: "%3", now: now) == nil)
+        file.noteClosed(conn: Self.conn, pane: "%3", closedAt: 1_790_000_600, now: now)
+        file.noteClosed(conn: Self.conn, pane: "%3", closedAt: 1_790_000_500, now: now)
+        #expect(try file.closedAt(conn: Self.conn, pane: "%3", now: now) == 1_790_000_600)
+        #expect(try file.closedAt(conn: Self.conn, pane: "%4", now: now) == nil)
+        #expect(try file.closedAt(conn: Self.conn, pane: "%3",
+                                  now: now.addingTimeInterval(PushStanding.lifetime + 1)) == nil)
+    }
+
+    /// B636: one entry per pane, and every write drops what is past the
+    /// lifetime — the file can't grow with every pane ever seen.
+    @Test("every write keeps one entry per pane and drops the expired")
+    func endingsArePruned() throws {
+        let file = try makeClosedFile()
+        defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
+        let now = Date()
+        file.noteClosed(conn: Self.conn, pane: "%1", closedAt: 100, now: now)
+        file.noteClosed(conn: Self.conn, pane: "%1", closedAt: 200, now: now)
+        #expect(try storedKeys(file) == ["\(Self.conn)|%1"])
+        let later = now.addingTimeInterval(PushStanding.lifetime + 1)
+        file.noteClosed(conn: Self.conn, pane: "%2", closedAt: 300, now: later)
+        #expect(try storedKeys(file) == ["\(Self.conn)|%2"])
+    }
+
+    /// B636: a file a thousand stale entries long comes back to what is live
+    /// on the next write.
+    @Test("a thousand stale endings go on the next write")
+    func thousandStaleEndings() throws {
+        let file = try makeClosedFile()
+        defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
+        let now = Date()
+        let old = now.addingTimeInterval(-PushStanding.lifetime - 10)
+        var stale: [String: PushClosedFile.Closed] = [:]
+        for i in 0..<1000 { stale["\(Self.conn)|%\(i)"] = .init(closedAt: i, recordedAt: old) }
+        try JSONEncoder().encode(stale).write(to: file.url)
+        #expect(try file.closedAt(conn: Self.conn, pane: "%5", now: now) == nil)
+        file.noteClosed(conn: Self.conn, pane: "%7", closedAt: 1_790_000_000, now: now)
+        #expect(try storedKeys(file) == ["\(Self.conn)|%7"])
+    }
+
+    /// B636: the lock held by another past the budget fails open, in time:
+    /// read as nothing ended, the ending not remembered — the notification
+    /// never waits on it.
+    @Test("a busy lock fails open within the budget")
+    func busyLockFailsOpen() throws {
+        let file = try makeClosedFile()
+        defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
+        let fd = open(file.url.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+        #expect(fd >= 0)
+        defer { close(fd) }
+        #expect(flock(fd, LOCK_EX) == 0)
+        defer { flock(fd, LOCK_UN) }
+        let started = Date()
+        #expect(throws: PushClosedFile.Busy.self) {
+            try file.closedAt(conn: Self.conn, pane: "%3")
+        }
+        #expect(!file.noteClosed(conn: Self.conn, pane: "%3", closedAt: 1))
+        #expect(Date().timeIntervalSince(started) < PushClosed.lockBudget * 4)
     }
 }
 

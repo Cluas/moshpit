@@ -1168,6 +1168,8 @@ fn output_and_replies_are_handled_in_stream_order() {
     let seen = rig.seen.len();
     for _ in 0..20 {
         rig.push("%output %0 x\n%begin 9 9 1\n%end 9 9 1\n");
+        // A pane's output is noted once a quarter second at most (B739).
+        rig.wait(moshpit_tmux::controller::ACTIVITY_NOTE_MS);
     }
     let order: Vec<&str> = rig.seen[seen..]
         .iter()
@@ -1178,6 +1180,33 @@ fn output_and_replies_are_handled_in_stream_order() {
         })
         .collect();
     assert_eq!(order, ["out", "hooks"].repeat(20));
+}
+
+/// B739: every `%output` line was a note of the pane's activity — 2 000 a
+/// second from `yes` over a fast link — and every note an event to the
+/// app: a call into the agents' machine on the main thread and a state
+/// sync, all queued ahead of the Ctrl-C that would stop the flood. A
+/// pane's output is noted once a quarter second at most, at once when it
+/// starts.
+#[test]
+fn a_flood_of_output_is_noted_once_a_quarter_second() {
+    let mut rig = attached();
+    one_window(&mut rig, false, false);
+    rig.settle();
+    let activity = |rig: &Rig, from: usize| {
+        rig.seen[from..]
+            .iter()
+            .filter(|s| matches!(s, Seen::Note(Notification::PaneActivity { .. })))
+            .count()
+    };
+    let seen = rig.seen.len();
+    for _ in 0..500 {
+        rig.push("%output %0 yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\\012\n");
+    }
+    assert_eq!(activity(&rig, seen), 1, "noted at once, then not again");
+    rig.wait(moshpit_tmux::controller::ACTIVITY_NOTE_MS);
+    rig.push("%output %0 y\\012\n");
+    assert_eq!(activity(&rig, seen), 2, "noted again a quarter second on");
 }
 
 #[test]
@@ -1674,6 +1703,48 @@ fn paste_markers_come_out_of_the_text() {
         rig.commands[base],
         "set-buffer -b moshpit-paste -- \"ab\u{301}c\""
     );
+}
+
+/// B738: a paste's control characters went out as they were, tmux
+/// turning `\u001b` back into ESC: an escape sequence ran as keys where
+/// the pane's program hadn't asked for bracketed paste, a ^C or ^D in it hit
+/// the tty as an interrupt or an end of file, bracketed or not. And
+/// paste-buffer sends each line feed as a carriage return, so a CRLF text
+/// went out CR CR, every line break doubled. Only tab, line feed and
+/// carriage return go now, and one line feed a line break.
+#[test]
+fn a_paste_sends_no_control_and_one_return_a_line() {
+    let mut rig = attached();
+    let base = rig.commands.len();
+    rig.with(|c, now| {
+        c.send_paste(
+            "a\r\nb\nc\u{1b}[31mred\u{3}\u{4}\u{7f}\u{9b}2Jend\tx",
+            "%0",
+            now,
+        )
+    });
+    assert_eq!(
+        rig.commands[base],
+        "set-buffer -b moshpit-paste -- \"a\\nb\\nc[31mred2Jend\\tx\""
+    );
+    // Tabs and line breaks stay (each line break one line feed, which
+    // paste-buffer sends as Return); neither an end marker nor the 8-bit
+    // CSI reaches the buffer.
+    for (pasted, buffer) in [
+        ("a\tb\r\nc\nd", "\"a\\tb\\nc\\nd\""),
+        ("x\u{1b}[201~y", "\"xy\""),
+        ("x\u{9b}201~y", "\"x201\\~y\""),
+    ] {
+        rig.settle();
+        rig.wait(150);
+        let base = rig.commands.len();
+        rig.with(|c, now| c.send_paste(pasted, "%0", now));
+        assert_eq!(
+            rig.commands[base],
+            format!("set-buffer -b moshpit-paste -- {buffer}"),
+            "{pasted:?}"
+        );
+    }
 }
 
 // MARK: - lifecycle

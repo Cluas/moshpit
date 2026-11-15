@@ -1345,6 +1345,8 @@ pub struct Asked {
     pub fingerprint: String,
     /// `Some` for a changed key: what was trusted.
     pub expected: Option<String>,
+    /// Asked because an earlier build stored two different keys (B725).
+    pub conflicting: bool,
 }
 
 impl Person {
@@ -1400,6 +1402,7 @@ impl HostKeyPrompt for Person {
             port,
             fingerprint: key.fingerprint(),
             expected: None,
+            conflicting: false,
         }))
     }
 
@@ -1416,6 +1419,22 @@ impl HostKeyPrompt for Person {
             port,
             fingerprint: key.fingerprint(),
             expected: Some(expected.to_owned()),
+            conflicting: false,
+        }))
+    }
+
+    fn accept_conflicting_host<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+        key: &'a HostKey,
+    ) -> BoxFuture<'a, bool> {
+        Box::pin(self.answer(Asked {
+            host: host.to_owned(),
+            port,
+            fingerprint: key.fingerprint(),
+            expected: None,
+            conflicting: true,
         }))
     }
 }

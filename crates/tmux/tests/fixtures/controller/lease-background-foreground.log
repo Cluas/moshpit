@@ -45,9 +45,7 @@
 @17 recv %output %0 hidden\n
 . note activity %0
 @18 recv %output %0 \\033]0;t\\007\n
-. note activity %0
 @19 recv %output %0 \\007\n
-. note activity %0
 . note bell %0
 @20 repin
 > list-sessions -F '#{session_id} #{session_attached} #{session_name}'

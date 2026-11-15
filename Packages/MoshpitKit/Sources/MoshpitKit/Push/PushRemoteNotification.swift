@@ -79,6 +79,10 @@ public enum PushRemoteNotification {
         case opened(PushSealedBox.Status)
         /// A pairing's key opened it, but it names another connection (B435).
         case misnamed
+        /// A pairing's key opened it, but it holds no status this device
+        /// reads (B635): the paired host sent it — not, as an unopened push
+        /// says, a host paired to another install.
+        case unreadable
         /// No key opened it.
         case unopened
     }
@@ -97,7 +101,9 @@ public enum PushRemoteNotification {
     public static func open(_ envelope: PushSealedBox.Envelope,
                             pairings: [PushPairing]) -> Opening {
         for pairing in pairings.sorted(by: { $0.createdAt > $1.createdAt }) {
-            guard let status = try? PushSealedBox.open(envelope, secretHex: pairing.secretHex) else { continue }
+            guard let plaintext = try? PushSealedBox.openRaw(envelope, secretHex: pairing.secretHex) else { continue }
+            // The key opened it: the MAC verified, only its holder sealed it.
+            guard let status = PushSealedBox.decodeStatus(plaintext) else { return .unreadable }
             guard UUID(uuidString: status.conn) == pairing.connectionId else { return .misnamed }
             return .opened(status)
         }

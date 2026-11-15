@@ -14,6 +14,7 @@
 //! Every path honours the user's sound switch, and leaves the diagnostic
 //! lines the app's screen shows.
 
+use crate::closed::PushClosedFile;
 use crate::copy::{self, Language};
 use crate::finishes::PushFinishesFile;
 use crate::envelope::Envelope;
@@ -23,7 +24,7 @@ use crate::foundation::uuid::Uuid;
 use crate::notification::{self, Card, Opening, Render};
 use crate::pairing::PushPairing;
 use crate::prefs::Prefs;
-use crate::standing::{Entry, PushStandingFile};
+use crate::standing::{Entry, LIFETIME_SECONDS, PushStandingFile};
 
 /// What to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +89,20 @@ pub fn receive(
                 diagnostics,
             };
         }
+        // The paired host's key opened it, but it holds no status this
+        // device reads (B635): the fallback, saying which it was.
+        Opening::Unreadable => {
+            diagnostics.push(
+                "a key opened this envelope, but it holds no status this phone reads — showed the fallback".to_owned(),
+            );
+            return Received {
+                delivery: Delivery::Fallback {
+                    secrets_tried: pairings.len(),
+                },
+                sound_allowed,
+                diagnostics,
+            };
+        }
         Opening::Unopened => {
             diagnostics.push(format!(
                 "no key opened this envelope ({} available) — showed the fallback",
@@ -120,11 +135,42 @@ pub fn receive(
         language,
         ..Render::default()
     };
+    // B636: when the host last said this pane's turn ended. Its lock busy
+    // past its budget reads as nothing ended — today's behaviour — never a
+    // push held up.
+    let closed = PushClosedFile::beside(standing.path());
+    let ended = if status.state == "attention" {
+        closed
+            .closed_at(&status.conn, &status.pane, now)
+            .unwrap_or_else(|_| {
+                diagnostics.push("turn endings busy — read as nothing ended".to_owned());
+                None
+            })
+    } else {
+        None
+    };
     let card = if status.agent.as_deref() == Some(notification::SELF_TEST_AGENT) {
         // A pairing self-test is no agent's turn (B439): it neither joins
         // nor leaves the waiting set, and rings no finish. Its "done" used
         // to clear the pane it named — `%0`, where an agent often waits.
         notification::render(&status, how)
+    } else if status.state == "attention" && ended.is_some_and(|ended| ended > status.ts) {
+        // B636: a question the host already said ended — APNs reordered
+        // it behind its `done`, or a relay sent it again. Not a new one: it
+        // doesn't stand and rings nothing.
+        diagnostics.push(
+            "an attention the host already ended came late — shown without a sound, not standing"
+                .to_owned(),
+        );
+        let count = standing.standing(&status.conn, now).len();
+        notification::render(
+            &status,
+            Render {
+                attention_edge: false,
+                standing_count: i64::try_from(count).unwrap_or(i64::MAX),
+                ..how
+            },
+        )
     } else if status.state == "attention" {
         let edge = standing.note_standing(
             &status.conn,
@@ -135,6 +181,7 @@ pub fn receive(
                 location: None,
                 since: status.ts,
                 recorded_at: now,
+                lifetime: Some(LIFETIME_SECONDS),
             },
             now,
         );
@@ -148,7 +195,16 @@ pub fn receive(
             },
         )
     } else {
-        standing.clear(&status.conn, &status.pane, now);
+        // B636: the host's word that the pane's turn ended, by its clock:
+        // what it asked up to then stops waiting, and a question from
+        // before it that comes later is told for what it is.
+        if closed
+            .note_closed(&status.conn, &status.pane, status.ts, now)
+            .is_err()
+        {
+            diagnostics.push("turn endings busy — this ending isn't remembered".to_owned());
+        }
+        standing.clear_ended(&status.conn, &status.pane, status.ts, now);
         // A long turn's finish rings once between this card and the app's
         // local copy of it: whichever lands first.
         let done_rings = status.state != "done"
@@ -221,6 +277,144 @@ mod tests {
         .unwrap()
     }
 
+    /// A payload sealed over `plaintext` exactly as given.
+    fn payload_of(plaintext: &[u8], key: &str) -> Value {
+        let sealed = seal(plaintext, key, None).unwrap();
+        let text = format!(
+            r#"{{"aps":{{"mutable-content":1}},"mp":{}}}"#,
+            json::encode(&sealed)
+        );
+        json::parse(
+            text.as_bytes(),
+            Dialect::Serialization {
+                fragments_allowed: false,
+            },
+        )
+        .unwrap()
+    }
+
+    /// [`payload`] for a status sent at `ts` (the host's clock).
+    fn payload_at(state: &str, ts: i64) -> Value {
+        let status = Status {
+            conn: CONN.into(),
+            host: "m1-pro".into(),
+            sess: Some("work".into()),
+            pane: "%3".into(),
+            agent: Some("claude".into()),
+            state: state.into(),
+            title: Some("Bash: ls".into()),
+            ts,
+            dur: None,
+        };
+        let sealed = seal(status.to_json().as_bytes(), SECRET, None).unwrap();
+        let text = format!(
+            r#"{{"aps":{{"mutable-content":1}},"mp":{}}}"#,
+            json::encode(&sealed)
+        );
+        json::parse(
+            text.as_bytes(),
+            Dialect::Serialization {
+                fragments_allowed: false,
+            },
+        )
+        .unwrap()
+    }
+
+    /// B635: a title a host cut in the middle of a character (GNU `cut -c`
+    /// counts bytes, and a host without `iconv` keeps the half) is shown,
+    /// the half as U+FFFD — not refused whole as a push no key opened.
+    #[test]
+    fn a_title_cut_mid_character_still_shows() {
+        let dir = TempDir::new("nse-cut-title");
+        let title = "构建".as_bytes();
+        let mut plaintext = format!(
+            r#"{{"conn":"{CONN}","host":"m1-pro","pane":"%3","agent":"claude","state":"done","ts":1755900000,"title":"Bash: "#
+        )
+        .into_bytes();
+        plaintext.extend_from_slice(&title[..4]);
+        plaintext.extend_from_slice(br#""}"#);
+        let received = deliver(
+            &payload_of(&plaintext, SECRET),
+            &[pairing(SECRET, "Mac")],
+            &dir,
+        );
+        let Delivery::Card(card) = &received.delivery else {
+            panic!("not shown: {:?}", received.diagnostics);
+        };
+        assert!(format!("{card:?}").contains('构'), "{card:?}");
+    }
+
+    /// B635: a push the paired host's key opened but that holds no status
+    /// is said as such — not as one sealed for another install, which sends
+    /// the person to pair again for nothing.
+    #[test]
+    fn a_push_the_key_opened_but_holding_no_status_is_said_as_such() {
+        let dir = TempDir::new("nse-unreadable");
+        let received = deliver(
+            &payload_of(b"not a status", SECRET),
+            &[pairing(SECRET, "Mac")],
+            &dir,
+        );
+        assert_eq!(received.delivery, Delivery::Fallback { secrets_tried: 1 });
+        let said = received.diagnostics.join("\n");
+        assert!(said.contains("holds no status"), "{said}");
+        assert!(!said.contains("no key opened"), "{said}");
+    }
+
+    fn standing_panes(dir: &TempDir) -> Vec<String> {
+        PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME))
+            .standing(CONN, Date::now())
+            .into_iter()
+            .map(|e| e.pane)
+            .collect()
+    }
+
+    /// B636: a question that arrives after the `done` that ended it (APNs
+    /// reordered them, or a relay sent the envelope again) is not a new
+    /// one: it neither stands nor rings. It rang "needs you" and stood six
+    /// hours on a pane nobody waited on.
+    #[test]
+    fn an_attention_that_comes_after_its_done_neither_stands_nor_rings() {
+        let dir = TempDir::new("nse-reordered");
+        let pairings = [pairing(SECRET, "Mac")];
+        deliver(&payload_at("done", 1_790_000_600), &pairings, &dir);
+        let late = card(deliver(
+            &payload_at("attention", 1_790_000_500),
+            &pairings,
+            &dir,
+        ));
+        assert!(!late.sound, "the late question rang");
+        assert!(standing_panes(&dir).is_empty(), "the late question stands");
+
+        // A question asked after that ending is a new one, as before.
+        let next = card(deliver(
+            &payload_at("attention", 1_790_000_700),
+            &pairings,
+            &dir,
+        ));
+        assert!(next.sound);
+        assert_eq!(standing_panes(&dir), vec!["%3".to_owned()]);
+    }
+
+    /// B636: a `done` that comes again leaves the question its pane asked
+    /// after it standing. It cleared it, and the waiting card went.
+    #[test]
+    fn a_done_that_comes_again_leaves_a_later_question_standing() {
+        let dir = TempDir::new("nse-replayed-done");
+        let pairings = [pairing(SECRET, "Mac")];
+        deliver(&payload_at("attention", 1_790_000_500), &pairings, &dir);
+        deliver(&payload_at("done", 1_790_000_600), &pairings, &dir);
+        assert!(standing_panes(&dir).is_empty(), "its own done ends it");
+        deliver(&payload_at("attention", 1_790_000_700), &pairings, &dir);
+        let replayed = payload_at("done", 1_790_000_600);
+        deliver(&replayed, &pairings, &dir);
+        assert_eq!(
+            standing_panes(&dir),
+            vec!["%3".to_owned()],
+            "an old done cleared the question asked after it"
+        );
+    }
+
     fn deliver(payload: &Value, pairings: &[PushPairing], dir: &TempDir) -> Received {
         let standing = PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME));
         receive(
@@ -259,6 +453,7 @@ mod tests {
             location: None,
             since: asked.unix() as i64,
             recorded_at: asked,
+            lifetime: Some(LIFETIME_SECONDS),
         };
         assert!(standing.note_standing(CONN, entry, asked));
         for pane in ["%0", "selftest"] {

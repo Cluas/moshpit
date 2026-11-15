@@ -48,6 +48,12 @@ struct MoshpitApp: App {
         let sshKeys = AppStores.sshKeys()
         // A sign-in with a managed key is that key's last use (B601).
         hub.signedIn = { [weak sshKeys] connection in sshKeys?.signedIn(with: connection) }
+        // A key 1.0.8 imported without its public half shows what it is
+        // once a sign-in has read it (B726): one behind Face ID can't be
+        // read at launch.
+        RustCredentialHost.keyRead = { [weak sshKeys] connection, privateKey in
+            Task { @MainActor in sshKeys?.learnFacts(for: connection, privateKey: privateKey) }
+        }
         // The language Moshpit shows, for the island, the widget and the
         // notification service extension to write in (AppLanguage). iOS
         // relaunches the app whenever it changes, so launch is enough —
@@ -178,6 +184,7 @@ struct MoshpitApp: App {
         Task { [store, sshKeys, keychain] in
             KeychainReferences.settleReleasesOnce(connections: store, keys: sshKeys, keychain: keychain)
             await KeychainReferences.recoverOrphansOnce(connections: store, keys: sshKeys, keychain: keychain)
+            KeychainReferences.learnKeyFactsOnce(keys: sshKeys, keychain: keychain)
         }
     }
 

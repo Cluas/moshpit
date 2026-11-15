@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use moshpit_seal::copy::{InterruptionLevel, Language};
-use moshpit_seal::standing::Entry;
+use moshpit_seal::standing::{Entry, LIFETIME_SECONDS};
 use moshpit_seal::{Date, PushFinishesFile, PushStandingFile};
 use serde::{Deserialize, Serialize};
 
@@ -157,6 +157,7 @@ pub fn run(script: &Script, dir: &std::path::Path, language: Language) -> Vec<St
                         location: None,
                         since: (T0 + ts) as i64,
                         recorded_at: Date::from_unix(T0 + t),
+                        lifetime: Some(LIFETIME_SECONDS),
                     },
                     Date::from_unix(T0 + t),
                 );

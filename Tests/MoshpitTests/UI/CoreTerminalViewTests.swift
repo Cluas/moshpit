@@ -112,6 +112,28 @@ struct CoreTerminalViewTests {
         #expect(view.rows.images.isEmpty, "its pixels let go")
     }
 
+    /// B737: a view off screen (a tmux pane not shown) let its drawables go
+    /// on a memory warning and in the background (B297), but kept its
+    /// images' textures: a full-screen image's is as large as a drawable,
+    /// and every pane once shown kept its own. They go with the drawables
+    /// now, and come back with the window.
+    @Test func aViewOffScreenLetsItsImageTexturesGo() {
+        let (view, _) = makeView(cols: 40, rows: 12)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        guard view.canvasKind == "metal" else { return }
+        let rgba = Data((0..<(16 * 48)).flatMap { _ in [UInt8(200), 0, 30, 255] })
+        feed(view, "\u{1b}_Ga=T,f=32,s=16,v=48,q=2;\(rgba.base64EncodedString())\u{1b}\\\r\n",
+             until: { !$0.rows.images.isEmpty })
+        #expect(view.viewImageMemory.textureCount == 1, "the image drew")
+        let host = view.superview
+        view.removeFromSuperview()
+        #expect(view.releaseDrawablesIfOffScreen())
+        #expect(view.viewImageMemory.textureCount == 0, "the pane off screen kept its image's texture")
+        host?.addSubview(view)
+        #expect(view.viewImageMemory.textureCount == 1, "back on screen, the image draws again")
+    }
+
     @Test func pushedBytesShowInOrder() {
         let (view, _) = makeView()
         var text = ""

@@ -435,6 +435,35 @@ fn a_paste_is_one_complete_bracketed_paste() {
     );
 }
 
+/// B738: no control character goes out in a paste but tab, line feed and
+/// carriage return (xterm's default). An escape sequence in it ran as keys
+/// where the program hadn't asked for bracketed paste, and a ^C or ^D hit
+/// the tty as an interrupt or an end of file, bracketed or not. C1
+/// controls and DEL go too; text, CJK and emoji stay as they are.
+#[test]
+fn b738_a_paste_carries_no_control_but_tab_and_line_breaks() {
+    assert_eq!(
+        frame::bracketed_paste("a\u{1b}[31mred\u{3}\u{4}end\tx\r\ny\u{9b}2J\u{7f}中文🎉"),
+        "\u{1b}[200~a[31mredend\tx\r\ny2J中文🎉\u{1b}[201~".as_bytes()
+    );
+    assert_eq!(
+        frame::paste_body("\u{1b}:!rm -rf ~\u{1b}\n"),
+        ":!rm -rf ~\n"
+    );
+    // Tabs and line breaks stay as they were; neither an end marker nor
+    // the 8-bit CSI (U+009B) can close the paste: one end, its own.
+    assert_eq!(
+        frame::bracketed_paste("a\tb\r\nc\nd"),
+        b"\x1b[200~a\tb\r\nc\nd\x1b[201~"
+    );
+    for (pasted, body) in [("x\u{1b}[201~y", "xy"), ("x\u{9b}201~y", "x201~y")] {
+        let paste = frame::bracketed_paste(pasted);
+        assert_eq!(paste, format!("\u{1b}[200~{body}\u{1b}[201~").as_bytes());
+        assert!(!paste[..paste.len() - 6].windows(6).any(|w| w == b"\x1b[201~"));
+        assert!(!String::from_utf8(paste).unwrap().contains('\u{9b}'));
+    }
+}
+
 #[test]
 fn an_end_marker_inside_the_pasted_text_cant_end_the_paste_early() {
     assert_eq!(

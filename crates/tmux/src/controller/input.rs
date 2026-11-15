@@ -228,7 +228,10 @@ impl Controller {
     /// back on the one channel.
     pub fn send_paste(&mut self, text: &str, pane: &str, now: u64) {
         self.begin_input(now);
-        let text = paste_body(text);
+        // tmux's paste-buffer sends each line feed as a carriage return: a
+        // CRLF text (from Windows, a web page) went out CR CR, every line
+        // break doubled (B738). One line feed per line break, then.
+        let text = paste_body(text).replace("\r\n", "\n");
         if !text.is_empty() && is_valid_id(pane) {
             self.paste_now(text, pane);
         }

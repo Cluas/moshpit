@@ -571,6 +571,9 @@ pub enum EventKind {
         /// `ssh-rsa` when the server offers no better host-key algorithm
         /// (B564): the card says so.
         older_algorithm: Option<String>,
+        /// An earlier build stored two different keys for the host, and it
+        /// presents one of them (B725): the card asks in its own words.
+        conflicting: bool,
     },
     /// The connection had to use an older host-key algorithm (`ssh-rsa`,
     /// SHA-1, B564): for the diagnostics. Every connect that did.

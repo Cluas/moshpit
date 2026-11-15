@@ -1496,7 +1496,9 @@ fn toggle(
         .test_id(id);
     let row = row(title).trailing(control);
     match subtitle {
-        Some(subtitle) => row.subtitle(subtitle),
+        // What the switch does, read in full in any language (B747): one
+        // line cut German, French, and English's longer ones.
+        Some(subtitle) => row.subtitle(subtitle).wrap_subtitle(),
         None => row,
     }
 }
@@ -1733,6 +1735,7 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
         .row(
             row(t!("Pixel Companion"))
                 .subtitle(t!("On the Dynamic Island, the lock screen and Home"))
+                .wrap_subtitle()
                 .trailing(
                     switch(on, toggle)
                         .label(t!("Pixel Companion"))
@@ -1742,6 +1745,7 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
         .row(
             row(t!("Let It Talk"))
                 .subtitle(t!("A short line on Home now and then"))
+                .wrap_subtitle()
                 .disabled(move || !on())
                 .trailing(
                     switch(talks, talk)
@@ -1753,7 +1757,9 @@ fn companion_group(pet: PetSignal, tell: &Tell) -> AnyElement {
         .row(
             row(String::new())
                 .title_with(title)
+                // The egg's is how it hatches: a sentence, whole (B747).
                 .subtitle_with(subtitle)
+                .wrap_subtitle()
                 .leading(figure)
                 .chevron()
                 .disabled(move || !on())

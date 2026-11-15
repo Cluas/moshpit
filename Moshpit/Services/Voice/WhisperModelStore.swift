@@ -170,8 +170,12 @@ actor WhisperModelStore {
 
     private let loader: WhisperModelLoader
 
-    init(loader: WhisperModelLoader = .whisperKit) {
+    /// How long the model stays after its last use (B678).
+    private let idleRelease: Duration
+
+    init(loader: WhisperModelLoader = .whisperKit, idleRelease: Duration = .seconds(30)) {
         self.loader = loader
+        self.idleRelease = idleRelease
     }
 
     /// Variants worth offering, best first.
@@ -237,6 +241,12 @@ actor WhisperModelStore {
     /// Which dictation sessions are using `loaded`, and whether it should go
     /// once they're done.
     private var sessions = WhisperSessionLedger()
+
+    /// The idle release waiting to fire, and which arming it belongs to: a
+    /// session or a load since then moves `idleArming`, and a stale timer
+    /// does nothing.
+    private var idleTimer: Task<Void, Never>?
+    private var idleArming = 0
 
     /// How many times each variant was removed: a load of a variant removed
     /// while it was loading keeps nothing once it lands (B124).
@@ -554,17 +564,59 @@ actor WhisperModelStore {
     /// A dictation session starts using the model: until `endSession`, an
     /// unload waits instead of pulling the model out from under it.
     func beginSession() -> UUID {
-        sessions.open()
+        disarmIdleRelease()
+        return sessions.open()
     }
 
     func endSession(_ id: UUID) {
-        if sessions.close(id) { dropModel() }
+        if sessions.close(id) {
+            dropModel()
+        } else {
+            armIdleRelease()
+        }
     }
 
+    /// The variant in memory, if any.
+    var loadedVariant: String? { loaded?.variant }
+
     private func dropModel() {
+        disarmIdleRelease()
         guard let variant = loaded?.variant else { return }
         loaded = nil
-        Log.voice.info("whisper model unloaded: \(variant, privacy: .public)")
+        Log.voice.info("voice unload: model=\(variant, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
+    }
+
+    // MARK: Idle release
+
+    /// The model goes `idleRelease` after its last use (B678): once the last
+    /// dictation ends, or once a load nobody is dictating with — an
+    /// install's warm-up — lands. It used to stay until a memory warning or
+    /// a settings change: up to 1.2 GB beside the live terminals for the rest
+    /// of the app's life, making the jetsam kill that takes every session
+    /// with it that much likelier. A dictation inside the window takes the
+    /// model as it is; one after it loads it again (seconds).
+    private func armIdleRelease() {
+        disarmIdleRelease()
+        guard loaded != nil, sessions.openSessions.isEmpty else { return }
+        let arming = idleArming
+        let delay = idleRelease
+        idleTimer = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await self?.idleExpired(arming)
+        }
+    }
+
+    private func disarmIdleRelease() {
+        idleArming += 1
+        idleTimer?.cancel()
+        idleTimer = nil
+    }
+
+    private func idleExpired(_ arming: Int) {
+        guard arming == idleArming, sessions.openSessions.isEmpty, loading == nil, !transcribing else { return }
+        Log.voice.info("voice idle: releasing the model after \(Self.seconds(self.idleRelease), privacy: .public)s unused")
+        unload()
     }
 
     /// Make sure a variant is loaded and ready to transcribe. Cheap after the
@@ -689,6 +741,9 @@ actor WhisperModelStore {
         guard sessions.generation == generation, removals[variant, default: 0] == removal else { return model }
         loaded = (variant, model)
         Log.voice.info("whisper model loaded: \(variant, privacy: .public)")
+        // Loaded with nobody dictating (an install's warm-up): it goes
+        // unless a dictation takes it in time.
+        armIdleRelease()
         return model
     }
 

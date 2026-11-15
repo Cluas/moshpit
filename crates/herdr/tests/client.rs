@@ -369,7 +369,8 @@ fn an_arrow_inside_a_paste_is_pasted_not_pressed() {
     rig.client.paste("w1:p1", "a\u{1b}[Ab", rig.now);
     rig.pump();
     rig.run(200);
-    assert_eq!(rig.typed("w1:p1"), "\u{1b}[200~a\u{1b}[Ab\u{1b}[201~");
+    // A paste carries no ESC (B738): the arrow's text, not the key.
+    assert_eq!(rig.typed("w1:p1"), "\u{1b}[200~a[Ab\u{1b}[201~");
 }
 
 // MARK: - Switching panes (B25)

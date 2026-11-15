@@ -140,6 +140,11 @@ pub enum Decision {
     /// Another key was trusted for this host: possibly someone in the
     /// middle. `expected` is the trusted fingerprint.
     Changed { expected: String },
+    /// An earlier build stored this host under more than one spelling, with
+    /// different keys, and the presented one is one of them (B725): asked,
+    /// never trusted silently — nothing says which record is the newer, and
+    /// either may be a key the host has retired.
+    Conflicting { stored: Vec<String> },
     /// The map can't be read until the device is unlocked. Neither a prompt
     /// nor a pass: "unknown" would offer to trust a host trusted long ago.
     Unverifiable,
@@ -199,9 +204,17 @@ impl KnownHosts {
                 TableRead::Broken => Vec::new(),
             },
         };
-        match stored.first() {
+        let mut distinct: Vec<String> = Vec::new();
+        for key in stored {
+            if !distinct.contains(&key) {
+                distinct.push(key);
+            }
+        }
+        let matches = distinct.iter().any(|s| s == fingerprint);
+        match distinct.first() {
             None => Decision::Unknown,
-            Some(_) if stored.iter().any(|s| s == fingerprint) => Decision::Trusted,
+            Some(_) if matches && distinct.len() == 1 => Decision::Trusted,
+            Some(_) if matches => Decision::Conflicting { stored: distinct },
             Some(first) => Decision::Changed {
                 expected: first.clone(),
             },
@@ -290,6 +303,14 @@ impl KnownHosts {
                 return;
             }
         };
+        // A trust written replaces every record of the same host and port
+        // an earlier build stored under another spelling (B725): left
+        // beside it, the retired key kept passing.
+        for key in state.unsaved.keys() {
+            merged.retain(|stored, _| {
+                stored == key || normalized_entry(stored).as_deref() != Some(key.as_str())
+            });
+        }
         merged.extend(state.unsaved.clone());
         match self.store.write(&merged) {
             Ok(()) => {
@@ -336,6 +357,19 @@ pub trait HostKeyPrompt: Send + Sync {
         expected: &'a str,
     ) -> BoxFuture<'a, bool> {
         let _ = (host, port, key, expected);
+        Box::pin(async { false })
+    }
+
+    /// An earlier build stored two different keys for the host, and it
+    /// presents one of them (B725): trust this one? Refused without asking
+    /// unless a platform overrides this.
+    fn accept_conflicting_host<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+        key: &'a HostKey,
+    ) -> BoxFuture<'a, bool> {
+        let _ = (host, port, key);
         Box::pin(async { false })
     }
 }
@@ -421,6 +455,19 @@ impl HostKeyPolicy for TrustOnFirstUse {
                     if !accepted {
                         log::warn!("{host}:{port}: host key changed; refused");
                         return Err(HostKeyRefusal::Changed { expected });
+                    }
+                    self.known.trust(host, port, &fingerprint);
+                    Ok(())
+                }
+                // Trusted, it replaces every stored spelling; declined,
+                // nothing is written (B725).
+                Decision::Conflicting { .. } => {
+                    let accepted = waiting
+                        .on_person(self.prompt.accept_conflicting_host(host, port, key))
+                        .await;
+                    if !accepted {
+                        log::warn!("{host}:{port}: two stored keys; the presented one not trusted");
+                        return Err(HostKeyRefusal::NotTrusted);
                     }
                     self.known.trust(host, port, &fingerprint);
                     Ok(())
@@ -531,6 +578,101 @@ mod tests {
     /// so a different key there got the quiet New Host card, never the
     /// loud Key Changed one. Entries an earlier build stored as typed
     /// still count.
+    /// B725: accepting a changed key for a host an earlier build stored as
+    /// typed (`Build-Box.example.com:22`, `example.com.:22`,
+    /// `2001:DB8::1:22`) retires the old key: the retired one no longer
+    /// passes. The new key was written under the one form beside the old
+    /// spelling, both were then trusted, and a host presenting the retired
+    /// key — whoever holds it now — connected without a word. 1.0.8's accept
+    /// replaced its one entry.
+    #[test]
+    fn accepting_a_changed_key_retires_the_old_spelling() {
+        for (stored, host) in [
+            ("Build-Box.example.com:22", "Build-Box.example.com"),
+            ("example.com.:22", "example.com."),
+            ("2001:DB8::1:22", "2001:DB8::1"),
+        ] {
+            let known = KnownHosts::in_memory(map(&[(stored, "SHA256:old")]));
+            assert_eq!(
+                known.decide(host, 22, "SHA256:new"),
+                Decision::Changed {
+                    expected: "SHA256:old".into()
+                }
+            );
+            known.trust(host, 22, "SHA256:new");
+            assert_eq!(known.decide(host, 22, "SHA256:new"), Decision::Trusted);
+            assert_eq!(
+                known.decide(host, 22, "SHA256:old"),
+                Decision::Changed {
+                    expected: "SHA256:new".into()
+                },
+                "{stored}: the retired key still passed"
+            );
+            assert!(!known.snapshot().contains_key(stored), "{stored} left behind");
+        }
+
+        // The port form: `[Example.COM]:2222` is `[example.com]:2222`, and a
+        // record is never pruned across ports.
+        let known = KnownHosts::in_memory(map(&[
+            ("[Example.COM]:2222", "SHA256:old"),
+            ("example.com:22", "SHA256:other-port"),
+            ("[example.com]:22", "SHA256:other-port-bracketed"),
+        ]));
+        known.trust("[example.com]", 2222, "SHA256:new");
+        let after = known.snapshot();
+        assert!(!after.contains_key("[Example.COM]:2222"), "{after:?}");
+        assert_eq!(after.get("[example.com]:2222").map(String::as_str), Some("SHA256:new"));
+        assert_eq!(after.get("example.com:22").map(String::as_str), Some("SHA256:other-port"));
+        assert_eq!(
+            after.get("[example.com]:22").map(String::as_str),
+            Some("SHA256:other-port-bracketed")
+        );
+        assert_eq!(
+            known.decide("[Example.COM]", 2222, "SHA256:old"),
+            Decision::Changed {
+                expected: "SHA256:new".into()
+            }
+        );
+    }
+
+    /// B725: two records an earlier build stored for one host and port, with
+    /// different keys: a key matching one of them is asked about, never
+    /// trusted silently (no order says which is newer; either may be
+    /// retired). A key matching neither is a changed key as ever. The same
+    /// key under two spellings is just trusted.
+    #[test]
+    fn records_that_disagree_are_asked_about() {
+        let known = KnownHosts::in_memory(map(&[
+            ("Example.com:22", "SHA256:a"),
+            ("example.com:22", "SHA256:b"),
+        ]));
+        for presented in ["SHA256:a", "SHA256:b"] {
+            assert!(
+                matches!(
+                    known.decide("example.com", 22, presented),
+                    Decision::Conflicting { ref stored } if stored.len() == 2
+                ),
+                "{presented}"
+            );
+        }
+        assert!(matches!(
+            known.decide("example.com", 22, "SHA256:c"),
+            Decision::Changed { .. }
+        ));
+        known.trust("example.com", 22, "SHA256:a");
+        assert_eq!(
+            known.snapshot(),
+            map(&[("example.com:22", "SHA256:a")]),
+            "one record left"
+        );
+
+        let same = KnownHosts::in_memory(map(&[
+            ("Example.com:22", "SHA256:a"),
+            ("example.com:22", "SHA256:a"),
+        ]));
+        assert_eq!(same.decide("example.com", 22, "SHA256:a"), Decision::Trusted);
+    }
+
     #[test]
     fn a_host_is_the_same_host_whatever_its_case_or_trailing_dot() {
         let changed = |expected: &str| Decision::Changed {

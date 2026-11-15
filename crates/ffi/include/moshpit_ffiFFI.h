@@ -1798,6 +1798,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_keystorehandle_keychain_refs(uint64_t pt
 RustBuffer uniffi_moshpit_ffi_fn_method_keystorehandle_keys(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_LEARN_FACTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_LEARN_FACTS
+int8_t uniffi_moshpit_ffi_fn_method_keystorehandle_learn_facts(uint64_t ptr, RustBuffer id, RustBuffer private_key, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
 int8_t uniffi_moshpit_ffi_fn_method_keystorehandle_mark_used(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
@@ -2514,6 +2519,11 @@ int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuf
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 int8_t uniffi_moshpit_ffi_fn_func_store_hold_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_LEARN_KEY_FACTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_LEARN_KEY_FACTS
+RustBuffer uniffi_moshpit_ffi_fn_func_store_learn_key_facts(uint64_t keys, uint64_t keychain, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MARK_DEFAULTS_READABLE
@@ -3285,6 +3295,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_readable(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOLD_RELEASE
 uint16_t uniffi_moshpit_ffi_checksum_func_store_hold_release(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_LEARN_KEY_FACTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_LEARN_KEY_FACTS
+uint16_t uniffi_moshpit_ffi_checksum_func_store_learn_key_facts(void
     
 );
 #endif
@@ -4515,6 +4531,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_keychain_refs(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_KEYS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_KEYS
 uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_keys(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_LEARN_FACTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_LEARN_FACTS
+uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_learn_facts(void
     
 );
 #endif

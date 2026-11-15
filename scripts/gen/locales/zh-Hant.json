@@ -219,6 +219,7 @@
   "%@ · runs %@": "%1$@ · 執行 %2$@",
   "Connection Error": "連線錯誤",
   "Trust New Key": "信任新金鑰",
+  "Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?": "早先的版本為 %@:%@ 存過兩把不同的金鑰。它這次送來的是 %@，要信任這把嗎？",
   "New Host": "新主機",
   "Trust": "信任",
   "Connecting…": "正在連線…",

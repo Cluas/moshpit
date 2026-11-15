@@ -64,7 +64,8 @@ pub const GAP: f32 = 12.0;
 pub const HEIGHT_MD: f32 = 44.0;
 /// A row with a subtitle: its least height.
 pub const HEIGHT_LG: f32 = 60.0;
-/// The value lane's least width, beside the title.
+/// The value lane's least width, beside the title: a value narrower than
+/// this keeps only its own width ([`value_least`]).
 pub const VALUE_MIN: f32 = 56.0;
 /// Past this share of the content lane, the title puts the value under it.
 pub const TITLE_SHARE: f32 = 0.6;
@@ -414,6 +415,14 @@ fn accessibility_size() -> bool {
     face::category(font_scale()) >= face::AX1
 }
 
+/// The least the value lane keeps beside the title for a value `natural`
+/// points wide (its dot and the dot's gap included): [`VALUE_MIN`], or
+/// less for a shorter value. A short value ("1m") kept 56 pt, and the
+/// subtitle beside it was cut with room to spare (B750).
+pub fn value_least(natural: f32) -> f32 {
+    natural.max(0.0).ceil().min(VALUE_MIN)
+}
+
 /// The width `words` take on one line in `token` at the user's text
 /// size, by the platform's text engine.
 fn natural_width(token: TextToken, words: &str) -> f32 {
@@ -549,6 +558,24 @@ impl Row {
                 whole_value && title + GAP + natural_width(token, &value()) > room
             })
         };
+        // The least the value lane keeps beside the title: its own width
+        // when that is less than VALUE_MIN (B750).
+        let least = {
+            let value = value.clone();
+            computed(move || {
+                let Some(value) = &value else { return 0.0 };
+                let token = if mono_value {
+                    TextToken::MonoSubhead
+                } else {
+                    TextToken::Subhead
+                };
+                let dot = match value_dot {
+                    Some(_) => DotSize::Sm.points() + 6.0,
+                    None => 0.0,
+                };
+                value_least(natural_width(token, &value()) + dot)
+            })
+        };
         // Side by side, or (stacked, an accessibility text size, crowded)
         // the value under the title.
         let side = {
@@ -585,15 +612,63 @@ impl Row {
             }
         });
 
+        // A row with a subtitle and a value reads as Mail's do (B752): the
+        // value on the title's line at its trailing end, the subtitle under
+        // them across the whole lane. At an accessibility text size (or
+        // stacked) the value goes under the title, which wraps.
+        let mail = has_subtitle && value_text.is_some();
+        let on_title_line = {
+            let stacked = stacked.clone();
+            move || !stacked() && !accessibility_size()
+        };
+        let title_words =
+            line(TextToken::Body, text(move || title()), false).text_color(move || token(ink));
+        let title_view = if mail {
+            let wraps = on_title_line.clone();
+            let shown = on_title_line.clone();
+            let make = value_text.clone().expect("a mail row has a value");
+            view()
+                .flex_row()
+                .items_start()
+                .gap(px(GAP))
+                .min_w(px(0.0))
+                .child(
+                    title_words
+                        .number_of_lines(move || u32::from(wraps()))
+                        .flex_grow(1.0)
+                        .flex_shrink(1.0)
+                        .min_w(px(0.0)),
+                )
+                .child(when(shown, move || {
+                    // One title line tall, the value centred in it; it gives
+                    // way four times faster than the title, down to its
+                    // least width (B317, B750).
+                    view()
+                        .flex_shrink(4.0)
+                        .min_w(move || px(least.get()))
+                        .h(move || {
+                            px(face::frame(
+                                TextToken::Body.size(font_scale()),
+                                pixel_ratio(),
+                            ))
+                        })
+                        .justify_center()
+                        .items_end()
+                        .child(make())
+                }))
+                .into_element()
+        } else {
+            title_words.into_element()
+        };
         // The content lane: title, the subtitle under it, and (stacked) the
         // value under them.
-        let mut content = view().min_w(px(0.0)).gap(px(2.0)).child(
-            line(TextToken::Body, text(move || title()), false).text_color(move || token(ink)),
-        );
+        let mut content = view().min_w(px(0.0)).gap(px(2.0)).child(title_view);
         match (subtitle, subtitle_mono) {
             (Some(words), Some(mono)) => {
                 // The words keep their width; the name shortens in its
-                // middle in what is left.
+                // middle in what is left. Where even the words don't fit
+                // (an accessibility text size), they shorten too, at their
+                // tail, once the name has given way: never clipped bare.
                 let shown = words.clone();
                 content = content.child(
                     view()
@@ -608,13 +683,15 @@ impl Row {
                                     text(move || format!("{} · ", words())),
                                     false,
                                 )
-                                .flex_shrink_0()
+                                .flex_shrink(1.0)
+                                .min_w(px(0.0))
                                 .text_color(move || token("muted-foreground"))
                             },
                         ))
                         .child(
                             line(TextToken::MonoSubhead, text(move || mono()), true)
-                                .flex_shrink(1.0)
+                                // Gives way long before the words do.
+                                .flex_shrink(1000.0)
                                 .min_w(px(0.0))
                                 .text_color(move || token("muted-foreground")),
                         ),
@@ -653,8 +730,13 @@ impl Row {
             content = content.child(under);
         }
         if let Some(make) = value_text.clone() {
-            let side = side.clone();
-            content = content.child(when(move || !side(), make));
+            if mail {
+                let under = on_title_line.clone();
+                content = content.child(when(move || !under(), make));
+            } else {
+                let side = side.clone();
+                content = content.child(when(move || !side(), make));
+            }
         }
 
         let mut lanes = view()
@@ -681,6 +763,8 @@ impl Row {
         }
         match value_text {
             None => lanes = lanes.child(content.flex_1()),
+            // The value is in the content's title line.
+            Some(_) if mail => lanes = lanes.child(content.flex_1()),
             Some(make) => {
                 // Both start at their own width: the value takes what is
                 // left, and when the two do not fit it gives way four times
@@ -692,7 +776,7 @@ impl Row {
                     view()
                         .flex_grow(1.0)
                         .flex_shrink(4.0)
-                        .min_w(move || px(if beside() { VALUE_MIN } else { 0.0 }))
+                        .min_w(move || px(if beside() { least.get() } else { 0.0 }))
                         .items_end()
                         .child(when(side, move || {
                             view().max_w(relative(1.0)).items_end().child(make())
@@ -877,5 +961,20 @@ impl Row {
                 plain.child(lanes).child(accessory).into_element()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_value_keeps_only_its_own_width() {
+        // "1m" needs about 18 pt: the rest goes to the subtitle (B750).
+        assert_eq!(value_least(17.3), 18.0);
+        assert_eq!(value_least(0.0), 0.0);
+        // A long one keeps VALUE_MIN and shortens inside it (B317).
+        assert_eq!(value_least(120.0), VALUE_MIN);
+        assert_eq!(value_least(VALUE_MIN), VALUE_MIN);
     }
 }

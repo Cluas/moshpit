@@ -189,4 +189,66 @@ struct CorePaneTests {
         #expect(surface.grid(fitting: CGSize(width: cell.width * 12.5, height: cell.height * 4.2))
                 == TerminalGrid(cols: 12, rows: 4))
     }
+
+    // MARK: Gone panes (B736)
+
+    /// The core's list of panes with a channel: `ids`, the first active.
+    private func list(_ ids: [String]) -> [PaneValue] {
+        ids.enumerated().map { n, id in PaneValue(pane: id, stream: UInt64(90_000 + n), active: n == 0) }
+    }
+
+    @Test("a pane tmux reports gone lets its terminal go; the live ones keep theirs (B736)")
+    func gonePanesLetTheirTerminalsGo() {
+        let (tmux, driver, _) = tmux()
+        // Four panes in two windows, every one shown once.
+        tmux.updatePanes(list(["%1", "%2", "%3", "%4"]))
+        for id in ["%1", "%2", "%3", "%4"] { _ = tmux.surface(for: id) }
+        let first = tmux.surface(for: "%1")
+        #expect(tmux.paneTerminalCount == 4)
+        // The second window closed: the core lists the first's panes. Every
+        // pane once shown kept its terminal, its history with it, for the
+        // attach's life.
+        tmux.updatePanes(list(["%1", "%2"]))
+        #expect(tmux.paneTerminalCount == 2, "the closed window's terminals stayed")
+        #expect(tmux.existingSurface(for: "%3") == nil)
+        #expect(tmux.surface(for: "%1") === first, "a live pane keeps its terminal")
+        // A pane hidden, zoomed or in another window is still listed: kept.
+        tmux.updatePanes(list(["%2", "%1"]))
+        #expect(tmux.surface(for: "%1") === first)
+        #expect(tmux.paneTerminalCount == 2)
+        _ = driver
+    }
+
+    @Test("a pane a landing waits on keeps its terminal until the landing ends (B736, B468)")
+    func aLandingHoldsItsPane() {
+        let (tmux, driver, _) = tmux()
+        tmux.updatePanes(list(["%1", "%2"]))
+        let held = tmux.surface(for: "%2")
+        tmux.holdPane("%2")
+        // %2 closed while its notification's landing waits.
+        tmux.updatePanes(list(["%1"]))
+        #expect(tmux.existingSurface(for: "%2") === held, "let go while the landing waited")
+        tmux.holdPane(nil)
+        #expect(tmux.existingSurface(for: "%2") == nil, "kept once the landing ended")
+        #expect(tmux.paneTerminalCount == 1)
+        _ = driver
+    }
+
+    @Test("a terminal made before its pane's channel is listed stays for it (B736)")
+    func aPaneOnItsWayKeepsItsTerminal() {
+        let (tmux, driver, _) = tmux()
+        tmux.updatePanes(list(["%1"]))
+        // The stage shows %5 from the tree before the core lists its channel.
+        let early = tmux.surface(for: "%5")
+        #expect(tmux.existingSurface(for: "%5") === early)
+        tmux.updatePanes(list(["%1", "%5"]))
+        #expect(tmux.surface(for: "%5") === early, "the pane on its way lost its terminal")
+        // One asked for after the latest list but never listed after it:
+        // a pane already gone, let go with the next list.
+        _ = tmux.surface(for: "%7")
+        tmux.updatePanes(list(["%5", "%1"]))
+        #expect(tmux.existingSurface(for: "%7") == nil)
+        #expect(tmux.paneTerminalCount == 2)
+        _ = driver
+    }
 }

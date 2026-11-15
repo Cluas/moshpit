@@ -106,6 +106,36 @@ final class Qwen3ASRModel: WhisperLoadedModel {
     static let maximumPieceSamples = 16_000 * 20
     static let maxTotalLen: Int32 = 768
 
+    /// onnxruntime session options for the three graphs, as sherpa-onnx reads
+    /// them from a `cpu:<file>` provider string (B679): no CPU memory arena,
+    /// no memory pattern.
+    ///
+    /// With its arena onnxruntime keeps the largest working set any decode
+    /// ever needed — the decoder's KV caches for 768 positions, the
+    /// encoder's activations — for as long as the model is loaded. Measured
+    /// with the app's configuration on a 10 s utterance: 1.33 GB resident
+    /// between decodes and 1.50 GB at a decode's peak with it, against
+    /// 0.53 GB and 0.98 GB without; a dictation's preview passes decode
+    /// every second or so, so the model sat at its peak for the whole
+    /// dictation, beside the live terminals. Decoding is a little slower
+    /// without (allocations per run), within the noise of the measurement.
+    static let sessionOptions = "EnableCpuMemArena=0\nEnableMemPattern=0\n"
+
+    /// The provider string carrying ``sessionOptions``: the options written
+    /// to a file under `directory`, or plain "cpu" when that fails —
+    /// sherpa-onnx exits the process if a named config file can't be
+    /// opened, so the file is written and checked right before use.
+    static func provider(writingOptionsTo directory: URL) -> String {
+        let file = directory.appendingPathComponent("qwen3-asr-session.cfg")
+        do {
+            try Data(sessionOptions.utf8).write(to: file, options: .atomic)
+        } catch {
+            return "cpu"
+        }
+        guard FileManager.default.isReadableFile(atPath: file.path) else { return "cpu" }
+        return "cpu:" + file.path
+    }
+
     /// Builds the recognizer from the downloaded folder. Seconds: onnxruntime
     /// maps the weights and plans the graphs. Throws, rather than trapping,
     /// when sherpa-onnx refuses the files.
@@ -118,6 +148,7 @@ final class Qwen3ASRModel: WhisperLoadedModel {
         let decoderPath = folder.appendingPathComponent("decoder.int4.onnx").path
         let tokenizerPath = folder.appendingPathComponent("tokenizer").path
         let threads = Int32(max(1, min(4, ProcessInfo.processInfo.activeProcessorCount - 2)))
+        let providerString = provider(writingOptionsTo: FileManager.default.temporaryDirectory)
         let maxLength = maxTotalLen
         let recognizer: OpaquePointer? = await Task.detached(priority: .userInitiated) {
             // The strings only have to live through the call: sherpa-onnx
@@ -126,7 +157,7 @@ final class Qwen3ASRModel: WhisperLoadedModel {
                 encoderPath.withCString { encoder in
                     decoderPath.withCString { decoder in
                         tokenizerPath.withCString { tokenizer in
-                            "cpu".withCString { provider in
+                            providerString.withCString { provider in
                                 "greedy_search".withCString { method -> OpaquePointer? in
                                     var config = SherpaOnnxOfflineRecognizerConfig()
                                     config.feat_config.sample_rate = 16_000

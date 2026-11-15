@@ -71,6 +71,7 @@ final class WhisperModelResidency {
     private let notifications: NotificationCenter
     private let memoryWarnings: NSObjectProtocol
     private var installs: NSObjectProtocol?
+    private var backgrounding: NSObjectProtocol?
 
     /// `unload` defaults to `WhisperModelStore.shared.unload()`; tests count
     /// calls instead.
@@ -87,6 +88,16 @@ final class WhisperModelResidency {
             Log.voice.info("memory warning: unloading the whisper model once it is idle")
             Task { await unload() }
         }
+        // B678: in the background the model is the largest thing the app
+        // holds, and the first the system would kill the app for — taking
+        // every live terminal with it. A dictation still open keeps it until
+        // it ends (`WhisperSessionLedger`); the next one loads it again.
+        backgrounding = notifications.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
+        ) { _ in
+            Log.voice.info("background: unloading the local speech model once it is idle")
+            Task { await unload() }
+        }
         installs = notifications.addObserver(forName: Self.modelInstalled, object: nil, queue: nil) { [weak self] note in
             guard let variant = note.userInfo?[Self.variantKey] as? String else { return }
             Task { @MainActor [weak self] in self?.installed(variant) }
@@ -97,6 +108,7 @@ final class WhisperModelResidency {
     deinit {
         notifications.removeObserver(memoryWarnings)
         if let installs { notifications.removeObserver(installs) }
+        if let backgrounding { notifications.removeObserver(backgrounding) }
     }
 
     /// A variant finished installing — and the install loaded it, on

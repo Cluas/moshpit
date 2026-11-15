@@ -217,5 +217,38 @@ struct SSHKeyRecordTests {
                                         authMethod: .password, keychainRef: "moshpit.secret.laptop")
         #expect(!store.signedIn(with: password))
     }
+
+    /// B726: a key 1.0.8 imported pasted without its public half, as it
+    /// saved it — an OpenSSH ECDSA key labelled ED25519 (its guess for any
+    /// PEM not `BEGIN RSA` or `BEGIN EC`), no public key, no fingerprint,
+    /// behind Face ID — shows what it is once its first sign-in has read
+    /// it, and only then: nothing else about the record changes. A SEC1 EC
+    /// key 1.0.8 labelled ECDSA-sk reads as plain ECDSA from the start,
+    /// which the connection form's picker offers.
+    @Test("a key 1.0.8 imported without its public half shows what it is after its first sign-in")
+    func signInLearnsWhatAKeyIs() throws {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let pasted = OlderBuildKeyRecord(name: "work", algorithm: .ed25519, source: .imported,
+                                         keychainRef: "moshpit.secret.work")
+        let sec1 = OlderBuildKeyRecord(name: "router", algorithm: .ecdsaSK, source: .imported,
+                                       keychainRef: "moshpit.secret.router")
+        defaults.set(try JSONEncoder().encode([pasted, sec1]), forKey: Self.storageKey)
+        let store = SSHKeyStore(defaults: defaults)
+        #expect(store.keys.first { $0.name == "router" }?.algorithm == .ecdsa, "in the picker")
+        let key = try String(decoding: TestFixtures.data("keys-written-by-rust/imported-ecdsa-p-256---openssh"),
+                             as: UTF8.self)
+        let connection = ServerConnection(name: "box", host: "192.0.2.7", port: 22, username: "me",
+                                          authMethod: .key, keychainRef: "moshpit.secret.work")
+        #expect(store.learnFacts(for: connection, privateKey: key))
+        let work = try #require(store.keys.first { $0.name == "work" })
+        #expect(work.algorithm == .ecdsa)
+        #expect(work.fingerprint == "SHA256:Y82atu0ehMoZKkgZksBoszn80yjGIvGqADbZjBF3FYg")
+        #expect(work.publicKey.hasPrefix("ecdsa-sha2-nistp256 AAAA"))
+        #expect(work.requireBiometry && work.boundHosts.isEmpty && work.keychainRef == "moshpit.secret.work")
+        #expect(SSHKeyStore(defaults: defaults).keys.first { $0.name == "work" }?.fingerprint == work.fingerprint,
+                "stored")
+        #expect(!store.learnFacts(for: connection, privateKey: key), "once: it has its facts now")
+    }
 }
 

@@ -7,7 +7,10 @@
 //! answered or resolved (a poll, the turn's `done` push) or its pane or
 //! agent ends; past [`LIFETIME_SECONDS`] (six hours, B660) it's taken for
 //! stale. It used to expire at fifteen minutes, and a question still
-//! waiting lost its card to the app opening for another host.
+//! waiting lost its card to the app opening for another host. An entry 1.0.8
+//! recorded still expires at fifteen minutes ([`OLDER_LIFETIME_SECONDS`],
+//! B727): this build's entries say how long they stand
+//! ([`Entry::lifetime`]), and one that doesn't is that build's.
 //!
 //! The file (`standing-attention.json`) is a JSON object, connection id →
 //! array of [`Entry`], read an entry at a time with the pairings file's
@@ -37,6 +40,13 @@ use crate::store::{self, Read};
 /// (B660); its question's answer, its pane's or agent's end take it first.
 pub const LIFETIME_SECONDS: f64 = 6.0 * 3600.0;
 
+/// How long an entry 1.0.8 recorded stands — one without a
+/// [`Entry::lifetime`]: that build's fifteen minutes (B727). It took a
+/// question unanswered that long for answered at the desk; read with six
+/// hours, one answered there while no app ran held the edge, and the next
+/// prompt came in silent.
+pub const OLDER_LIFETIME_SECONDS: f64 = 15.0 * 60.0;
+
 /// One standing prompt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entry {
@@ -53,11 +63,30 @@ pub struct Entry {
     /// When this entry was recorded on the phone, for expiry.
     #[serde(rename = "recordedAt")]
     pub recorded_at: Date,
+    /// How long it stands, in seconds: [`LIFETIME_SECONDS`], set when this
+    /// build records it ([`PushStandingFile::note_standing`]). None on one
+    /// 1.0.8 recorded, which keeps that build's [`OLDER_LIFETIME_SECONDS`]
+    /// (B727).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifetime: Option<f64>,
 }
 
-/// Whether something recorded at `recorded_at` still counts: younger than
-/// the lifetime, and not from more than a minute in the future (a clock that
-/// jumped).
+impl Entry {
+    /// Whether it still counts at `now`: younger than its own lifetime
+    /// (never past this build's), and not from more than a minute in the
+    /// future (a clock that jumped).
+    pub fn is_live(&self, now: Date) -> bool {
+        let lasts = self
+            .lifetime
+            .unwrap_or(OLDER_LIFETIME_SECONDS)
+            .min(LIFETIME_SECONDS);
+        now.seconds_since(self.recorded_at) < lasts && self.recorded_at < now.adding(60.0)
+    }
+}
+
+/// Whether something recorded at `recorded_at` still counts under the
+/// longest lifetime any build gives it: what an entry this build can't read
+/// is held to.
 pub fn is_live(recorded_at: Date, now: Date) -> bool {
     now.seconds_since(recorded_at) < LIFETIME_SECONDS && recorded_at < now.adding(60.0)
 }
@@ -66,11 +95,7 @@ pub fn is_live(recorded_at: Date, now: Date) -> bool {
 pub fn prune(raw: &BTreeMap<String, Vec<Entry>>, now: Date) -> BTreeMap<String, Vec<Entry>> {
     raw.iter()
         .filter_map(|(conn, entries)| {
-            let live: Vec<Entry> = entries
-                .iter()
-                .filter(|e| is_live(e.recorded_at, now))
-                .cloned()
-                .collect();
+            let live: Vec<Entry> = entries.iter().filter(|e| e.is_live(now)).cloned().collect();
             (!live.is_empty()).then(|| (conn.clone(), live))
         })
         .collect()
@@ -137,6 +162,11 @@ impl PushStandingFile {
     /// never an edge: the push and the local announcement of one prompt both
     /// land here, and only one of them may ring.
     pub fn note_standing(&self, conn: &str, entry: Entry, now: Date) -> bool {
+        // Recorded by this build: it stands this build's lifetime (B727).
+        let entry = Entry {
+            lifetime: Some(LIFETIME_SECONDS),
+            ..entry
+        };
         let _lock = store::Lock::take(&self.path);
         let contents = self.contents();
         let mut all = prune(&contents.entries, now);
@@ -177,6 +207,29 @@ impl PushStandingFile {
         }
         let mut carried = contents.carried.clone();
         if let Some(items) = carried.get_mut(conn) {
+            items.retain(|item| pane_of(item) != Some(pane));
+        }
+        self.save(&all, &carried, &contents.odd, &contents, now);
+        entries
+    }
+
+    /// The host said `pane`'s turn ended at `ended_at` (its clock, B636):
+    /// the question it asked up to then stops waiting — not one the pane
+    /// asked after, which a `done` that came again (a relay can send an
+    /// envelope twice) used to clear. Returns what still stands.
+    pub fn clear_ended(&self, conn: &str, pane: &str, ended_at: i64, now: Date) -> Vec<Entry> {
+        let _lock = store::Lock::take(&self.path);
+        let contents = self.contents();
+        let mut all = prune(&contents.entries, now);
+        let mut entries = all.remove(conn).unwrap_or_default();
+        let before = entries.len();
+        entries.retain(|e| e.pane != pane || e.since > ended_at);
+        let cleared = entries.len() != before;
+        if !entries.is_empty() {
+            all.insert(conn.to_owned(), entries.clone());
+        }
+        let mut carried = contents.carried.clone();
+        if cleared && let Some(items) = carried.get_mut(conn) {
             items.retain(|item| pane_of(item) != Some(pane));
         }
         self.save(&all, &carried, &contents.odd, &contents, now);
@@ -339,6 +392,7 @@ mod tests {
             location: Some("m1 · work".into()),
             since,
             recorded_at: at,
+            lifetime: Some(LIFETIME_SECONDS),
         }
     }
 
@@ -462,6 +516,74 @@ mod tests {
         assert!(prune(&future, now).is_empty());
         assert!(is_live(now.adding(59.0), now));
         assert!(!is_live(now.adding(60.0), now));
+    }
+
+    /// B727: an entry 1.0.8 recorded says nothing of how long it stands,
+    /// and keeps that build's fifteen minutes. One twenty minutes old was
+    /// answered at the desk long since — no app ran to clear it — and held
+    /// the edge for six hours: the next prompt came in silent. One this
+    /// build records stands six hours (B660), and the file says so.
+    #[test]
+    fn an_entry_1_0_8_recorded_keeps_its_fifteen_minutes() {
+        let dir = TempDir::new("standing-108");
+        let file = file(&dir);
+        let now = Date::from_unix(1_790_000_000.0);
+        // As 1.0.8's PushStanding wrote one (JSONEncoder: the date as
+        // seconds since 2001, a nil field left out), `minutes` old.
+        let older = |pane: &str, minutes: f64| {
+            format!(
+                r#"{{"pane":"{pane}","agent":"claude","title":"may I","since":1789990000,"recordedAt":{}}}"#,
+                now.adding(-minutes * 60.0).since_reference()
+            )
+        };
+        std::fs::write(
+            file.path(),
+            format!(
+                r#"{{"{CONN}":[{}],"{OTHER}":[{}]}}"#,
+                older("%1", 20.0),
+                older("%2", 10.0)
+            ),
+        )
+        .unwrap();
+        assert!(
+            file.standing(CONN, now).is_empty(),
+            "20 minutes old: past 1.0.8's fifteen"
+        );
+        assert_eq!(file.standing(OTHER, now).len(), 1, "10 minutes old");
+        assert!(
+            file.note_standing(CONN, entry("%3", 1, now), now),
+            "nobody waits on CONN: the next prompt rings"
+        );
+        assert!(
+            !file.note_standing(OTHER, entry("%4", 1, now), now),
+            "%2 still waits"
+        );
+
+        let panes = |conn: &str, at: Date| -> Vec<String> {
+            file.standing(conn, at)
+                .into_iter()
+                .map(|e| e.pane)
+                .collect()
+        };
+        let later = now.adding(LIFETIME_SECONDS - 60.0);
+        assert_eq!(panes(CONN, later), ["%3"], "this build's stands six hours");
+        assert_eq!(panes(OTHER, later), ["%4"], "1.0.8's %2 is gone");
+        assert!(panes(CONN, now.adding(LIFETIME_SECONDS + 1.0)).is_empty());
+        let bytes = std::fs::read(file.path()).unwrap();
+        let stored = json::parse(&bytes, Dialect::Decoder).unwrap();
+        let lifetime = stored
+            .as_object()
+            .and_then(|m| m.get(CONN))
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("lifetime"))
+            .and_then(Value::as_swift_double);
+        assert_eq!(
+            lifetime,
+            Some(LIFETIME_SECONDS),
+            "the file says how long it stands"
+        );
     }
 
     #[test]

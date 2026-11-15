@@ -20196,7 +20196,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comment fonctionnent les notifications"
+            "value": "Fonctionnement des notifications"
           }
         },
         "ja": {
@@ -26665,6 +26665,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "Moshpit 不會悄悄安裝任何東西。把下面的指令貼到你的 shell 執行，sudo 和輸出全程都看得到。"
+          }
+        }
+      }
+    },
+    "Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine frühere Version hat für %@:%@ zwei verschiedene Schlüssel gespeichert. Gesendet wurde jetzt %@. Diesem Schlüssel vertrauen?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una versión anterior guardó dos claves distintas para %@:%@. La que envió ahora es %@. ¿Confiar en esta clave?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une version précédente a enregistré deux clés différentes pour %@:%@. Celle envoyée maintenant est %@. Faire confiance à cette clé ?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョンで %@:%@ に異なる2つのキーが保存されています。今回送られてきたのは %@ です。このキーを信頼しますか？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 버전에서 %@:%@에 서로 다른 키 두 개를 저장했습니다. 이번에 보낸 키는 %@입니다. 이 키를 신뢰할까요?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uma versão anterior salvou duas chaves diferentes para %@:%@. A que ele enviou agora é %@. Confiar nesta chave?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "早先的版本为 %@:%@ 存过两把不同的密钥。它这次发来的是 %@，信任这把吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "早先的版本為 %@:%@ 存過兩把不同的金鑰。它這次送來的是 %@，要信任這把嗎？"
           }
         }
       }

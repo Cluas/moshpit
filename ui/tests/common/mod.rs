@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+pub mod a11y;
 pub mod home_fixture;
 pub mod settings_fixture;
 

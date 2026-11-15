@@ -52,7 +52,7 @@ use crate::herdr::{
     unanswered,
 };
 use crate::herdr_mosh::{
-    HerdrMoshCommand, HerdrMoshLeg, HerdrMoshNote, HerdrMoshStart, PlaneConfig,
+    HELD_SHOWN, HerdrMoshCommand, HerdrMoshLeg, HerdrMoshNote, HerdrMoshStart, PlaneConfig,
 };
 use crate::lifecycle::{Action, Lifecycle, Probe, Teardown, Transport};
 use crate::mosh_udp::{self, MoshCommand, MoshLoop, MoshNote, MoshStart, Painted};
@@ -152,6 +152,8 @@ pub(crate) enum Msg {
         previous: Option<String>,
         /// The older algorithm the key came by (B564).
         older_algorithm: Option<&'static str>,
+        /// An earlier build stored two different keys for the host (B725).
+        conflicting: bool,
         reply: oneshot::Sender<bool>,
     },
     /// The attempt of `generation` asks the person what the server asked
@@ -227,10 +229,13 @@ pub(crate) enum Msg {
     TmuxHoldExpired {
         hold: u64,
     },
-    /// mosh-server acked paste `paste` to `dest` (B525).
+    /// Paste `paste` to `dest` is in the tty by mosh-server's ack
+    /// (`landed`, B525), or never will be: its loop ended, or herdr's
+    /// plane dropped it (B687).
     PasteLanded {
         dest: Dest,
         paste: u64,
+        landed: bool,
     },
     /// What a dropped sidecar of `epoch` owed the server, for the next.
     SidecarHandoff {
@@ -285,7 +290,17 @@ pub struct SessionView {
     pub return_path_dead: bool,
     pub attach_stalled: bool,
     pub mosh_srtt_ms: Option<f64>,
+    /// mosh is roaming, or what was typed has waited over a second for
+    /// mosh-server's acknowledgement of what went before it
+    /// ([`Self::input_held`]): the pill's amber and "mosh is reconnecting"
+    /// (B689).
     pub mosh_roaming: bool,
+    /// Typing (a Return behind a paste, a key or typing behind the herdr
+    /// plane's barrier) has waited over a second, unbounded, for
+    /// mosh-server's acknowledgement of what was sent before it (B689):
+    /// shown as mosh's reconnecting state, never a pane that looks fine
+    /// while nothing happens.
+    pub input_held: bool,
     /// mosh's protocol counters (the pill's long-press popover).
     pub mosh_diagnostics: Option<moshpit_mosh::Diagnostics>,
     /// The mosh-server this session started (for diagnostics and the
@@ -343,6 +358,7 @@ impl SessionView {
             attach_stalled: false,
             mosh_srtt_ms: None,
             mosh_roaming: false,
+            input_held: false,
             mosh_diagnostics: None,
             mosh_server_pid: None,
             connected_at: None,
@@ -544,12 +560,6 @@ const CONTROL_HOLD: Duration = Duration::from_secs(5);
 /// leaves room for a slower host.
 const PASTE_SETTLE: Duration = Duration::from_millis(150);
 
-/// Over plain mosh, what follows a paste also waits for mosh-server's ack
-/// of the paste's state, at most this long (B525): a paste state lost on
-/// the way goes again as one diff with what was typed after it, and
-/// mosh-server writes them together.
-const PASTE_ACK_WAIT: Duration = Duration::from_secs(2);
-
 /// Where typing goes: the session's shell (plain SSH, mosh) or a
 /// multiplexer's pane.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -562,13 +572,16 @@ pub(crate) enum Dest {
 struct Settling {
     /// The paste's number (an older paste's ack lands nothing of this one).
     paste: u64,
+    /// When the paste went (the session clock's ms).
+    since: u64,
     /// When the paste has had its time (the session clock's ms).
     until: u64,
-    /// The paste has landed: mosh-server acked its state (B525); always,
-    /// elsewhere.
+    /// The paste has landed: mosh-server acked its state (B525), however
+    /// long that takes (B687: a paste state lost on the way goes again as
+    /// one diff with what was typed after it, and mosh-server writes them
+    /// together; the 2 s this was bounded by let a slow path's Return
+    /// join it). Always, elsewhere.
     landed: bool,
-    /// When what follows goes, landed or not.
-    hard: u64,
     /// What came after it, in order.
     queued: Vec<Queued>,
 }
@@ -771,6 +784,11 @@ pub(crate) struct Actor {
     settling: BTreeMap<Dest, Settling>,
     /// The last paste's number.
     pastes: u64,
+    /// herdr's plane holds typing behind an unacknowledged barrier past
+    /// [`HELD_SHOWN`] (B689).
+    plane_held: bool,
+    /// mosh's own roaming flag, as its metrics last said.
+    transport_roaming: bool,
     /// The in-place return's question, until it is settled.
     resume_question: Option<ResumeQuestion>,
     deliveries: Vec<Delivery>,
@@ -866,6 +884,8 @@ impl Actor {
             tmux_dropped: false,
             settling: BTreeMap::new(),
             pastes: 0,
+            plane_held: false,
+            transport_roaming: false,
             resume_question: None,
             deliveries: Vec::new(),
             grids: BTreeMap::new(),
@@ -928,8 +948,10 @@ impl Actor {
                 self.deliveries.iter().map(|d| d.deadline).min(),
                 self.settling
                     .values()
-                    .map(|s| if s.landed { s.until } else { s.hard })
+                    .filter(|s| s.landed)
+                    .map(|s| s.until)
                     .min(),
+                self.held_due(),
                 self.side_idle_until,
             ]
             .into_iter()
@@ -1199,6 +1221,7 @@ impl Actor {
                 fingerprint,
                 previous,
                 older_algorithm,
+                conflicting,
                 reply,
             } => {
                 if generation != self.life.generation()
@@ -1219,6 +1242,7 @@ impl Actor {
                     fingerprint,
                     previous,
                     older_algorithm: older_algorithm.map(str::to_owned),
+                    conflicting,
                 });
             }
             Msg::Question {
@@ -1307,10 +1331,20 @@ impl Actor {
             Msg::ControlChecked { epoch, alive } => self.control_checked(epoch, alive),
             Msg::ControlHoldExpired { hold } => self.control_hold_expired(hold),
             Msg::TmuxHoldExpired { hold } => self.tmux_hold_expired(hold),
-            Msg::PasteLanded { dest, paste } => {
-                if let Some(settling) = self.settling.get_mut(&dest)
-                    && settling.paste == paste
-                {
+            Msg::PasteLanded {
+                dest,
+                paste,
+                landed,
+            } => {
+                let current = self.settling.get(&dest).is_some_and(|s| s.paste == paste);
+                if current && !landed {
+                    let why = if self.herdr_mosh.is_some() {
+                        Discarded::NotAttached
+                    } else {
+                        Discarded::Reconnected
+                    };
+                    self.drop_settled(&dest, why);
+                } else if current && let Some(settling) = self.settling.get_mut(&dest) {
                     settling.landed = true;
                 }
                 self.release_settled(now);
@@ -1422,10 +1456,11 @@ impl Actor {
                 let end = self.shell.as_ref().map_or(0, |shell| shell.written);
                 if let Some(plane) = &self.herdr_mosh {
                     // Under the renderer's rule, as typing is.
-                    let _ = plane
-                        .leg
-                        .commands
-                        .send(HerdrMoshCommand::Paste { text, end });
+                    let _ = plane.leg.commands.send(HerdrMoshCommand::Paste {
+                        text,
+                        end,
+                        landed: None,
+                    });
                     return;
                 }
                 let payload = moshpit_herdr::frame::bracketed_paste(&text);
@@ -2434,14 +2469,35 @@ impl Actor {
                 reaped,
                 ..
             } => {
+                // herdr's plane first: nothing it holds reaches mosh after
+                // mosh is asked what it never delivered, and what it holds
+                // (typing behind a key or a switch, B686) is said with it.
+                let held = self.stop_herdr_control().await;
+                self.plane_held = false;
+                // What waits behind a paste was for this shell: never the
+                // next one's, never dropped unsaid (B689).
+                let why_dropped = if why == Teardown::Reconnect {
+                    Discarded::Reconnected
+                } else {
+                    Discarded::SessionEnded
+                };
+                self.drop_settled(&Dest::Shell, why_dropped);
+                let now = self.now();
+                self.show_held(now);
                 // Keys this flow never delivered go with it, said (B618): a
                 // reconnect's server is a fresh shell, which mustn't get
                 // them, and the person must know they weren't sent.
                 let (asked, answer) = oneshot::channel();
-                if mosh.commands.send(MoshCommand::Undelivered(asked)).is_ok()
+                let undelivered = if mosh.commands.send(MoshCommand::Undelivered(asked)).is_ok()
                     && let Ok(Ok(bytes)) =
                         tokio::time::timeout(Duration::from_millis(500), answer).await
-                    && bytes > 0
+                {
+                    bytes
+                } else {
+                    0
+                };
+                let bytes = undelivered + held;
+                if bytes > 0
                     && let Some(stream) = self.shell.as_ref().map(|shell| shell.stream.id())
                 {
                     self.emit(EventKind::InputDiscarded {
@@ -2467,7 +2523,6 @@ impl Actor {
                 // before the card closes.
                 let hand_back = courtesy || why == Teardown::Ended;
                 self.stop_control(hand_back, renderer_server).await;
-                self.stop_herdr_control().await;
                 self.lend_to_control_waiting();
                 // A server that never heard from us waits forever; one whose
                 // session the person ended (or left for SSH) can never be
@@ -3179,6 +3234,11 @@ impl Actor {
                 self.emit(EventKind::TreeChanged);
             }
             HerdrMoshNote::AgentHooksUpdated => self.emit(EventKind::AgentHooksUpdated),
+            HerdrMoshNote::InputHeld(held) => {
+                self.plane_held = held;
+                let now = self.now();
+                self.show_held(now);
+            }
             HerdrMoshNote::InputDropped { bytes } => {
                 let stream = self.shell.as_ref().map_or(0, |shell| shell.stream.id());
                 self.emit(EventKind::InputDiscarded {
@@ -3302,18 +3362,24 @@ impl Actor {
         self.redial_herdr_control();
     }
 
-    /// The mosh leg is going: its herdr control plane with it.
-    async fn stop_herdr_control(&mut self) {
+    /// The mosh leg is going: its herdr control plane with it. Says how many
+    /// bytes of typing the plane held that never reached mosh.
+    async fn stop_herdr_control(&mut self) -> usize {
         let Some(control) = self.herdr_mosh.take() else {
-            return;
+            return 0;
         };
         let (done, closed) = oneshot::channel();
         let _ = control.leg.commands.send(HerdrMoshCommand::Close(done));
-        let _ = tokio::time::timeout(Duration::from_millis(500), closed).await;
+        let held = tokio::time::timeout(Duration::from_millis(500), closed)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or(0);
         control.leg.abort();
         if let Some(ssh) = control.ssh {
             tokio::spawn(async move { ssh.close().await });
         }
+        held
     }
 
     // MARK: What the pane tasks say
@@ -3569,6 +3635,14 @@ impl Actor {
                 self.life.lost(generation, now);
             }
             MoshNote::Metrics { srtt_ms, roaming } => {
+                self.transport_roaming = roaming;
+                // Typing held past a second shows as roaming too (B689).
+                let roaming = roaming
+                    || self
+                        .view
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .input_held;
                 self.update(|view| {
                     view.mosh_srtt_ms = Some(srtt_ms);
                     view.mosh_roaming = roaming;
@@ -3730,22 +3804,40 @@ impl Actor {
     /// Sends to a place now; what comes after a paste waits behind it.
     fn send_now(&mut self, dest: &Dest, stream: StreamId, typed: Typed, end: u64) {
         let paste = matches!(typed, Typed::Paste(_));
+        // Over herdr and mosh the plane says when the paste is in the tty
+        // (B687): it goes through the plane's lane, behind what it holds.
+        let through_plane = paste
+            && *dest == Dest::Shell
+            && matches!(self.leg, Some(Leg::Mosh { .. }))
+            && self.herdr_mosh.is_some();
+        let (said, landing) = if through_plane {
+            let (said, landing) = oneshot::channel();
+            (Some(said), Some(landing))
+        } else {
+            (None, None)
+        };
         match dest {
-            Dest::Shell => self.send_to_shell(stream, typed, end),
+            Dest::Shell => self.send_to_shell(stream, typed, end, said),
             Dest::Pane(pane) => self.send_to_pane(pane, stream, typed),
         }
         if paste {
             let now = self.now();
             self.pastes += 1;
             let paste = self.pastes;
-            let landed = !self.ask_paste_ack(dest, paste);
+            let landed = match landing {
+                Some(landing) => {
+                    self.await_paste(dest, paste, async move { landing.await.unwrap_or(false) });
+                    false
+                }
+                None => !self.ask_paste_ack(dest, paste),
+            };
             self.settling.insert(
                 dest.clone(),
                 Settling {
                     paste,
+                    since: now,
                     until: now + crate::spec::ms(PASTE_SETTLE),
                     landed,
-                    hard: now + crate::spec::ms(PASTE_ACK_WAIT),
                     queued: Vec::new(),
                 },
             );
@@ -3763,15 +3855,95 @@ impl Actor {
         if mosh.commands.send(MoshCommand::Barrier(reply)).is_err() {
             return false;
         }
+        // Acked, or the transport gone without it: the loop's end drops the
+        // barrier unanswered.
+        self.await_paste(dest, paste, async move { acked.await.is_ok() });
+        true
+    }
+
+    /// Paste `paste` to `dest` is said landed (or not) once `landed` says.
+    fn await_paste(
+        &self,
+        dest: &Dest,
+        paste: u64,
+        landed: impl std::future::Future<Output = bool> + Send + 'static,
+    ) {
         let me = self.me.clone();
         let dest = dest.clone();
         tokio::spawn(async move {
-            // Acked, or the transport gone: either way nothing more to wait
-            // for.
-            let _ = acked.await;
-            let _ = me.send(Msg::PasteLanded { dest, paste });
+            let landed = landed.await;
+            let _ = me.send(Msg::PasteLanded {
+                dest,
+                paste,
+                landed,
+            });
         });
-        true
+    }
+
+    /// A paste to `dest` never reached the tty: what was sent after it
+    /// waiting behind it doesn't go on its own — a Return behind an image
+    /// path submitted the prompt without it (B687) — and is said. A size
+    /// change among it still goes.
+    fn drop_settled(&mut self, dest: &Dest, why: Discarded) {
+        let Some(settling) = self.settling.remove(dest) else {
+            return;
+        };
+        for queued in settling.queued {
+            match queued {
+                Queued::Typed(stream, typed, _) => self.emit(EventKind::InputDiscarded {
+                    stream,
+                    bytes: typed.len(),
+                    why,
+                }),
+                Queued::Resize(stream, cols, rows) => self.resize(stream, cols, rows),
+            }
+        }
+    }
+
+    /// When typing behind an unacknowledged paste is next due to be shown
+    /// as held (B689).
+    fn held_due(&self) -> Option<u64> {
+        if self
+            .view
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .input_held
+        {
+            return None;
+        }
+        self.settling
+            .values()
+            .filter(|s| !s.landed && !s.queued.is_empty())
+            .map(|s| s.since + HELD_SHOWN)
+            .min()
+    }
+
+    /// Typing held behind mosh-server's acknowledgement past [`HELD_SHOWN`]
+    /// — behind a paste here, or in herdr's plane — shown as mosh's
+    /// reconnecting state, and no longer once it isn't (B689).
+    fn show_held(&mut self, now: u64) {
+        let settling = self
+            .settling
+            .values()
+            .any(|s| !s.landed && !s.queued.is_empty() && now >= s.since + HELD_SHOWN);
+        let held = settling || self.plane_held;
+        let (was, srtt) = {
+            let view = self.view.lock().unwrap_or_else(|e| e.into_inner());
+            (view.input_held, view.mosh_srtt_ms)
+        };
+        if held == was {
+            return;
+        }
+        let roaming = self.transport_roaming || held;
+        self.update(|view| {
+            view.input_held = held;
+            view.mosh_roaming = roaming;
+        });
+        // The pill and the banner follow mosh's metrics.
+        self.emit(EventKind::MoshMetrics {
+            srtt_ms: srtt.unwrap_or(0.0),
+            roaming,
+        });
     }
 
     /// The pastes whose time is up: what waited behind each goes out, in
@@ -3780,7 +3952,7 @@ impl Actor {
         let due: Vec<Dest> = self
             .settling
             .iter()
-            .filter(|(_, s)| (s.landed && s.until <= now) || s.hard <= now)
+            .filter(|(_, s)| s.landed && s.until <= now)
             .map(|(dest, _)| dest.clone())
             .collect();
         for dest in due {
@@ -3806,9 +3978,17 @@ impl Actor {
                 }
             }
         }
+        self.show_held(now);
     }
 
-    fn send_to_shell(&mut self, stream: StreamId, typed: Typed, end: u64) {
+    /// `landed`, for a paste over herdr and mosh: answered by the plane.
+    fn send_to_shell(
+        &mut self,
+        stream: StreamId,
+        typed: Typed,
+        end: u64,
+        landed: Option<oneshot::Sender<bool>>,
+    ) {
         match &self.leg {
             Some(Leg::Shell { shell, .. }) => {
                 let _ = shell.commands.send(ShellCommand::Input(typed.into_bytes()));
@@ -3825,7 +4005,7 @@ impl Actor {
                     let _ = plane
                         .leg
                         .commands
-                        .send(HerdrMoshCommand::Paste { text, end });
+                        .send(HerdrMoshCommand::Paste { text, end, landed });
                 }
                 (None, typed) => {
                     let bytes = typed.into_bytes();
@@ -4335,6 +4515,7 @@ impl Prompt {
         port: u16,
         key: &HostKey,
         previous: Option<&str>,
+        conflicting: bool,
     ) -> SshBoxFuture<'static, bool> {
         let (reply, answer) = oneshot::channel();
         let asked = self
@@ -4346,6 +4527,7 @@ impl Prompt {
                 fingerprint: key.fingerprint(),
                 previous: previous.map(str::to_owned),
                 older_algorithm: key.older_algorithm(),
+                conflicting,
                 reply,
             })
             .is_ok();
@@ -4387,7 +4569,7 @@ impl HostKeyPrompt for Prompt {
         port: u16,
         key: &'a HostKey,
     ) -> SshBoxFuture<'a, bool> {
-        self.ask(host, port, key, None)
+        self.ask(host, port, key, None, false)
     }
 
     fn accept_changed_host<'a>(
@@ -4397,7 +4579,16 @@ impl HostKeyPrompt for Prompt {
         key: &'a HostKey,
         expected: &'a str,
     ) -> SshBoxFuture<'a, bool> {
-        self.ask(host, port, key, Some(expected))
+        self.ask(host, port, key, Some(expected), false)
+    }
+
+    fn accept_conflicting_host<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+        key: &'a HostKey,
+    ) -> SshBoxFuture<'a, bool> {
+        self.ask(host, port, key, None, true)
     }
 }
 
@@ -4848,6 +5039,7 @@ mod tests {
                 fingerprint: "SHA256:x".into(),
                 previous: None,
                 older_algorithm: None,
+                conflicting: false,
                 reply,
             })
             .await;
@@ -4886,6 +5078,7 @@ mod tests {
                     fingerprint: "SHA256:x".into(),
                     previous: None,
                     older_algorithm: older,
+                    conflicting: false,
                     reply,
                 })
                 .await;
@@ -5684,6 +5877,21 @@ mod tests {
         id
     }
 
+    /// Handles what the mailbox brings up to a paste's landing, that too.
+    async fn paste_landed(actor: &mut Actor) {
+        loop {
+            let message = tokio::time::timeout(Duration::from_secs(5), actor.mailbox.recv())
+                .await
+                .expect("the paste's landing is said")
+                .expect("the mailbox is open");
+            let landed = matches!(message, Msg::PasteLanded { .. });
+            actor.handle(message).await;
+            if landed {
+                return;
+            }
+        }
+    }
+
     fn discarded(events: &mut mpsc::UnboundedReceiver<Event>) -> Vec<EventKind> {
         std::iter::from_fn(|| events.try_recv().ok())
             .map(|event| event.kind)
@@ -5968,10 +6176,13 @@ mod tests {
     /// on the way goes again as one diff with the Return typed after it
     /// (mosh retransmits from the acked state to the newest), mosh-server
     /// writes them together, and Claude Code drops the Return behind an
-    /// image path's paste. With no ack in 2 s it goes anyway.
+    /// image path's paste. B687: however long the ack takes — it went
+    /// after 2 s, into a slow path's retransmitted diff — and when the loop
+    /// ends without it, what follows never goes (a reconnect's shell is a
+    /// fresh one) and is said.
     #[tokio::test(start_paused = true)]
     async fn over_mosh_what_follows_a_paste_waits_for_its_ack() {
-        let (mut actor, _events) = live_actor(false);
+        let (mut actor, mut events) = live_actor(false);
         let (commands, mut sent) = mpsc::unbounded_channel();
         actor.leg = Some(Leg::Mosh {
             generation: actor.life.generation(),
@@ -6012,15 +6223,204 @@ mod tests {
         actor.release_settled(past);
         assert_eq!(keys(&mut sent).0, vec![b"\r".to_vec()], "then the Return");
 
-        // No ack at all: after 2 s.
+        // No ack, however long: the key waits.
         actor.send_or_wait(Dest::Shell, 1, Typed::Paste("x".into()), 2);
         actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"y".to_vec()), 3);
-        let _ = keys(&mut sent);
+        let (_, mut barriers) = keys(&mut sent);
+        let _ = discarded(&mut events);
         let start = actor.now();
-        actor.release_settled(start + 1_900);
-        assert!(keys(&mut sent).0.is_empty());
-        actor.release_settled(start + 2_000);
-        assert_eq!(keys(&mut sent).0, vec![b"y".to_vec()]);
+        actor.release_settled(start + 60_000);
+        assert!(keys(&mut sent).0.is_empty(), "no ack, a minute on");
+        // The loop ends without it: the key never goes, and is said.
+        drop(barriers.remove(0));
+        paste_landed(&mut actor).await;
+        actor.release_settled(start + 120_000);
+        assert!(keys(&mut sent).0.is_empty(), "never into a fresh shell");
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: 1,
+                bytes: 1,
+                why: Discarded::Reconnected,
+            }]
+        );
+        assert!(actor.settling.is_empty());
+    }
+
+    /// B689: an unbounded wait is never invisible. A Return held behind a
+    /// paste mosh-server hasn't acknowledged shows, past a second, as
+    /// mosh's reconnecting state (the amber pill, "mosh is reconnecting");
+    /// herdr's plane holding typing shows the same; and the person closing
+    /// the session says the Return wasn't sent, with its count.
+    #[tokio::test(start_paused = true)]
+    async fn typing_held_past_a_second_is_shown_and_said_when_the_session_closes() {
+        let (mut actor, mut events) = live_actor(false);
+        let generation = actor.life.generation();
+        let (commands, _sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation,
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let held = |actor: &Actor| {
+            let view = actor.view.lock().unwrap();
+            (view.input_held, view.mosh_roaming)
+        };
+        let roaming = |events: &mut mpsc::UnboundedReceiver<Event>| -> Vec<bool> {
+            std::iter::from_fn(|| events.try_recv().ok())
+                .filter_map(|event| match event.kind {
+                    EventKind::MoshMetrics { roaming, .. } => Some(roaming),
+                    _ => None,
+                })
+                .collect()
+        };
+        actor.send_or_wait(Dest::Shell, 1, Typed::Paste("/tmp/a.jpg".into()), 0);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"\r".to_vec()), 1);
+        let since = actor.settling[&Dest::Shell].since;
+        assert_eq!(
+            actor.held_due(),
+            Some(since + HELD_SHOWN),
+            "a wake-up is due"
+        );
+        actor.release_settled(since + 900);
+        assert_eq!(held(&actor), (false, false));
+        actor.release_settled(since + HELD_SHOWN);
+        assert_eq!(held(&actor), (true, true), "shown past a second");
+        assert_eq!(
+            roaming(&mut events),
+            [true],
+            "the pill and the banner hear it"
+        );
+        assert_eq!(actor.held_due(), None, "said once");
+
+        // herdr's plane saying it holds typing shows the same.
+        let (plane, _asked) = mpsc::unbounded_channel();
+        actor.herdr_mosh = Some(HerdrMoshControl {
+            generation,
+            leg: HerdrMoshLeg::fake(plane),
+            ssh: None,
+            epoch: 1,
+            dialling: false,
+            failures: 0,
+        });
+        actor.herdr_mosh_note(generation, HerdrMoshNote::InputHeld(true));
+        assert!(actor.plane_held);
+        assert_eq!(held(&actor), (true, true));
+
+        // The person closes the session: the Return is said, not sent, and
+        // nothing waits any more.
+        actor.teardown(generation, Teardown::Disconnect).await;
+        assert_eq!(held(&actor), (false, false));
+        let said: Vec<EventKind> = std::iter::from_fn(|| events.try_recv().ok())
+            .map(|event| event.kind)
+            .filter(|kind| {
+                matches!(
+                    kind,
+                    EventKind::InputDiscarded { .. } | EventKind::MoshMetrics { .. }
+                )
+            })
+            .collect();
+        assert!(
+            said.contains(&EventKind::InputDiscarded {
+                stream: 1,
+                bytes: 1,
+                why: Discarded::SessionEnded,
+            }),
+            "{said:?}"
+        );
+        assert!(
+            said.iter()
+                .any(|kind| matches!(kind, EventKind::MoshMetrics { roaming: false, .. })),
+            "{said:?}"
+        );
+        assert!(actor.settling.is_empty());
+    }
+
+    /// B687: over herdr and mosh, what follows a paste waits for herdr's
+    /// plane to say the paste is in the tty (mosh-server acknowledged it
+    /// behind whatever the plane's lane held before it), as over plain mosh
+    /// (B525) — it waited only the paste's 150 ms, and an image path's
+    /// Return could join its retransmitted diff. A paste the plane dropped
+    /// (typing not going now) takes what follows it with it, said: a bare
+    /// Return submitted the prompt without the image.
+    #[tokio::test(start_paused = true)]
+    async fn over_herdr_and_mosh_what_follows_a_paste_waits_for_the_plane_to_land_it() {
+        let (mut actor, mut events) = live_actor(false);
+        let generation = actor.life.generation();
+        let (commands, _sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation,
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (plane, mut asked) = mpsc::unbounded_channel();
+        actor.herdr_mosh = Some(HerdrMoshControl {
+            generation,
+            leg: HerdrMoshLeg::fake(plane),
+            ssh: None,
+            epoch: 1,
+            dialling: false,
+            failures: 0,
+        });
+        // What reached the plane: typing, and each paste's question.
+        let take = |asked: &mut mpsc::UnboundedReceiver<HerdrMoshCommand>| {
+            let (mut typed, mut pastes) = (Vec::new(), Vec::new());
+            while let Ok(command) = asked.try_recv() {
+                match command {
+                    HerdrMoshCommand::Typed { bytes, .. } => typed.push(bytes),
+                    HerdrMoshCommand::Paste { text, landed, .. } => {
+                        pastes.push((text, landed.expect("the paste's landing is asked")))
+                    }
+                    _ => {}
+                }
+            }
+            (typed, pastes)
+        };
+        actor.send_or_wait(Dest::Shell, 1, Typed::Paste(" /tmp/a.jpg ".into()), 0);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"\r".to_vec()), 12);
+        let (typed, mut pastes) = take(&mut asked);
+        assert!(typed.is_empty());
+        assert_eq!(pastes.len(), 1);
+        let start = actor.now();
+        actor.release_settled(start + 60_000);
+        assert!(
+            take(&mut asked).0.is_empty(),
+            "the Return waits for the plane"
+        );
+        let _ = pastes.remove(0).1.send(true);
+        paste_landed(&mut actor).await;
+        actor.release_settled(start + 60_200);
+        assert_eq!(take(&mut asked).0, vec![b"\r".to_vec()], "then the Return");
+
+        // Dropped by the plane: the Return behind it never goes, said.
+        let _ = discarded(&mut events);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Paste(" /tmp/b.jpg ".into()), 13);
+        actor.send_or_wait(Dest::Shell, 1, Typed::Bytes(b"\r".to_vec()), 25);
+        let (_, mut pastes) = take(&mut asked);
+        let _ = pastes.remove(0).1.send(false);
+        paste_landed(&mut actor).await;
+        actor.release_settled(start + 120_000);
+        assert!(take(&mut asked).0.is_empty(), "no bare Return");
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: 1,
+                bytes: 1,
+                why: Discarded::NotAttached,
+            }]
+        );
     }
 
     thread_local! {
@@ -6240,6 +6640,8 @@ mod tests {
             used: false,
             written: 0,
         });
+        // mosh-server acknowledges the paste as it is asked (B687: what
+        // follows waits for that, however long).
         let seen = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>| -> Vec<String> {
             std::iter::from_fn(|| sent.try_recv().ok())
                 .filter_map(|command| match command {
@@ -6247,6 +6649,10 @@ mod tests {
                         Some(String::from_utf8_lossy(&bytes).into_owned())
                     }
                     MoshCommand::Resize { cols, rows } => Some(format!("{cols}x{rows}")),
+                    MoshCommand::Barrier(reply) => {
+                        let _ = reply.send(());
+                        None
+                    }
                     _ => None,
                 })
                 .collect()
@@ -6265,6 +6671,7 @@ mod tests {
         );
         actor.input(id, InputEvent::Bytes(b"b".to_vec()));
         assert_eq!(seen(&mut sent), Vec::<String>::new(), "all three wait");
+        paste_landed(&mut actor).await;
         let past = actor.now() + 10_000;
         actor.release_settled(past);
         assert_eq!(seen(&mut sent), ["a", "100x30", "b"], "in the order given");
@@ -6561,15 +6968,25 @@ mod tests {
         assert!(moshpit_stream::view::write(id, b"c"));
         take_input(&mut actor, 3).await;
         // The key after the paste waits behind it (B485), for the paste's
-        // ack (B525, here past its wait), ending where it did when typed.
-        let hard = actor.settling[&Dest::Shell].hard;
-        actor.release_settled(hard);
-        let went: Vec<(Vec<u8>, u64)> = std::iter::from_fn(|| sent.try_recv().ok())
-            .filter_map(|command| match command {
-                MoshCommand::Keys { bytes, end } => Some((bytes, end)),
-                _ => None,
-            })
-            .collect();
+        // ack (B525), ending where it did when typed.
+        let mut went: Vec<(Vec<u8>, u64)> = Vec::new();
+        let take = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>,
+                    went: &mut Vec<(Vec<u8>, u64)>| {
+            while let Ok(command) = sent.try_recv() {
+                match command {
+                    MoshCommand::Keys { bytes, end } => went.push((bytes, end)),
+                    MoshCommand::Barrier(reply) => {
+                        let _ = reply.send(());
+                    }
+                    _ => {}
+                }
+            }
+        };
+        take(&mut sent, &mut went);
+        paste_landed(&mut actor).await;
+        let until = actor.settling[&Dest::Shell].until;
+        actor.release_settled(until);
+        take(&mut sent, &mut went);
         assert_eq!(
             went,
             [

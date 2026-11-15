@@ -135,6 +135,9 @@ final class WhisperDictationEngine: DictationEngine {
     /// cellular, mid-session, with a terminal open.
     func prepare(onProgress: @escaping @Sendable (DictationPreparation) -> Void) async throws {
         onProgress(.loading)
+        // B678: the footprint before this dictation loads anything, to read
+        // `voice load:`, `voice final:` and `voice unload:` against.
+        Log.voice.info("voice prepare: model=\(self.variant, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
         // Hold the model before loading it, so an unload that lands mid-load
         // or mid-dictation (a memory warning, say) waits for this session
         // instead of pulling the model out from under it.

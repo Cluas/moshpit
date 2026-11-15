@@ -44,6 +44,8 @@ pub struct HostKeyAsk {
     /// `ssh-rsa` when the server offers no better host-key algorithm
     /// (B564): the question says so, as iOS's card does.
     pub older_algorithm: Option<String>,
+    /// An earlier version stored two different keys for the host (B725).
+    pub conflicting: bool,
 }
 
 /// One connection's session, as the screens read it.
@@ -456,6 +458,7 @@ impl App {
                     fingerprint,
                     previous,
                     older_algorithm,
+                    conflicting,
                 } => {
                     host_key = Some(HostKeyAsk {
                         prompt,
@@ -464,6 +467,7 @@ impl App {
                         fingerprint,
                         previous,
                         older_algorithm,
+                        conflicting,
                     });
                 }
                 EventKind::InputDiscarded { stream, bytes, why } => {
@@ -488,6 +492,13 @@ impl App {
 
     fn ask_host_key(&mut self, connection: Uuid, ask: HostKeyAsk) {
         let (title, mut message) = match &ask.previous {
+            None if ask.conflicting => (
+                "Host key changed".to_owned(),
+                format!(
+                    "Moshpit saved two different keys for {}:{} in an earlier version. The key it sent now is {}. Trust this key?",
+                    ask.host, ask.port, ask.fingerprint
+                ),
+            ),
             None => (
                 "Trust this host?".to_owned(),
                 format!(
@@ -508,7 +519,7 @@ impl App {
                 "\n\nThis server uses an older host-key algorithm ({older}, SHA-1)."
             ));
         }
-        let destructive = ask.previous.is_some();
+        let destructive = ask.previous.is_some() || ask.conflicting;
         let prompt = ask.prompt;
         self.ask(super::Question::TrustHostKey(connection, prompt), |token| {
             Ask::Confirm {

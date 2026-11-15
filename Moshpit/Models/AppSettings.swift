@@ -131,11 +131,17 @@ final class AppSettings {
     /// store keeps only the settings of its schema, and took this write for
     /// none — every icon not the primary read as picked by hand, the card's
     /// own switch too.
+    ///
+    /// With nothing kept, only an icon the gallery still offers counts
+    /// (B728): an id an earlier build stored for an icon since retired
+    /// (`ringdown`, `nocarrier`, the old `teal`/`green`/`amber` recolors)
+    /// shows as the primary on the home screen, and was never this
+    /// gallery's pick.
     var appIconPickedByHand: Bool {
         get {
             access(keyPath: \.appIconPickedByHand)
             return store.object(forKey: Self.appIconPickedByHandKey) as? Bool
-                ?? (appIconId != AppIconCatalog.primary.id)
+                ?? AppIconCatalog.all.contains { $0.id == appIconId && !$0.isPrimary }
         }
         set {
             withMutation(keyPath: \.appIconPickedByHand) {

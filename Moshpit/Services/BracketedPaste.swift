@@ -32,6 +32,13 @@ enum BracketedPaste {
     /// gone. Removing each marker the moment its last byte is read gets there
     /// in one pass: the bytes kept so far never hold a marker, so the only
     /// one a new byte can complete ends at that byte.
+    ///
+    /// No control character goes out either but tab, line feed and carriage
+    /// return (xterm's default; B738, the core's `input::paste_body`): an
+    /// escape sequence in a paste ran as keys where the program hadn't
+    /// asked for bracketed paste, and a ^C or ^D reached the tty as an
+    /// interrupt or an end of file, bracketed or not. C1 controls and DEL
+    /// go too; with no ESC left, no marker can be either.
     static func body(_ text: String) -> Data {
         var kept: [UInt8] = []
         kept.reserveCapacity(text.utf8.count)
@@ -41,7 +48,22 @@ enum BracketedPaste {
                 kept.removeLast(6)
             }
         }
-        return Data(kept)
+        let unmarked = String(decoding: kept, as: UTF8.self)
+        var out = String.UnicodeScalarView()
+        for scalar in unmarked.unicodeScalars where pasteable(scalar) {
+            out.append(scalar)
+        }
+        return Data(String(out).utf8)
+    }
+
+    /// Whether a pasted character goes out: text, and of the controls only
+    /// tab, line feed and carriage return.
+    static func pasteable(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x09, 0x0A, 0x0D: return true
+        case 0x00...0x1F, 0x7F...0x9F: return false
+        default: return true
+        }
     }
 
     /// `text` as one complete bracketed paste.

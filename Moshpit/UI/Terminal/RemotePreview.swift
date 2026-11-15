@@ -218,8 +218,14 @@ final class RemotePreviewModel: Identifiable {
         }
     }
 
+    /// The person said yes to a file past 50 MB: it is fetching from this
+    /// moment (B800). The card stops asking at once, and a second tap
+    /// before the fetch has begun finds nothing to confirm — it used to
+    /// stay on the question until the task ran, and a second tap started a
+    /// second download of the same file.
     func confirm() {
         guard case .confirm(let entry) = phase else { return }
+        phase = .downloading(entry, 0)
         work = Task { [weak self] in
             guard let self else { return }
             do {

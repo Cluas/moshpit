@@ -1185,6 +1185,28 @@ fn v30_a_paste_is_bracketed_as_the_program_asked_without_markers() {
 /// doubled every line break in a program that reads raw (`cat > file`
 /// through the tty's ICRNL, an old REPL). A bracketed paste is the
 /// program's to read: byte for byte.
+/// B738: a paste the terminal sends itself carries no control character
+/// but tab and line breaks: unbracketed, an ESC and what follows ran as
+/// keys (vim: ESC, then `:!` and a command); bracketed or not, a ^C or ^D
+/// hit the tty as an interrupt or an end of file.
+#[test]
+fn b738_a_paste_carries_no_control_but_tab_and_line_breaks() {
+    let mut t = term(20, 4, 10);
+    assert_eq!(t.paste("a\u{1b}:!rm -rf ~\u{3}\n", false), b"a:!rm -rf ~\r");
+    t.feed(b"\x1b[?2004h");
+    assert_eq!(
+        t.paste("x\u{1b}[31m\u{4}\u{9b}y\tz", false),
+        "\u{1b}[200~x[31my\tz\u{1b}[201~".as_bytes()
+    );
+    // Tabs and line breaks as before (bracketed: byte for byte); neither an
+    // end marker nor the 8-bit CSI can close the paste.
+    assert_eq!(t.paste("a\tb\r\nc\nd", false), b"\x1b[200~a\tb\r\nc\nd\x1b[201~");
+    assert_eq!(t.paste("x\u{1b}[201~y", false), b"\x1b[200~xy\x1b[201~");
+    assert_eq!(t.paste("x\u{9b}201~y", false), "\u{1b}[200~x201~y\u{1b}[201~".as_bytes());
+    t.feed(b"\x1b[?2004l");
+    assert_eq!(t.paste("a\tb\r\nc\nd", false), b"a\tb\rc\rd", "unbracketed: Return (B574)");
+}
+
 #[test]
 fn b574_a_plain_paste_sends_its_line_breaks_as_return() {
     let mut t = term(20, 4, 10);

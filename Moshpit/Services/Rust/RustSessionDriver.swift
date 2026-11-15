@@ -312,9 +312,10 @@ final class RustSessionDriver: RustSessionListener {
             // plane down, B401; the connection dialled again, B483) waited
             // past their bound; an attach is back now.
             tmux?.noteRefused(RustCopy.tmuxActionsDropped)
-        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous, let older):
+        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous, let older, let conflicting):
             presentHostKey(prompt: prompt, host: host, port: Int(port),
-                           fingerprint: fingerprint, previous: previous, older: older)
+                           fingerprint: fingerprint, previous: previous, older: older,
+                           conflicting: conflicting)
         case .olderHostKeyAlgorithm(let algorithm):
             // B564: for the diagnostics, once a session.
             if !saidOlderHostKey {
@@ -980,13 +981,14 @@ final class RustSessionDriver: RustSessionListener {
     // MARK: Cards
 
     private func presentHostKey(prompt: UInt64, host: String, port: Int, fingerprint: String,
-                                previous: String?, older: String?) {
+                                previous: String?, older: String?, conflicting: Bool) {
         hostKeyPrompt = prompt
         // In the background, a notification says it waits (B632).
-        PromptNotifier.shared.asked(.hostKey(connection: connection.id, host: host, changed: previous != nil))
+        PromptNotifier.shared.asked(.hostKey(connection: connection.id, host: host,
+                                             changed: previous != nil || conflicting))
         viewModel.hostKeyPrompt = TerminalViewModel.HostKeyPrompt(
             host: host, port: port, fingerprint: fingerprint, previousFingerprint: previous,
-            olderAlgorithm: older
+            olderAlgorithm: older, conflicting: conflicting
         ) { [weak self] trusted in
             guard let self else { return }
             // B631: only the prompt still up is cleared, and only its no is

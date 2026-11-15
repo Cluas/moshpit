@@ -173,3 +173,46 @@ fn it_follows_the_system() {
     assert!(Screen::HostKey.follows_system());
     assert!(Screen::HostKey.draws_light());
 }
+
+/// B725: an earlier build stored two different keys for the host, and it
+/// sent one of them: the sheet asks about that key in its own words, warned
+/// as a changed key is, its fingerprint and the command to check it shown,
+/// Trust and Cancel the way out. In Chinese too.
+#[test]
+fn two_stored_keys_are_asked_about_in_their_own_words() {
+    let (mut app, channel) = start(Screen::HostKey, Params::default(), "host-key");
+    let heard = hear(&channel);
+    post(&mut app, &channel, &prompt(json!({"conflicting": true})));
+    app.wait_for("id:host-key-fingerprint").unwrap();
+    let screen = app.screen();
+    for text in [
+        "Host Key Changed",
+        "Moshpit saved two different keys for build-box:2222 in an earlier version. The key it sent now is SHA256:k3VJxZ2mJ1u4bS9eQq8yF0aJr6w5nTqP7cXo2Lh1dEs. Trust this key?",
+        "Cancel",
+        "Trust",
+    ] {
+        assert!(screen.shows(text), "{text:?}: {:?}", screen.texts());
+    }
+    assert!(!screen.matches("id:host-key-stored").unwrap());
+    assert!(screen.matches("id:host-key-verify").unwrap());
+    quiet(&heard);
+    app.press("id:host-key-trust").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "trust"}));
+    app.press("id:host-key-decline").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "decline"}));
+
+    let (mut app, channel) = start(Screen::HostKey, zh_hans(), "host-key");
+    post(&mut app, &channel, &prompt(json!({"conflicting": true})));
+    app.wait_for("id:host-key-fingerprint").unwrap();
+    let screen = app.screen();
+    assert!(
+        screen.shows(
+            "早先的版本为 build-box:2222 存过两把不同的密钥。它这次发来的是 SHA256:k3VJxZ2mJ1u4bS9eQq8yF0aJr6w5nTqP7cXo2Lh1dEs，信任这把吗？"
+        ),
+        "{:?}",
+        screen.texts()
+    );
+    for text in ["信任", "取消"] {
+        assert!(screen.shows(text), "{text}: {:?}", screen.texts());
+    }
+}

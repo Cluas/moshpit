@@ -227,6 +227,8 @@ struct Running {
     id: ExecId,
     asked: Asked,
     deadline: u64,
+    /// The host holds it back ([`Renderer::exec_held`]): no budget runs.
+    held: bool,
     /// A retarget's: the terminal on screen when it went out, back on
     /// screen if it is refused before the loop is touched.
     before: Option<String>,
@@ -848,10 +850,31 @@ impl Renderer {
         }
     }
 
+    /// The host holds exec `id` back — a retarget behind typing still on
+    /// its way through mosh: the switch waits for it, however long (B686).
+    /// Its budget doesn't run until [`Renderer::exec_sent`]: a roam longer
+    /// than the budget had the switch given up while it still waited.
+    pub fn exec_held(&mut self, id: ExecId) {
+        if let Some(running) = self.running.as_mut().filter(|running| running.id == id) {
+            running.held = true;
+        }
+    }
+
+    /// Exec `id`, held back, went out now: its budget counts from here.
+    pub fn exec_sent(&mut self, id: ExecId, now: u64) {
+        if let Some(running) = self.running.as_mut().filter(|running| running.id == id) {
+            running.held = false;
+            running.deadline = now + self.budgets.lane;
+        }
+    }
+
     /// Timers: the lane's budget, the deliveries' waits, a watch to ask
     /// again.
     pub fn tick(&mut self, now: u64) {
-        if let Some(running) = self.running.take_if(|running| now >= running.deadline) {
+        if let Some(running) = self
+            .running
+            .take_if(|running| !running.held && now >= running.deadline)
+        {
             match running.asked {
                 Asked::Boot => self.boot_answered(false, now),
                 Asked::Retarget(terminal) => {
@@ -884,7 +907,11 @@ impl Renderer {
 
     /// When [`Renderer::tick`] is next due.
     pub fn next_deadline(&self) -> Option<u64> {
-        let lane = self.running.as_ref().map(|running| running.deadline);
+        let lane = self
+            .running
+            .as_ref()
+            .filter(|running| !running.held)
+            .map(|running| running.deadline);
         let deliveries = self
             .deliveries
             .iter()
@@ -1092,6 +1119,7 @@ impl Renderer {
                 id,
                 asked,
                 deadline: now + self.budgets.lane,
+                held: false,
                 before,
             });
         }

@@ -65,6 +65,43 @@ impl Lock {
     }
 }
 
+impl Lock {
+    /// [`Lock::take`] that waits `within` at most (B636): `None` when another
+    /// holder kept it that long — the caller goes on without what the file
+    /// says, never later than its budget. A lock file that can't be opened
+    /// lets it go ahead unguarded, as `take` does.
+    pub(crate) fn try_take(path: &Path, within: std::time::Duration) -> Option<Self> {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let Ok(file) = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(with_extension(path, "lock"))
+        else {
+            return Some(Self(None));
+        };
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let deadline = std::time::Instant::now() + within;
+            loop {
+                // SAFETY: a valid descriptor for the file's lifetime.
+                if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        Some(Self(Some(file)))
+    }
+}
+
 impl Drop for Lock {
     fn drop(&mut self) {
         #[cfg(unix)]

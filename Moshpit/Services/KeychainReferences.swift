@@ -190,11 +190,35 @@ enum KeychainReferences {
         account.hasPrefix(KeychainService.refPrefix) && !KeychainService.mintedThisLaunch(account)
     }
 
+    /// Whether this launch has put right what keys show
+    /// (``learnKeyFactsOnce(keys:keychain:)``).
+    private static var learnedFacts = false
+
+    /// What each key 1.0.8 imported without its public half is (B726):
+    /// once a launch, once the key list can be trusted. 1.0.8 guessed the
+    /// type from the PEM's first line — every OpenSSH or PKCS#8 key read as
+    /// ED25519, a SEC1 EC key as ECDSA-sk — and kept no public key or
+    /// fingerprint. Each such key's private key is read without asking and
+    /// its record given what the key itself says; nothing else about the
+    /// record changes. One behind Face ID is left for its first sign-in
+    /// (``RustCredentialHost/keyRead``). Returns the records changed.
+    @discardableResult
+    static func learnKeyFactsOnce(keys: SSHKeyStore, keychain: KeychainService) -> [SSHKeyRecord] {
+        guard !learnedFacts, keys.isAuthoritative else { return [] }
+        learnedFacts = true
+        let learned = keys.learnKeyFacts(keychain: keychain.storeHost)
+        if !learned.isEmpty {
+            Log.store.notice("key facts: \(learned.count, privacy: .public) key(s) an earlier build imported now show what they are")
+        }
+        return learned
+    }
+
     #if DEBUG
     /// Tests look, and settle, more than once a process.
     static func resetForTesting() {
         looked = false
         settled = false
+        learnedFacts = false
     }
     #endif
 }

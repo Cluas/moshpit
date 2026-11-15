@@ -219,6 +219,7 @@
   "%@ · runs %@": "%1$@ · executa %2$@",
   "Connection Error": "Erro de conexão",
   "Trust New Key": "Confiar na nova chave",
+  "Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?": "Uma versão anterior salvou duas chaves diferentes para %@:%@. A que ele enviou agora é %@. Confiar nesta chave?",
   "New Host": "Novo host",
   "Trust": "Confiar",
   "Connecting…": "Conectando…",

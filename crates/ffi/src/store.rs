@@ -849,6 +849,21 @@ impl KeyStoreHandle {
             .map(|refs| refs.into_iter().collect()))
     }
 
+    /// Key `id`'s facts, read off `private_key` — its keychain item, as
+    /// the first sign-in with it read it (B726): for a record 1.0.8 saved
+    /// without them (`SshKeyStore::learn_facts`). Whether they were
+    /// written; false when the record has them, or the text reads as no
+    /// private key.
+    pub fn learn_facts(&self, id: String, private_key: String) -> Result<bool, StoreError> {
+        let id = uuid(&id)?;
+        let mut keys = lock(&self.0);
+        if !keys.keys().iter().any(|k| k.id == id && k.lacks_facts()) {
+            return Ok(false);
+        }
+        Ok(describe_private_key(private_key.as_bytes())
+            .is_some_and(|facts| keys.learn_facts(id, &facts)))
+    }
+
     pub fn reload_if_needed(&self) {
         lock(&self.0).reload_if_needed();
     }
@@ -980,6 +995,24 @@ pub fn store_recover_orphaned_keys(
             message: error.to_string(),
         },
     }
+}
+
+/// Put right what each key 1.0.8 imported without its public half shows
+/// (B726): its algorithm, size, public key and fingerprint, off its own
+/// private key, read without asking (`secrets::learn_key_facts`). One
+/// behind Face ID waits for its first sign-in
+/// ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
+/// runs it once a launch, beside the orphan recovery.
+#[uniffi::export]
+pub fn store_learn_key_facts(
+    keys: Arc<KeyStoreHandle>,
+    keychain: Arc<dyn KeychainHost>,
+) -> Vec<KeyRecord> {
+    let mut keys = lock(&keys.0);
+    secrets::learn_key_facts(&mut keys, &HostKeychain(keychain), &describe_private_key)
+        .iter()
+        .map(Into::into)
+        .collect()
 }
 
 /// What a stored secret is, if it is an unencrypted private key of a kind
@@ -2175,5 +2208,242 @@ mod tests {
         let mut left = keychain.accounts().unwrap();
         left.sort();
         assert_eq!(left, ["moshpit.knownHosts"]);
+    }
+
+    /// A keychain whose items in `guarded` are behind Face ID: read without
+    /// asking, they fail as iOS fails them. Counts those reads.
+    #[derive(Default)]
+    struct FaceIdVault {
+        vault: Vault,
+        guarded: Mutex<BTreeSet<String>>,
+        silent_reads: Mutex<usize>,
+    }
+
+    impl KeychainHost for FaceIdVault {
+        fn save(
+            &self,
+            account: String,
+            secret: Vec<u8>,
+            guarded: bool,
+        ) -> Result<(), KeychainFailure> {
+            if guarded {
+                lock(&self.guarded).insert(account.clone());
+            }
+            self.vault.save(account, secret, guarded)
+        }
+        fn load(&self, account: String, prompt: String) -> Result<Vec<u8>, KeychainFailure> {
+            self.vault.load(account, prompt)
+        }
+        fn delete(&self, account: String) -> Result<(), KeychainFailure> {
+            self.vault.delete(account)
+        }
+        fn exists(&self, account: String) -> bool {
+            self.vault.exists(account)
+        }
+        fn accounts(&self) -> Result<Vec<String>, KeychainFailure> {
+            self.vault.accounts()
+        }
+        fn load_silently(&self, account: String) -> Result<Vec<u8>, KeychainFailure> {
+            *lock(&self.silent_reads) += 1;
+            if lock(&self.guarded).contains(&account) {
+                return Err(KeychainFailure::InteractionNotAllowed);
+            }
+            self.vault.load_silently(account)
+        }
+    }
+
+    /// Keys 1.0.8 imported pasted without their public half, as it kept
+    /// them (`SSHKeyFactory.importKey`, `AddKeyView.submit`): the label
+    /// guessed from the PEM's first line — `BEGIN RSA` RSA-4096, `BEGIN EC`
+    /// ECDSA-sk, anything else ED25519 — no public key, no fingerprint, the
+    /// PEM trimmed into the keychain. Each: its name, the key as pasted,
+    /// 1.0.8's label, Face ID on it, and what the key really is (algorithm,
+    /// bits, `ssh-keygen -l`'s fingerprint, the fixtures' own).
+    #[allow(clippy::type_complexity)]
+    const PASTED_IN_1_0_8: [(&str, &str, &str, bool, KeyAlgorithm, Option<i64>, &str); 7] = [
+        (
+            "openssh rsa",
+            include_str!("../../ssh/tests/fixtures/keys/rsa2048"),
+            "ED25519",
+            false,
+            KeyAlgorithm::Rsa,
+            Some(2048),
+            "SHA256:N2LwkXVb8yni0Be3hZglQ7dx5gMpc8PwDBsVnb9psTw",
+        ),
+        (
+            "openssh ecdsa",
+            include_str!("../../ssh/tests/fixtures/keys/ecdsa256"),
+            "ED25519",
+            false,
+            KeyAlgorithm::Ecdsa,
+            None,
+            "SHA256:0Y13tT5ReKS2k3cGXtoz0wDe+P+tGDk0SEJ20ssdW/E",
+        ),
+        (
+            "pkcs8 ecdsa",
+            include_str!("../../ssh/tests/fixtures/keys/ecdsa256-pkcs8"),
+            "ED25519",
+            false,
+            KeyAlgorithm::Ecdsa,
+            None,
+            "SHA256:+/NM1+yXgl+S2qVb51R2UzjQJkEgeXRLbKly4kx/51c",
+        ),
+        (
+            "pkcs8 rsa",
+            include_str!("../../ssh/tests/fixtures/keys/matrix/keygen-rsa2048-pkcs8"),
+            "ED25519",
+            false,
+            KeyAlgorithm::Rsa,
+            Some(2048),
+            "SHA256:/0oMA7hmnrMEcGfKKGdBmHikVtX37Jnj9u+BT1KUW+4",
+        ),
+        (
+            "sec1 ec",
+            include_str!("../../ssh/tests/fixtures/keys/matrix/openssl-p256-sec1"),
+            "ECDSA-sk",
+            true,
+            KeyAlgorithm::Ecdsa,
+            None,
+            "SHA256:ymmErxUAgIrJg8Vbe3LmwEO/vCFHYvSy9MyH0Fx8eWM",
+        ),
+        (
+            "pkcs1 rsa",
+            include_str!("../../ssh/tests/fixtures/keys/rsa2048-pem"),
+            "RSA-4096",
+            false,
+            KeyAlgorithm::Rsa,
+            Some(2048),
+            "SHA256:YI308USvR1zZ2NtAEtFF7tm0SR2whhSScC1VPQYyh8w",
+        ),
+        (
+            "openssh ed25519",
+            include_str!("../../ssh/tests/fixtures/keys/ed25519"),
+            "ED25519",
+            true,
+            KeyAlgorithm::Ed25519,
+            None,
+            "SHA256:vUkJtFTGJFHkmC/nyQRfUJBNnAVbxp0w/5MKe0lMTK0",
+        ),
+    ];
+
+    /// B726: a key 1.0.8 imported without its public half shows as what it
+    /// is once 1.0.9 has read it — its algorithm, size, public key and
+    /// fingerprint off the key itself, kept — and nothing else about the
+    /// record changes. Read without asking at launch; one behind Face ID at
+    /// its first sign-in. A SEC1 EC key (1.0.8's ECDSA-sk, which 1.0.8 never
+    /// made for a security key) is a plain ECDSA key from the start, so the
+    /// connection form's picker offers it before any read. A record with
+    /// its facts is never read again.
+    #[test]
+    fn a_key_1_0_8_imported_without_its_public_half_learns_its_facts() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let vault = Arc::new(FaceIdVault::default());
+        let keychain: Arc<dyn KeychainHost> = vault.clone();
+        let mut stored = Vec::new();
+        for (n, (name, pem, label, face_id, ..)) in PASTED_IN_1_0_8.iter().enumerate() {
+            let account = format!("moshpit.secret.0f0e0d0c-0000-4000-8000-00000000010{n}");
+            keychain
+                .save(account.clone(), pem.trim().as_bytes().to_vec(), *face_id)
+                .unwrap();
+            stored.push(format!(
+                r#"{{"id":"6A1F0B2C-0000-4000-8000-00000000010{n}","name":"{name}","algorithm":"{label}","comment":"","fingerprint":"","publicKey":"","source":"imported","boundHosts":[],"keychainRef":"{account}","requireBiometry":{face_id},"createdAt":784000000.5}}"#
+            ));
+        }
+        // And one pasted with its public half: 1.0.8 labelled it right.
+        let with_public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGd2ZXJ5LXJlYWwta2V5LWJ5dGVzLWhlcmUtMzI= dev@example.com";
+        keychain
+            .save(
+                "moshpit.secret.0f0e0d0c-0000-4000-8000-000000000200".into(),
+                ED25519.trim().as_bytes().to_vec(),
+                false,
+            )
+            .unwrap();
+        stored.push(format!(
+            r#"{{"id":"6A1F0B2C-0000-4000-8000-000000000200","name":"laptop","algorithm":"ED25519","comment":"","fingerprint":"SHA256:kept","publicKey":"{with_public}","source":"imported","boundHosts":["192.0.2.7"],"keychainRef":"moshpit.secret.0f0e0d0c-0000-4000-8000-000000000200","requireBiometry":false,"createdAt":784000000.5}}"#
+        ));
+        host.set(
+            SshKeyStore::STORAGE_KEY.into(),
+            Some(to_value(&Plist::Data(
+                format!("[{}]", stored.join(",")).into_bytes(),
+            ))),
+        );
+        let keys = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let named = |keys: &KeyStoreHandle, name: &str| {
+            keys.keys().into_iter().find(|k| k.name == name).unwrap()
+        };
+        assert_eq!(
+            named(&keys, "sec1 ec").algorithm,
+            KeyAlgorithm::Ecdsa,
+            "1.0.8's ECDSA-sk is a plain ECDSA key: the picker offers it"
+        );
+
+        let learned = store_learn_key_facts(keys.clone(), keychain.clone());
+        let mut names: Vec<String> = learned.iter().map(|k| k.name.clone()).collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "openssh ecdsa",
+                "openssh rsa",
+                "pkcs1 rsa",
+                "pkcs8 ecdsa",
+                "pkcs8 rsa"
+            ],
+            "the ones read without asking"
+        );
+        assert_eq!(
+            *lock(&vault.silent_reads),
+            7,
+            "one read for each without facts"
+        );
+
+        // The two behind Face ID, at their first sign-in.
+        for name in ["sec1 ec", "openssh ed25519"] {
+            let pem = PASTED_IN_1_0_8.iter().find(|c| c.0 == name).unwrap().1;
+            let id = named(&keys, name).id;
+            assert!(
+                keys.learn_facts(id.clone(), pem.trim().into()).unwrap(),
+                "{name}"
+            );
+            assert!(
+                !keys.learn_facts(id, pem.trim().into()).unwrap(),
+                "{name}: learned once"
+            );
+        }
+
+        let reread = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        for (name, _, _, face_id, algorithm, bits, fingerprint) in PASTED_IN_1_0_8 {
+            for k in [named(&keys, name), named(&reread, name)] {
+                assert_eq!(k.algorithm, algorithm, "{name}");
+                assert_eq!(k.bits, bits, "{name}");
+                assert_eq!(k.fingerprint, fingerprint, "{name}");
+                assert!(
+                    k.public_key.starts_with(match algorithm {
+                        KeyAlgorithm::Rsa => "ssh-rsa AAAA",
+                        KeyAlgorithm::Ecdsa => "ecdsa-sha2-nistp256 AAAA",
+                        _ => "ssh-ed25519 AAAA",
+                    }),
+                    "{name}: {}",
+                    k.public_key
+                );
+                assert_eq!(k.name, name, "the name stays");
+                assert!(k.bound_hosts.is_empty(), "{name}: bound to nothing");
+                assert_eq!(k.require_biometry, face_id, "{name}");
+                assert_eq!(k.source, KeySource::Imported, "{name}");
+            }
+        }
+        let laptop = named(&reread, "laptop");
+        assert_eq!(
+            (
+                laptop.public_key.as_str(),
+                laptop.fingerprint.as_str(),
+                laptop.bound_hosts.clone()
+            ),
+            (with_public, "SHA256:kept", vec!["192.0.2.7".to_owned()]),
+            "a record with its public key is left as it is"
+        );
+
+        assert!(store_learn_key_facts(reread.clone(), keychain.clone()).is_empty());
+        assert_eq!(*lock(&vault.silent_reads), 7, "nothing left to read");
     }
 }

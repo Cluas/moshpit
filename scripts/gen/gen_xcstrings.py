@@ -517,6 +517,9 @@ add("%@ · runs %@", "%1$@ · 运行 %2$@", "%1$@ · %2$@ を実行")
 # ---------- Terminal ----------
 add("Connection Error", "连接错误", "接続エラー")
 add("Trust New Key", "信任新密钥", "新しいキーを信頼")
+add("Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?",
+    "早先的版本为 %@:%@ 存过两把不同的密钥。它这次发来的是 %@，信任这把吗？",
+    "以前のバージョンで %@:%@ に異なる2つのキーが保存されています。今回送られてきたのは %@ です。このキーを信頼しますか？")
 add("New Host", "新主机", "新しいホスト")
 add("Trust", "信任", "信頼")
 add("Connecting…", "正在连接…", "接続中…")

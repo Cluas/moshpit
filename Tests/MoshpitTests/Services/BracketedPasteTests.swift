@@ -45,7 +45,8 @@ struct BracketedPasteTests {
                 }
             }
             bytes = out
-            if !removed { return Data(bytes) }
+            // And no ESC, the only control among the pieces (B738).
+            if !removed { return Data(bytes.filter { $0 != 0x1B }) }
         }
     }
 
@@ -92,12 +93,32 @@ struct BracketedPasteTests {
         #expect(text(BracketedPaste.body("\u{1B}\(Self.start)[201~")) == "")
     }
 
-    @Test("Bytes that only look like a marker are left alone")
+    @Test("Bytes that only look like a marker are left alone, but for the ESC no paste carries")
     func nearMisses() {
         for kept in ["\u{1B}[201", "\u{1B}[202~", "[201~", "\u{1B}[2O1~", "\u{1B}\u{1B}", "\u{1B}[200",
                      "~\u{1B}[20 1~", "\u{1B}[201\u{301}~"] {
-            #expect(text(BracketedPaste.body(kept)) == kept, "\(kept.debugDescription)")
+            #expect(text(BracketedPaste.body(kept)) == kept.replacingOccurrences(of: "\u{1B}", with: ""),
+                    "\(kept.debugDescription)")
         }
+    }
+
+    /// B738: no control character goes out in a paste but tab, line feed
+    /// and carriage return (xterm's default): unbracketed, an ESC and what
+    /// follows ran as keys (vim: ESC, then `:!` and a command); bracketed or
+    /// not, a ^C or ^D hit the tty as an interrupt or an end of file. C1
+    /// controls and DEL go too; text, CJK and emoji stay.
+    @Test("B738: a paste carries no control but tab and line breaks")
+    func noControls() {
+        let pasted = "a\u{1B}:!rm -rf ~\u{03}\u{04}\u{7F}\u{9B}2J\tx\r\ny中文🎉"
+        #expect(text(BracketedPaste.body(pasted)) == "a:!rm -rf ~2J\tx\r\ny中文🎉")
+        #expect(BracketedPaste.payload("x\u{1B}[A\u{03}\n", bracketed: false) == Data("x[A\r".utf8))
+        #expect(!BracketedPaste.pasteable("\u{1B}") && BracketedPaste.pasteable("\t") && BracketedPaste.pasteable("中"))
+        // Tabs and line breaks as before; neither an end marker nor the
+        // 8-bit CSI (U+009B) can close the paste.
+        #expect(BracketedPaste.wrapped("a\tb\r\nc\nd") == Data("\(Self.start)a\tb\r\nc\nd\(Self.end)".utf8))
+        #expect(BracketedPaste.payload("a\tb\r\nc\nd", bracketed: false) == Data("a\tb\rc\rd".utf8))
+        #expect(BracketedPaste.wrapped("x\u{1B}[201~y") == Data("\(Self.start)xy\(Self.end)".utf8))
+        #expect(BracketedPaste.wrapped("x\u{9B}201~y") == Data("\(Self.start)x201~y\(Self.end)".utf8))
     }
 
     @Test("A payload is wrapped only when the program asked, and sanitized either way")

@@ -707,11 +707,15 @@ final class CoreTermMetalCanvas: UIView {
 
     /// A view off screen lets its drawables go (two of the screen's size,
     /// 22 MB a pane on an iPad mini, kept by every tmux pane once shown,
-    /// B297): the layer's picture and its pool. Back in a window it draws
-    /// again (``fitDrawables``, then a render) before it shows.
+    /// B297): the layer's picture and its pool, and its images' textures
+    /// (B737: a full-screen image's is as large again, and every pane
+    /// shown kept its own for good). Back in a window it draws again
+    /// (``fitDrawables``, then every row encoded, the textures with them)
+    /// before it shows.
     func releaseDrawables() {
         metalLayer.contents = nil
         metalLayer.drawableSize = CGSize(width: 1, height: 1)
+        textures.removeAll()
         released = true
     }
 

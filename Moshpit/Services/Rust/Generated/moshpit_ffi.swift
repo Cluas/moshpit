@@ -4803,6 +4803,15 @@ public protocol KeyStoreHandleProtocol: AnyObject, Sendable {
     func keys()  -> [KeyRecord]
     
     /**
+     * Key `id`'s facts, read off `private_key` — its keychain item, as
+     * the first sign-in with it read it (B726): for a record 1.0.8 saved
+     * without them (`SshKeyStore::learn_facts`). Whether they were
+     * written; false when the record has them, or the text reads as no
+     * private key.
+     */
+    func learnFacts(id: String, privateKey: String) throws  -> Bool
+    
+    /**
      * Key `id` signed in now (B601): its last use, written at most once a
      * day (`SshKeyStore::mark_used`). Whether it was written.
      */
@@ -4945,6 +4954,23 @@ open func keys() -> [KeyRecord]  {
     return try!  FfiConverterSequenceTypeKeyRecord.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_method_keystorehandle_keys(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Key `id`'s facts, read off `private_key` — its keychain item, as
+     * the first sign-in with it read it (B726): for a record 1.0.8 saved
+     * without them (`SshKeyStore::learn_facts`). Whether they were
+     * written; false when the record has them, or the text reads as no
+     * private key.
+     */
+open func learnFacts(id: String, privateKey: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
+    uniffi_moshpit_ffi_fn_method_keystorehandle_learn_facts(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(privateKey),$0
     )
 })
 }
@@ -22869,7 +22895,11 @@ public enum SessionEventKind: Equatable, Hashable {
         /**
          * `ssh-rsa` when the server offers no better host-key algorithm
          * (B564).
-         */olderAlgorithm: String?
+         */olderAlgorithm: String?, 
+        /**
+         * An earlier version stored two different keys for the host, and it
+         * presents one of them (B725).
+         */conflicting: Bool
     )
     /**
      * The connection had to use an older host-key algorithm (B564).
@@ -22989,7 +23019,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
         
         case 9: return .tmuxActionsDropped
         
-        case 10: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf)
+        case 10: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf), conflicting: try FfiConverterBool.read(from: &buf)
         )
         
         case 11: return .olderHostKeyAlgorithm(algorithm: try FfiConverterString.read(from: &buf)
@@ -23084,7 +23114,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             writeInt(&buf, Int32(9))
         
         
-        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm):
+        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm,conflicting):
             writeInt(&buf, Int32(10))
             FfiConverterUInt64.write(prompt, into: &buf)
             FfiConverterString.write(host, into: &buf)
@@ -23092,6 +23122,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             FfiConverterString.write(fingerprint, into: &buf)
             FfiConverterOptionString.write(previous, into: &buf)
             FfiConverterOptionString.write(olderAlgorithm, into: &buf)
+            FfiConverterBool.write(conflicting, into: &buf)
             
         
         case let .olderHostKeyAlgorithm(algorithm):
@@ -29744,6 +29775,22 @@ public func storeHoldRelease(preferences: PreferencesHost, mode: ReadinessMode, 
 })
 }
 /**
+ * Put right what each key 1.0.8 imported without its public half shows
+ * (B726): its algorithm, size, public key and fingerprint, off its own
+ * private key, read without asking (`secrets::learn_key_facts`). One
+ * behind Face ID waits for its first sign-in
+ * ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
+ * runs it once a launch, beside the orphan recovery.
+ */
+public func storeLearnKeyFacts(keys: KeyStoreHandle, keychain: KeychainHost) -> [KeyRecord]  {
+    return try!  FfiConverterSequenceTypeKeyRecord.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_learn_key_facts(
+        FfiConverterTypeKeyStoreHandle_lower(keys),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
+    )
+})
+}
+/**
  * `DefaultsReadiness.markReadable`.
  */
 public func storeMarkDefaultsReadable(host: PreferencesHost)  {try! rustCall() {
@@ -30132,6 +30179,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 16082) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable() != 15913) {
@@ -30747,6 +30797,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_keys() != 34608) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_keystorehandle_learn_facts() != 56051) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used() != 43528) {

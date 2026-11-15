@@ -28,6 +28,40 @@ struct PushRemoteNotificationTests {
         ]
     }
 
+    /// B635: a title a host cut in the middle of a character (GNU `cut -c`
+    /// counts bytes; a host without `iconv` keeps the half) still opens,
+    /// the half as U+FFFD — it read as a push no key opened.
+    @Test("a title cut mid-character still opens")
+    func titleCutMidCharacter() throws {
+        let conn = UUID()
+        var plaintext = Data(#"{"conn":"\#(conn.uuidString)","host":"m1-pro","pane":"%3","state":"done","ts":1755900000,"title":"Bash: "#.utf8)
+        plaintext.append(Data("构建".utf8).prefix(4))
+        plaintext.append(Data(#""}"#.utf8))
+        let envelope = try PushSealedBox.seal(plaintext, secretHex: Self.secret)
+        let pairing = PushPairing(connectionId: conn, hostLabel: "Mac", secretHex: Self.secret,
+                                  sendToken: "", relayURL: "https://push.example.org", createdAt: Date())
+        guard case .opened(let status) = PushRemoteNotification.open(envelope, pairings: [pairing]) else {
+            Issue.record("not opened")
+            return
+        }
+        #expect(status.title?.hasPrefix("Bash: 构") == true)
+        #expect(status.title?.contains("\u{FFFD}") == true)
+    }
+
+    /// B635: opened by the paired host's key but holding no status: its own
+    /// outcome, not "no key opened it" (which says the host is paired to
+    /// another install).
+    @Test("a push the key opened but holding no status is unreadable, not unopened")
+    func openedButNoStatus() throws {
+        let envelope = try PushSealedBox.seal(Data("not a status".utf8), secretHex: Self.secret)
+        let pairing = PushPairing(connectionId: UUID(), hostLabel: "Mac", secretHex: Self.secret,
+                                  sendToken: "", relayURL: "https://push.example.org", createdAt: Date())
+        #expect(PushRemoteNotification.open(envelope, pairings: [pairing]) == .unreadable)
+        let other = PushPairing(connectionId: UUID(), hostLabel: "Mac", secretHex: Self.otherSecret,
+                                sendToken: "", relayURL: "https://push.example.org", createdAt: Date())
+        #expect(PushRemoteNotification.open(envelope, pairings: [other]) == .unopened)
+    }
+
     static func status(state: String = "attention",
                        title: String? = "Bash: rm -rf build",
                        agent: String? = "claude",

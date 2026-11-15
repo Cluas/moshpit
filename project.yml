@@ -173,6 +173,9 @@ targets:
         # flatten its iOS 18/19 fallbacks, and write the CFBundleAlternateIcons
         # entries into Info.plist itself — the iPad sizes included, which the
         # hand-written plist block and loose PNGs used to get wrong (ITMS-90892).
+        # Pit through Hail are the alternates 1.0.8 shipped: one dropped
+        # here, an upgraded phone set to it shows the primary (B728,
+        # AppThemeTests.iconsOf108StayOffered).
         ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIcon-Tun AppIcon-TunShiny AppIcon-Coo AppIcon-CooShiny AppIcon-Dig AppIcon-DigShiny AppIcon-Hex AppIcon-HexShiny AppIcon-Ether AppIcon-EtherShiny AppIcon-Moth AppIcon-MothShiny AppIcon-Classic AppIcon-Pit AppIcon-Island AppIcon-Wq AppIcon-Prefix AppIcon-Localhost AppIcon-Prompt AppIcon-Cursor AppIcon-Hail
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES

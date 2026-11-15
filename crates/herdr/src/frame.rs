@@ -455,6 +455,14 @@ pub fn bracketed_paste(text: &str) -> Vec<u8> {
 /// its last byte is read, so removing one can't join the bytes around it
 /// into another (see [`bracketed_paste`]'s fixes). Taking ASCII out of UTF-8
 /// leaves UTF-8, so the result is still the text it was, less the markers.
+///
+/// No control character goes out either but tab, line feed and carriage
+/// return (xterm's default, `allowPasteControls` off; B738): pasted as
+/// they were, an escape sequence ran as keys where the program hadn't
+/// asked for bracketed paste (an ESC and `:!cmd` in vim), and a ^C or ^D
+/// reached the tty's line discipline as an interrupt or an end of file,
+/// bracketed or not. C1 controls (U+0080–U+009F) and DEL go too. With no
+/// ESC left, no marker can be either.
 pub fn paste_body(text: &str) -> String {
     let mut kept: Vec<u8> = Vec::with_capacity(text.len());
     for &byte in text.as_bytes() {
@@ -463,7 +471,17 @@ pub fn paste_body(text: &str) -> String {
             kept.truncate(kept.len() - PASTE_END.len());
         }
     }
-    String::from_utf8(kept).expect("removing ASCII markers keeps UTF-8 valid")
+    String::from_utf8(kept)
+        .expect("removing ASCII markers keeps UTF-8 valid")
+        .chars()
+        .filter(|&c| pasteable(c))
+        .collect()
+}
+
+/// Whether a pasted character goes out: text, and of the controls only
+/// tab, line feed and carriage return.
+pub fn pasteable(c: char) -> bool {
+    !c.is_control() || matches!(c, '\t' | '\n' | '\r')
 }
 
 /// Whether `bytes` ends with `ESC[200~` or `ESC[201~`.

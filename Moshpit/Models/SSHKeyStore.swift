@@ -109,7 +109,8 @@ extension SSHKeyRecord {
         let real = (try? container.decodeIfPresent(String.self, forKey: .keyAlgorithm))
             .flatMap { $0 }
             .flatMap(SSHKeyAlgorithm.init(rawValue:))
-        let algorithm = real ?? Self.recoveredAlgorithm(olderBuildsName: olderBuildsName, publicKey: publicKey)
+        let algorithm = real ?? Self.recoveredAlgorithm(olderBuildsName: olderBuildsName, publicKey: publicKey,
+                                                        source: source)
         self.algorithm = algorithm
         // A record from before the size was kept (or one an older build saved
         // back without it): the public key line still says.
@@ -138,9 +139,14 @@ extension SSHKeyRecord {
     /// The algorithm of a record with no (readable) `keyAlgorithm`: one an
     /// older build saved, dropping the field it doesn't know. Its ECDSA-sk
     /// covers every ECDSA key; the public key line says which ones are plain
-    /// ECDSA, and those are named that again.
-    private static func recoveredAlgorithm(olderBuildsName: SSHKeyAlgorithm, publicKey: String) -> SSHKeyAlgorithm {
-        guard olderBuildsName == .ecdsaSK, publicKey.hasPrefix("ecdsa-sha2-") else { return olderBuildsName }
+    /// ECDSA, and so is one with no line at all (B726): a SEC1 EC key 1.0.8
+    /// imported without its public half — 1.0.8 never labelled a security
+    /// key ECDSA-sk. A hardware key saved back by an older build keeps its
+    /// label. The Rust store's `recovered_algorithm`.
+    private static func recoveredAlgorithm(olderBuildsName: SSHKeyAlgorithm, publicKey: String,
+                                           source: SSHKeySource) -> SSHKeyAlgorithm {
+        guard olderBuildsName == .ecdsaSK, source != .hardware,
+              publicKey.isEmpty || publicKey.hasPrefix("ecdsa-sha2-") else { return olderBuildsName }
         return .ecdsa
     }
 }
@@ -209,6 +215,34 @@ final class SSHKeyStore {
         adopt()
     }
 
+    /// Put right what each key 1.0.8 imported without its public half shows
+    /// (B726): its type, size, public key and fingerprint, off its own
+    /// private key, read from `keychain` without asking. One behind Face ID
+    /// waits for its first sign-in (``learnFacts(for:privateKey:)``).
+    /// Returns the records changed.
+    @discardableResult
+    func learnKeyFacts(keychain: KeychainHost) -> [SSHKeyRecord] {
+        let learned = backing.learnKeyFacts(keychain: keychain)
+        if !learned.isEmpty { adopt() }
+        return learned
+    }
+
+    /// `connection` read its key for a sign-in — `privateKey`, as read: a
+    /// key 1.0.8 imported without its public half takes its type, size,
+    /// public key and fingerprint from it (B726). The key is its record by
+    /// id, else the one holding its keychain item, as ``signedIn(with:)``
+    /// finds it. Whether they were written.
+    @discardableResult
+    func learnFacts(for connection: ServerConnection, privateKey: String) -> Bool {
+        guard connection.authMethod == .key else { return false }
+        let record = keys.first { $0.id == connection.sshKeyId }
+            ?? connection.keychainRef.flatMap { ref in keys.first { $0.keychainRef == ref } }
+        guard let record, record.publicKey.isEmpty,
+              backing.learnFacts(id: record.id, privateKey: privateKey) else { return false }
+        adopt()
+        return true
+    }
+
     /// Read again if the last read could not be trusted; a no-op otherwise.
     func reloadIfNeeded() {
         backing.reloadIfNeeded()
@@ -246,6 +280,13 @@ protocol SSHKeyStoreBacking: AnyObject {
     /// Key `id` signed in now: its last use, at most once a day; whether it
     /// was written.
     func markUsed(id: UUID) -> Bool
+    /// Every key 1.0.8 imported without its public half, read from
+    /// `keychain` without asking, its facts kept (B726); the records
+    /// changed.
+    func learnKeyFacts(keychain: KeychainHost) -> [SSHKeyRecord]
+    /// Key `id`'s facts off `privateKey`, if its record lacks them (B726);
+    /// whether they were written.
+    func learnFacts(id: UUID, privateKey: String) -> Bool
 }
 
 #if DEBUG

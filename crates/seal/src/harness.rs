@@ -36,7 +36,7 @@ use crate::notification::{self, Render};
 use crate::pairing::PushPairing;
 use crate::pairing_file::PushPairingFile;
 use crate::prefs::Prefs;
-use crate::standing::{Entry, PushStandingFile};
+use crate::standing::{Entry, LIFETIME_SECONDS, PushStandingFile};
 use crate::status::Status;
 
 // MARK: - Tokens
@@ -463,6 +463,7 @@ fn sfile(f: &[&str], scratch: &Path) -> String {
                     location: None,
                     since: p[5].parse().expect("since"),
                     recorded_at: date_in(p[6]),
+                    lifetime: Some(LIFETIME_SECONDS),
                 };
                 results.push(
                     if file.note_standing(&arg(p[1]), entry, now) {

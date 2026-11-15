@@ -88,11 +88,23 @@ public enum PushSealedBox {
     /// Authenticate and decrypt an envelope, then decode the status inside.
     public static func open(_ envelope: Envelope, secretHex: String) throws -> Status {
         let plaintext = try openRaw(envelope, secretHex: secretHex)
-        do {
-            return try JSONDecoder().decode(Status.self, from: plaintext)
-        } catch {
-            throw Failure.malformed
+        guard let status = decodeStatus(plaintext) else { throw Failure.malformed }
+        return status
+    }
+
+    /// The status in an authenticated plaintext, or nil. Bytes that aren't
+    /// UTF-8 read as U+FFFD rather than refuse the whole status (B635): a
+    /// host cuts a title with `cut` (bytes on GNU) and drops the half
+    /// character with `iconv -c` — where there is one; without it (BusyBox,
+    /// Alpine) a long Chinese title split one, and the push read as one no
+    /// key opened.
+    public static func decodeStatus(_ plaintext: Data) -> Status? {
+        if let status = try? JSONDecoder().decode(Status.self, from: plaintext) {
+            return status
         }
+        guard String(data: plaintext, encoding: .utf8) == nil else { return nil }
+        let repaired = Data(String(decoding: plaintext, as: UTF8.self).utf8)
+        return try? JSONDecoder().decode(Status.self, from: repaired)
     }
 
     public static func openRaw(_ envelope: Envelope, secretHex: String) throws -> Data {

@@ -36,8 +36,20 @@ impl Status {
     /// string fields and `ts` required, `sess`/`agent`/`title`/`dur` optional,
     /// `null` the same as absent, unknown keys ignored, an integral `1.0` or
     /// `1e3` read as an `Int`. `None` for anything else.
+    ///
+    /// B635: bytes that aren't UTF-8 are read as U+FFFD rather than refuse
+    /// the whole status. A host cuts a title to 120 characters with `cut`,
+    /// which cuts bytes (GNU's `-c` is `-b`), and drops the half character
+    /// with `iconv -c` — where there is one: on a host without it (BusyBox,
+    /// Alpine) every title of more than 40 Chinese characters split one,
+    /// and the push read as one no key opened.
     pub fn from_json(plaintext: &[u8]) -> Option<Self> {
-        json::decode(plaintext).ok()
+        json::decode(plaintext)
+            .ok()
+            .or_else(|| match String::from_utf8_lossy(plaintext) {
+                std::borrow::Cow::Owned(text) => json::decode(text.as_bytes()).ok(),
+                std::borrow::Cow::Borrowed(_) => None,
+            })
     }
 
     /// Compact JSON as `JSONEncoder` writes it, keys in code point order

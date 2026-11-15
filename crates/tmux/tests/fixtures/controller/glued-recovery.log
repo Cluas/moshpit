@@ -42,7 +42,6 @@
 . note activity %0
 . pane %0 visible%begin 900 2000 1
 @17 recv %output %0 quote:%begin 100 5 1\n
-. note activity %0
 . pane %0 quote:%begin 100 5 1
 @18 resync 1
 > capture-pane -p -e -t %0
@@ -53,5 +52,4 @@
 @20 settle
 . pane %0 \x1b[1;1H
 @21 recv %output %0 -after\n
-. note activity %0
 . pane %0 -after

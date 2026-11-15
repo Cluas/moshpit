@@ -1426,3 +1426,179 @@ fn a_held_share_is_a_quiet_notice_that_sends_or_discards() {
     }
     channel.close();
 }
+
+/// Home at `width` points (6.9": 440, the owner's 16 Pro: 402, 6.1": 393).
+fn phone_at(width: f32) -> (App, Arc<Channel>, Natives) {
+    start_observing_with(Screen::Home, Params::default(), "home", |config| {
+        config.clock = nsh_core::time::Clock::manual(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs_f64(NOW),
+        );
+        config.viewport = Size::new(Points(width), Points(HEIGHT));
+        config.environment.idiom = Idiom::Phone;
+        config.environment.safe_area = Edges {
+            top: Points(62.0),
+            bottom: Points(34.0),
+            left: Points(0.0),
+            right: Points(0.0),
+        };
+    })
+}
+
+/// The Needs-you row of gpu-01's `w3` agent, renamed `title` and working
+/// in `~/src/payments-api`, waiting a minute.
+fn payments(title: &str) -> Vec<Connection> {
+    let mut connections = hosts();
+    let control = connections[0].control.as_mut().expect("gpu-01's tree");
+    for session in &mut control.sessions {
+        if session.id == "w3" {
+            session.name = title.into();
+        }
+    }
+    for pane in &mut control.panes {
+        if pane.id == "w3:p1" {
+            pane.path = Some("/home/dev/src/payments-api".into());
+        }
+    }
+    for hook in &mut control.hooks {
+        if hook.pane == "w3:p1" {
+            hook.since = Some(NOW - 60.0);
+        }
+    }
+    connections
+}
+
+/// Where `words` is laid out in the `w3` row.
+fn in_row(app: &App, words: &str) -> nsh_core::Bounds<Points> {
+    let nodes = app.0.screen().layout_nodes();
+    let row = node(&nodes, &format!("home-pane-{GPU}-w3:p1"));
+    nodes
+        .iter()
+        .find(|n| {
+            within(&nodes, n.id, row.id) && n.text.as_ref().is_some_and(|t| t.text.text == words)
+        })
+        .unwrap_or_else(|| panic!("{words} in the row: {:?}", app.0.screen().texts()))
+        .bounds
+}
+
+/// `words`' width in the row with nothing pressing it.
+fn whole_width(app: &mut App, words: &str) -> f32 {
+    app.0
+        .set_viewport(Size::new(Points(1600.0), Points(HEIGHT)))
+        .unwrap();
+    app.0
+        .run_for(std::time::Duration::from_millis(100))
+        .unwrap();
+    in_row(app, words).size.width.0
+}
+
+/// B752 (and B750): a row with a title, a subtitle and a value reads as
+/// Mail's: the value on the title's line at its trailing end, the subtitle
+/// under them across the whole lane. The time ("1m") keeps only its own
+/// width (B750). So "claude · gpu-01 · ~/src/payments-api" is cut only
+/// where the lane really is too narrow, and then reaches the lane's end.
+/// (The value kept a 56 pt lane beside the content, and the path read
+/// "~/src/…ts-api" with ~50 pt to spare on a 6.9" phone.) Whether it reads
+/// whole on a device is its text metrics: the headless engine measures SF
+/// Pro as wide as SF Mono, so here it fits at 440 pt only.
+#[test]
+fn the_time_rides_the_title_line_and_the_path_gets_the_lane() {
+    let path = "~/src/payments-api";
+    for width in [440.0, 402.0, 393.0] {
+        let (mut app, channel, _) = phone_at(width);
+        show(&mut app.0, &channel, payments("payments-api"));
+        find(&mut app.0, &format!("id:home-pane-{GPU}-w3:p1"));
+        let (title, shown, time) = (
+            in_row(&app, "payments-api"),
+            in_row(&app, path),
+            in_row(&app, "1m"),
+        );
+        // On the title's line, after it, at the lane's trailing end.
+        let middle = |b: &nsh_core::Bounds<Points>| b.origin.y.0 + b.size.height.0 / 2.0;
+        assert!(
+            (middle(&time) - middle(&title)).abs() < 1.0,
+            "at {width}: the time {time:?} on the title's line {title:?}"
+        );
+        assert!(time.origin.x.0 >= title.origin.x.0 + title.size.width.0);
+        let lane_end = time.origin.x.0 + time.size.width.0;
+        // The time keeps only its own width (not VALUE_MIN's 56 pt).
+        assert!(
+            time.size.width.0 < moshpit_ui::ui::row::VALUE_MIN - 20.0,
+            "\"1m\" is {} pt wide",
+            time.size.width.0
+        );
+        let whole = whole_width(&mut app, path);
+        let cut = shown.size.width.0 < whole - 0.5;
+        if cut {
+            // Cut only where the lane ends: the subtitle has all of it.
+            assert!(
+                shown.origin.x.0 + shown.size.width.0 >= lane_end - 0.5,
+                "at {width} the path is cut ({} of {whole}) short of the lane's end {lane_end}",
+                shown.size.width.0
+            );
+        }
+        if width >= 440.0 {
+            assert!(
+                !cut,
+                "6.9\": the path reads whole ({} of {whole})",
+                shown.size.width.0
+            );
+        }
+        channel.close();
+    }
+}
+
+#[test]
+fn a_long_title_is_cut_before_the_time() {
+    let title = "payments-api-gateway-for-the-eu-west-region-and-more";
+    let (mut app, channel, _) = phone_at(402.0);
+    show(&mut app.0, &channel, payments(title));
+    find(&mut app.0, &format!("id:home-pane-{GPU}-w3:p1"));
+    let (shown, time) = (in_row(&app, title), in_row(&app, "1m"));
+    assert!(
+        shown.origin.x.0 + shown.size.width.0 + moshpit_ui::ui::row::GAP <= time.origin.x.0 + 0.5,
+        "the title {shown:?} ends before the time {time:?}"
+    );
+    let (title_whole, time_whole) = (
+        whole_width(&mut app, title),
+        in_row(&app, "1m").size.width.0,
+    );
+    assert!(shown.size.width.0 < title_whole - 1.0, "the title is cut");
+    assert!(
+        (time.size.width.0 - time_whole).abs() < 0.5,
+        "the time reads whole: {} of {time_whole}",
+        time.size.width.0
+    );
+    channel.close();
+}
+
+#[test]
+fn at_the_largest_text_size_the_title_wraps_clear_of_the_time() {
+    let title = "payments-api-gateway-for-the-eu-west-region";
+    let params = Params {
+        font_scale: Some(53.0 / 17.0),
+        ..Params::default()
+    };
+    let (mut app, channel, _) = start_observing_with(Screen::Home, params, "home", |config| {
+        config.clock = nsh_core::time::Clock::manual(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs_f64(NOW),
+        );
+        config.viewport = Size::new(Points(402.0), Points(HEIGHT));
+        config.environment.idiom = Idiom::Phone;
+    });
+    show(&mut app.0, &channel, payments(title));
+    find(&mut app.0, &format!("id:home-pane-{GPU}-w3:p1"));
+    let (shown, time) = (in_row(&app, title), in_row(&app, "1m"));
+    let apart = shown.origin.y.0 + shown.size.height.0 <= time.origin.y.0 + 0.5
+        || time.origin.y.0 + time.size.height.0 <= shown.origin.y.0 + 0.5
+        || shown.origin.x.0 + shown.size.width.0 <= time.origin.x.0 + 0.5;
+    assert!(apart, "the title {shown:?} and the time {time:?} overlap");
+    let nodes = app.0.screen().layout_nodes();
+    let row = node(&nodes, &format!("home-pane-{GPU}-w3:p1"));
+    let one_line = in_row(&app, "1m").size.height.0;
+    assert!(
+        shown.size.height.0 > one_line * 1.5,
+        "the title wraps: {shown:?}"
+    );
+    assert!(row.bounds.size.height.0 >= 44.0);
+    channel.close();
+}

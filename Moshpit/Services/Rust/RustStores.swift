@@ -135,6 +135,16 @@ final class RustSSHKeyStore: SSHKeyStoreBacking {
         RustStoreCall.value("keys: mark used") { try handle.markUsed(id: id.uuidString) } ?? false
     }
 
+    func learnKeyFacts(keychain: KeychainHost) -> [SSHKeyRecord] {
+        storeLearnKeyFacts(keys: handle, keychain: keychain).compactMap(SSHKeyRecord.init)
+    }
+
+    func learnFacts(id: UUID, privateKey: String) -> Bool {
+        RustStoreCall.value("keys: learn facts") {
+            try handle.learnFacts(id: id.uuidString, privateKey: privateKey)
+        } ?? false
+    }
+
     func reloadIfNeeded() { handle.reloadIfNeeded() }
 
     func keychainRefs(excluding: UUID?) -> Set<String>? {

@@ -69,6 +69,15 @@ final class NotificationService: UNNotificationServiceExtension {
             content.categoryIdentifier = ""
             contentHandler(content)
             return
+        case .unreadable:
+            // The paired host's key opened it, but it holds no status this
+            // phone reads (B635): the fallback, without the actions, saying
+            // which it was — not "paired to another install".
+            Log.push.error("a key opened this envelope, but it holds no status this phone reads — showing the generic fallback")
+            PushDiagnostics.record("a key opened this envelope, but it holds no status this phone reads — showed the fallback")
+            content.categoryIdentifier = ""
+            contentHandler(content)
+            return
         case .unopened:
             // The count is the whole diagnosis: 0 means the store did not reach
             // the extension (App Group or file protection), while n > 0 means the
@@ -110,6 +119,17 @@ final class NotificationService: UNNotificationServiceExtension {
             // nor leaves the waiting set, and rings no finish. Its "done" used
             // to clear the pane it named — `%0`, where an agent often waits.
             PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label)
+        } else if status.state == "attention",
+                  let ended = closedAt(conn: status.conn, pane: status.pane),
+                  ended > status.ts {
+            // B636: a question the host already said ended — APNs reordered
+            // it behind its `done`, or a relay sent it again. Not a new one:
+            // it doesn't stand, and rings nothing.
+            PushDiagnostics.record("an attention the host already ended came late — shown without a sound, not standing")
+            let count = PushStanding.standing(conn: status.conn).count
+            PushRemoteNotification.apply(status, to: content,
+                                         attentionEdge: false, standingCount: count,
+                                         prefs: prefs, label: label)
         } else if status.state == "attention" {
             // With its place, as the card says it: the app redraws this card
             // from the entry when the set changes, and has only what is here.
@@ -126,8 +146,15 @@ final class NotificationService: UNNotificationServiceExtension {
                                          prefs: prefs, label: label)
         } else {
             // A `done` closes its pane's turn — that pane is no longer waiting.
-            let wasWaiting = PushStanding.standing(conn: status.conn).contains { $0.pane == status.pane }
-            let remaining = PushStanding.clear(conn: status.conn, pane: status.pane)
+            // B636: the host's word for when, by its clock: what it asked up
+            // to then stops waiting, and a question from before it that comes
+            // later is told for what it is.
+            if !PushClosed.noteClosed(conn: status.conn, pane: status.pane, closedAt: status.ts) {
+                PushDiagnostics.record("turn endings busy — this ending isn't remembered")
+            }
+            let wasWaiting = PushStanding.standing(conn: status.conn)
+                .contains { $0.pane == status.pane && $0.since <= status.ts }
+            let remaining = PushStanding.clearEnded(conn: status.conn, pane: status.pane, endedAt: status.ts)
             // Its waiting card says what still waits, or goes (B669).
             if wasWaiting {
                 redrawWaitingCard(conn: status.conn, remaining: remaining,
@@ -145,6 +172,18 @@ final class NotificationService: UNNotificationServiceExtension {
                                          doneRings: rings)
         }
         contentHandler(content)
+    }
+
+    /// When the host last said this pane's turn ended (B636). Its lock busy
+    /// past the budget reads as nothing ended — today's behaviour — and is
+    /// logged; the notification is never held up for it.
+    private func closedAt(conn: String, pane: String) -> Int? {
+        do {
+            return try PushClosed.closedAt(conn: conn, pane: pane)
+        } catch {
+            PushDiagnostics.record("turn endings busy — read as nothing ended")
+            return nil
+        }
     }
 
     /// The connection's waiting card after a finish left the set (B669):

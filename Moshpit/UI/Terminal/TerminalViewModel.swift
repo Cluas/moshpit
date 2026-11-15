@@ -35,6 +35,9 @@ final class TerminalViewModel {
         /// `ssh-rsa` when the server offers no better host-key algorithm
         /// (B564): the New Host card says so.
         var olderAlgorithm: String? = nil
+        /// An earlier version stored two different keys for the host, and it
+        /// sent one of them (B725): the card asks in its own words.
+        var conflicting: Bool = false
         let decide: (Bool) -> Void
     }
 

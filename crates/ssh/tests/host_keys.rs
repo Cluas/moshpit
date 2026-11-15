@@ -53,6 +53,7 @@ async fn a_new_host_is_asked_about_once_and_remembered() {
             port: host.port(),
             fingerprint: fingerprint.clone(),
             expected: None,
+            conflicting: false,
         }]
     );
     assert_eq!(
@@ -145,6 +146,55 @@ async fn a_change_the_person_accepts_is_trusted_from_then_on() {
         known.snapshot()[&entry(&host)],
         host.host_keys[0].fingerprint()
     );
+}
+
+/// B725: an earlier build stored the host under two spellings with
+/// different keys, and it presents one of them: asked once (trust this
+/// key?), never connected silently. Trusted, one record is left; declined,
+/// nothing connects and the map is as it was. A key matching neither is a
+/// changed key, asked as ever.
+#[tokio::test]
+async fn two_stored_keys_for_a_host_are_asked_about() {
+    let host = Host::start(Bench::default()).await;
+    let real = host.host_keys[0].fingerprint();
+    let port = host.port();
+    let records = |a: &str, b: &str| {
+        BTreeMap::from([
+            (format!("127.0.0.1:{port}"), a.to_owned()),
+            (format!("127.0.0.1.:{port}"), b.to_owned()),
+        ])
+    };
+    for trust in [true, false] {
+        let seeded = records(&real, "SHA256:retired");
+        let known = Arc::new(KnownHosts::in_memory(seeded.clone()));
+        let person = Person::answering(&[trust]);
+        let connected =
+            connect_with(&host.target(), tofu(&known, person.clone()), &options()).await;
+        let asked = person.asked();
+        assert_eq!(asked.len(), 1, "asked once");
+        assert!(asked[0].conflicting, "{:?}", asked[0]);
+        if trust {
+            connected.expect("trusted");
+            assert_eq!(
+                known.snapshot(),
+                BTreeMap::from([(format!("127.0.0.1:{port}"), real.clone())]),
+                "one record left"
+            );
+        } else {
+            assert!(connected.is_err(), "declined: no connection");
+            assert_eq!(known.snapshot(), seeded, "the map as it was");
+        }
+    }
+
+    // A key matching neither record: the changed-key path.
+    let known = Arc::new(KnownHosts::in_memory(records("SHA256:a", "SHA256:b")));
+    let person = Person::answering(&[false]);
+    let err = connect_with(&host.target(), tofu(&known, person.clone()), &options())
+        .await
+        .err()
+        .expect("refused");
+    assert!(matches!(err, SshError::HostKeyChanged { .. }), "{err:?}");
+    assert!(!person.asked()[0].conflicting);
 }
 
 struct Locked;

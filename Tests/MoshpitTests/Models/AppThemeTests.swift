@@ -118,6 +118,44 @@ struct AppThemeTests {
         }
     }
 
+    /// B728: every icon 1.0.8 offered, by the id its setting stored and the
+    /// alternate iOS was set to, is still offered under both — and still
+    /// in the bundle (actool lists each alternate project.yml names in
+    /// `CFBundleAlternateIcons`). An upgrade keeps the home screen's icon
+    /// and the gallery's tick on it; one dropped, iOS falls back to the
+    /// primary and the tick to nothing.
+    @Test("the icons 1.0.8 offered keep their ids, alternates and artwork")
+    func iconsOf108StayOffered() {
+        let shipped: [(id: String, alternate: String?)] = [
+            ("default", nil),
+            ("pit", "AppIcon-Pit"), ("island", "AppIcon-Island"), ("wq", "AppIcon-Wq"),
+            ("prefix", "AppIcon-Prefix"), ("localhost", "AppIcon-Localhost"),
+            ("prompt", "AppIcon-Prompt"), ("cursor", "AppIcon-Cursor"), ("hail", "AppIcon-Hail"),
+        ]
+        let bundled = Self.bundledAlternateIcons()
+        for (id, alternate) in shipped {
+            let option = AppIconCatalog.all.first { $0.id == id }
+            #expect(option != nil, "\(id) no longer offered")
+            #expect(option?.alternateName == alternate, "\(id)")
+            if let alternate {
+                #expect(bundled.contains(alternate), "\(alternate) not in the bundle")
+            }
+        }
+        #expect(AppIconCatalog.primary.id == "default")
+    }
+
+    /// The alternate icons the app's Info.plist lists, iPhone's and iPad's.
+    private static func bundledAlternateIcons() -> Set<String> {
+        var names = Set<String>()
+        for key in ["CFBundleIcons", "CFBundleIcons~ipad"] {
+            let icons = Bundle.main.object(forInfoDictionaryKey: key) as? [String: Any]
+            if let alternates = icons?["CFBundleAlternateIcons"] as? [String: Any] {
+                names.formUnion(alternates.keys)
+            }
+        }
+        return names
+    }
+
     @Test("an unknown icon id resolves to the primary icon")
     func iconFallback() {
         #expect(AppIconCatalog.option(for: "nope").id == AppIconCatalog.primary.id)

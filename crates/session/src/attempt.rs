@@ -780,6 +780,15 @@ impl HostKeyPrompt for NotingYes {
     ) -> BoxFuture<'a, bool> {
         self.noted(self.prompt.accept_changed_host(host, port, key, expected))
     }
+
+    fn accept_conflicting_host<'a>(
+        &'a self,
+        host: &'a str,
+        port: u16,
+        key: &'a HostKey,
+    ) -> BoxFuture<'a, bool> {
+        self.noted(self.prompt.accept_conflicting_host(host, port, key))
+    }
 }
 
 async fn dial_once(

@@ -53,6 +53,10 @@ pub enum Opening {
     Opened(Status),
     /// A pairing's key opened it, but it names another connection (B435).
     Misnamed,
+    /// A pairing's key opened it, but what it holds is no status this
+    /// device reads (B635): the right key, so the host is the paired one —
+    /// not, as an unopened push says, a host paired to another install.
+    Unreadable,
     /// No key opened it.
     Unopened,
 }
@@ -70,8 +74,12 @@ pub enum Opening {
 /// needs trying.
 pub fn open_paired(envelope: &Envelope, pairings: &[PushPairing]) -> Opening {
     for pairing in newest_first(pairings.to_vec()) {
-        let Ok(status) = envelope::open(envelope, &pairing.secret_hex) else {
+        let Ok(plaintext) = envelope::open_raw(envelope, &pairing.secret_hex) else {
             continue;
+        };
+        // The key opened it: the MAC verified, only its holder sealed it.
+        let Some(status) = Status::from_json(&plaintext) else {
+            return Opening::Unreadable;
         };
         return if Uuid::parse(&status.conn) == Some(pairing.connection_id) {
             Opening::Opened(status)

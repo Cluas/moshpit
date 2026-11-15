@@ -76,6 +76,7 @@ impl Bench {
                 location: None,
                 since: sent_at,
                 recorded_at: Date::from_unix(now),
+                lifetime: Some(LIFETIME_SECONDS),
             },
             Date::from_unix(now),
         )
@@ -266,6 +267,7 @@ fn a_card_redrawn_from_a_pushed_entry_keeps_show_detail_off_and_says_where() {
         location: None,
         since: T0 as i64 + 31,
         recorded_at: Date::from_unix(T0),
+        lifetime: Some(LIFETIME_SECONDS),
     };
     let off = Settings { show_detail: false, ..Settings::default() };
     let hidden = digest(&pushed, 1, off, false, "devbox · work", "devbox");
@@ -897,7 +899,7 @@ fn disconnecting_leaves_a_waiting_card_and_answering_it_seen_later_takes_it_down
     bench.standing.note_standing(
         CONN,
         Entry { pane: "%1".into(), agent: Some("claude".into()), title: None, location: Some("devbox".into()),
-                since: asked as i64, recorded_at: Date::from_unix(asked + 60.0) },
+                since: asked as i64, recorded_at: Date::from_unix(asked + 60.0), lifetime: Some(LIFETIME_SECONDS) },
         Date::from_unix(asked + 60.0),
     );
     bench.poll("%1", "attention", asked, asked + 61.0);
@@ -1256,7 +1258,7 @@ fn a_card_left_up_for_a_pane_that_closed_while_the_app_was_away_is_withdrawn() {
     bench.standing.note_standing(
         CONN,
         Entry { pane: "%1".into(), agent: Some("claude".into()), title: None, location: Some("devbox".into()),
-                since: asked as i64, recorded_at: Date::from_unix(asked + 60.0) },
+                since: asked as i64, recorded_at: Date::from_unix(asked + 60.0), lifetime: Some(LIFETIME_SECONDS) },
         Date::from_unix(asked + 60.0),
     );
     bench.monitor.tree(CONN, tree_of(&["%2"]));
@@ -1687,6 +1689,7 @@ fn a_card_for_an_entry_with_no_agent_names_the_connection() {
         location: Some("devbox · work".into()),
         since: T0 as i64,
         recorded_at: Date::from_unix(T0),
+        lifetime: Some(LIFETIME_SECONDS),
     };
     let zh = Settings { language: Language::ZhHans, ..Settings::default() };
     assert_eq!(digest(&entry, 1, Settings::default(), false, "devbox · work", "devbox").title, "devbox needs you");

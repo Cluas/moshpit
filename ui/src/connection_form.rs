@@ -1317,6 +1317,7 @@ fn mosh(draft: &Draft) -> AnyElement {
     let set = draft.setter(Field::Mosh);
     let toggle = row(t!("Use mosh"))
         .subtitle(t!("Survives network changes; needs UDP."))
+        .wrap_subtitle()
         .trailing(
             switch(move || on.get(), set)
                 .label(t!("Use mosh"))

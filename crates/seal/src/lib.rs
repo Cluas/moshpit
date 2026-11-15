@@ -30,6 +30,7 @@
 //! backup exclusion; registering for a device token; the HTTP calls to the
 //! relay; posting the notification. Those belong to each platform.
 
+pub mod closed;
 pub mod copy;
 pub mod diagnostics;
 pub mod envelope;

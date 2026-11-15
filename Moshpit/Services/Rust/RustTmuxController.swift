@@ -112,6 +112,17 @@ final class RustTmuxController: MultiplexerControlling {
     /// The grid pane terminals are born at, until their view reports one.
     @ObservationIgnored private let birthGrid: (cols: Int, rows: Int)
     @ObservationIgnored private var panes: [String: PaneTerminal] = [:]
+    /// The panes the core last listed with a channel: every pane tmux has,
+    /// in any window or session, hidden or zoomed or not; one tmux reports
+    /// gone (its window closed, or missing from a whole-server listing, B87)
+    /// leaves it. Nil until the attach's first list.
+    @ObservationIgnored private var livePanes: Set<String>?
+    /// Counts the core's lists (a terminal made before the latest one, for a
+    /// pane it doesn't hold, is for a pane that's gone).
+    @ObservationIgnored private var listGeneration = 0
+    /// Panes a notification's landing waits on (B468): kept, terminal and
+    /// all, while the landing's patience runs.
+    @ObservationIgnored private var heldPanes: Set<String> = []
     @ObservationIgnored private var model: TmuxReadModel?
     @ObservationIgnored private var rowCarry = ScrollRowCarry()
     /// Whether a pane of this attach has been revealed.
@@ -129,10 +140,15 @@ final class RustTmuxController: MultiplexerControlling {
         /// The grid its view last reported, sent when its channel arrives.
         var grid: (cols: Int, rows: Int)?
         var deferSafety: Task<Void, Never>?
+        /// The core has listed it with a channel.
+        var listed = false
+        /// The core's list count when it was made.
+        let generation: Int
 
-        init(terminal: CoreTerminalView, coordinator: CoreTerminalHost.Coordinator) {
+        init(terminal: CoreTerminalView, coordinator: CoreTerminalHost.Coordinator, generation: Int) {
             self.terminal = terminal
             self.coordinator = coordinator
+            self.generation = generation
         }
     }
 
@@ -259,7 +275,45 @@ final class RustTmuxController: MultiplexerControlling {
             pane.feeder?.detach()
             pane.feeder = nil
         }
+        listGeneration += 1
+        livePanes = live
+        for paneId in live { panes[paneId]?.listed = true }
+        dropGonePanes()
     }
+
+    /// Lets the terminals of panes tmux reports gone go (B736): every pane
+    /// once shown kept its terminal, its whole history with it, for the
+    /// attach's life, after its window closed too — agents opening and
+    /// closing windows all day grew it without bound. Not a pane a landing
+    /// waits on (``holdPane(_:)``), and not one made after the latest list
+    /// for a pane on its way (its channel comes with the next list).
+    private func dropGonePanes() {
+        guard let live = livePanes else { return }
+        let gone = panes.filter { id, pane in
+            !live.contains(id) && !heldPanes.contains(id)
+                && (pane.listed || pane.generation < listGeneration)
+        }
+        for (id, pane) in gone {
+            pane.feeder?.detach()
+            pane.feeder = nil
+            pane.deferSafety?.cancel()
+            panes[id] = nil
+        }
+        if !gone.isEmpty {
+            Log.ui.info("tmux: let go of \(gone.count, privacy: .public) gone panes' terminals; \(self.panes.count, privacy: .public) kept")
+        }
+    }
+
+    /// Keeps `paneId`'s terminal while a notification's landing waits on it
+    /// (B468), whether or not tmux still lists it; nil lets it go (and what
+    /// tmux no longer lists goes then).
+    func holdPane(_ paneId: String?) {
+        heldPanes = paneId.map { [$0] } ?? []
+        dropGonePanes()
+    }
+
+    /// How many pane terminals there are (tests, debug probes).
+    var paneTerminalCount: Int { panes.count }
 
     func notePainted() {
         paintedSinceAttach = true
@@ -372,7 +426,7 @@ final class RustTmuxController: MultiplexerControlling {
         terminal.followTmuxClears()
         terminal.apply(look: look.terminalLook)
         let coordinator = CoreTerminalHost.Coordinator()
-        let pane = PaneTerminal(terminal: terminal, coordinator: coordinator)
+        let pane = PaneTerminal(terminal: terminal, coordinator: coordinator, generation: listGeneration)
         wire(coordinator, for: paneId)
         coordinator.attach(terminal)
         panes[paneId] = pane

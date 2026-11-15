@@ -219,6 +219,7 @@
   "%@ · runs %@": "%1$@ · %2$@ 실행",
   "Connection Error": "연결 오류",
   "Trust New Key": "새 키 신뢰",
+  "Moshpit saved two different keys for %@:%@ in an earlier version. The key it sent now is %@. Trust this key?": "이전 버전에서 %@:%@에 서로 다른 키 두 개를 저장했습니다. 이번에 보낸 키는 %@입니다. 이 키를 신뢰할까요?",
   "New Host": "새 호스트",
   "Trust": "신뢰",
   "Connecting…": "연결 중…",

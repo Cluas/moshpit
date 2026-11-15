@@ -33,6 +33,11 @@ fn term(pane: &str) -> String {
     format!("term_{}", pane.replace(':', "_"))
 }
 
+/// Where herdr's own TUI puts a byte: the server's focused pane.
+fn tui(pane: &str) -> String {
+    format!("tui {pane}")
+}
+
 fn held_words(terminal: &str) -> String {
     format!(
         "herdr: server shut down: terminal attach failed: terminal {terminal} already has an attached client; retry with --takeover"
@@ -94,7 +99,6 @@ struct Exec {
 struct Datagram {
     seq: u64,
     bytes: Vec<u8>,
-    sent_at: u64,
     arrives: Option<u64>,
 }
 
@@ -116,6 +120,13 @@ struct Rig {
     max_retargets: usize,
     one_way: u64,
     udp_down: bool,
+    /// mosh shows herdr's own TUI: a byte reaches the server's focused pane
+    /// as it arrives.
+    tui: bool,
+    /// The control connection is up; execs asked while it isn't wait for
+    /// the next one, in order, as the leg holds them.
+    connected: bool,
+    waiting: Vec<(ExecTag, String)>,
     up: Vec<Datagram>,
     seq: u64,
     /// The newest seq the server has, and when the phone hears of it.
@@ -134,6 +145,10 @@ struct Rig {
     delivered: BTreeMap<u64, (u64, bool)>,
     answers: Vec<u64>,
     dropped: usize,
+    /// Pastes said landed or not: (when, token, landed).
+    pastes: Vec<(u64, u64, bool)>,
+    /// Typing said held or let go: (when, held).
+    held_said: Vec<(u64, bool)>,
     /// Screen bytes due: (when).
     paints: Vec<u64>,
     log: Vec<String>,
@@ -159,6 +174,9 @@ impl Rig {
             max_retargets: 0,
             one_way: 30,
             udp_down: false,
+            tui: false,
+            connected: true,
+            waiting: Vec::new(),
             up: Vec::new(),
             seq: 0,
             server_seq: 0,
@@ -173,6 +191,8 @@ impl Rig {
             delivered: BTreeMap::new(),
             answers: Vec::new(),
             dropped: 0,
+            pastes: Vec::new(),
+            held_said: Vec::new(),
             paints: Vec::new(),
             log: Vec::new(),
         };
@@ -188,6 +208,9 @@ impl Rig {
 
     /// What the tty shows now: where a byte that arrives goes.
     fn tty(&self) -> String {
+        if self.tui {
+            return tui(self.herdr.focused.as_deref().unwrap_or("-"));
+        }
         match &self.state {
             Loop::On(terminal) => terminal.clone(),
             Loop::Waiting | Loop::Parked { .. } => NO_PANE.to_owned(),
@@ -203,7 +226,10 @@ impl Rig {
         while let Some(output) = self.plane.poll_output() {
             match output {
                 PlaneOut::Exec { tag, command } => self.ask(tag, command),
-                PlaneOut::Abandon { tag } => self.execs.retain(|exec| exec.tag != tag),
+                PlaneOut::Abandon { tag } => {
+                    self.execs.retain(|exec| exec.tag != tag);
+                    self.waiting.retain(|(waiting, _)| *waiting != tag);
+                }
                 PlaneOut::OpenPush { .. } => {
                     let now = self.now;
                     self.plane.push_failed(now);
@@ -218,7 +244,6 @@ impl Rig {
                     self.up.push(Datagram {
                         seq: self.seq,
                         bytes,
-                        sent_at: self.now,
                         arrives,
                     });
                 }
@@ -236,12 +261,18 @@ impl Rig {
                 }
                 PlaneOut::Answer { token, .. } => self.answers.push(token),
                 PlaneOut::InputDropped { bytes } => self.dropped += bytes,
+                PlaneOut::Landed { token, landed } => self.pastes.push((self.now, token, landed)),
+                PlaneOut::InputHeld(held) => self.held_said.push((self.now, held)),
                 PlaneOut::AgentHooksUpdated => {}
             }
         }
     }
 
     fn ask(&mut self, tag: ExecTag, command: String) {
+        if !self.connected {
+            self.waiting.push((tag, command));
+            return;
+        }
         let kind = kind(&command);
         let at = match kind {
             Kind::Herdr => match self.herdr.plan(&command) {
@@ -470,10 +501,7 @@ impl Rig {
     }
 
     fn arrive(&mut self, datagram: Datagram) {
-        // A keystroke older than mosh's lifetime is dropped.
-        if self.now.saturating_sub(datagram.sent_at) > 10_000 {
-            return;
-        }
+        // Never expired on the same session (B618): kept until acked.
         let place = self.tty();
         let mut bytes = datagram.bytes;
         if place == LOGIN_SHELL && bytes.first() == Some(&0x15) {
@@ -502,6 +530,44 @@ impl Rig {
     fn run(&mut self, ms: u64) {
         let until = self.now + ms;
         self.run_until(until);
+    }
+
+    /// UDP gets through again (a roam landed): mosh sends again what the
+    /// server never acknowledged, in order.
+    fn path_back(&mut self) {
+        self.udp_down = false;
+        let at = self.now + self.one_way;
+        for datagram in &mut self.up {
+            datagram.arrives.get_or_insert(at);
+        }
+    }
+
+    /// The control connection drops (mosh carries on): what runs on it
+    /// fails, what is asked waits for the next one.
+    fn drop_connection(&mut self) {
+        self.connected = false;
+        let now = self.now;
+        self.plane.connection_lost(now);
+        for exec in std::mem::take(&mut self.execs) {
+            self.plane.exec_finished(exec.tag, None, now);
+        }
+        self.pump();
+    }
+
+    /// A control connection again: what waited runs on it, in order.
+    fn reconnect(&mut self) {
+        self.connected = true;
+        for (tag, command) in std::mem::take(&mut self.waiting) {
+            self.ask(tag, command);
+        }
+        let now = self.now;
+        self.plane.connection_up(now);
+        self.pump();
+    }
+
+    /// Where `needle` first landed in the log, by line.
+    fn at(&self, needle: &str) -> Option<usize> {
+        self.log.iter().position(|line| line.ends_with(needle))
     }
 
     fn type_text(&mut self, text: &str) {
@@ -1047,6 +1113,161 @@ fn a_switch_waits_for_the_typing_before_it_to_reach_the_tty() {
     assert!(rig.landed_in(&term(B)).is_empty());
 }
 
+/// B686: a switch waits for the typing before it however long mosh takes
+/// to acknowledge it: on a path slower than the old 1.5 s bound (a 4 s
+/// round trip), the retarget went anyway and the keystrokes still on their
+/// way landed in the pane switched to.
+#[test]
+fn a_switch_on_a_slow_path_never_takes_the_typing_before_it() {
+    let mut rig = Rig::booted();
+    rig.one_way = 2_000;
+    rig.type_text("for-a");
+    rig.act(Action::SelectPane(B.to_owned()));
+    rig.run(15_000);
+    assert_eq!(rig.landed_in(&term(A)), "for-a", "{:?}", rig.log);
+    assert!(rig.landed_in(&term(B)).is_empty(), "{:?}", rig.log);
+    assert_eq!(rig.on_screen(), Some(term(B)), "{:?}", rig.log);
+}
+
+/// B686: across a roam (UDP gone for 8 s, then back), the typing before a
+/// switch lands in the pane it was typed for, and the switch lands after
+/// it — the renderer's budget for the switch counts from when it went, not
+/// from when it was asked.
+#[test]
+fn a_switch_across_a_roaming_gap_lands_after_the_typing_before_it() {
+    let mut rig = Rig::booted();
+    rig.udp_down = true;
+    rig.type_text("for-a");
+    rig.act(Action::SelectPane(B.to_owned()));
+    rig.run(8_000);
+    assert!(rig.landed.values().all(|bytes| bytes.is_empty()));
+    rig.path_back();
+    rig.run(10_000);
+    assert_eq!(rig.landed_in(&term(A)), "for-a", "{:?}", rig.log);
+    assert!(rig.landed_in(&term(B)).is_empty(), "{:?}", rig.log);
+    assert_eq!(rig.on_screen(), Some(term(B)), "{:?}", rig.log);
+    rig.type_text("for-b");
+    rig.run(2_000);
+    assert_eq!(rig.landed_in(&term(B)), "for-b", "{:?}", rig.log);
+}
+
+/// B686: an arrow waits for the typing before it however slow the path:
+/// past the old 1.5 s bound herdr typed the key ahead of it.
+#[test]
+fn an_arrow_on_a_slow_path_waits_for_the_typing_before_it() {
+    let mut rig = Rig::booted();
+    rig.one_way = 2_000;
+    rig.type_text("ab");
+    rig.type_text("\x1b[A");
+    rig.type_text("cd");
+    rig.run(15_000);
+    assert_eq!(rig.keys, vec![(A.to_owned(), "up".to_owned())]);
+    assert_eq!(rig.landed_in(&term(A)), "abcd");
+    let (ab, up, cd) = (rig.at(" ab"), rig.at("key up"), rig.at(" cd"));
+    assert!(
+        ab.is_some() && up.is_some() && cd.is_some(),
+        "{:?}",
+        rig.log
+    );
+    assert!(ab < up && up < cd, "{:?}", rig.log);
+}
+
+/// B686: an arrow pressed while the control connection is being redialled
+/// never reaches the pane after the typing behind it. Down then Return in a
+/// menu picked the default: the Return went once the key's 3 s were up,
+/// and the key ran on the next connection. Past its bound the key and the
+/// typing behind it are dropped and said, and the key never runs late.
+#[test]
+fn an_arrow_while_the_control_connection_is_down_never_lands_after_what_follows() {
+    let mut rig = Rig::booted();
+    rig.drop_connection();
+    rig.type_text("\x1b[B");
+    rig.type_text("\r");
+    rig.run(5_000);
+    rig.reconnect();
+    rig.run(3_000);
+    assert!(rig.keys.is_empty(), "the key ran late: {:?}", rig.log);
+    assert!(rig.landed_in(&term(A)).is_empty(), "{:?}", rig.log);
+    assert_eq!(rig.dropped, 4, "said, with the Return behind it");
+    // What is typed next goes, in order.
+    rig.type_text("x");
+    rig.run(1_000);
+    assert_eq!(rig.landed_in(&term(A)), "x", "{:?}", rig.log);
+}
+
+/// B686: a connection back within the key's bound: the key and the typing
+/// behind it go, in order.
+#[test]
+fn an_arrow_waits_out_a_quick_redial_in_order() {
+    let mut rig = Rig::booted();
+    rig.drop_connection();
+    rig.type_text("\x1b[B");
+    rig.type_text("\r");
+    rig.run(1_000);
+    assert!(rig.landed_in(&term(A)).is_empty(), "{:?}", rig.log);
+    rig.reconnect();
+    rig.run(3_000);
+    assert_eq!(rig.keys, vec![(A.to_owned(), "down".to_owned())]);
+    assert_eq!(rig.landed_in(&term(A)), "\r");
+    assert!(rig.at("key down") < rig.at(" \r"), "{:?}", rig.log);
+    assert_eq!(rig.dropped, 0);
+}
+
+/// B689: typing held behind mosh-server's acknowledgement is never
+/// invisible: past a second the plane says so, and says when it goes.
+#[test]
+fn typing_held_past_a_second_is_said_and_so_is_its_going() {
+    let mut rig = Rig::booted();
+    rig.udp_down = true;
+    let start = rig.now;
+    rig.type_text("ab");
+    rig.type_text("\x1b[A");
+    rig.type_text("\r");
+    rig.run(900);
+    assert!(rig.held_said.is_empty(), "not before a second");
+    rig.run(300);
+    assert_eq!(rig.held_said, vec![(start + 1_000, true)]);
+    rig.path_back();
+    rig.run(3_000);
+    assert_eq!(
+        rig.held_said.iter().map(|h| h.1).collect::<Vec<_>>(),
+        [true, false]
+    );
+    assert_eq!(rig.keys, vec![(A.to_owned(), "up".to_owned())]);
+    assert_eq!(rig.landed_in(&term(A)), "ab\r");
+}
+
+/// B689: closing the plane while typing is held says how much never
+/// reached mosh, and that nothing waits any more.
+#[test]
+fn closing_while_typing_is_held_lets_it_go_said() {
+    let mut rig = Rig::booted();
+    rig.udp_down = true;
+    rig.type_text("ab");
+    rig.type_text("\x1b[A");
+    rig.type_text("\r");
+    rig.run(1_500);
+    assert_eq!(rig.held_said.last().map(|h| h.1), Some(true));
+    let now = rig.now;
+    assert_eq!(rig.plane.close(now), 4, "the key and the Return");
+    rig.pump();
+    assert_eq!(rig.held_said.last().map(|h| h.1), Some(false));
+}
+
+/// B686: what the lane still holds when the plane closes (the mosh leg
+/// going: a reconnect, the end) is said, never dropped in silence.
+#[test]
+fn typing_held_in_the_lane_when_the_plane_closes_is_said() {
+    let mut rig = Rig::booted();
+    rig.udp_down = true;
+    rig.type_text("ab");
+    rig.type_text("\x1b[A");
+    rig.type_text("cd");
+    rig.run(2_000);
+    let now = rig.now;
+    assert_eq!(rig.plane.close(now), 5, "the key and what's behind it");
+}
+
 #[test]
 fn arrows_go_as_keys_herdr_encodes_in_order_with_the_typing() {
     let mut rig = Rig::booted();
@@ -1115,7 +1336,59 @@ fn an_arrow_inside_a_paste_is_pasted_not_pressed() {
     rig.pump();
     rig.run(2_000);
     assert!(rig.keys.is_empty(), "{:?}", rig.keys);
-    assert_eq!(rig.landed_in(&term(A)), "\x1b[200~a\x1b[Ab\x1b[201~");
+    // A paste carries no ESC (B738): what lands is the text around it.
+    assert_eq!(rig.landed_in(&term(A)), "\x1b[200~a[Ab\x1b[201~");
+}
+
+/// B687: a paste the session waits on is said landed once mosh-server has
+/// it, not when it leaves: what follows (an image path's Return) must not
+/// join its retransmitted diff.
+#[test]
+fn a_paste_is_said_landed_once_mosh_server_has_it() {
+    let mut rig = Rig::booted();
+    rig.one_way = 2_000;
+    let start = rig.now;
+    rig.plane.paste_then(" /tmp/a.jpg ", 0, 7, start);
+    rig.pump();
+    rig.run(1_000);
+    assert!(rig.pastes.is_empty(), "not on its way out");
+    rig.run(9_000);
+    assert_eq!(rig.pastes.len(), 1, "{:?}", rig.pastes);
+    let (at, token, landed) = rig.pastes[0];
+    assert_eq!((token, landed), (7, true));
+    assert!(at >= start + 4_000, "acknowledged: {at} {start}");
+    assert_eq!(rig.landed_in(&term(A)), "\x1b[200~ /tmp/a.jpg \x1b[201~");
+}
+
+/// B687: a paste dropped mid-switch is said not landed at once, so the
+/// Return sent after it doesn't go on its own.
+#[test]
+fn a_paste_dropped_mid_switch_is_said_not_landed() {
+    let mut rig = Rig::booted();
+    rig.act(Action::SelectPane(B.to_owned()));
+    let now = rig.now;
+    rig.plane.paste_then("p", 0, 8, now);
+    rig.pump();
+    assert_eq!(rig.pastes, vec![(now, 8, false)]);
+    assert!(rig.dropped > 0);
+}
+
+/// B687: a paste queued behind a key that never went is dropped with it,
+/// and said not landed.
+#[test]
+fn a_paste_behind_a_key_that_never_went_is_said_not_landed() {
+    let mut rig = Rig::booted();
+    rig.drop_connection();
+    rig.type_text("\x1b[B");
+    let now = rig.now;
+    rig.plane.paste_then("p", 0, 9, now);
+    rig.pump();
+    rig.run(5_000);
+    assert_eq!(
+        rig.pastes.iter().map(|p| (p.1, p.2)).collect::<Vec<_>>(),
+        vec![(9, false)]
+    );
+    assert!(rig.landed_in(&term(A)).is_empty(), "{:?}", rig.log);
 }
 
 #[test]
@@ -1160,6 +1433,54 @@ fn a_herdr_without_terminal_attach_runs_its_own_tui_and_zooms_server_side() {
     assert_eq!(rig.herdr.focused.as_deref(), Some(A));
     assert_eq!(rig.landed_in("tui"), "okr\r");
     assert!(rig.retargets.is_empty());
+}
+
+/// herdr's own TUI on mosh, its focus the server's, booted on A.
+fn tui_rig() -> Rig {
+    let mut rig = Rig::new();
+    rig.plane = Plane::new(PlaneConfig::new(KEY, None, None, false));
+    rig.state = Loop::On("tui".into());
+    rig.tui = true;
+    rig.start();
+    rig.run(2_000);
+    assert_eq!(rig.herdr.focused.as_deref(), Some(A));
+    rig
+}
+
+/// B688: herdr's own TUI types into the server's focused pane, so a switch
+/// the person asks for waits for the typing before it to reach the tty, as
+/// the raw-attach loop's does (B686): the focus moved on the server while
+/// the keystrokes were still on their way, and they landed in the pane
+/// switched to.
+#[test]
+fn the_full_tuis_switch_waits_for_the_typing_before_it() {
+    let mut rig = tui_rig();
+    rig.one_way = 400;
+    rig.type_text("for-a");
+    rig.act(Action::SelectPane(B.to_owned()));
+    rig.type_text("mid");
+    assert_eq!(rig.dropped, 3, "typed while the switch hadn't landed");
+    rig.run(5_000);
+    assert_eq!(rig.herdr.focused.as_deref(), Some(B));
+    assert_eq!(rig.landed_in(&tui(A)), "for-a", "{:?}", rig.log);
+    assert!(rig.landed_in(&tui(B)).is_empty(), "{:?}", rig.log);
+    rig.type_text("for-b");
+    rig.run(2_000);
+    assert_eq!(rig.landed_in(&tui(B)), "for-b", "{:?}", rig.log);
+}
+
+/// B688: a reply to another pane under herdr's own TUI: the typing before
+/// it lands where it was typed, the reply in its pane.
+#[test]
+fn the_full_tuis_reply_to_another_pane_waits_for_the_typing_before_it() {
+    let mut rig = tui_rig();
+    rig.one_way = 400;
+    rig.type_text("for-a");
+    rig.deliver(1, B, "r\r");
+    rig.run(10_000);
+    assert_eq!(rig.delivered.get(&1).map(|d| d.1), Some(true));
+    assert_eq!(rig.landed_in(&tui(A)), "for-a", "{:?}", rig.log);
+    assert_eq!(rig.landed_in(&tui(B)), "r\r", "{:?}", rig.log);
 }
 
 // MARK: - Replies

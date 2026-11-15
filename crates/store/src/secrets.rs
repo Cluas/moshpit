@@ -498,6 +498,57 @@ pub fn recover_orphans(
     Ok(recovered)
 }
 
+/// What each key 1.0.8 imported without its public half is (B726): every
+/// record that [lacks its facts](SshKeyRecord::lacks_facts) has its private
+/// key read without asking ([`Keychain::load_silently`]) and, if `describe`
+/// reads it as a private key, those facts kept
+/// ([`SshKeyStore::learn_facts`]). One behind Face ID is left for its first
+/// sign-in, which reads it anyway; one that reads as nothing is left as it
+/// is. Returns the records changed. A record with its facts is never read,
+/// so a later launch reads nothing for one this put right. The app runs it
+/// once a launch, beside [`recover_orphans`].
+pub fn learn_key_facts(
+    keys: &mut SshKeyStore,
+    keychain: &dyn Keychain,
+    describe: &dyn Fn(&[u8]) -> Option<KeyFacts>,
+) -> Vec<SshKeyRecord> {
+    keys.reload_if_needed();
+    let lacking: Vec<(Uuid, String)> = keys
+        .keys()
+        .iter()
+        .filter(|k| k.lacks_facts())
+        .filter_map(|k| Some((k.id, k.keychain_ref.clone()?)))
+        .collect();
+    let mut learned = Vec::new();
+    for (id, account) in lacking {
+        let secret = match keychain.load_silently(&account) {
+            Ok(secret) => secret,
+            Err(error) => {
+                log::info!(
+                    "key facts: a key can't be read without asking ({error}); left for its first sign-in"
+                );
+                continue;
+            }
+        };
+        let Some(facts) = describe(&secret) else {
+            log::info!("key facts: a key's item doesn't read as a private key; left as it is");
+            continue;
+        };
+        if keys.learn_facts(id, &facts)
+            && let Some(record) = keys.keys().iter().find(|k| k.id == id)
+        {
+            learned.push(record.clone());
+        }
+    }
+    if !learned.is_empty() {
+        log::info!(
+            "key facts: {} key(s) an earlier build imported now show what they are",
+            learned.len()
+        );
+    }
+    learned
+}
+
 /// The start of a fingerprint's hash, to tell two recovered keys apart in
 /// their names: `SHA256:` dropped, eight characters kept.
 pub fn short_fingerprint(fingerprint: &str) -> String {

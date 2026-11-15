@@ -675,6 +675,39 @@ mod tests {
         }
     }
 
+    /// B729: an upgrade from 1.0.8 keeps the stored `teal`, the store's
+    /// default. 1.0.8 filled its swatch with the signal blue `7AA7FF` and
+    /// gave it no name, though its cursor drew `5FE3D8`. 1.0.9 ticks the
+    /// swatch named Blue and draws that same blue, so the tick, the name
+    /// and the cursor agree under every theme; where an accent like the
+    /// blue hides Blue, the tick and the cursor are both Accent.
+    #[test]
+    fn a_stored_teal_from_1_0_8_is_ticked_and_drawn_as_one_blue() {
+        use CursorColor::*;
+        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+        let rgb = |c: Rgba| byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+        let mut blue_shown = 0;
+        for (name, app) in themes() {
+            let palette = palette_of(&app);
+            let visible = CursorColor::visible(&palette);
+            let ticked = CursorColor::shown_picked("teal", &visible);
+            let drawn = CursorColor::drawn("teal", &palette);
+            assert_eq!(ticked, Some(drawn), "{name}: the tick is what's drawn");
+            if visible.contains(&Blue) {
+                blue_shown += 1;
+                assert_eq!(drawn, Blue, "{name}");
+                assert_eq!(
+                    rgb(drawn.value(&palette).1),
+                    0x7AA7FF,
+                    "{name}: 1.0.8's swatch blue"
+                );
+            } else {
+                assert_eq!(drawn, Accent, "{name}: Blue hidden");
+            }
+        }
+        assert!(blue_shown >= 4, "every built-in theme shows Blue");
+    }
+
     #[test]
     fn the_stored_ids_are_the_ones_every_build_reads() {
         let ids: Vec<&str> = CursorColor::ALL.iter().map(|c| c.id()).collect();

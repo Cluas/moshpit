@@ -29,6 +29,7 @@ use crate::codec;
 use crate::host::Defaults;
 use crate::plist::Plist;
 use crate::readiness::Readiness;
+use crate::secrets::KeyFacts;
 use crate::stored_list::{self, Contents, Entry};
 use crate::swift;
 
@@ -182,18 +183,37 @@ impl SshKeyRecord {
 
     /// The algorithm of a record with no (readable) `keyAlgorithm`: one an
     /// older build saved. Its ECDSA-sk covers every ECDSA key; the public
-    /// key line says which are plain ECDSA.
+    /// key line says which are plain ECDSA, and so is one with no line at
+    /// all (B726): a SEC1 EC key 1.0.8 imported without its public half.
+    /// 1.0.8 never labelled a security key ECDSA-sk (it took one's public
+    /// line for ED25519); a hardware key an older build saved back keeps
+    /// its `sk-` line, and its label.
     fn recovered_algorithm(
         older_builds_name: SshKeyAlgorithm,
         public_key: &str,
+        source: SshKeySource,
     ) -> SshKeyAlgorithm {
         if older_builds_name == SshKeyAlgorithm::EcdsaSk
-            && swift::has_prefix(public_key, "ecdsa-sha2-")
+            && source != SshKeySource::Hardware
+            && (public_key.is_empty() || swift::has_prefix(public_key, "ecdsa-sha2-"))
         {
             SshKeyAlgorithm::Ecdsa
         } else {
             older_builds_name
         }
+    }
+
+    /// Whether what the key is has to come off its private key (B726): a
+    /// record with no public key — one 1.0.8 imported pasted without its
+    /// public half, labelled by a guess at the PEM's first line — whose
+    /// private key is a keychain item the app can read.
+    pub fn lacks_facts(&self) -> bool {
+        self.public_key.is_empty()
+            && self.keychain_ref.is_some()
+            && matches!(
+                self.source,
+                SshKeySource::Imported | SshKeySource::Generated
+            )
     }
 
     /// The record as the app's `encode(to:)` writes it.
@@ -265,8 +285,8 @@ impl SshKeyRecord {
             .get("keyAlgorithm")
             .and_then(Value::as_str)
             .and_then(SshKeyAlgorithm::from_raw);
-        let algorithm =
-            real.unwrap_or_else(|| Self::recovered_algorithm(older_builds_name, &public_key));
+        let algorithm = real
+            .unwrap_or_else(|| Self::recovered_algorithm(older_builds_name, &public_key, source));
         // A record from before the size was kept (or saved back by an older
         // build): the public key line still says.
         let bits = match fields.get("bits") {
@@ -470,6 +490,32 @@ impl SshKeyStore {
             }
         }
         key.last_used_at = Some(now);
+        self.persist();
+        self.is_authoritative
+    }
+
+    /// Key `id`'s algorithm, size, public key and fingerprint, as read off
+    /// its own private key (`facts`), for a record that
+    /// [lacks them](SshKeyRecord::lacks_facts) (B726). Nothing else about
+    /// the record changes — its name ("Recovered key …" too), its hosts,
+    /// its Face ID. Whether it was written; false for an unknown key, one
+    /// that has its facts, facts of a Secure Enclave key (never a keychain
+    /// item read as text), or a list that can't be trusted.
+    pub fn learn_facts(&mut self, id: Uuid, facts: &KeyFacts) -> bool {
+        self.reload_if_needed();
+        let Some(key) = self.keys.iter_mut().find(|k| k.id == id) else {
+            return false;
+        };
+        if !key.lacks_facts()
+            || facts.public_key.is_empty()
+            || facts.algorithm == SshKeyAlgorithm::SeP256
+        {
+            return false;
+        }
+        key.algorithm = facts.algorithm;
+        key.bits = facts.bits;
+        key.public_key = facts.public_key.clone();
+        key.fingerprint = facts.fingerprint.clone();
         self.persist();
         self.is_authoritative
     }

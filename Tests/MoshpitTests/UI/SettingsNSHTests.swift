@@ -121,6 +121,27 @@ struct SettingsNSHTests {
         #expect(CompanionPet.offeredIcon(#"{"op":"pet"}"#) == nil)
     }
 
+    /// B728: an icon id an earlier build stored for an icon since retired
+    /// (`ringdown` and `nocarrier`, retired before 1.0.8; the `teal`,
+    /// `green` and `amber` 1.0.8 took from a pre-split install's theme) has
+    /// iOS showing the primary, and was no pick of this gallery: the pet's
+    /// card offers its icon as for anyone on the primary. An icon the
+    /// gallery offers still counts.
+    @Test("an icon id an earlier build kept for a retired icon is not picked by hand")
+    func retiredIconIsNotPickedByHand() {
+        for retired in ["ringdown", "nocarrier", "teal", "green", "amber"] {
+            let (_, _, defaults) = Self.scratch()
+            // As 1.0.8 wrote it: the id alone, no pickedByHand.
+            defaults.set(retired, forKey: "moshpit.settings.appIconId")
+            let settings = AppSettings(defaults: defaults)
+            #expect(settings.appIconId == retired, "kept as stored")
+            #expect(!settings.appIconPickedByHand, "\(retired)")
+        }
+        let (_, _, defaults) = Self.scratch()
+        defaults.set("pit", forKey: "moshpit.settings.appIconId")
+        #expect(AppSettings(defaults: defaults).appIconPickedByHand, "an icon 1.0.8 offered")
+    }
+
     /// What the answers to Home's icon card did.
     private final class Answers {
         var answered = 0

@@ -259,6 +259,37 @@ struct BorrowedHostTests {
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
     }
 
+    /// B800: a yes fetches from that moment — the card stops asking at once
+    /// (CI run 15 found the phase still on the question after the yes) —
+    /// and a second tap before the fetch begins starts no second download.
+    @Test("a yes to a file past 50 MB fetches it at once, and once")
+    @MainActor
+    func aYesFetchesOnce() async throws {
+        let ssh = FakeLentSSH()
+        let bytes = Data("PNG!".utf8)
+        ssh.file("/work/big.png", bytes)
+        ssh.reportSize("/work/big.png", RemotePreviewModel.confirmAbove + 1)
+        let big = preview("/work/big.png", on: ssh)
+        guard case .confirm = try await settled(big) else {
+            Issue.record("past 50 MB it didn't ask: \(big.phase)")
+            return
+        }
+        let asked = ssh.sftpCalls.count
+        big.confirm()
+        guard case .downloading = big.phase else {
+            Issue.record("still asking after the yes: \(big.phase)")
+            return
+        }
+        big.confirm()
+        guard case .ready(let url) = try await settled(big) else {
+            Issue.record("a yes didn't fetch it: \(big.phase)")
+            return
+        }
+        #expect(ssh.sftpCalls.count == asked + 1, "one download: \(ssh.sftpCalls.dropFirst(asked))")
+        #expect(try Data(contentsOf: url) == bytes)
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
     /// 1.0.8 (1): a tapped .mp4/.mov/.m4v starts playing at once, reading
     /// only the bytes the player needs; a host without SFTP falls back to
     /// downloading (asking first past 50 MB, as any file).

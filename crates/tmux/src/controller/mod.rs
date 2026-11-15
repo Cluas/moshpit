@@ -528,6 +528,11 @@ struct Watchdog {
     last_pops: u64,
 }
 
+/// How often a pane's output is noted as activity at most: the agents'
+/// machine reads it in seconds (two to show an agent working, four of
+/// quiet to call it done).
+pub const ACTIVITY_NOTE_MS: u64 = 250;
+
 /// The controller.
 #[derive(Debug)]
 pub struct Controller {
@@ -598,6 +603,8 @@ pub struct Controller {
     pane_resize_awaiting_capture: BTreeSet<String>,
 
     last_pane_output_at: BTreeMap<String, Wall>,
+    /// When each pane's output was last noted as activity (B739).
+    activity_noted: BTreeMap<String, u64>,
     bell_detectors: BTreeMap<String, BellDetector>,
 
     has_painted_since_attach: bool,
@@ -688,6 +695,7 @@ impl Controller {
             convergence_saw_output: false,
             pane_resize_awaiting_capture: BTreeSet::new(),
             last_pane_output_at: BTreeMap::new(),
+            activity_noted: BTreeMap::new(),
             bell_detectors: BTreeMap::new(),
             has_painted_since_attach: false,
             attached_at: None,
@@ -2231,9 +2239,21 @@ impl Controller {
     // MARK: - Notifications
 
     fn handle_pane_output(&mut self, pane: &str, data: Vec<u8>) {
-        self.notify(Notification::PaneActivity {
-            pane: pane.to_owned(),
-        });
+        // Once per pane per [`ACTIVITY_NOTE_MS`] (B739): every `%output`
+        // line was a note — 2 000 a second from `yes`, each one an event
+        // to the app, a call into the agents' machine on the main thread
+        // and a state sync there, all ahead of the key that would stop it.
+        let now = self.now;
+        if self
+            .activity_noted
+            .get(pane)
+            .is_none_or(|at| now.saturating_sub(*at) >= ACTIVITY_NOTE_MS)
+        {
+            self.activity_noted.insert(pane.to_owned(), now);
+            self.notify(Notification::PaneActivity {
+                pane: pane.to_owned(),
+            });
+        }
         let now = self.wall();
         match self.last_pane_output_at.get_mut(pane) {
             Some(at) => *at = now,
