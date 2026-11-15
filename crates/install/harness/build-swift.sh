@@ -5,8 +5,11 @@
 # app's UNCHANGED Moshpit/Services/Install/{HostScripts,InstallManifest,
 # HostChannel,HostInstaller,AgentHookConfig}.swift — gone from the app since
 # W15b moved the installer to the core, so read from the last commit that
-# had them ($MOSHPIT_SWIFT_INSTALL_REV, 81c121a1 by default) —
-# Moshpit/Services/HostCapabilities.swift and Moshpit/Services/Shell.swift
+# had them ($MOSHPIT_SWIFT_INSTALL_REV, 81c121a1 by default) — the app's
+# Swift capability probe as it last ran it (Moshpit/Services/
+# HostCapabilities.swift before E6a batch 2a handed the probe, its parser,
+# the PATH dirs and the install commands to the core: e57f7941, or
+# $MOSHPIT_SWIFT_CAPS_REV) and Moshpit/Services/Shell.swift
 # (HostCommands.quote) against it, with harness/swift/
 # {stubs,main}.swift. Same language mode and optimisation as the app's
 # Release build (SWIFT_VERSION 5.9, -O, whole module).
@@ -25,6 +28,9 @@ mkdir -p "$install"
 for name in HostScripts InstallManifest HostChannel HostInstaller AgentHookConfig; do
     git -C "$repo" show "$rev:Moshpit/Services/Install/$name.swift" >"$install/$name.swift"
 done
+# The app's Swift capability probe, as it was when the app last ran it.
+caps_rev="${MOSHPIT_SWIFT_CAPS_REV:-e57f7941}"
+git -C "$repo" show "$caps_rev:Moshpit/Services/HostCapabilities.swift" >"$install/HostCapabilities.swift"
 
 # The stub's Multiplexer must keep the app's cases.
 want="$(sed -n '/^enum Multiplexer/,/^}/p' "$repo/Moshpit/Models/ServerConnection.swift" | grep -E '^ *case [a-z]+$' | tr -d ' ')"
@@ -51,7 +57,7 @@ swiftc -O -wmo -swift-version 5 -parse-as-library \
     -I "$work" -L "$work" -lMoshpitKit \
     -o "$out" \
     "$install/HostScripts.swift" "$install/InstallManifest.swift" "$install/HostChannel.swift" \
-    "$install/HostInstaller.swift" "$install/AgentHookConfig.swift" "$repo/Moshpit/Services/HostCapabilities.swift" \
+    "$install/HostInstaller.swift" "$install/AgentHookConfig.swift" "$install/HostCapabilities.swift" \
     "$repo/Moshpit/Services/Shell.swift" \
     "$here/swift/stubs.swift" "$here/swift/main.swift"
 echo "$out"
