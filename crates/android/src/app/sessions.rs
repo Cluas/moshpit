@@ -41,6 +41,9 @@ pub struct HostKeyAsk {
     pub port: u16,
     pub fingerprint: String,
     pub previous: Option<String>,
+    /// `ssh-rsa` when the server offers no better host-key algorithm
+    /// (B564): the question says so, as iOS's card does.
+    pub older_algorithm: Option<String>,
 }
 
 /// One connection's session, as the screens read it.
@@ -452,6 +455,7 @@ impl App {
                     port,
                     fingerprint,
                     previous,
+                    older_algorithm,
                 } => {
                     host_key = Some(HostKeyAsk {
                         prompt,
@@ -459,6 +463,7 @@ impl App {
                         port,
                         fingerprint,
                         previous,
+                        older_algorithm,
                     });
                 }
                 EventKind::InputDiscarded { stream, bytes, why } => {
@@ -482,7 +487,7 @@ impl App {
     }
 
     fn ask_host_key(&mut self, connection: Uuid, ask: HostKeyAsk) {
-        let (title, message) = match &ask.previous {
+        let (title, mut message) = match &ask.previous {
             None => (
                 "Trust this host?".to_owned(),
                 format!(
@@ -498,6 +503,11 @@ impl App {
                 ),
             ),
         };
+        if let Some(older) = &ask.older_algorithm {
+            message.push_str(&format!(
+                "\n\nThis server uses an older host-key algorithm ({older}, SHA-1)."
+            ));
+        }
         let destructive = ask.previous.is_some();
         let prompt = ask.prompt;
         self.ask(super::Question::TrustHostKey(connection, prompt), |token| {
