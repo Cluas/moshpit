@@ -88,10 +88,11 @@ jobs:
             spm-${{ runner.os }}-
 
       # Debug: the DEBUG seeds the shots are made with. One build for both
-      # simulators (the app is universal); arm64 only.
+      # simulators (the app is universal); arm64 only. For testing too: the
+      # shots a page has to be waited for are ShotsUITest's.
       - name: Build the app
         run: |
-          xcodebuild build \
+          xcodebuild build-for-testing \
             -project Moshpit.xcodeproj \
             -scheme Moshpit \
             -configuration Debug \
@@ -100,6 +101,7 @@ jobs:
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             CODE_SIGNING_ALLOWED=NO
           ls -d build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app
+          echo "SHOTS_XCTESTRUN=$(ls build/dd/Build/Products/*.xctestrun | head -1)" >> "$GITHUB_ENV"
 
       - name: iPhone 6.9"
         if: inputs.devices != 'ipad'

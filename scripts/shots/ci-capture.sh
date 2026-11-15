@@ -143,16 +143,71 @@ shoot() {  # <locale> <name> <seconds> <launch args…>
 sizes_wrong=0
 for locale in "${locales[@]}"; do
     log "$device · $locale"
-    # Home: long enough to connect to the staged host and poll its agents.
-    shoot "$locale" 01-home 24 "${quiet[@]}" -MOSHPIT_SEED_HOME_FIXTURE "$home_fixture"
-    shoot "$locale" 02-agent-pane 14 "${quiet[@]}" "${session[@]}"
-    if [ "$device" = iphone ]; then
+    if [ -z "${SHOTS_XCTESTRUN:-}" ]; then
+        # Home: long enough to connect to the staged host and poll its
+        # agents. With a test bundle, ShotsUITest takes these two, waiting
+        # on the page instead of the clock.
+        shoot "$locale" 01-home 24 "${quiet[@]}" -MOSHPIT_SEED_HOME_FIXTURE "$home_fixture"
+        shoot "$locale" 02-agent-pane 14 "${quiet[@]}" "${session[@]}"
+    fi
+    if [ "$device" = iphone ] && [ -z "${SHOTS_XCTESTRUN:-}" ]; then
         shoot "$locale" 06-keyboard 18 "${quiet[@]}" "${session[@]}" -MOSHPIT_TERMINAL_DIRECTOR shots
     fi
     shoot "$locale" 09-themes 9 "${quiet[@]}" -MOSHPIT_SEED_SCREEN theme
     shoot "$locale" 12-icons 9 "${quiet[@]}" -MOSHPIT_SEED_SCREEN app-icon
 done
 xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
+
+# ── The shots a page has to be waited for (ShotsUITest) ─────────────────
+
+# SHOTS_XCTESTRUN: the .xctestrun of the workflow's build-for-testing. The
+# test waits on each page's id, keeps the screen as an attachment named
+# shot~<locale>~<shot>, and the attachments come out of the result bundle
+# as <locale>/<shot>.png beside the others.
+if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
+    log "$device · ShotsUITest (Home's agents, the agent's pane, tmux's windows, the keyboard)"
+    specs=""
+    for locale in "${locales[@]}"; do specs="$specs $locale=$(language "$locale")=$(region "$locale")"; done
+    args_json="$(python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${quiet[@]}")"
+    result="$work/shots-$device.xcresult"
+    env TEST_RUNNER_SHOTS_LOCALES="${specs# }" TEST_RUNNER_SHOTS_ARGS_JSON="$args_json" \
+        TEST_RUNNER_SHOTS_HOME_FIXTURE="$home_fixture" \
+        TEST_RUNNER_MOSHPIT_SEED_USER="$user" TEST_RUNNER_MOSHPIT_SEED_KEY_B64="$key_b64" \
+        TEST_RUNNER_MOSHPIT_SEED_HOST="$host" TEST_RUNNER_MOSHPIT_SEED_PORT="$port" \
+        TEST_RUNNER_MOSHPIT_SEED_TRUST_FP="$fingerprint" TEST_RUNNER_MOSHPIT_SEED_NAME=devbox \
+        TEST_RUNNER_MOSHPIT_SEED_MUX=tmux TEST_RUNNER_MOSHPIT_SEED_TMUX_BIN="$stage_tmux" \
+        xcodebuild test-without-building -xctestrun "$SHOTS_XCTESTRUN" -destination "id=$udid" \
+        -only-testing:MoshpitUITests/ShotsUITest -resultBundlePath "$result" \
+        > "$out/shots-ui-$device.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device.log" >&2
+    exported="$work/attachments-$device"
+    xcrun xcresulttool export attachments --path "$result" --output-path "$exported" >/dev/null 2>&1 || true
+    python3 -I - "$exported" "$out" "$px" <<'PY' || sizes_wrong=1
+import json, os, shutil, struct, sys
+src, out, px = sys.argv[1:4]
+try:
+    manifest = json.load(open(os.path.join(src, "manifest.json")))
+except OSError:
+    sys.exit("✘ ShotsUITest left no attachments")
+bad = 0
+for test in manifest:
+    for attachment in test["attachments"]:
+        name = attachment["suggestedHumanReadableName"]
+        if not name.startswith("shot~"):
+            continue
+        _, locale, shot = name.split("~", 2)
+        shot = shot.rsplit(".", 1)[0].split("_", 1)[0] if shot.endswith(".png") else shot
+        os.makedirs(os.path.join(out, locale), exist_ok=True)
+        target = os.path.join(out, locale, shot + ".png")
+        shutil.copyfile(os.path.join(src, attachment["exportedFileName"]), target)
+        size = "%dx%d" % struct.unpack(">II", open(target, "rb").read(24)[16:24])
+        if size != px:
+            print(f"✘ {locale}/{shot}.png is {size}, not {px}", file=sys.stderr)
+            bad = 1
+        else:
+            print(f"  ✓ {locale}/{shot}.png {size}")
+sys.exit(bad)
+PY
+fi
 
 # What the app said, for a shot that came out wrong.
 xcrun simctl spawn "$udid" log show --last 15m --style compact \
