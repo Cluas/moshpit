@@ -79,11 +79,14 @@ final class ShotsUITest: XCTestCase {
         for locale in Self.locales {
             let app = launch(locale, ["-MOSHPIT_SEED_HOME_FIXTURE", fixture])
             let waiting = app.nsh("home-needs-you")
-            if !waiting.waitForExistence(timeout: 20) {
-                // Home lists the agents of panes a terminal has attached to
-                // (dry run 2: connected, stamped, and no agents on Home): open
-                // devbox's terminal from its card, as a person would, and
-                // come back.
+            // A cold Home should list the waiting agent on its own (the core
+            // attaches tmux on connect and polls the stamps every 2 s); dry
+            // run 2 shot none at 24 s. Say which happened (B620), then fall
+            // back to what a person would do.
+            let cold = waiting.waitForExistence(timeout: 45)
+            print("SHOTS B620 \(locale.name): Home listed the waiting agent without a terminal: \(cold)")
+            if !cold {
+                // Open devbox's terminal from its card and come back.
                 let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
                 if head.waitForExistence(timeout: 30) { head.tap() }
                 let crumb = app.nsh("terminal-crumb-window")
