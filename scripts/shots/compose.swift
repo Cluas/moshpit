@@ -10,8 +10,9 @@
 //   <out>       the store images: <out>/<locale>/<nn>-<shot>.png
 //   --external  shots taken elsewhere (the lock screen and the Dynamic
 //               Island, on a phone): <dir>/<locale>/<shot>.png, else
-//               <dir>/<shot>.png for every locale. One found here is used
-//               in place of the capture's.
+//               <dir>/<shot>.png, else en-US's (<dir>/en-US/<shot>.png)
+//               for a locale not taken yet. One found here is used in
+//               place of the capture's.
 //   locale      the captions' locales to compose (default: every file in
 //               scripts/shots/captions/)
 //
@@ -290,6 +291,7 @@ for locale in locales {
         let candidates = [
             external?.appendingPathComponent(locale).appendingPathComponent("\(caption.shot).png"),
             external?.appendingPathComponent("\(caption.shot).png"),
+            external?.appendingPathComponent("en-US").appendingPathComponent("\(caption.shot).png"),
             raw.appendingPathComponent(locale).appendingPathComponent("\(caption.shot).png"),
         ].compactMap { $0 }
         guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
