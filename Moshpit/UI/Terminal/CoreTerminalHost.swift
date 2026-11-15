@@ -1264,7 +1264,7 @@ enum CoreTerminalHost {
         /// The terminal's own paste (its edit menu, ⌘V): pasting means "I'm
         /// done reading", like typing does; then the session's paste path,
         /// or bracketed by the terminal's own mode with any marker inside
-        /// taken out (``BracketedPaste``, V30) — never a view's own paste,
+        /// taken out (the core's paste rule, V30) — never a view's own paste,
         /// which wraps the text as it is, so a marker inside ends it early.
         func paste(_ text: String) {
             releaseScrollHold()

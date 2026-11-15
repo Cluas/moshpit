@@ -30987,6 +30987,21 @@ public func localNetworkMayBeWhy(host: String, why: UnreachableValue) -> Bool  {
 })
 }
 /**
+ * What a paste of `text` sends (the core's `input::paste`, E7c: the app's
+ * one paste rule): one bracketed paste when the program asked for them
+ * (`bracketed`), the text as typed otherwise, its line breaks as Return;
+ * never a marker inside, no control but tab and line breaks, and nothing
+ * at all for a paste that is empty once cleaned.
+ */
+public func pasteBytes(text: String, bracketed: Bool) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_paste_bytes(
+        FfiConverterString.lower(text),
+        FfiConverterBool.lower(bracketed),$0
+    )
+})
+}
+/**
  * A custom accent theme from one accent, the rest derived.
  */
 public func storeAccentTheme(id: String, name: String, accentHex: String) -> AccentThemeRecord  {
@@ -31486,6 +31501,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_local_network_may_be_why() != 54429) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_paste_bytes() != 42833) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_accent_theme() != 12419) {

@@ -1934,3 +1934,13 @@ mod tests {
         assert!(defaults.get(&format!("hostcaps.{id}")).is_some());
     }
 }
+
+/// What a paste of `text` sends (the core's `input::paste`, E7c: the app's
+/// one paste rule): one bracketed paste when the program asked for them
+/// (`bracketed`), the text as typed otherwise, its line breaks as Return;
+/// never a marker inside, no control but tab and line breaks, and nothing
+/// at all for a paste that is empty once cleaned.
+#[uniffi::export]
+pub fn paste_bytes(text: String, bracketed: bool) -> Vec<u8> {
+    moshpit_term::input::paste(&text, bracketed)
+}

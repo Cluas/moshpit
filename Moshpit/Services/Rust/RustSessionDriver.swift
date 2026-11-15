@@ -886,7 +886,7 @@ final class RustSessionDriver: RustSessionListener {
                                 text: text)
         } else {
             let bracketed = session.coordinator.modes?.bracketedPaste == true
-            let payload = BracketedPaste.payload(text, bracketed: bracketed)
+            let payload = pasteBytes(text: text, bracketed: bracketed)
             if !payload.isEmpty {
                 session.coordinator.dropPredictions()
                 shell?.write(payload)
@@ -906,7 +906,7 @@ final class RustSessionDriver: RustSessionListener {
         if !expectsTmux, !expectsSidecar, !expectsHerdrSurface {
             // A plain shell: the local terminal knows the program's paste mode.
             let bracketed = session.coordinator.modes?.bracketedPaste == true
-            return await deliver(BracketedPaste.payload(text, bracketed: bracketed),
+            return await deliver(pasteBytes(text: text, bracketed: bracketed),
                                  toPane: "shell", paste: false)
         }
         return await deliver(Data(text.utf8), toPane: pane, paste: true)
