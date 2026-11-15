@@ -182,10 +182,14 @@ enum RustCopy {
         switch notice {
         case nil: text = nil
         case .refused(let message), .mismatch(let message): text = message
+        // Which side is older is the core's verdict (crates/herdr
+        // version.rs): the remedy each names follows it. A stale copy on
+        // PATH needs updating on the host; a stale server is what the
+        // restart button beside it fixes.
         case .clientOlder(let client, let server):
-            text = HerdrVersionReport(client: client, server: server).notice
+            text = String(localized: "herdr on the host's PATH is \(client), its server \(server) — update that copy")
         case .serverOlder(let client, let server):
-            text = HerdrVersionReport(client: client, server: server).notice
+            text = String(localized: "The host's herdr server is \(server), older than its herdr \(client)")
         case .onAnotherDevice:
             text = String(localized: "This pane is open on another device")
         case .inputDropped:
@@ -295,7 +299,7 @@ enum RustCopy {
         case .restarted: return .restarted
         case .failed: return .failed
         case .wouldDowngrade(let client, let server):
-            return .wouldDowngrade(HerdrVersionReport(client: client, server: server))
+            return .wouldDowngrade(client: client, server: server)
         case .unneeded: return .unneeded
         }
     }
