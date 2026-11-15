@@ -78,7 +78,20 @@ final class ShotsUITest: XCTestCase {
         guard let fixture = Self.env["SHOTS_HOME_FIXTURE"] else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
         for locale in Self.locales {
             let app = launch(locale, ["-MOSHPIT_SEED_HOME_FIXTURE", fixture])
-            if app.nsh("home-needs-you").waitForExistence(timeout: 60) {
+            let waiting = app.nsh("home-needs-you")
+            if !waiting.waitForExistence(timeout: 20) {
+                // Home lists the agents of panes a terminal has attached to
+                // (dry run 2: connected, stamped, and no agents on Home): open
+                // devbox's terminal from its card, as a person would, and
+                // come back.
+                let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
+                if head.waitForExistence(timeout: 30) { head.tap() }
+                let crumb = app.nsh("terminal-crumb-window")
+                if crumb.waitForExistence(timeout: 30), waitEnabled(crumb, 30) {
+                    app.tapNSH("terminal-back")
+                }
+            }
+            if waiting.waitForExistence(timeout: 30) {
                 settle(2)
                 keep(locale, "01-home")
             } else {
