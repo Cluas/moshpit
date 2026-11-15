@@ -52,6 +52,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
             continue
         fi
         base="$remote_sha"
+    else
+        # A new ref (a tag): what it adds to the public main. In a team
+        # checkout `origin` is the private repository, so ask the public one.
+        public_main="$(git ls-remote "$url" refs/heads/main 2>/dev/null | cut -f1)"
+        if [ -n "$public_main" ] && git cat-file -e "$public_main^{commit}" 2>/dev/null; then
+            base="$(git merge-base "$public_main" "$local_sha" 2>/dev/null || true)"
+        fi
     fi
     if ! "${scan[@]}" ${base:+--base "$base"} --head "$local_sha"; then
         echo "pre-push: $remote_ref refused by the leak scan (above)" >&2

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """The leak scan: what must never reach this public repository, checked on
-what is about to, the lines a range of commits adds and their messages.
+what is about to: the lines each commit of a range adds, and its message.
 
     python3 -I scripts/oss-scan.py --head <rev> [--base <rev>] [--public]
     python3 -I scripts/oss-scan.py --tree <rev> [--public]
 
 --head/--base: the commits base..head (base omitted, or all zeros as a new
-ref's is: where head leaves the remote's main, else the whole history).
+ref's is: where head leaves the remote's main, else the whole history), each
+against its first parent: a line one commit adds and a later one removes
+still reaches the public history.
 --tree: every file of one tree (an audit, not a gate).
 
 Two sets of rules:
@@ -16,7 +18,8 @@ Two sets of rules:
   than the fixtures' generic ones, tailnet (CGNAT) addresses outside the
   fixtures' 100.64.0.0/24.
 - Private ones, never in this repository: the maintainer's denylist of
-  literal strings and the team's agent names (in commit messages), read
+  literal strings and the team's agent names (in messages, and in what a
+  commit adds outside vendor/), read
   from a checkout of the private ops repository ($MOSHPIT_OPS, default
   ../moshpit-ops next to this checkout: app/oss/denylist.txt,
   app/oss/agent-names.txt), and the signing Team ID of the local
@@ -38,6 +41,11 @@ import sys
 
 ZERO = "0" * 40
 SELF = "scripts/oss-scan.py"
+# Third-party trees: an agent's name there is somebody else's text (a
+# terminfo's `%t3`).
+NAMES_EXEMPT = ("vendor/",)
+# A name stands alone: not inside a word, an id (`w1:t3`), a format (`%t3`)
+# or a hyphenated branch; after a slash it counts (`/tmp/<name>`).
 
 TOKENS = re.compile(
     r"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKI[AD][A-Z0-9]{16,}"
@@ -95,19 +103,30 @@ def team_id(root):
         return None
 
 
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
 def added_lines(base, head):
-    """(path, line number, text) for every line base..head adds."""
-    diff = git("diff", "--no-color", "--no-ext-diff", "-U0", "--no-renames", base, head)
-    path, number = None, 0
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else None
-        elif line.startswith("@@"):
-            m = re.search(r"\+(\d+)", line)
-            number = int(m.group(1)) if m else 0
-        elif line.startswith("+") and path:
-            yield path, number, line[1:]
-            number += 1
+    """(commit, path, line number, text) for every line a commit of
+    base..head adds to its first parent, each line once (the first commit
+    adding it)."""
+    commits = git("rev-list", "--reverse", "--topo-order", f"{base}..{head}" if base else head).split()
+    seen = set()
+    for commit in commits:
+        parent = git("rev-parse", "--verify", "-q", f"{commit}^1", check=False).strip() or EMPTY_TREE
+        diff = git("diff", "--no-color", "--no-ext-diff", "-U0", "--no-renames", parent, commit)
+        path, number = None, 0
+        for line in diff.splitlines():
+            if line.startswith("+++ "):
+                path = line[6:] if line.startswith("+++ b/") else None
+            elif line.startswith("@@"):
+                m = re.search(r"\+(\d+)", line)
+                number = int(m.group(1)) if m else 0
+            elif line.startswith("+") and path:
+                if (path, line) not in seen:
+                    seen.add((path, line))
+                    yield commit, path, number, line[1:]
+                number += 1
 
 
 def tree_lines(rev):
@@ -119,7 +138,7 @@ def tree_lines(rev):
         if b"\0" in text[:8000]:
             continue
         for number, line in enumerate(text.decode("utf-8", "replace").splitlines(), 1):
-            yield path, number, line
+            yield None, path, number, line
 
 
 def public_hits(path, line):
@@ -165,7 +184,7 @@ def main():
     team = None if args.public else team_id(root)
     if team:
         deny = deny + [team]
-    name_pattern = (re.compile(r"(?<![\w:/-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w-])")
+    name_pattern = (re.compile(r"(?<![\w:%-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w-])")
                     if names else None)
 
     leaks = []
@@ -177,20 +196,23 @@ def main():
         if not base or base == ZERO:
             remote_main = git("rev-parse", "--verify", "-q", "refs/remotes/origin/main", check=False).strip()
             base = (git("merge-base", args.head, remote_main, check=False).strip() if remote_main else "")
-            base = base or git("hash-object", "-t", "tree", "/dev/null").strip()
-        lines = added_lines(base, args.head)
-        commits = git("rev-list", f"{base}..{args.head}", check=False).split() if len(base) == 40 else \
-            git("rev-list", args.head).split()
+        lines = list(added_lines(base, args.head))
+        commits = git("rev-list", f"{base}..{args.head}" if base else args.head).split()
         messages = [(c, git("log", "-1", "--format=%B", c)) for c in commits]
 
-    for path, number, line in lines:
+    for commit, path, number, line in lines:
         if path == SELF:
             continue
+        where = f"{commit[:10]} {path}:{number}" if commit else f"{path}:{number}"
         for rule in public_hits(path, line):
-            leaks.append(f"{path}:{number}: {rule}: {line.strip()[:120]}")
+            leaks.append(f"{where}: {rule}: {line.strip()[:120]}")
         for word in deny:
             if word in line:
-                leaks.append(f"{path}:{number}: the private denylist (a line of it)")
+                leaks.append(f"{where}: the private denylist (a line of it)")
+        if name_pattern and not path.startswith(NAMES_EXEMPT):
+            m = name_pattern.search(line)
+            if m:
+                leaks.append(f"{where}: a team agent's name ({m.group(0)}): {line.strip()[:120]}")
     for commit, message in messages:
         for word in deny:
             if word in message:
