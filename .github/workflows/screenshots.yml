@@ -1,12 +1,23 @@
 name: Screenshots
 
-# The App Store and README screenshots, by hand only: a Debug simulator build
-# of the app, a host staged on the runner itself (sshd on loopback, tmux on
-# a private socket, a throwaway key), the app seeded to each screen on the
-# iPhone 6.9" and iPad 13" simulators, and the PNGs kept as the run's
-# artifact. scripts/shots/ci-capture.sh does the staging and the shots.
-# Normal CI never runs it.
+# The App Store and README screenshots: a Debug simulator build of the app,
+# a host staged on the runner itself (sshd on loopback, tmux on a private
+# socket, a throwaway key), the app seeded to each screen on the iPhone 6.9"
+# and iPad 13" simulators, and the PNGs kept as the run's artifact.
+# scripts/shots/ci-capture.sh does the staging and the shots; the lock
+# screen and the Dynamic Island come from scripts/shots/external/, taken on
+# a phone. A run takes about an hour and a half, so it runs nightly, on
+# each version tag and by hand, never on a push.
+#
+# A complete set from main or a version tag (every slot, every locale, the
+# store's sizes: scripts/shots/pages.py) is published to GitHub Pages at
+# /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link.
+# Anything less publishes nothing, and the last good set stays up.
 on:
+  schedule:
+    - cron: "23 18 * * *" # 02:23 in Shanghai, 18:23 UTC: off-peak for the runners
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       devices:
@@ -22,16 +33,27 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   shots:
-    name: Screenshots (${{ inputs.devices }}, ${{ inputs.locales }})
+    name: Screenshots (${{ inputs.devices || 'both' }}, ${{ inputs.locales || 'all' }})
     runs-on: xcode-27
     timeout-minutes: 120
+    outputs:
+      complete: ${{ steps.set.outputs.complete }}
 
     env:
       SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
       # Every locale the app ships, shot for every simulator shot. Trim here.
       LOCALES_ALL: en-US zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
+      # A scheduled or tag run has no inputs: both devices, every locale.
+      DEVICES: ${{ inputs.devices || 'both' }}
+      LOCALES: ${{ inputs.locales || 'all' }}
+      # The lock screen and the Dynamic Island, taken on a phone.
+      SHOTS_EXTERNAL: ${{ github.workspace }}/scripts/shots/external
 
     steps:
       - name: Checkout
@@ -104,9 +126,7 @@ jobs:
           echo "SHOTS_XCTESTRUN=$(ls build/dd/Build/Products/*.xctestrun | head -1)" >> "$GITHUB_ENV"
 
       - name: iPhone 6.9"
-        if: inputs.devices != 'ipad'
-        env:
-          LOCALES: ${{ inputs.locales }}
+        if: env.DEVICES != 'ipad'
         run: |
           [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
           # shellcheck disable=SC2086 # one locale per word
@@ -116,9 +136,7 @@ jobs:
       # Run even when the iPhone's step failed: a missing shot there is no
       # reason to lose the iPad's.
       - name: iPad 13"
-        if: ${{ !cancelled() && inputs.devices != 'iphone' }}
-        env:
-          LOCALES: ${{ inputs.locales }}
+        if: ${{ !cancelled() && env.DEVICES != 'iphone' }}
         run: |
           [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
           # shellcheck disable=SC2086 # one locale per word
@@ -132,3 +150,49 @@ jobs:
           name: shots-${{ github.run_number }}
           path: shots
           if-no-files-found: warn
+
+      # The whole set or nothing: every slot of both devices in every locale,
+      # at the store's sizes. Only then may the publish job run.
+      - name: Check the set
+        id: set
+        run: |
+          python3 -I scripts/shots/pages.py check shots
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish to GitHub Pages
+    needs: shots
+    if: needs.shots.outputs.complete == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}shots/
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Fetch the shots
+        uses: actions/download-artifact@v8
+        with:
+          name: shots-${{ github.run_number }}
+          path: shots
+
+      - name: Lay out the site
+        run: python3 -I scripts/shots/pages.py site shots site
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v5
