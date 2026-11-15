@@ -21,11 +21,15 @@ public struct AgentWidgetState: Codable, Equatable {
         /// — how the share extension addresses a queued image at a specific
         /// pane. Optional so older snapshots still decode.
         public var deepLink: String?
+        /// Its connection dropped (B662): greyed, "offline". Optional so
+        /// older snapshots still decode.
+        public var paused: Bool?
 
         public init(id: String, command: String, location: String, detail: String? = nil,
-                    state: String, startedAt: Date, deepLink: String? = nil) {
+                    state: String, startedAt: Date, deepLink: String? = nil, paused: Bool? = nil) {
             self.id = id; self.command = command; self.location = location; self.detail = detail
             self.state = state; self.startedAt = startedAt; self.deepLink = deepLink
+            self.paused = paused
         }
     }
     public var items: [Item]

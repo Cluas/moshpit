@@ -109,6 +109,15 @@ pub struct Component {
     pub connection_id: Option<String>,
     #[serde(rename = "relayURL", default, skip_serializing_if = "Option::is_none")]
     pub relay_url: Option<String>,
+    /// For the two scripts: the version the file on the host says it is
+    /// (`crate::scripts::SCRIPTS_VERSION`, B633), as written or as a look
+    /// last read it. Absent for one without the line, an older build's.
+    #[serde(
+        rename = "scriptsVersion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scripts_version: Option<u32>,
 }
 
 impl Component {
@@ -119,6 +128,7 @@ impl Component {
             config_path: None,
             connection_id: None,
             relay_url: None,
+            scripts_version: None,
         }
     }
 }

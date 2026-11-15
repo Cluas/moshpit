@@ -1,4 +1,5 @@
 #!/bin/sh
+# moshpit-scripts: 1
 # moshpit-stamp.sh — what a coding agent's lifecycle hook calls.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-stamp.sh. Each agent's config

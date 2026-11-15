@@ -85,6 +85,9 @@ final class CoreTerminalView: UIView {
     /// screen: the history scrolled in above it moves it down with its row
     /// (B693).
     var markedAnchor: (col: Int, row: Int)?
+    /// The grid changed size under the composition: its cell is taken again
+    /// from the cursor in the first frame of the new size (B692).
+    var markedAnchorStale = false
     /// The caret at the composition's end.
     lazy var compositionCaret: UIView = {
         let v = UIView()
@@ -102,6 +105,7 @@ final class CoreTerminalView: UIView {
             if !canvasCursorHidden {
                 compositionCaret.removeFromSuperview()
                 markedAnchor = nil
+                markedAnchorStale = false
             }
             canvas.setCursorShown(cursorOn && !canvasCursorHidden)
             redrawCursorRow()
@@ -347,6 +351,14 @@ final class CoreTerminalView: UIView {
             let applyAt = CACurrentMediaTime()
             if apply(frame) { changedAny = true }
             frameCosts.note(apply: CACurrentMediaTime() - applyAt)
+            if markedAnchorStale, Int(rows.info.cols) == cols, Int(rows.info.rows) == gridRows {
+                // The first frame of the new size: the core reflowed the
+                // lines and took the cursor with them, and the remote's
+                // redraw for the size, which moves the cursor about, comes
+                // after it (B692).
+                markedAnchorStale = false
+                if markedLabel != nil { markedAnchor = liveCursorCell }
+            }
             taken += 1
             // One at a time, so a mark's handler that frames a change of its
             // own takes the frames after this one in their order. A wake
@@ -822,15 +834,11 @@ final class CoreTerminalView: UIView {
         if let term { mp_term_resize(term, UInt16(clamping: c), UInt16(clamping: r)) }
         applyCellPixels()
         canvas.view.frame = canvasFrame
-        if markedLabel != nil {
-            // The core reflowed the lines and took the cursor with them; the
-            // composition's cell, numbered in the old grid, was off its line
-            // or below the view (B692). Taken again from the cursor now: the
-            // remote's redraw for the new size moves the cursor about.
-            takeFrame()
-            markedAnchor = liveCursorCell
-            positionMarkedText()
-        }
+        // The composition's cell, numbered in the old grid, was off its line
+        // or below the view (B692). It is taken again from the first frame
+        // of the new size: the core resizes after the bytes pushed so far,
+        // on its own thread, so a frame taken here is still the old size.
+        if markedLabel != nil { markedAnchorStale = true }
         surfaceDelegate?.surface(self, sizeChanged: c, rows: r)
     }
 

@@ -103,15 +103,53 @@ final class CompanionPet {
                         byHand: settings.appIconPickedByHand)
     }
 
+    /// A 「换」 under way: another answer waits for it.
+    @ObservationIgnored private var switchingIcon = false
+
     /// The person answered Home's icon card (B668): 「换」 switches to the
-    /// pet's icon through the gallery's own call; either way this look is
-    /// not asked about again. Never switched otherwise.
+    /// pet's icon through the gallery's own call. Never switched otherwise.
     func answerIcon(switch change: Bool, settings: AppSettings = .shared) {
-        defer { machine.iconAnswered() }
-        guard change, let id = Self.offeredIcon(machine.message()) else { return }
-        Log.ui.notice("pet: switching the app icon to \(id, privacy: .public)")
-        AppIconModel().select(id, settings: settings, byHand: false) { [weak self] _ in
-            self?.syncIcon(settings)
+        guard !switchingIcon else { return }
+        switchingIcon = change
+        Self.answer(
+            switch: change, offered: Self.offeredIcon(machine.message()),
+            select: { id, done in
+                Log.ui.notice("pet: switching the app icon to \(id, privacy: .public)")
+                AppIconModel().select(id, settings: settings, byHand: false, done: done)
+            },
+            answered: { [weak self] in self?.machine.iconAnswered() },
+            synced: { [weak self] in
+                self?.switchingIcon = false
+                self?.syncIcon(settings)
+            })
+    }
+
+    /// What an answer to Home's icon card does: 「先不换」 is the answer at
+    /// once, this look not asked about again; 「换」 is the answer once iOS
+    /// has switched (`select`, then `synced` either way).
+    ///
+    /// B608: it was the answer whatever iOS said. A switch iOS refused (the
+    /// app not in front, an icon missing from the bundle) took the card
+    /// away, left the icon as it was, said nothing on Home, and the look
+    /// was never offered again. Refused, the card stays to be tried again,
+    /// and the log says so.
+    @MainActor
+    static func answer(switch change: Bool, offered: String?,
+                       select: (String, @escaping @MainActor (Bool) -> Void) -> Void,
+                       answered: @escaping @MainActor () -> Void,
+                       synced: @escaping @MainActor () -> Void) {
+        guard change, let id = offered else {
+            answered()
+            if change { synced() }
+            return
+        }
+        select(id) { switched in
+            if switched {
+                answered()
+            } else {
+                Log.ui.error("pet: iOS didn't switch the app icon to \(id, privacy: .public); the card asks again")
+            }
+            synced()
         }
     }
 

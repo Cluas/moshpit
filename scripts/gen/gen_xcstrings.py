@@ -1309,6 +1309,25 @@ add("Copied", "已复制", "コピーしました")
 add("Copy command", "复制命令", "コマンドをコピー")
 add("Couldn't detect a package manager.", "没找到包管理器。", "パッケージマネージャを検出できませんでした。")
 add("Couldn't reach the server. Check the host, port, and that it's online.", "连不上服务器。检查一下主机、端口，以及服务器是否在线。", "サーバーに接続できませんでした。ホスト、ポート、サーバーが稼働しているか確認してください。")
+# B740: an unreachable host, worded by why; a local one names the Local Network switch.
+add("%@ refused the connection on port %@. Check the port, and that SSH is running there.",
+    "%1$@ 拒绝了端口 %2$@ 上的连接。检查一下端口，以及那台机器上的 SSH 有没有在运行。",
+    "%1$@ がポート %2$@ への接続を拒否しました。ポート番号と、SSH が動いているか確認してください。")
+add("Couldn't find %@ on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.",
+    "在本地网络里找不到 %@。检查一下名字，并确认 Moshpit 可以使用本地网络：「设置 → 隐私与安全性 → 本地网络」。",
+    "ローカルネットワーク上に %@ が見つかりません。名前と、Moshpit にローカルネットワークの使用を許可しているかを確認してください（「設定 → プライバシーとセキュリティ → ローカルネットワーク」）。")
+add("Couldn't find %@. Check the host name.",
+    "找不到 %@。检查一下主机名。",
+    "%@ が見つかりません。ホスト名を確認してください。")
+add("Couldn't reach %@ on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.",
+    "连不上本地网络里的 %@。确认它开着机，并确认 Moshpit 可以使用本地网络：「设置 → 隐私与安全性 → 本地网络」。",
+    "ローカルネットワーク上の %@ に接続できません。電源が入っているかと、Moshpit にローカルネットワークの使用を許可しているかを確認してください（「設定 → プライバシーとセキュリティ → ローカルネットワーク」）。")
+add("%@ didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.",
+    "%@ 没有响应。检查一下地址、主机有没有开机；如果它在 VPN 后面，再看看 VPN 连上没有。",
+    "%@ から応答がありません。アドレスとホストの電源を確認してください。VPN の内側にあるなら VPN の接続も確認してください。")
+add("There's no route to %@ from this network. Check your connection, and your VPN if the host sits behind one.",
+    "当前网络没有通往 %@ 的路由。检查一下网络连接；如果主机在 VPN 后面，再看看 VPN 连上没有。",
+    "このネットワークから %@ への経路がありません。接続状況を確認してください。VPN の内側にあるホストなら VPN の接続も確認してください。")
 add("Couldn't reach the SOCKS proxy at %@. Check that it's running, and its host and port.",
     "连不上 %@ 上的 SOCKS 代理。看看代理有没有在运行，主机和端口有没有填错。",
     "%@ の SOCKS プロキシに接続できませんでした。プロキシが動いているか、ホストとポートが正しいか確認してください。")
@@ -1479,6 +1498,12 @@ add("Open the server's UDP ports in this range.", "服务器要放开这段 UDP 
 add("Forever", "一直", "ずっと")
 add("Images upload to the host's ~/.moshpit/uploads; each connect clears expired ones.", "图片上传到主机的 ~/.moshpit/uploads，每次连接时清掉过期的。", "画像はホストの ~/.moshpit/uploads にアップロードされ、接続のたびに期限切れのものを削除します。")
 add("Status in the Dynamic Island", "在灵动岛显示状态", "Dynamic Island に状況を表示")
+# B741: what iOS itself has off of the app's alerts, on Settings › Notifications.
+add("Off in iOS", "iOS 已关闭", "iOS でオフ")
+add("Allow in iOS Settings", "去 iOS 设置里允许", "iOS の設定で許可")
+add("iOS has notifications and Live Activities off for Moshpit.", "iOS 关掉了 Moshpit 的通知和实时活动。", "iOS で Moshpit の通知とライブアクティビティがオフになっています。")
+add("iOS has notifications off for Moshpit, so no alert reaches you.", "iOS 关掉了 Moshpit 的通知，什么提醒都收不到。", "iOS で Moshpit の通知がオフになっているため、お知らせが届きません。")
+add("iOS has Live Activities off for Moshpit, so the Dynamic Island stays empty.", "iOS 关掉了 Moshpit 的实时活动，灵动岛上什么也不会显示。", "iOS で Moshpit のライブアクティビティがオフになっているため、Dynamic Island に何も表示されません。")
 add("Off keeps it private", "关掉就不显示具体内容", "オフにすると内容を表示しません")
 add("Adds a mic key to the shortcut bar", "快捷键栏上多一个麦克风键", "ショートカットバーにマイクキーを追加")
 add("Speech is transcribed on this device and never leaves it.", "语音只在本机转写，不会离开这台设备。", "音声はこの端末で書き起こされ、外に出ることはありません。")
@@ -1630,6 +1655,9 @@ ISLAND["Moshpit"] = SAME
 ISLAND["%lld needs you"] = plural_spec("%lld needs you", "%lld needs you",
                                        "%lld 个在等你", "対応待ち %lld", en_other="%lld need you")
 ISLAND["%lld working"] = ("%lld 个工作中", "作業中 %lld")
+# A dropped connection's agents (B662): the rows' word and the header's count.
+ISLAND["offline"] = S["offline"]
+ISLAND["%lld offline"] = ("%lld 个离线", "オフライン %lld")
 ISLAND["%lld done"] = plural_spec("%lld done", "%lld done", "%lld 个已完成", "完了 %lld")
 ISLAND["+%lld more"] = ("还有 %lld 个", "ほか %lld 件")
 ISLAND["paused — open Moshpit to refresh"] = ("已暂停，打开 Moshpit 刷新", "一時停止中 — Moshpit を開くと更新されます")

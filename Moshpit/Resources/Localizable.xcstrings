@@ -417,6 +417,58 @@
         }
       }
     },
+    "%@ didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ antwortet nicht. Prüfe die Adresse, ob der Host eingeschaltet ist und – falls er hinter einem VPN liegt – das VPN."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ no respondió. Comprueba la dirección, que el host esté encendido y, si está detrás de una VPN, la VPN."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ne répond pas. Vérifiez l’adresse, que l’hôte est allumé et, s’il est derrière un VPN, le VPN."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ から応答がありません。アドレスとホストの電源を確認してください。VPN の内側にあるなら VPN の接続も確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 호스트가 응답하지 않습니다. 주소와 호스트 전원을 확인하고, VPN 뒤에 있다면 VPN 연결도 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ não respondeu. Confira o endereço, se o host está ligado e, se ele estiver atrás de uma VPN, a VPN."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 没有响应。检查一下地址、主机有没有开机；如果它在 VPN 后面，再看看 VPN 连上没有。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 沒有回應。檢查一下位址、主機有沒有開機；如果它在 VPN 後面，再看看 VPN 有沒有連上。"
+          }
+        }
+      }
+    },
     "%@ doesn't register Moshpit for %@. Reinstall to put it back.": {
       "localizations": {
         "de": {
@@ -1141,6 +1193,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 窗格 %lld？"
+          }
+        }
+      }
+    },
+    "%@ refused the connection on port %@. Check the port, and that SSH is running there.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ hat die Verbindung auf Port %2$@ abgelehnt. Prüfe den Port und ob SSH dort läuft."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ rechazó la conexión en el puerto %2$@. Comprueba el puerto y que SSH esté en ejecución allí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ a refusé la connexion sur le port %2$@. Vérifiez le port et que SSH y est bien lancé."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ がポート %2$@ への接続を拒否しました。ポート番号と、SSH が動いているか確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@에서 포트 %2$@ 연결을 거부했습니다. 포트 번호와 SSH 서버가 실행 중인지 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ recusou a conexão na porta %2$@. Confira a porta e se o SSH está rodando lá."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 拒绝了端口 %2$@ 上的连接。检查一下端口，以及那台机器上的 SSH 有没有在运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 拒絕了連接埠 %2$@ 上的連線。檢查一下連接埠，以及那台機器上的 SSH 有沒有在執行。"
           }
         }
       }
@@ -5601,6 +5705,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部工作區"
+          }
+        }
+      }
+    },
+    "Allow in iOS Settings": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In den iOS-Einstellungen erlauben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir en Ajustes de iOS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser dans les Réglages d’iOS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS の設定で許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 설정에서 허용"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir nos Ajustes do iOS"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去 iOS 设置里允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到 iOS 設定裡允許"
           }
         }
       }
@@ -12379,6 +12535,110 @@
         }
       }
     },
+    "Couldn't find %@ on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wurde im lokalen Netzwerk nicht gefunden. Prüfe den Namen und ob Moshpit das lokale Netzwerk verwenden darf: „Einstellungen“ → „Datenschutz & Sicherheit“ → „Lokales Netzwerk“."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró %@ en tu red local. Comprueba el nombre y que Moshpit pueda usar la red local: Ajustes → Privacidad y seguridad → Red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est introuvable sur votre réseau local. Vérifiez le nom, et que Moshpit peut utiliser le réseau local : Réglages → Confidentialité et sécurité → Réseau local."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルネットワーク上に %@ が見つかりません。名前と、Moshpit にローカルネットワークの使用を許可しているかを確認してください（「設定 → プライバシーとセキュリティ → ローカルネットワーク」）。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 네트워크에서 %@ 호스트를 찾을 수 없습니다. 이름을 확인하고, Moshpit이 로컬 네트워크를 사용할 수 있는지 확인하세요: 설정 → 개인정보 보호 및 보안 → 로컬 네트워크."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ não foi encontrado na sua rede local. Confira o nome e se o Moshpit pode usar a rede local: Ajustes → Privacidade e Segurança → Rede Local."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在本地网络里找不到 %@。检查一下名字，并确认 Moshpit 可以使用本地网络：「设置 → 隐私与安全性 → 本地网络」。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在區域網路裡找不到 %@。檢查一下名稱，並確認 Moshpit 可以使用區域網路：「設定 → 隱私權與安全性 → 區域網路」。"
+          }
+        }
+      }
+    },
+    "Couldn't find %@. Check the host name.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wurde nicht gefunden. Prüfe den Hostnamen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontró %@. Comprueba el nombre del host."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est introuvable. Vérifiez le nom d’hôte."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が見つかりません。ホスト名を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 호스트를 찾을 수 없습니다. 호스트 이름을 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ não foi encontrado. Confira o nome do host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到 %@。检查一下主机名。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到 %@。檢查一下主機名稱。"
+          }
+        }
+      }
+    },
     "Couldn't open this folder": {
       "localizations": {
         "de": {
@@ -12427,6 +12687,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "打不開這個資料夾"
+          }
+        }
+      }
+    },
+    "Couldn't reach %@ on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ im lokalen Netzwerk ist nicht erreichbar. Prüfe, ob das Gerät eingeschaltet ist und ob Moshpit das lokale Netzwerk verwenden darf: „Einstellungen“ → „Datenschutz & Sicherheit“ → „Lokales Netzwerk“."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo contactar con %@ en tu red local. Comprueba que esté encendido y que Moshpit pueda usar la red local: Ajustes → Privacidad y seguridad → Red local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre %@ sur votre réseau local. Vérifiez qu’il est allumé, et que Moshpit peut utiliser le réseau local : Réglages → Confidentialité et sécurité → Réseau local."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルネットワーク上の %@ に接続できません。電源が入っているかと、Moshpit にローカルネットワークの使用を許可しているかを確認してください（「設定 → プライバシーとセキュリティ → ローカルネットワーク」）。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 네트워크의 %@ 호스트에 연결할 수 없습니다. 기기가 켜져 있는지, Moshpit이 로컬 네트워크를 사용할 수 있는지 확인하세요: 설정 → 개인정보 보호 및 보안 → 로컬 네트워크."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível alcançar %@ na sua rede local. Confira se ele está ligado e se o Moshpit pode usar a rede local: Ajustes → Privacidade e Segurança → Rede Local."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上本地网络里的 %@。确认它开着机，并确认 Moshpit 可以使用本地网络：「设置 → 隐私与安全性 → 本地网络」。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連不上區域網路裡的 %@。確認它有開機，並確認 Moshpit 可以使用區域網路：「設定 → 隱私權與安全性 → 區域網路」。"
           }
         }
       }
@@ -30777,6 +31089,58 @@
         }
       }
     },
+    "Off in iOS": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In iOS aus"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivado en iOS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé dans iOS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS でオフ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS에서 꺼짐"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desativado no iOS"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 已关闭"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 已關閉"
+          }
+        }
+      }
+    },
     "Off it goes.": {
       "localizations": {
         "de": {
@@ -47521,6 +47885,58 @@
         }
       }
     },
+    "There's no route to %@ from this network. Check your connection, and your VPN if the host sits behind one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus diesem Netzwerk führt keine Route zu %@. Prüfe deine Verbindung und – falls der Host hinter einem VPN liegt – das VPN."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ruta hacia %@ desde esta red. Comprueba tu conexión y, si el host está detrás de una VPN, la VPN."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune route vers %@ depuis ce réseau. Vérifiez votre connexion et, si l’hôte est derrière un VPN, le VPN."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このネットワークから %@ への経路がありません。接続状況を確認してください。VPN の内側にあるホストなら VPN の接続も確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 네트워크에서 %@ 호스트로 가는 경로가 없습니다. 네트워크 연결을 확인하고, 호스트가 VPN 뒤에 있다면 VPN 연결도 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não há rota até %@ a partir desta rede. Confira sua conexão e, se o host estiver atrás de uma VPN, a VPN."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前网络没有通往 %@ 的路由。检查一下网络连接；如果主机在 VPN 后面，再看看 VPN 连上没有。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前的網路沒有通往 %@ 的路由。檢查一下網路連線；如果主機在 VPN 後面，再看看 VPN 有沒有連上。"
+          }
+        }
+      }
+    },
     "These eight are what shells, diffs and TUIs paint with.": {
       "localizations": {
         "de": {
@@ -53029,6 +53445,162 @@
           "stringUnit": {
             "state": "translated",
             "value": "herdr 的回應半路斷了"
+          }
+        }
+      }
+    },
+    "iOS has Live Activities off for Moshpit, so the Dynamic Island stays empty.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In iOS sind Live-Aktivitäten für Moshpit aus, daher bleibt die Dynamic Island leer."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS tiene desactivadas las Actividades en Vivo de Moshpit, así que la Dynamic Island queda vacía."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les Activités en direct de Moshpit sont désactivées dans iOS : la Dynamic Island reste vide."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS で Moshpit のライブアクティビティがオフになっているため、Dynamic Island に何も表示されません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS에서 Moshpit 실시간 현황이 꺼져 있어 Dynamic Island에 아무것도 표시되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O iOS está com as Atividades ao Vivo do Moshpit desativadas, então a Dynamic Island fica vazia."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 关掉了 Moshpit 的实时活动，灵动岛上什么也不会显示。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 關掉了 Moshpit 的即時動態，動態島上什麼也不會顯示。"
+          }
+        }
+      }
+    },
+    "iOS has notifications and Live Activities off for Moshpit.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In iOS sind Mitteilungen und Live-Aktivitäten für Moshpit aus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS tiene desactivadas las notificaciones y las Actividades en Vivo de Moshpit."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les notifications et les Activités en direct de Moshpit sont désactivées dans iOS."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS で Moshpit の通知とライブアクティビティがオフになっています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS에서 Moshpit의 알림과 실시간 현황이 꺼져 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O iOS está com as notificações e as Atividades ao Vivo do Moshpit desativadas."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 关掉了 Moshpit 的通知和实时活动。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 關掉了 Moshpit 的通知和即時動態。"
+          }
+        }
+      }
+    },
+    "iOS has notifications off for Moshpit, so no alert reaches you.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In iOS sind Mitteilungen für Moshpit aus, daher erreicht dich keine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS tiene desactivadas las notificaciones de Moshpit, así que no te llega ningún aviso."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les notifications de Moshpit sont désactivées dans iOS : aucune alerte ne vous parvient."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS で Moshpit の通知がオフになっているため、お知らせが届きません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS에서 Moshpit 알림이 꺼져 있어 알림을 받을 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O iOS está com as notificações do Moshpit desativadas, então nenhum alerta chega até você."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 关掉了 Moshpit 的通知，什么提醒都收不到。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 關掉了 Moshpit 的通知，什麼提醒都收不到。"
           }
         }
       }

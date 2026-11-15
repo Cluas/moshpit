@@ -765,9 +765,11 @@ fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
             }
         }
     };
+    // In the flow at the window's size, not absolute: the fade's view
+    // around it then has the page's size. Hung outside an empty one, the
+    // page was drawn but UIKit gave it to no screen reader or UI test
+    // (B659).
     view()
-        .absolute()
-        .inset_0()
         .w(move || px(window().width.0))
         .h(move || px(window().height.0))
         .bg(move || token("background"))

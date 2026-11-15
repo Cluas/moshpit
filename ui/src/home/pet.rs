@@ -156,15 +156,11 @@ impl PetCtx {
         let Some(view) = self.view.get_untracked() else {
             return;
         };
-        if !talks(&view) {
-            return;
-        }
         let hour = self.visible.with_untracked(|v| v.hour);
-        let Some(parts) = speaker(&view, hour) else {
-            return;
-        };
-        let line = self.chatter.borrow_mut().cue(cue, who(&parts), now);
-        self.show(line, &view, fill);
+        let said = super::talk::line(&mut self.chatter.borrow_mut(), cue, &view, hour, fill, now);
+        if let Some((name, words)) = said {
+            self.say(name, words);
+        }
     }
 
     /// Home has settled after appearing: a milestone kept for this visit,
@@ -197,11 +193,28 @@ impl PetCtx {
         }) else {
             return;
         };
-        let n = self.said.get() + 1;
-        self.said.set(n);
-        announce_for_accessibility(t!("%@: %@", arg1 = name, arg2 = words.clone()));
-        self.saying.set(Some((n, words)));
+        self.say(name, words);
     }
+
+    /// `name` says `words`: in the bubble, and to screen readers.
+    fn say(&self, name: String, words: String) {
+        say_into(self.saying, &self.said, name, words);
+    }
+}
+
+/// `name` says `words` into `saying` (the bubble's line, numbered by
+/// `said`), and screen readers hear it (§17.3): Home's pet and Settings'
+/// card (B607).
+pub(crate) fn say_into(
+    saying: Signal<Option<(u64, String)>>,
+    said: &Cell<u64>,
+    name: String,
+    words: String,
+) {
+    let n = said.get() + 1;
+    said.set(n);
+    announce_for_accessibility(t!("%@: %@", arg1 = name, arg2 = words.clone()));
+    saying.set(Some((n, words)));
 }
 
 /// The host's `{"op": "pet"}`.
@@ -264,6 +277,77 @@ pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
 }
 
 fn perched(ctx: Ctx) -> AnyElement {
+    let saying = ctx.pet.saying;
+    target(ctx)
+        .absolute()
+        .top(px(-ABOVE))
+        .right(px(FROM_END))
+        .z_index(1)
+        // What it says (§17.3): on its leading side, the bubble's bottom
+        // level with its middle, so a second line grows upward.
+        .child(
+            says(saying)
+                .absolute()
+                .right(px(TARGET + SAYS_GAP))
+                .w(px(crate::ui::bubble::MAX_WIDTH)),
+        )
+        .into_element()
+}
+
+/// The companion on the empty Home (B746): no connection yet, so no card
+/// to perch on. It waits in the app's mark's place above the page's title,
+/// the same egg (three taps hatch it) and the same pet once hatched; the
+/// first card it perches on is the next place it goes. While the companion
+/// is off or minimal, or before the host has said, the mark is there as
+/// before.
+pub(crate) fn alone(ctx: Ctx) -> AnyElement {
+    let pet_view = ctx.pet.view;
+    let shows = computed(move || {
+        pet_view.with(|v| v.as_ref().and_then(|v| figure(v, Pose::Idle)).is_some())
+    });
+    when(
+        move || shows.get(),
+        move || {
+            let saying = ctx.pet.saying;
+            // Centred on the page, it says its line in the half of the
+            // row on its leading side, as on a card, bounded by that half
+            // so a long line wraps rather than leave the screen.
+            view()
+                .w_full()
+                .flex_row()
+                .items_center()
+                .child(
+                    view().flex_1().h(px(TARGET)).relative().child(
+                        says(saying)
+                            .absolute()
+                            .left(px(0.0))
+                            .right(px(SAYS_GAP)),
+                    ),
+                )
+                .child(target(ctx.clone()))
+                .child(view().flex_1())
+                .into_element()
+        },
+    )
+    .otherwise(crate::ui::empty::app_mark)
+    .into_element()
+}
+
+/// What the companion says, beside its target: the bubble's bottom level
+/// with the target's middle, so a second line grows upward; it takes no
+/// taps.
+fn says(saying: Signal<Option<(u64, String)>>) -> View {
+    view()
+        .bottom(px(TARGET / 2.0 - SAYS_HALF_LINE))
+        .items_end()
+        .pointer_events(PointerEvents::None)
+        .child(speech(saying))
+}
+
+/// The companion's 44 pt target: the egg or the pet in the pose of where
+/// it sits, its taps, the moments it plays (what it says goes beside it,
+/// where it sits: [`says`]).
+fn target(ctx: Ctx) -> View {
     let pet = ctx.pet.clone();
     let pose = {
         let ctx = ctx.clone();
@@ -314,7 +398,6 @@ fn perched(ctx: Ctx) -> AnyElement {
         });
     }
     let showing = pet.showing;
-    let saying = pet.saying;
     let shown = computed(move || showing.get().or_else(|| base.get()));
     let label = {
         let view = pet.view;
@@ -373,14 +456,10 @@ fn perched(ctx: Ctx) -> AnyElement {
         }
     };
     view()
-        .absolute()
-        .top(px(-ABOVE))
-        .right(px(FROM_END))
         .w(px(TARGET))
         .h(px(TARGET))
         .items_center()
         .justify_center()
-        .z_index(1)
         .role(AccessibilityRole::Button)
         .label(label)
         .hint(hint)
@@ -390,19 +469,6 @@ fn perched(ctx: Ctx) -> AnyElement {
             Some(f) => untracked(move || companion(move || f, ART)),
             None => untracked(|| view().into_element()),
         }))
-        // What it says (§17.3): on its leading side, the bubble's bottom
-        // level with its middle, so a second line grows upward.
-        .child(
-            view()
-                .absolute()
-                .right(px(TARGET + SAYS_GAP))
-                .bottom(px(TARGET / 2.0 - SAYS_HALF_LINE))
-                .w(px(crate::ui::bubble::MAX_WIDTH))
-                .items_end()
-                .pointer_events(PointerEvents::None)
-                .child(speech(saying)),
-        )
-        .into_element()
 }
 
 /// Whether Home asks about the app icon now (B668): the host offers it,
@@ -524,13 +590,18 @@ fn pet_may_hatch(pet: &PetCtx) -> bool {
 
 /// Plays `figure` once, then goes back to the loop.
 fn play(pet: &PetCtx, figure: Figure) {
+    play_in(pet.showing, figure);
+}
+
+/// Shows `figure` in `showing` once, then clears it (Home's pet, Settings'
+/// card).
+pub(crate) fn play_in(showing: Signal<Option<Figure>>, figure: Figure) {
     let length = if reduce_motion() {
         Duration::from_millis(900)
     } else {
         figure.length()
     };
-    pet.showing.set(Some(figure));
-    let showing = pet.showing;
+    showing.set(Some(figure));
     // Dropping the handle leaves the timer running (it ends with the owner).
     drop(set_timeout(length, move || {
         if showing.get_untracked() == Some(figure) {
@@ -540,7 +611,7 @@ fn play(pet: &PetCtx, figure: Figure) {
 }
 
 /// What a screen reader hears: its name, and what it is.
-fn label_of(view: &PetView) -> String {
+pub(crate) fn label_of(view: &PetView) -> String {
     match &view.pet {
         None => t!(
             "An egg. Tap it three times to hatch it; it also hatches by itself when an agent finishes a task."

@@ -696,3 +696,43 @@ fn a_shown_pane_behind_more_has_no_cell_to_shrink_into() {
     none_of(&heard, "overview-anchor");
     channel.close();
 }
+
+#[test]
+fn the_overview_and_every_view_around_it_have_a_size() {
+    // An empty view around it (the fade's, the page hung outside it) hid
+    // the whole overview from VoiceOver and XCUITest though it was drawn
+    // (B659): every view from the screen down to each of the overview's
+    // ids has a width and a height.
+    let (mut app, channel, _heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    app.0.wait_for("id:overview-new-window").unwrap();
+    app.0.run_for(Duration::from_millis(400)).unwrap();
+    let nodes = app.0.screen().layout_nodes();
+    let mut checked = 0;
+    for node in &nodes {
+        let Some(id) = node.test_id.as_deref() else {
+            continue;
+        };
+        if !(id.starts_with("terminal-overview") || id.starts_with("overview-")) {
+            continue;
+        }
+        checked += 1;
+        let mut at = node.parent;
+        while let Some(around) = nodes.iter().find(|n| n.id == at) {
+            let size = around.bounds.size;
+            assert!(
+                size.width.0 > 0.0 && size.height.0 > 0.0,
+                "{id} is inside an empty view {:?} ({:?})",
+                around.id,
+                around.test_id
+            );
+            at = around.parent;
+        }
+    }
+    assert!(checked > 10, "the overview's views: {checked}");
+    channel.close();
+}

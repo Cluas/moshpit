@@ -52,6 +52,10 @@ pub struct SettingsPageState {
     pub keys: i64,
     pub notifications: bool,
     pub live_activity: bool,
+    /// iOS has the app's notifications off (B741).
+    pub notifications_blocked: bool,
+    /// iOS has the app's Live Activities off (B741).
+    pub live_activity_blocked: bool,
     pub alert_sound: bool,
     pub lock_screen_detail: bool,
     pub live_session: bool,
@@ -283,6 +287,8 @@ impl TryFrom<SettingsPageState> for SettingsState {
             keys: s.keys,
             notifications: s.notifications,
             live_activity: s.live_activity,
+            notifications_blocked: s.notifications_blocked,
+            live_activity_blocked: s.live_activity_blocked,
             alert_sound: s.alert_sound,
             lock_screen_detail: s.lock_screen_detail,
             live_session: s.live_session,

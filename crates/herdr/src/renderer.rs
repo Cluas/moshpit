@@ -75,6 +75,15 @@ use crate::launch::{self, RendererStop, StopKind};
 /// focus has left it (B487), in ms.
 const PROBE_EVERY: u64 = 10_000;
 
+/// How long a focus change the person asked for is followed (B683), in ms.
+const FOLLOW_ASKED_FOCUS: u64 = 10_000;
+
+/// How long a loop that showed "open on another device" waits, once the
+/// terminal it was refused is gone (a restart numbers terminals anew),
+/// before following the focus again (B684), in ms: the device that had the
+/// pane asks for it at once.
+const RESTART_GRACE: u64 = 6_000;
+
 /// One exec the renderer asked for ([`Output::Exec`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExecId(pub u64);
@@ -303,9 +312,17 @@ pub struct Renderer {
     /// the next report of it is still their pick, `--takeover`, not a
     /// follow.
     lost_pick: Option<String>,
+    /// Until when the next focus report is followed: a focus change the
+    /// person asked for (B683).
+    follow_until: Option<u64>,
     /// When the terminal another device took was last asked for plainly
     /// (B487).
     probed_at: Option<u64>,
+    /// When the terminal another device held left the listing (B684).
+    hold_gone_at: Option<u64>,
+    /// The last listing that named any terminal: a restart numbers them all
+    /// anew, a pane closing takes one (B684).
+    last_listed: BTreeSet<String>,
     /// The terminal a plain ask got back from another device, and the
     /// focus that device sits on: that focus doesn't pull the loop after
     /// it (B487).
@@ -366,7 +383,10 @@ impl Renderer {
             target: None,
             take_over: false,
             lost_pick: None,
+            follow_until: None,
             probed_at: None,
+            hold_gone_at: None,
+            last_listed: BTreeSet::new(),
             regained: None,
             applied: None,
             down: None,
@@ -443,11 +463,44 @@ impl Renderer {
     pub fn tree(&mut self, listed: impl IntoIterator<Item = String>, server_up: bool, now: u64) {
         self.listed = listed.into_iter().collect();
         self.server_up = server_up;
+        // A restart numbers every terminal anew: none of the last listing's
+        // is left. A pane closing leaves the others.
+        let restarted = !self.listed.is_empty()
+            && !self.last_listed.is_empty()
+            && self.last_listed.is_disjoint(&self.listed);
+        if !self.listed.is_empty() {
+            self.last_listed = self.listed.clone();
+        }
+        if let Some(Down::TakenOver(terminal)) = &self.down
+            && server_up
+            && !self.listed.contains(terminal)
+            && (restarted || self.hold_gone_at.is_some())
+        {
+            // Fix (B684): the terminal another device held is gone — the
+            // server restarted (terminals numbered anew), or its pane
+            // closed. Every device's attach ended with a restart; the one
+            // that had the pane asks for it again at once, plainly. This
+            // one only showed the notice: it waits a moment first, the
+            // notice still up — following at once raced the device in use
+            // and could keep its pane. Never a takeover.
+            let terminal = terminal.clone();
+            self.hold_gone(terminal, now);
+            return;
+        }
         if let Some(Down::TakenOver(terminal) | Down::Refused(terminal)) = &self.down
             && server_up
             && !self.listed.contains(terminal)
         {
             let terminal = terminal.clone();
+            self.went(terminal, now);
+        }
+    }
+
+    /// The terminal another device held left the listing at `hold_gone_at`
+    /// (B684): followed past its moment.
+    fn hold_gone(&mut self, terminal: String, now: u64) {
+        let since = *self.hold_gone_at.get_or_insert(now);
+        if now.saturating_sub(since) >= RESTART_GRACE {
             self.went(terminal, now);
         }
     }
@@ -461,6 +514,12 @@ impl Renderer {
             return;
         }
         match &self.down {
+            Some(Down::TakenOver(held)) if self.hold_gone_at.is_some() => {
+                // B684: its terminal is gone; the moment runs out here too.
+                let held = held.clone();
+                self.hold_gone(held, now);
+                return;
+            }
             Some(Down::TakenOver(held)) => {
                 // B487: the focus has left the terminal another device took
                 // — that device has likely moved on and let it go. Asked
@@ -504,8 +563,27 @@ impl Renderer {
             self.steer(terminal, true, now);
             return;
         }
+        // Fix (B683): once the loop is on a pane, the server's focus moving
+        // elsewhere (the desktop) no longer moves it — the phone switched
+        // under the person and dropped what they typed. Followed still: the
+        // first landing, a pane gone (by `went`), a focus change the person
+        // asked for, B487's ask above.
+        if let Some(ours) = self.target.clone()
+            && ours != terminal
+            && (self.listed.is_empty() || self.listed.contains(&ours))
+            && !self.follow_until.take().is_some_and(|until| now < until)
+        {
+            return;
+        }
         // Following the focus never takes a pane from another device.
         self.steer(terminal, false, now);
+    }
+
+    /// The person asked for a focus change the server makes (a workspace or
+    /// tab picked, a pane, tab or workspace made): the next focus report is
+    /// followed (B683).
+    pub fn follow_focus(&mut self, now: u64) {
+        self.follow_until = Some(now + FOLLOW_ASKED_FOCUS);
     }
 
     /// The person picked `terminal`'s pane (a tap, a reply for it): shown,
@@ -520,6 +598,20 @@ impl Renderer {
                 // The same pane, wanted again: not "already showing it".
                 self.target = None;
                 self.applied = None;
+            }
+            Some(Down::TakenOver(_) | Down::Refused(_)) => {
+                // Fix (B685): another pane picked while the notice of one
+                // another device holds (or herdr refused) was up: the person
+                // moved on from it. Its hold went on: B487's ask for it,
+                // due at the next focus report (the pick's own), pulled the
+                // loop back off the pane just picked — refused, parked,
+                // nothing on screen (live: two devices on one herdr, the
+                // iPad never showed the pane it picked). The frame
+                // channel's pick drops the hold the same way.
+                self.down = None;
+                self.probed_at = None;
+                self.hold_gone_at = None;
+                self.outputs.push_back(Output::ClearNotice);
             }
             Some(Down::LoopGone) => return,
             _ => {}
@@ -891,6 +983,7 @@ impl Renderer {
                     StopKind::TakenOver => {
                         // A plain ask refused: still theirs.
                         self.regained = None;
+                        self.hold_gone_at = None;
                         self.down = Some(Down::TakenOver(terminal));
                         self.outputs
                             .push_back(Output::Notice(Notice::OnAnotherDevice));
@@ -910,6 +1003,7 @@ impl Renderer {
     /// `terminal`'s pane closed, or herdr stopped or restarted: the focused
     /// pane next, by itself — not this one again.
     fn went(&mut self, terminal: String, now: u64) {
+        self.hold_gone_at = None;
         if matches!(
             self.down,
             Some(Down::TakenOver(_) | Down::Refused(_) | Down::LoopGone)

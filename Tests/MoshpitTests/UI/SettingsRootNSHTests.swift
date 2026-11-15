@@ -61,6 +61,37 @@ struct SettingsRootNSHTests {
         }
     }
 
+    /// B741: what iOS itself has off (a first-run "Don't Allow", Live
+    /// Activities switched off in iOS) reaches the page, read again when
+    /// asked, and the page's row opens iOS's settings where it is turned
+    /// back on.
+    @Test("what iOS has off reaches the page, and its row opens iOS's settings for it (B741)")
+    func iosOff() async throws {
+        let (settings, shortcuts, keys, themes) = Self.scratch()
+        let allowed = Self.snapshot(settings)
+        #expect(!allowed.notificationsBlocked && !allowed.liveActivityBlocked)
+        let blocked = SettingsSnapshot(
+            settings: settings, shortcuts: shortcuts, keys: keys, themes: themes,
+            liveSession: false, showsFilingNumber: false,
+            blocked: .init(notifications: true, liveActivity: true), shownIcon: { nil })
+        #expect(blocked.notificationsBlocked && blocked.liveActivityBlocked)
+        let json = try pageMessage(message: .settings(state: blocked))
+        #expect(NSHSurface.check(screen: NSHScreen.settings.name, json: json), "\(json)")
+        #expect(json.contains("\"notificationsBlocked\":true"), "\(json)")
+
+        final class Answer { var now = IOSAlertPermissions.Blocked(notifications: true) }
+        let answer = Answer()
+        let permissions = IOSAlertPermissions(read: { answer.now })
+        #expect(permissions.blocked == .none, "nothing read yet: nothing said")
+        await permissions.refresh()
+        #expect(permissions.blocked.notifications)
+        #expect(permissions.settingsURL?.absoluteString == UIApplication.openNotificationSettingsURLString)
+        answer.now = .init(liveActivity: true)
+        await permissions.refresh()
+        #expect(!permissions.blocked.notifications && permissions.blocked.liveActivity)
+        #expect(permissions.settingsURL?.absoluteString == UIApplication.openSettingsURLString)
+    }
+
     @Test("the row names the icon iOS shows, as the NSH App Icon page ticks it")
     func iconName() {
         let (settings, _, _, _) = Self.scratch()

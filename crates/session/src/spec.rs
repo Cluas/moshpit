@@ -134,7 +134,10 @@ pub struct Timing {
     /// is reported stalled (22 s).
     pub attach_stall: Duration,
     /// The mosh transport's own timers (the 8 s return-path watchdog, the
-    /// 3 s liveness check, the 10 s keystroke lifetime, …).
+    /// 3 s liveness check, …). Keystrokes never expire here (B618): kept
+    /// until the server acks them, as mosh-client keeps them, however long
+    /// the silence; a flow replaced by another server says what it never
+    /// delivered.
     pub mosh: TransportConfig,
     /// The way back from the background without a blind redial (off: the
     /// app's rule, `force_reconnect_after`). On, a live SSH transport is
@@ -151,6 +154,9 @@ pub struct Timing {
     /// fails at once; this is what a silent one costs before the redial.
     pub resume_probe_timeout: Duration,
 }
+
+/// A keystroke lifetime no silence reaches (B618).
+pub const KEYS_NEVER_EXPIRE: u64 = u64::MAX;
 
 impl Default for Timing {
     fn default() -> Self {
@@ -169,7 +175,10 @@ impl Default for Timing {
             path_redial_after: Duration::from_secs(1),
             path_settle: Duration::from_millis(400),
             attach_stall: Duration::from_secs(22),
-            mosh: TransportConfig::default(),
+            mosh: TransportConfig {
+                keystroke_ttl_ms: KEYS_NEVER_EXPIRE,
+                ..TransportConfig::default()
+            },
             resume_in_place: false,
             resume_probe_timeout: Duration::from_millis(1_500),
         }

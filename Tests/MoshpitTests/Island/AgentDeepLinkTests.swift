@@ -42,6 +42,24 @@ struct AgentDeepLinkTests {
         #expect(LockScreenView.deepLink(for: none) == nil)
     }
 
+    /// B706: a notification tapped after a launch before the first unlock
+    /// can arrive before the saved connections are read again (they are,
+    /// as the app comes forward). Home took the request for one it doesn't
+    /// have, left it, and nothing looked again: the tap opened Home. It
+    /// waits, and lands once the connection is known.
+    @Test("a tap lands once its connection is among the saved ones")
+    func tapLandsOnceTheConnectionIsKnown() {
+        let connection = ServerConnection(name: "devbox", host: "192.0.2.1", port: 22,
+                                          username: "dev", authMethod: .password)
+        let request = DeepLinkRouter.PaneRequest(connectionId: connection.id, paneId: "%3", token: 1)
+        #expect(HomeView.landing(request, saved: []) == nil, "not read yet: it waits")
+        #expect(HomeView.landing(request, saved: [connection]) == connection.id)
+        #expect(HomeView.landing(nil, saved: [connection]) == nil)
+        let other = ServerConnection(name: "mac", host: "192.0.2.2", port: 22,
+                                     username: "dev", authMethod: .password)
+        #expect(HomeView.landing(request, saved: [other]) == nil)
+    }
+
     @Test("the uuid is the path, not the host")
     func uuidIsThePath() throws {
         let url = try #require(URL(string: AgentDeepLink.string(connectionId: id, paneId: "%3")))

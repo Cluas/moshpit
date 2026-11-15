@@ -1050,7 +1050,25 @@ public protocol AgentMachineProtocol: AnyObject, Sendable {
      */
     func hooks(conn: String, hooks: [AgentHookInValue], now: Double, interval: Double)  -> [AgentEffectValue]
     
+    /**
+     * The person typed into `pane` from the phone: a bell's question is
+     * answered (B663).
+     */
+    func input(conn: String, pane: String, now: Double)  -> [AgentEffectValue]
+    
     func isTracking()  -> Bool
+    
+    /**
+     * The system would not start the island the last effect asked for: it
+     * is asked for again shortly.
+     */
+    func islandNotShown(now: Double)  -> [AgentEffectValue]
+    
+    /**
+     * `conn`'s link dropped (`up` false) or came back: its agents pause,
+     * and resume.
+     */
+    func link(conn: String, up: Bool, now: Double)  -> [AgentEffectValue]
     
     func output(conn: String, pane: String, place: AgentPaneWhereValue, now: Double)  -> [AgentEffectValue]
     
@@ -1223,10 +1241,53 @@ open func hooks(conn: String, hooks: [AgentHookInValue], now: Double, interval: 
 })
 }
     
+    /**
+     * The person typed into `pane` from the phone: a bell's question is
+     * answered (B663).
+     */
+open func input(conn: String, pane: String, now: Double) -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_agentmachine_input(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(conn),
+        FfiConverterString.lower(pane),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
 open func isTracking() -> Bool  {
     return try!  FfiConverterBool.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_method_agentmachine_is_tracking(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * The system would not start the island the last effect asked for: it
+     * is asked for again shortly.
+     */
+open func islandNotShown(now: Double) -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_agentmachine_island_not_shown(
+            self.uniffiCloneHandle(),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+    /**
+     * `conn`'s link dropped (`up` false) or came back: its agents pause,
+     * and resume.
+     */
+open func link(conn: String, up: Bool, now: Double) -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_agentmachine_link(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(conn),
+        FfiConverterBool.lower(up),
+        FfiConverterDouble.lower(now),$0
     )
 })
 }
@@ -9848,13 +9909,22 @@ public struct AgentRowValue: Equatable, Hashable {
     public var detail: String?
     public var state: String
     public var startedAt: Double
+    /**
+     * When its connection dropped (Unix seconds): shown as it was,
+     * greyed, its time stopped there.
+     */
+    public var pausedAt: Double?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(id: String, connectionId: String, paneId: String, command: String, location: String, 
         /**
          * "moshpit · mac": Home's name for the pane and the host.
-         */place: String, detail: String?, state: String, startedAt: Double) {
+         */place: String, detail: String?, state: String, startedAt: Double, 
+        /**
+         * When its connection dropped (Unix seconds): shown as it was,
+         * greyed, its time stopped there.
+         */pausedAt: Double?) {
         self.id = id
         self.connectionId = connectionId
         self.paneId = paneId
@@ -9864,6 +9934,7 @@ public struct AgentRowValue: Equatable, Hashable {
         self.detail = detail
         self.state = state
         self.startedAt = startedAt
+        self.pausedAt = pausedAt
     }
 
     
@@ -9890,7 +9961,8 @@ public struct FfiConverterTypeAgentRowValue: FfiConverterRustBuffer {
                 place: FfiConverterString.read(from: &buf), 
                 detail: FfiConverterOptionString.read(from: &buf), 
                 state: FfiConverterString.read(from: &buf), 
-                startedAt: FfiConverterDouble.read(from: &buf)
+                startedAt: FfiConverterDouble.read(from: &buf), 
+                pausedAt: FfiConverterOptionDouble.read(from: &buf)
         )
     }
 
@@ -9904,6 +9976,7 @@ public struct FfiConverterTypeAgentRowValue: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.detail, into: &buf)
         FfiConverterString.write(value.state, into: &buf)
         FfiConverterDouble.write(value.startedAt, into: &buf)
+        FfiConverterOptionDouble.write(value.pausedAt, into: &buf)
     }
 }
 
@@ -13882,6 +13955,14 @@ public struct SettingsPageState: Equatable, Hashable {
     public var keys: Int64
     public var notifications: Bool
     public var liveActivity: Bool
+    /**
+     * iOS has the app's notifications off (B741).
+     */
+    public var notificationsBlocked: Bool
+    /**
+     * iOS has the app's Live Activities off (B741).
+     */
+    public var liveActivityBlocked: Bool
     public var alertSound: Bool
     public var lockScreenDetail: Bool
     public var liveSession: Bool
@@ -13908,7 +13989,13 @@ public struct SettingsPageState: Equatable, Hashable {
          */cursorShape: String, cursorColor: String, cursorBlink: Bool, trailOnPredict: Bool, keyboardOnOpen: Bool, remoteClipboardRead: Bool, uploadRetentionDays: Int64, moshByDefault: Bool, 
         /**
          * `adaptive`, `always`, `never` or `experimental`.
-         */predictMode: String, udpRange: PortRange, shortcuts: SettingsCount, keys: Int64, notifications: Bool, liveActivity: Bool, alertSound: Bool, lockScreenDetail: Bool, liveSession: Bool, voiceInput: Bool, 
+         */predictMode: String, udpRange: PortRange, shortcuts: SettingsCount, keys: Int64, notifications: Bool, liveActivity: Bool, 
+        /**
+         * iOS has the app's notifications off (B741).
+         */notificationsBlocked: Bool, 
+        /**
+         * iOS has the app's Live Activities off (B741).
+         */liveActivityBlocked: Bool, alertSound: Bool, lockScreenDetail: Bool, liveSession: Bool, voiceInput: Bool, 
         /**
          * `apple` or `whisper`.
          */voiceEngine: String, voiceModel: String?, voiceLanguage: String, version: String, filing: String?, appTheme: SettingsAppTheme, 
@@ -13935,6 +14022,8 @@ public struct SettingsPageState: Equatable, Hashable {
         self.keys = keys
         self.notifications = notifications
         self.liveActivity = liveActivity
+        self.notificationsBlocked = notificationsBlocked
+        self.liveActivityBlocked = liveActivityBlocked
         self.alertSound = alertSound
         self.lockScreenDetail = lockScreenDetail
         self.liveSession = liveSession
@@ -13984,6 +14073,8 @@ public struct FfiConverterTypeSettingsPageState: FfiConverterRustBuffer {
                 keys: FfiConverterInt64.read(from: &buf), 
                 notifications: FfiConverterBool.read(from: &buf), 
                 liveActivity: FfiConverterBool.read(from: &buf), 
+                notificationsBlocked: FfiConverterBool.read(from: &buf), 
+                liveActivityBlocked: FfiConverterBool.read(from: &buf), 
                 alertSound: FfiConverterBool.read(from: &buf), 
                 lockScreenDetail: FfiConverterBool.read(from: &buf), 
                 liveSession: FfiConverterBool.read(from: &buf), 
@@ -14019,6 +14110,8 @@ public struct FfiConverterTypeSettingsPageState: FfiConverterRustBuffer {
         FfiConverterInt64.write(value.keys, into: &buf)
         FfiConverterBool.write(value.notifications, into: &buf)
         FfiConverterBool.write(value.liveActivity, into: &buf)
+        FfiConverterBool.write(value.notificationsBlocked, into: &buf)
+        FfiConverterBool.write(value.liveActivityBlocked, into: &buf)
         FfiConverterBool.write(value.alertSound, into: &buf)
         FfiConverterBool.write(value.lockScreenDetail, into: &buf)
         FfiConverterBool.write(value.liveSession, into: &buf)
@@ -21509,6 +21602,12 @@ public enum PageMessage: Equatable, Hashable {
     case settingsHosts(hosts: [SettingsHostEntry]
     )
     /**
+     * `{"op": "clock", …}`: the local hour (0–23), which the pet's card
+     * answers a tap by (B607).
+     */
+    case settingsClock(hour: UInt8
+    )
+    /**
      * `{"op": "models", …}`: Voice Input › Model.
      */
     case whisperModel(state: WhisperModelsState
@@ -21597,36 +21696,39 @@ public struct FfiConverterTypePageMessage: FfiConverterRustBuffer {
         case 4: return .settingsHosts(hosts: try FfiConverterSequenceTypeSettingsHostEntry.read(from: &buf)
         )
         
-        case 5: return .whisperModel(state: try FfiConverterTypeWhisperModelsState.read(from: &buf)
+        case 5: return .settingsClock(hour: try FfiConverterUInt8.read(from: &buf)
         )
         
-        case 6: return .accent(state: try FfiConverterTypeAccentPageState.read(from: &buf)
+        case 6: return .whisperModel(state: try FfiConverterTypeWhisperModelsState.read(from: &buf)
         )
         
-        case 7: return .themeGallery(state: try FfiConverterTypeThemeGalleryPageState.read(from: &buf)
+        case 7: return .accent(state: try FfiConverterTypeAccentPageState.read(from: &buf)
         )
         
-        case 8: return .themeGalleryReveal
-        
-        case 9: return .sshKeys(state: try FfiConverterTypeSshKeysPageState.read(from: &buf)
+        case 8: return .themeGallery(state: try FfiConverterTypeThemeGalleryPageState.read(from: &buf)
         )
         
-        case 10: return .muxPicker(state: try FfiConverterTypeMuxPickerPageState.read(from: &buf)
+        case 9: return .themeGalleryReveal
+        
+        case 10: return .sshKeys(state: try FfiConverterTypeSshKeysPageState.read(from: &buf)
         )
         
-        case 11: return .muxPickerAct(action: try FfiConverterTypeMuxPickerAction.read(from: &buf), id: try FfiConverterString.read(from: &buf)
+        case 11: return .muxPicker(state: try FfiConverterTypeMuxPickerPageState.read(from: &buf)
         )
         
-        case 12: return .prompted(id: try FfiConverterUInt32.read(from: &buf), text: try FfiConverterOptionString.read(from: &buf)
+        case 12: return .muxPickerAct(action: try FfiConverterTypeMuxPickerAction.read(from: &buf), id: try FfiConverterString.read(from: &buf)
         )
         
-        case 13: return .remoteFolder(state: try FfiConverterTypeRemoteFolderPageState.read(from: &buf)
+        case 13: return .prompted(id: try FfiConverterUInt32.read(from: &buf), text: try FfiConverterOptionString.read(from: &buf)
         )
         
-        case 14: return .remoteFolderAct(action: try FfiConverterTypeRemoteFolderAction.read(from: &buf), path: try FfiConverterString.read(from: &buf)
+        case 14: return .remoteFolder(state: try FfiConverterTypeRemoteFolderPageState.read(from: &buf)
         )
         
-        case 15: return .addKey(state: try FfiConverterTypeAddKeyPageState.read(from: &buf)
+        case 15: return .remoteFolderAct(action: try FfiConverterTypeRemoteFolderAction.read(from: &buf), path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 16: return .addKey(state: try FfiConverterTypeAddKeyPageState.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -21657,60 +21759,65 @@ public struct FfiConverterTypePageMessage: FfiConverterRustBuffer {
             FfiConverterSequenceTypeSettingsHostEntry.write(hosts, into: &buf)
             
         
-        case let .whisperModel(state):
+        case let .settingsClock(hour):
             writeInt(&buf, Int32(5))
+            FfiConverterUInt8.write(hour, into: &buf)
+            
+        
+        case let .whisperModel(state):
+            writeInt(&buf, Int32(6))
             FfiConverterTypeWhisperModelsState.write(state, into: &buf)
             
         
         case let .accent(state):
-            writeInt(&buf, Int32(6))
+            writeInt(&buf, Int32(7))
             FfiConverterTypeAccentPageState.write(state, into: &buf)
             
         
         case let .themeGallery(state):
-            writeInt(&buf, Int32(7))
+            writeInt(&buf, Int32(8))
             FfiConverterTypeThemeGalleryPageState.write(state, into: &buf)
             
         
         case .themeGalleryReveal:
-            writeInt(&buf, Int32(8))
+            writeInt(&buf, Int32(9))
         
         
         case let .sshKeys(state):
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
             FfiConverterTypeSshKeysPageState.write(state, into: &buf)
             
         
         case let .muxPicker(state):
-            writeInt(&buf, Int32(10))
+            writeInt(&buf, Int32(11))
             FfiConverterTypeMuxPickerPageState.write(state, into: &buf)
             
         
         case let .muxPickerAct(action,id):
-            writeInt(&buf, Int32(11))
+            writeInt(&buf, Int32(12))
             FfiConverterTypeMuxPickerAction.write(action, into: &buf)
             FfiConverterString.write(id, into: &buf)
             
         
         case let .prompted(id,text):
-            writeInt(&buf, Int32(12))
+            writeInt(&buf, Int32(13))
             FfiConverterUInt32.write(id, into: &buf)
             FfiConverterOptionString.write(text, into: &buf)
             
         
         case let .remoteFolder(state):
-            writeInt(&buf, Int32(13))
+            writeInt(&buf, Int32(14))
             FfiConverterTypeRemoteFolderPageState.write(state, into: &buf)
             
         
         case let .remoteFolderAct(action,path):
-            writeInt(&buf, Int32(14))
+            writeInt(&buf, Int32(15))
             FfiConverterTypeRemoteFolderAction.write(action, into: &buf)
             FfiConverterString.write(path, into: &buf)
             
         
         case let .addKey(state):
-            writeInt(&buf, Int32(15))
+            writeInt(&buf, Int32(16))
             FfiConverterTypeAddKeyPageState.write(state, into: &buf)
             
         }
@@ -30078,7 +30185,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_hooks() != 13790) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_input() != 2573) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_is_tracking() != 4400) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_island_not_shown() != 9430) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_link() != 2708) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_output() != 7407) {

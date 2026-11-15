@@ -96,7 +96,7 @@ struct SettingsNSHTests {
     /// defaults to 「换」); one picked in the gallery is.
     @Test("an icon the pet's card switched to is not picked by hand")
     func appIconPickedByHand() async throws {
-        let (settings, _, _) = Self.scratch()
+        let (settings, _, defaults) = Self.scratch()
         settings.appIconId = "default"
         #expect(!settings.appIconPickedByHand, "the primary, never picked")
         let model = AppIconModel()
@@ -108,13 +108,51 @@ struct SettingsNSHTests {
         try await Self.settle { switched != nil }
         #expect(switched == true && settings.appIconId == "tun-shiny")
         #expect(shown == "AppIcon-TunShiny")
+        // B704 (CI run 14): the Rust settings store took this write for no
+        // setting, and every icon not the primary read as picked by hand.
         #expect(!settings.appIconPickedByHand)
+        #expect(!AppSettings(defaults: defaults).appIconPickedByHand, "kept for the next launch")
         model.select("classic", settings: settings)
         try await Self.settle { settings.appIconId == "classic" }
         #expect(settings.appIconPickedByHand)
+        #expect(AppSettings(defaults: defaults).appIconPickedByHand)
         // The card's offer, read from the pet's message.
         #expect(CompanionPet.offeredIcon(#"{"op":"pet","icon":{"id":"tun","species":"tun","keep_default":true}}"#) == "tun")
         #expect(CompanionPet.offeredIcon(#"{"op":"pet"}"#) == nil)
+    }
+
+    /// What the answers to Home's icon card did.
+    private final class Answers {
+        var answered = 0
+        var synced = 0
+        var switches: [String] = []
+    }
+
+    /// B608: 「换」 was the answer whatever iOS said. A switch iOS refused
+    /// took the card away, left the icon as it was and never offered this
+    /// look again; refused now, the card stays. 「先不换」 is the answer at
+    /// once and switches nothing.
+    @Test("a 「换」 iOS refuses is no answer: the card asks again")
+    func iconSwitchRefusedIsNoAnswer() {
+        let refused = Answers()
+        CompanionPet.answer(switch: true, offered: "tun",
+                            select: { id, done in refused.switches.append(id); done(false) },
+                            answered: { refused.answered += 1 }, synced: { refused.synced += 1 })
+        #expect(refused.switches == ["tun"])
+        #expect(refused.answered == 0, "a refused switch answered the card")
+        #expect(refused.synced == 1)
+
+        let switched = Answers()
+        CompanionPet.answer(switch: true, offered: "tun",
+                            select: { _, done in done(true) },
+                            answered: { switched.answered += 1 }, synced: { switched.synced += 1 })
+        #expect(switched.answered == 1 && switched.synced == 1)
+
+        let declined = Answers()
+        CompanionPet.answer(switch: false, offered: "tun",
+                            select: { id, _ in declined.switches.append(id) },
+                            answered: { declined.answered += 1 }, synced: { declined.synced += 1 })
+        #expect(declined.switches.isEmpty && declined.answered == 1)
     }
 
     @Test("the tick is the icon iOS shows, not a stale setting")
@@ -172,6 +210,23 @@ struct SettingsNSHTests {
         // A stored id that names no accent resolves to Signal Room.
         settings.appThemeId = "deleted-long-ago"
         #expect(AccentModel().selectedID(settings, store: store) == "signal-room")
+    }
+
+    /// B609: a pick waited for the page to go away, which a phone that ends
+    /// the app in the background never lets happen: the next launch wore
+    /// the old accent. It applies as the app leaves too.
+    @Test("a pick applies as the app goes to the background with the page up")
+    func accentPickKeptOnLeaving() {
+        let (settings, store, _) = Self.scratch()
+        settings.appThemeId = "signal-room"
+        let center = NotificationCenter()
+        let model = AccentModel()
+        model.commitOnLeaving(settings, center: center)
+        model.commitOnLeaving(settings, center: center)
+        model.select("terminal-green", settings: settings, store: store)
+        #expect(settings.appThemeId == "signal-room", "not applied while the page shows")
+        center.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        #expect(settings.appThemeId == "terminal-green", "the pick was lost as the app left")
     }
 
     @Test("deleting the picked custom accent falls back to Signal Room")

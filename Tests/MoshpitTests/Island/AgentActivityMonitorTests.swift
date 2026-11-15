@@ -61,7 +61,7 @@ struct AgentActivityMonitorTests {
         let row = { (id: String, state: String) in
             AgentRowValue(id: "C:\(id)", connectionId: "C", paneId: id, command: "claude",
                           location: "devbox", place: "devbox", detail: nil, state: state,
-                          startedAt: 1_800_000_000)
+                          startedAt: 1_800_000_000, pausedAt: nil)
         }
         // %2 waits (first, most urgent); the pill was cycled to %1.
         let island = AgentIslandValue(agents: [row("%2", "attention"), row("%1", "working")],
@@ -70,6 +70,30 @@ struct AgentActivityMonitorTests {
         #expect(widget.items.first?.id == "C:%2")
         #expect(widget.headlineDeepLink == widget.items.first?.deepLink,
                 "the widget shows %2 and opened \(widget.headlineDeepLink ?? "-")")
+    }
+
+    /// 1.0.7 (1)'s note (B743): sharing images from Photos lists the agents
+    /// to pick. The share extension lists the widget snapshot's items that
+    /// address a pane (`Item.target`), so every agent the core reports has
+    /// to: a working one, a waiting one, one whose connection dropped.
+    @Test("every agent in the widget snapshot addresses its pane, so the share sheet lists it")
+    func shareSheetListsTheAgents() {
+        let connection = UUID()
+        let row = { (pane: String, state: String, paused: Double?) in
+            AgentRowValue(id: "\(connection.uuidString):\(pane)", connectionId: connection.uuidString,
+                          paneId: pane, command: "claude", location: "devbox", place: "devbox",
+                          detail: nil, state: state, startedAt: 1_800_000_000, pausedAt: paused)
+        }
+        let island = AgentIslandValue(
+            agents: [row("%2", "attention", nil), row("%1", "working", nil), row("w1:p3", "idle", 1_800_000_100)],
+            workingCount: 1, attentionCount: 1, headlineId: nil)
+        let widget = AgentActivityMonitor.widget(island, at: Date())
+        #expect(widget.items.count == 3)
+        for item in widget.items {
+            let target = item.target
+            #expect(target?.connectionId == connection, "\(item.id): \(item.deepLink ?? "-")")
+            #expect(target.map { "\(connection.uuidString):\($0.paneId)" } == item.id)
+        }
     }
 
     /// B597: the compact pill's trailing "2" (two agents working) meant
@@ -101,23 +125,76 @@ struct AgentActivityMonitorTests {
         #expect(State(agents: [], workingCount: 0, attentionCount: 0).compactSignal == nil)
     }
 
-    /// B667: after a relaunch the Home Screen widget kept the last
-    /// process's agents until this one had a state to write, which a launch
-    /// that connects nowhere never has. At launch an earlier process's
-    /// agents are cleared; an empty widget is left alone.
-    @Test("a launch clears the agents an earlier process left on the widget")
-    func launchClearsTheLeftoverWidget() {
+    /// B709: B667 emptied the agents' snapshot at a launch that connected
+    /// nowhere, and with it the share sheet's and the Shortcuts' targets,
+    /// which read the same snapshot: they offered nothing where 1.0.8
+    /// offered the last agents, saying how old the list is. A launch leaves
+    /// it; the widget turns it stale on its own timeline.
+    @Test("a launch leaves the last agents for the share sheet and Shortcuts")
+    @MainActor
+    func launchLeavesTheLastAgents() {
+        let kept = AgentWidgetStore.read()
+        defer { AgentWidgetStore.write(kept) }
+        let then = Date(timeIntervalSince1970: 1_800_000_000)
+        let id = UUID()
+        let item = AgentWidgetState.Item(id: "\(id.uuidString):%1", command: "claude", location: "mac",
+                                         state: "working", startedAt: then,
+                                         deepLink: AgentDeepLink.string(connectionId: id, paneId: "%1"))
+        AgentWidgetStore.write(AgentWidgetState(items: [item], attentionCount: 0, workingCount: 1,
+                                                headlineDeepLink: item.deepLink, updatedAt: then))
+        // A launch: the app's own monitor, writing the App Group's snapshot.
+        let defaults = UserDefaults(suiteName: "test.launch.\(UUID().uuidString)")!
+        let monitor = AgentActivityMonitor(
+            settings: AppSettings(defaults: defaults), standing: nil, writeWidget: nil,
+            island: AgentStandingTests.CountingIsland(), finishes: nil,
+            notifier: .init(add: { _ in }, withdraw: { _ in }, requestAuthorization: {}))
+        _ = monitor
+        #expect(AgentWidgetStore.read().items.map(\.id) == [item.id], "the last agents are kept")
+        #expect(AgentTargetEntity.fromSnapshot().map(\.paneId) == ["%1"], "Shortcuts offers them")
+    }
+
+    /// B662: a dropped connection's agents come from the machine paused,
+    /// with when; the activity carries it (the island greys the row and
+    /// stops its time there), the widget's item too, and the pill holds.
+    @Test("a dropped connection's agents reach the island paused")
+    func droppedConnectionPausesTheIsland() {
+        let dropped = 1_800_000_060.0
+        let row = { (pane: String, state: String, pausedAt: Double?) in
+            AgentRowValue(id: "C:\(pane)", connectionId: "C", paneId: pane, command: "claude",
+                          location: "mac", place: "mac", detail: nil, state: state,
+                          startedAt: 1_800_000_000, pausedAt: pausedAt)
+        }
+        let island = AgentIslandValue(agents: [row("%1", "working", dropped)],
+                                      workingCount: 0, attentionCount: 0, headlineId: "C:%1")
+        let content = AgentActivityMonitor.content(island)
+        #expect(content.agents[0].pausedAt == Date(timeIntervalSince1970: dropped))
+        #expect(content.compactSignal == .paused)
+        #expect(AgentActivityMonitor.widget(island, at: Date()).items[0].paused == true)
+        // A live row elsewhere leads; the pill says its state.
+        let both = AgentIslandValue(agents: [row("%2", "working", nil), row("%1", "attention", dropped)],
+                                    workingCount: 1, attentionCount: 0, headlineId: "C:%2")
+        #expect(AgentActivityMonitor.content(both).compactSignal
+                == .working(since: Date(timeIntervalSince1970: 1_800_000_000)))
+        #expect(AgentActivityMonitor.widget(both, at: Date()).items[0].paused == nil)
+    }
+
+    /// B701: the widget is written only when what it shows changes (each
+    /// write reloads its timelines, from a daily budget), and its timeline
+    /// turns it stale a horizon after the snapshot's date. Leaving the
+    /// foreground writes the last one again, dated now: fresh while the app
+    /// could still be watching. Not with no agents listed.
+    @Test("leaving the foreground dates the widget's agents now, and nothing else")
+    func leavingTheForegroundDatesTheWidgetNow() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let item = AgentWidgetState.Item(id: "C:%1", command: "claude", location: "mac",
-                                         state: "working", startedAt: now.addingTimeInterval(-600))
-        let left = AgentWidgetState(items: [item], attentionCount: 0, workingCount: 1,
-                                    headlineDeepLink: "moshpit://connection/C?pane=%1",
-                                    updatedAt: now.addingTimeInterval(-3600))
-        let cleared = AgentActivityMonitor.leftoverWidgetCleared(left, at: now)
-        #expect(cleared?.items.isEmpty == true)
-        #expect(cleared?.workingCount == 0 && cleared?.headlineDeepLink == nil)
-        #expect(cleared?.updatedAt == now, "fresh, not read as a stale snapshot")
-        #expect(AgentActivityMonitor.leftoverWidgetCleared(.empty, at: now) == nil)
+                                         state: "working", startedAt: now.addingTimeInterval(-900))
+        let last = AgentWidgetState(items: [item], attentionCount: 0, workingCount: 1,
+                                    updatedAt: now.addingTimeInterval(-600))
+        let again = AgentActivityMonitor.widgetRefreshedAtLeaving(last, at: now)
+        #expect(again?.updatedAt == now)
+        #expect(again?.items == last.items && again?.workingCount == 1)
+        #expect(AgentActivityMonitor.widgetRefreshedAtLeaving(nil, at: now) == nil)
+        #expect(AgentActivityMonitor.widgetRefreshedAtLeaving(.empty, at: now) == nil)
     }
 
     @Test("the announced record is read and written where earlier builds kept it")

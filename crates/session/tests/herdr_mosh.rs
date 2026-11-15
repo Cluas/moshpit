@@ -325,12 +325,17 @@ impl Rig {
             Kind::Retarget => {
                 let terminal = quoted_words(command)[0].clone();
                 let takeover = !command.contains("rm -f");
+                // Numbered anew by a restart, as the fake server lists them.
+                let epoch = self.herdr.terminal_epoch;
                 let listed = self.herdr.running
-                    && self
-                        .herdr
-                        .panes
-                        .iter()
-                        .any(|pane| term(&pane.id) == terminal);
+                    && self.herdr.panes.iter().any(|pane| {
+                        let named = if epoch == 0 {
+                            term(&pane.id)
+                        } else {
+                            format!("{}_r{epoch}", term(&pane.id))
+                        };
+                        named == terminal
+                    });
                 if !listed {
                     return Some(format!("{}\n", launch::RETARGET_MISSING_MARKER).into_bytes());
                 }
@@ -547,6 +552,29 @@ impl Rig {
 
 // MARK: - The focus, the person's pick
 
+/// B685: a device that boots onto a pane another device holds says so
+/// ("open on another device"); its person picks another pane: that pick
+/// lands, and typing goes there. Live, the iPad of two devices on one herdr
+/// never showed the pane it picked.
+#[test]
+fn a_pick_from_the_notice_of_a_held_pane_lands() {
+    let mut rig = Rig::new();
+    rig.held.push(term(A));
+    rig.start();
+    rig.run(3_000);
+    assert_eq!(
+        rig.notice(),
+        Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere)))
+    );
+    rig.act(Action::SelectPane(B.to_owned()));
+    rig.run(3_000);
+    assert_eq!(rig.on_screen(), Some(term(B)), "{:?}", rig.retargets);
+    assert_eq!(rig.notice(), None);
+    rig.type_text("here");
+    rig.run(500);
+    assert_eq!(rig.landed_in(&term(B)), "here");
+}
+
 #[test]
 fn it_boots_onto_the_focused_pane_with_a_plain_attach() {
     let rig = Rig::booted();
@@ -556,8 +584,12 @@ fn it_boots_onto_the_focused_pane_with_a_plain_attach() {
 
 #[test]
 fn following_the_focus_never_takes_a_pane_and_open_here_does() {
-    // Another device holds B; the desktop moves the focus to B.
+    // Another device holds B; the person picks the tab and the focus lands
+    // on B (B683: a focus change they asked for is followed, the desktop's
+    // own moves aren't).
     let mut rig = Rig::booted();
+    rig.act(Action::SelectWindow("w1:t1".to_owned()));
+    rig.run(300);
     rig.held.push(term(B));
     rig.herdr.focused = Some(B.to_owned());
     rig.run(10_000);
@@ -592,6 +624,23 @@ fn following_the_focus_never_takes_a_pane_and_open_here_does() {
     rig.type_text("pwd\r");
     rig.run(500);
     assert_eq!(rig.landed_in(&term(B)), "pwd\r");
+}
+
+/// B683: the desktop moves herdr's focus while the phone types over
+/// mosh: the loop stays on its pane, and the typing lands there.
+#[test]
+fn the_desktop_moving_the_focus_leaves_the_loop_on_its_pane() {
+    let mut rig = Rig::booted();
+    rig.run(1_000);
+    assert_eq!(rig.on_screen(), Some(term(A)));
+    rig.herdr.focused = Some(B.to_owned());
+    rig.run(10_000);
+    assert_eq!(rig.on_screen(), Some(term(A)), "{:?}", rig.retargets);
+    assert!(!rig.retargets.iter().any(|(t, _)| *t == term(B)));
+    rig.type_text("ls\r");
+    rig.run(500);
+    assert_eq!(rig.landed_in(&term(A)), "ls\r");
+    assert_eq!(rig.dropped, 0);
 }
 
 #[test]
@@ -857,6 +906,77 @@ fn a_herdr_restart_comes_back_on_the_new_focused_pane_by_itself() {
     rig.run(500);
     assert_eq!(rig.landed_in(&term("w1:p9")), "ok");
     assert!(rig.landed_in(LOGIN_SHELL).is_empty());
+}
+
+/// B684: the server restarts and every device's attach ends with it. The
+/// device that had the pane asks for it again at once, plainly; if another
+/// device's person picked it in that moment, it stays theirs — said, never
+/// taken over.
+#[test]
+fn a_restart_never_takes_a_pane_another_device_picked_meanwhile() {
+    let mut rig = Rig::booted();
+    rig.run(1_000);
+    rig.herdr.running = false;
+    rig.park(
+        &term(A),
+        1,
+        "herdr: server shut down: server is shutting down",
+    );
+    rig.run(3_000);
+    rig.herdr.running = true;
+    rig.herdr.terminal_epoch = 1;
+    let again = format!("{}_r1", term(A));
+    rig.held.push(again.clone());
+    let asked = rig.retargets.len();
+    rig.run(15_000);
+    assert!(
+        rig.retargets[asked..].iter().all(|(_, takeover)| !takeover),
+        "{:?}",
+        rig.retargets
+    );
+    assert!(rig.taken.is_empty());
+    assert_eq!(
+        rig.notice(),
+        Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere)))
+    );
+}
+
+/// B684: a device whose loop showed "open on another device" when the
+/// server restarted waits a moment before following the focus again — the
+/// device that had the pane asks at once and gets it — then asks plainly,
+/// and gets it if nobody has.
+#[test]
+fn a_device_showing_the_notice_waits_its_moment_after_a_restart() {
+    let mut rig = Rig::new();
+    rig.held.push(term(A));
+    rig.start();
+    rig.run(3_000);
+    assert_eq!(
+        rig.notice(),
+        Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere)))
+    );
+    // The restart ends the other device's attach too.
+    rig.herdr.running = false;
+    rig.run(3_000);
+    rig.held.clear();
+    rig.herdr.running = true;
+    rig.herdr.terminal_epoch = 1;
+    let again = format!("{}_r1", term(A));
+    let asked = rig.retargets.len();
+    rig.run(4_000);
+    assert!(
+        !rig.retargets[asked..].iter().any(|(t, _)| *t == again),
+        "asked at once: {:?}",
+        rig.retargets
+    );
+    assert_eq!(
+        rig.notice(),
+        Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere))),
+        "still said while it waits"
+    );
+    rig.run(8_000);
+    assert_eq!(rig.on_screen(), Some(again.clone()), "{:?}", rig.retargets);
+    assert!(rig.retargets.contains(&(again, false)), "plainly");
 }
 
 #[test]

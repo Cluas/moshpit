@@ -178,22 +178,21 @@ fn decode(data: &Arc<ImageData>, budget: usize) -> Option<DecodedImage> {
             ImageDataType::EncodedLease(_) => return None,
         }
     };
-    // Decoded outside the emulator's lock, from a copy.
-    match ImageDataType::EncodedFile(encoded).decode() {
-        ImageDataType::Rgba8 {
-            data,
-            width,
-            height,
-            ..
-        } => checked(id, width, height, data, budget),
-        ImageDataType::AnimRgba8 {
-            width,
-            height,
-            mut frames,
-            ..
-        } if !frames.is_empty() => checked(id, width, height, frames.swap_remove(0), budget),
-        _ => None,
-    }
+    // Decoded outside the emulator's lock, from a copy: its first frame
+    // only (an animation draws as its first frame), within the budget.
+    // wezterm's decode took every frame of an animated GIF, APNG or WebP
+    // first: frames × width × height × 4 bytes at once for one drawn — a
+    // 100-frame 512×512 GIF from `imgcat` 100 MB, past what iOS lets a
+    // terminal app keep (B731). The emulator checks one frame's size only.
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(&encoded[..]))
+        .with_guessed_format()
+        .ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(budget as u64);
+    reader.limits(limits);
+    let rgba = reader.decode().ok()?.into_rgba8();
+    let (width, height) = rgba.dimensions();
+    checked(id, width, height, rgba.into_raw(), budget)
 }
 
 fn checked(id: u64, width: u32, height: u32, rgba: Vec<u8>, budget: usize) -> Option<DecodedImage> {

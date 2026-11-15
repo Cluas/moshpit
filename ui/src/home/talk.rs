@@ -14,7 +14,10 @@
 
 use std::collections::HashMap;
 
-use moshpit_pet::{Moment, PetView, Pose, Style, talk::Cue, talk::Speaker};
+use moshpit_pet::{
+    Moment, PetView, Pose, Style,
+    talk::{Chatter, Cue, Speaker},
+};
 use nsh_core::t;
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +72,33 @@ pub(crate) fn who(parts: &(Vec<u8>, String, bool, u8)) -> Speaker<'_> {
         sudo: parts.2,
         local_hour: parts.3,
     }
+}
+
+/// What `view` says to `cue` at `now`, the local hour being `hour`, and its
+/// name: none when it doesn't talk or the core's chatter says nothing
+/// (§17). Home's pet and Settings' card (B607) both speak through it.
+pub(crate) fn line(
+    chatter: &mut Chatter,
+    cue: Cue,
+    view: &PetView,
+    hour: u8,
+    fill: Fill,
+    now: f64,
+) -> Option<(String, String)> {
+    if !talks(view) {
+        return None;
+    }
+    let parts = speaker(view, hour)?;
+    let id = chatter.cue(cue, who(&parts), now)?;
+    let name = pet_name(view);
+    let said = words(
+        id,
+        &Fill {
+            name: name.clone(),
+            ..fill
+        },
+    )?;
+    Some((name, said))
 }
 
 /// The pet's name as it says it: the one given, else its species'.

@@ -28,9 +28,14 @@ base64 = "0.22"
 unicode-segmentation = "1.12"
 # The emulator's clipboard hook returns its Result.
 anyhow = "1"
+# MIT OR Apache-2.0. An iTerm2 image's first frame, decoded within the
+# cache's budget (B731); the same version and formats as wezterm's.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 [dev-dependencies]
 base64 = "0.22"
+# An animated GIF for the image tests (already in the tree through image).
+gif = "0.14"
 serde_json = "1"
 
 [[bench]]

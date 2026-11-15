@@ -467,6 +467,40 @@ shows as before.
 
 **Upstream:** worth offering, with the limit theirs to choose.
 
+## W26. A sixel image is bounded before it is drawn
+
+**Touches:** `wezterm-escape-parser/src/parser/sixel.rs` (`MAX_SIXEL_DATA`,
+`MAX_SIXEL_RESERVE`, `SixelBuilder::dropped`, `push`, the raster
+attributes' reserve), `parser/mod.rs` (`dcs_unhook`).
+
+**Why:** the parser reserved room for width × height sixel commands as
+soon as the raster attributes named a size, under its 100 M limit: a
+header naming 10000×10000, a few dozen bytes, allocated 762 MB before a
+single command came. And it kept every command of an image without a
+limit, twelve bytes each: 20 MB of sixel data took 384 MB. The terminal's
+own check of the image's size (W8) comes only after all that (B735). The
+reserve is now at most 64 Ki commands (a sixel is six pixels: the size
+over six), and past 4 Mi commands (about 48 MB of them; a 4096×2048 image
+without a repeat is 1.4 Mi) the image is dropped whole: its bytes are still
+read to its end, what it held is let go at once, and it is not dispatched.
+
+**Upstream:** worth offering, with the limits theirs to choose.
+## W27. The host lets go of kitty images its history no longer shows
+
+**Touches:** `term/src/terminalstate/kitty.rs` (`kitty_drop_data`).
+
+**Why:** the host holds the images of the rows in its history to a budget
+and takes them off the oldest rows (B733). A kitty image's placement stays
+on record after that, and the store prunes only images with no placement
+on record: the ones the host had let go of were kept for good, up to all of
+them (100 icat images of 400×400 kept 84 MB past the store's 32 MB limit).
+`kitty_drop_data` lets go of the stored images the host names that no cell
+shows any more, with their placements and numbers. Images a program stored
+and has not placed yet are never among them (W20's `kitty_drop_unplaced`,
+for a memory warning, takes those too).
+
+**Upstream:** ours (the host's budget is ours).
+
 ## W0. deprecated `max_value()`
 
 **Touches:** `wezterm-escape-parser/src/*.rs`, `bidi/src/lib.rs`.

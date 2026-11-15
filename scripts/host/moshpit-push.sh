@@ -1,4 +1,5 @@
 #!/bin/sh
+# moshpit-scripts: 1
 # moshpit-push.sh — seal one agent status and hand it to the Moshpit push relay.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-push.sh, next to the stamp
@@ -68,12 +69,22 @@ set -u
 # live one file per device under push.d/ (keyed by the device's connection id),
 # and the legacy single file is still honored so nothing already installed
 # breaks. `MOSHPIT_PUSH_CONF` narrows to a single file for tests.
+#
+# Newest first (B664): a phone with two saved connections to this host holds
+# two pairings here and gets each push once, on the first that gets through
+# (DELIVERED below). In name order that was whichever connection's id sorted
+# first, so the card, its tap and its withdrawal named a connection the phone
+# may not use. The app touches its conf each time it looks this host over
+# (the drift check), so the newest is the connection the phone used last.
+# The names are connection ids (and an install id): no whitespace to split on.
 CONFS=""
 if [ -n "${MOSHPIT_PUSH_CONF:-}" ]; then
   [ -r "$MOSHPIT_PUSH_CONF" ] && CONFS="$MOSHPIT_PUSH_CONF"
 else
   [ -r "$HOME/.moshpit/push.conf" ] && CONFS="$HOME/.moshpit/push.conf"
-  for F in "$HOME/.moshpit/push.d"/*.conf; do
+  for F in $(ls -t "$HOME/.moshpit/push.d" 2>/dev/null); do
+    case "$F" in *.conf) ;; *) continue ;; esac
+    F="$HOME/.moshpit/push.d/$F"
     [ -r "$F" ] && CONFS="$CONFS
 $F"
   done

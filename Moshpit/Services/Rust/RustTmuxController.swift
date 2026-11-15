@@ -80,6 +80,8 @@ final class RustTmuxController: MultiplexerControlling {
     @ObservationIgnored var onPaneActivity: ((String) -> Void)?
     /// A pane rang the bell.
     @ObservationIgnored var onPaneBell: ((String) -> Void)?
+    /// The person typed or pasted into a pane (B663: it answers a bell).
+    @ObservationIgnored var onPaneInput: ((String) -> Void)?
     /// The agent stamps were read again.
     @ObservationIgnored var onAgentHooksUpdated: (() -> Void)?
     /// A pinch settled on a font size.
@@ -289,6 +291,7 @@ final class RustTmuxController: MultiplexerControlling {
     func sendBarToActivePane(_ data: Data) {
         guard let paneId = inputPaneId, let feeder = panes[paneId]?.feeder else { return }
         feeder.writeBar(data)
+        onPaneInput?(paneId)
     }
 
     /// Bytes into `paneId`'s channel; false when it has none.
@@ -298,13 +301,16 @@ final class RustTmuxController: MultiplexerControlling {
             Log.input.info("rust tmux: \(data.count, privacy: .public) bytes for \(paneId, privacy: .public) before its channel — not sent")
             return false
         }
-        return feeder.write(data)
+        let sent = feeder.write(data)
+        if sent { onPaneInput?(paneId) }
+        return sent
     }
 
     /// A paste into `paneId`'s channel, in its place among the keys typed
     /// there (B361). A pane without a channel yet gets it as an intent, as
     /// before.
     func paste(_ text: String, toPane paneId: String) {
+        onPaneInput?(paneId)
         if let feeder = panes[paneId]?.feeder, feeder.paste(text) { return }
         driver?.perform(.paste(pane: paneId, text: text))
     }

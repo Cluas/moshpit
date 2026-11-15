@@ -60,10 +60,34 @@ pub(crate) fn in_range(a: Point, b: Point, row: StableRowIndex, col: usize) -> b
 }
 
 /// Characters that end a word for a double tap (alacritty's and the fork's
-/// set): spaces and the punctuation that surrounds paths and URLs.
+/// set): spaces and the punctuation that surrounds paths and URLs, and the
+/// punctuation of CJK text.
 fn is_word(s: &str) -> bool {
     !s.chars()
-        .all(|c| c.is_whitespace() || ",│`|:\"' ()[]{}<>\t".contains(c))
+        .all(|c| c.is_whitespace() || ",│`|:\"' ()[]{}<>\t".contains(c) || is_cjk_punctuation(c))
+}
+
+/// The punctuation of CJK prose: the full-width forms (，：；！？（）), the
+/// CJK brackets, quotes and marks (、。「」《》【】), and the dashes, quotes
+/// and ellipses of general punctuation (—— “” ……). A word ran through
+/// them (B696): a path tapped in an agent's Chinese came with the comma
+/// and the sentence after it. Full-width letters and digits, `＿` and the
+/// middle dot of names (·) stay in a word.
+fn is_cjk_punctuation(c: char) -> bool {
+    matches!(c,
+        '\u{2010}'..='\u{2027}'
+        | '\u{2030}'..='\u{205E}'
+        | '\u{3000}'..='\u{3004}'
+        | '\u{3008}'..='\u{3020}'
+        | '\u{3030}'
+        | '\u{303D}'
+        | '\u{FE10}'..='\u{FE19}'
+        | '\u{FE30}'..='\u{FE4F}'
+        | '\u{FF01}'..='\u{FF0F}'
+        | '\u{FF1A}'..='\u{FF20}'
+        | '\u{FF3B}'..='\u{FF3E}'
+        | '\u{FF40}'
+        | '\u{FF5B}'..='\u{FF65}')
 }
 
 impl Selection {
@@ -78,9 +102,13 @@ impl Selection {
         }
     }
 
-    /// Row `row`'s text and wrap mark as the selection last saw them.
+    /// Row `row`'s text and wrap mark as the selection last saw them (the
+    /// rows are noted in order).
     pub fn read(&self, row: StableRowIndex) -> Option<&(String, bool)> {
-        self.rows.iter().find(|(r, _)| *r == row).map(|(_, t)| t)
+        self.rows
+            .binary_search_by_key(&row, |(r, _)| *r)
+            .ok()
+            .map(|k| &self.rows[k].1)
     }
 
     pub fn extend(&mut self, to: Point, right_half: bool) {
@@ -264,8 +292,11 @@ fn word_edge(
 /// and where each of its characters sits.
 pub(crate) struct LogicalLine {
     pub text: String,
-    /// (byte offset in `text`, row, column, width) of each cell's text.
+    /// (byte offset in `text`, row, column, width) of each cell's text;
+    /// none from [`logical_texts`].
     starts: Vec<(usize, StableRowIndex, usize, usize)>,
+    /// The first and last rows it covers.
+    pub rows: (StableRowIndex, StableRowIndex),
 }
 
 impl LogicalLine {
@@ -310,34 +341,62 @@ pub(crate) fn logical_lines(
     last: StableRowIndex,
     cells: impl Fn(StableRowIndex) -> Option<RowCells>,
 ) -> Vec<LogicalLine> {
-    let mut out = Vec::new();
-    let mut line = LogicalLine {
+    lines_of(first, last, cells, true)
+}
+
+/// The logical lines' text only, without where each character sits: what
+/// a search looks through before it places its matches (B734: the places
+/// of 10 000 rows' cells cost a find step 20 MB, for the few lines that
+/// match).
+pub(crate) fn logical_texts(
+    first: StableRowIndex,
+    last: StableRowIndex,
+    cells: impl Fn(StableRowIndex) -> Option<RowCells>,
+) -> Vec<LogicalLine> {
+    lines_of(first, last, cells, false)
+}
+
+fn lines_of(
+    first: StableRowIndex,
+    last: StableRowIndex,
+    cells: impl Fn(StableRowIndex) -> Option<RowCells>,
+    places: bool,
+) -> Vec<LogicalLine> {
+    let new_line = |row| LogicalLine {
         text: String::new(),
         starts: Vec::new(),
+        rows: (row, row),
     };
+    let mut out = Vec::new();
+    let mut line = new_line(first);
+    let mut fresh = true;
     for row in first..=last {
         let Some((row_cells, wrapped)) = cells(row) else {
             continue;
         };
+        if fresh {
+            line.rows.0 = row;
+            fresh = false;
+        }
+        line.rows.1 = row;
         let mut next = 0;
         for (i, w, s) in row_cells {
             while next < i {
-                line.starts.push((line.text.len(), row, next, 1));
+                if places {
+                    line.starts.push((line.text.len(), row, next, 1));
+                }
                 line.text.push(' ');
                 next += 1;
             }
-            line.starts.push((line.text.len(), row, i, w));
+            if places {
+                line.starts.push((line.text.len(), row, i, w));
+            }
             line.text.push_str(&s);
             next = i + w;
         }
         if !wrapped {
-            out.push(std::mem::replace(
-                &mut line,
-                LogicalLine {
-                    text: String::new(),
-                    starts: Vec::new(),
-                },
-            ));
+            out.push(std::mem::replace(&mut line, new_line(row + 1)));
+            fresh = true;
         }
     }
     if !line.text.is_empty() {

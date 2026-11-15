@@ -134,6 +134,8 @@ fn the_probe_resolves_searches_below_the_working_directory_and_filters_folders()
             "repo/episodes/ep/build/concept/v2/02_poses.png",
             "repo/old/b.png",
             "repo/new/b.png",
+            // B743: one level past 1.0.8's six.
+            "repo/a/b/c/d/e/f/07_deep.png",
         ];
         for file in files {
             let path = root.join(file);
@@ -162,6 +164,7 @@ fn the_probe_resolves_searches_below_the_working_directory_and_filters_folders()
             ("build/concept/v2/", true),
             ("02_poses.png", false),
             ("b.png", false),
+            ("07_deep.png", false),
         ]);
         let probe = |cwd: &str| {
             parse_probe(
@@ -209,6 +212,12 @@ fn the_probe_resolves_searches_below_the_working_directory_and_filters_folders()
             hit(format!("{cwd_s}/new/b.png"), false),
             "the newest match wins ({sh})"
         );
+        assert_eq!(
+            hits.get(&11),
+            None,
+            "seven levels down is past the search: up to six, as 1.0.8 ({sh})"
+        );
+        assert_eq!(SEARCH_DEPTH, 6);
 
         let from_home = probe(root.to_str().unwrap());
         assert_eq!(from_home.get(&1), None, "a pane in $HOME is never searched");

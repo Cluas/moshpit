@@ -477,6 +477,7 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         switch action {
         case #selector(copy(_:)): return hasSelection
+        case #selector(selectAll(_:)): return term != nil
         case #selector(paste(_:)): return UIPasteboard.general.hasStrings
         case #selector(find(_:)), #selector(findNext(_:)), #selector(findPrevious(_:)): return finder != nil
         case #selector(useSelectionForFind(_:)): return finder != nil && hasSelection
@@ -488,6 +489,16 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
         guard let text = selectedText else { return }
         UIPasteboard.general.string = text
         clearSelection()
+    }
+
+    /// Everything, the history's included, to the last text (B699; the
+    /// SwiftTerm path had it, B98), with its menu to copy it.
+    override func selectAll(_ sender: Any?) {
+        guard let term, mp_term_select_all(term) else { return }
+        gestures.selecting = true
+        takeFrame()
+        positionHandles()
+        showMenu()
     }
 
     override func paste(_ sender: Any?) {

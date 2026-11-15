@@ -196,7 +196,7 @@ fn storable(pasted: &str) -> String {
 impl App {
     /// A Boolean setting, by its name in `AppSettings`.
     pub(crate) fn settings_flag(&self, name: &str) -> bool {
-        moshpit_store::settings::spec_named(name).is_some_and(|spec| {
+        super::settings::spec(name).is_some_and(|spec| {
             matches!(
                 self.settings.get(spec),
                 moshpit_store::settings::SettingValue::Bool(true)

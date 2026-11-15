@@ -27,6 +27,7 @@ struct AccentNSHPage: View {
                 screen: .accent,
                 attach: { surface in
                     model.attach(surface, settings: settings, store: store)
+                    model.commitOnLeaving(settings)
                     menus.editable = { [store] in store.customThemes }
                     menus.onEdit = { editing = $0 }
                     menus.onDelete = { model.confirmDelete($0.id, settings: settings, store: store) }
@@ -132,6 +133,30 @@ final class AccentModel {
     func pick(_ id: String, settings: AppSettings, store: AppThemeStore) {
         pendingID = id
         post(settings: settings, store: store)
+    }
+
+    /// The observer that commits the pick as the app leaves (B609), and
+    /// where it is registered.
+    nonisolated(unsafe) private var leaving: (NSObjectProtocol, NotificationCenter)?
+
+    deinit {
+        if let leaving { leaving.1.removeObserver(leaving.0) }
+    }
+
+    /// The pick applies when the app goes to the background too (B609): it
+    /// waited for the page to go away, which a phone that ends the app in
+    /// the background never lets happen — the accent picked was the old one
+    /// at the next launch. Registered once.
+    func commitOnLeaving(_ settings: AppSettings, center: NotificationCenter = .default) {
+        guard leaving == nil else { return }
+        let observer = center.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                          object: nil, queue: nil) { [weak self, weak settings] _ in
+            // Posted on the main thread.
+            MainActor.assumeIsolated {
+                if let settings { self?.commit(settings) }
+            }
+        }
+        leaving = (observer, center)
     }
 
     /// The page goes away: the pick applies.

@@ -56,4 +56,27 @@ struct IslandLanguageTests {
             #expect(LockScreenView.summary(for: state, in: bundle) == "1 needs you · 1 done")
         }
     }
+
+    /// B662: a dropped connection's agents are counted apart in the
+    /// header, not as working or done.
+    @Test("the lock screen's header counts a dropped connection's agents as offline")
+    func headerCountsOffline() throws {
+        let bundle = try islandBundle()
+        let dropped = Date()
+        let agents: [AgentActivityAttributes.Agent] = [
+            .init(id: "c:%1", connectionId: "c", paneId: "%1", command: "claude", location: "devbox",
+                  state: .working, startedAt: Date()),
+            .init(id: "d:%1", connectionId: "d", paneId: "%1", command: "codex", location: "mac",
+                  state: .working, startedAt: Date(), pausedAt: dropped),
+            .init(id: "d:%2", connectionId: "d", paneId: "%2", command: "claude", location: "mac",
+                  state: .done, startedAt: Date(), pausedAt: dropped),
+        ]
+        let state = AgentActivityAttributes.ContentState(agents: agents, workingCount: 1, attentionCount: 0)
+        try withAppLanguage("zh-Hans") {
+            #expect(LockScreenView.summary(for: state, in: bundle) == "1 个工作中 · 2 个离线")
+        }
+        try withAppLanguage("en") {
+            #expect(LockScreenView.summary(for: state, in: bundle) == "1 working · 2 offline")
+        }
+    }
 }

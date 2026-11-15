@@ -161,3 +161,52 @@ fn the_match_mark_follows_its_text_through_a_reflow() {
         "the same match: the one before it is the first"
     );
 }
+
+/// B730: "starts with" and "whole words" put the regex's `\b` at the
+/// text's edges. A text that begins or ends with punctuation (`--force`,
+/// `./run`, `-v`) has no `\b` after a space, so it was never found; and
+/// Chinese has no spaces between words, so a word inside a sentence (世界
+/// in 你好世界) never was either. Punctuation is a word's edge; so is any
+/// side of a CJK character, and a letter next to one.
+#[test]
+fn b730_word_edges_for_punctuation_and_cjk() {
+    let count = |text: &str, q: &str, start: bool, end: bool| {
+        let mut t = term(60, 4, 10);
+        t.feed(text.as_bytes());
+        let o = FindOptions {
+            word_start: start,
+            word_end: end,
+            ..FindOptions::default()
+        };
+        t.find(q, o, FindStep::Newest).map_or(0, |f| f.count)
+    };
+    assert_eq!(count("git push --force now", "--force", true, true), 1);
+    assert_eq!(
+        count("git push --forced", "--force", true, true),
+        0,
+        "not the word"
+    );
+    assert_eq!(count("ls -v -vv", "-v", true, false), 2);
+    assert_eq!(count("run ./run.sh", "./run", true, false), 1);
+    assert_eq!(count("你好世界", "世界", true, true), 1);
+    assert_eq!(count("你好世界", "你好", true, false), 1);
+    assert_eq!(count("rust中文 中文rust", "rust", true, true), 2);
+    // Unchanged: letters inside a word are not its edge.
+    assert_eq!(count("rust rusty trust", "rust", true, true), 1);
+    assert_eq!(count("rust rusty trust", "rust", true, false), 2);
+    assert_eq!(count("rust rusty trust", "rust", false, true), 2);
+    // A match off the edges doesn't hide one a character on.
+    assert_eq!(count("aaa aa", "aa", true, true), 1);
+    let mut t = term(60, 4, 10);
+    t.feed(b"xaa aa");
+    let words = FindOptions {
+        word_start: true,
+        word_end: true,
+        ..FindOptions::default()
+    };
+    assert_eq!(
+        t.find("aa", words, FindStep::Newest)
+            .map(|f| f.matched.start),
+        Some((0, 4))
+    );
+}

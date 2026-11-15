@@ -231,16 +231,22 @@ func compose(shot: CGImage, title: String, language: String, to url: URL) -> Boo
     if set.lines > 2 {
         FileHandle.standardError.write(Data("  ! \(url.lastPathComponent): \(set.lines) lines at \(Int(fitted.font)) pt\n".utf8))
     }
+    // The headline's room is two lines at the full size whatever it says,
+    // so the device sits at the same height in every image and language
+    // (a one-line headline is centred in it).
+    let block = max(set.height, setHeadline("A\nA", language: language, size: layout.font,
+                                            width: size.width).height)
     // CoreGraphics counts from the bottom.
     let textTop = size.height - layout.top
-    let textRect = CGRect(x: ((size.width - fitted.width) / 2).rounded(), y: textTop - set.height,
+    let textRect = CGRect(x: ((size.width - fitted.width) / 2).rounded(),
+                          y: textTop - ((block + set.height) / 2).rounded(),
                           width: fitted.width, height: set.height + 2)
     let frame = CTFramesetterCreateFrame(set.framesetter, CFRange(location: 0, length: 0),
                                          CGPath(rect: textRect, transform: nil), nil)
     CTFrameDraw(frame, context)
 
     // The shot: the room left, its aspect kept, centred across.
-    let roomTop = textTop - set.height - layout.gap
+    let roomTop = textTop - block - layout.gap
     let room = CGSize(width: size.width - 2 * layout.side * 0.7, height: roomTop - layout.bottom)
     let scale = min(room.width / CGFloat(shot.width), room.height / CGFloat(shot.height))
     let drawn = CGSize(width: (CGFloat(shot.width) * scale).rounded(),

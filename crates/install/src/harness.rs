@@ -479,6 +479,7 @@ pub fn run(line: &str) -> Option<String> {
                         config_path: opt_arg(p[2]),
                         connection_id: opt_arg(p[3]),
                         relay_url: opt_arg(p[4]),
+                        scripts_version: None,
                     }),
                 );
             }
@@ -1193,6 +1194,7 @@ pub fn generate(seed: u64, count: usize) -> Vec<String> {
                             config_path: opt_arg(p[2]),
                             connection_id: opt_arg(p[3]),
                             relay_url: opt_arg(p[4]),
+                            scripts_version: None,
                         }),
                     );
                 }

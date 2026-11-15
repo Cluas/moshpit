@@ -49,6 +49,8 @@ pub struct Empty {
     title: SharedString,
     message: Option<SharedString>,
     graphic: Option<Graphic>,
+    /// A page's own graphic in the mark's place ([`Empty::graphic`]).
+    art: Option<AnyElement>,
     action: Option<Button>,
     variant: EmptyVariant,
     test_id: Option<SharedString>,
@@ -61,6 +63,7 @@ pub fn empty(title: impl Into<SharedString>) -> Empty {
         title: title.into(),
         message: None,
         graphic: None,
+        art: None,
         action: None,
         variant: EmptyVariant::Page,
         test_id: None,
@@ -93,6 +96,14 @@ impl Empty {
         self
     }
 
+    /// A page's own graphic in the mark's place: Home's companion (B746),
+    /// which shows the mark itself ([`app_mark`]) while it is away. A page
+    /// only; inline there is no place for it.
+    pub fn graphic(mut self, art: impl IntoElement) -> Self {
+        self.art = Some(art.into_element());
+        self
+    }
+
     /// The one way forward ([`crate::ui::button::button`], primary or
     /// secondary). The variant sets its size: large on a page, small inline.
     pub fn action(mut self, action: Button) -> Self {
@@ -112,12 +123,13 @@ impl IntoElement for Empty {
             title,
             message,
             graphic,
+            art,
             action,
             variant,
             test_id,
         } = self;
         let mut state = match variant {
-            EmptyVariant::Page => page(title, message, graphic, action),
+            EmptyVariant::Page => page(title, message, art.ok_or(graphic), action),
             EmptyVariant::Inline => inline(title, message, graphic, action),
         };
         if let Some(id) = &test_id {
@@ -127,13 +139,23 @@ impl IntoElement for Empty {
     }
 }
 
+/// The app's mark as an empty page draws it (the host's
+/// `moshpit/app-icon-mark`): the icon the person picked.
+pub fn app_mark() -> AnyElement {
+    native("moshpit/app-icon-mark")
+        .w(px(MARK_SIDE))
+        .h(px(MARK_SIDE))
+        .accessibility_elements_hidden(true)
+        .into_element()
+}
+
 /// An empty page: centered, 48 pt above and 32 below, the graphic (the
 /// mark unless a symbol was given) over the title over the message over
 /// the action.
 fn page(
     title: SharedString,
     message: Option<SharedString>,
-    graphic: Option<Graphic>,
+    graphic: Result<AnyElement, Option<Graphic>>,
     action: Option<Button>,
 ) -> View {
     let mut body = view()
@@ -143,18 +165,17 @@ fn page(
         .pb(px(32.0))
         .px(px(number("space-page")));
     {
-        let graphic = match graphic.unwrap_or(Graphic::Mark) {
-            Graphic::Mark => native("moshpit/app-icon-mark")
-                .w(px(MARK_SIDE))
-                .h(px(MARK_SIDE))
-                .accessibility_elements_hidden(true)
-                .into_element(),
-            Graphic::Symbol(name) => icon(name)
+        let graphic = match graphic {
+            Ok(art) => art,
+            Err(None | Some(Graphic::Mark)) => app_mark(),
+            Err(Some(Graphic::Symbol(name))) => icon(name)
                 .size(IconSize::Lg)
                 .tone(Tone::Muted)
                 .into_element(),
         };
-        body = body.child(view().mb(px(16.0)).child(graphic));
+        // The page's width, so a graphic of the page's own (Home's
+        // companion and what it says) can lay itself out across it.
+        body = body.child(view().w_full().items_center().mb(px(16.0)).child(graphic));
     }
     body = body.child(
         TextToken::Title

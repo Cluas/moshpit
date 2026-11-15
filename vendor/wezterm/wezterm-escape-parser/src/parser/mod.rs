@@ -309,7 +309,10 @@ impl<'a, F: FnMut(Action)> VTActor for Performer<'a, F> {
             ));
         } else if let Some(mut sixel) = self.state.sixel.take() {
             sixel.finish();
-            (self.callback)(Action::Sixel(Box::new(sixel.sixel)));
+            // Moshpit (W26): one dropped past its limit is not dispatched.
+            if !sixel.dropped {
+                (self.callback)(Action::Sixel(Box::new(sixel.sixel)));
+            }
         } else if let Some(tcap) = self.state.get_tcap.take() {
             (self.callback)(Action::XtGetTcap(tcap.finish()));
         } else {

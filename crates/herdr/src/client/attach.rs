@@ -56,6 +56,11 @@ const FOLLOW_HOLD: u64 = 2_000;
 /// focus has left it (B487), in ms.
 const PROBE_EVERY: u64 = 10_000;
 
+/// How long a device that showed "open on another device" waits, after the
+/// server restarted under that hold, before asking for a pane again (B681,
+/// reworked), in ms: the device that had the pane asks at once.
+const RESTART_GRACE: u64 = 6_000;
+
 /// The frame channel's state.
 #[derive(Debug, Default)]
 pub(super) struct Attach {
@@ -77,10 +82,12 @@ pub(super) struct Attach {
     pub stuck: bool,
     /// The target's attach has painted.
     pub painted: bool,
-    /// The pane our attach had when the server shut down under it (B681):
-    /// asked for again with `--takeover`, once — another device asking
-    /// first after the restart must not keep it from us.
-    pub reclaim: Option<String>,
+    /// The server went away while another device held our pane (B467):
+    /// the hold outlived its server.
+    pub hold_server_gone: bool,
+    /// Until when this device, which showed "open on another device" when
+    /// the server restarted, waits before asking for a pane (B681).
+    pub restart_grace_until: Option<u64>,
     pub asked_at: Option<u64>,
     /// Releases whose `terminal.closed` hasn't come back, oldest first.
     pub expected: VecDeque<u64>,
@@ -325,6 +332,24 @@ impl Client {
                 }
                 return;
             }
+            // B681: the hold outlived its server (a restart): the other
+            // device's attach ended with it, as ours had. The device that
+            // had the pane asks for it again at once, plainly; this one —
+            // it only showed the notice — waits a moment first. Asking at
+            // once raced it, and an idle device could keep the pane the
+            // person was using. Never a takeover either way: a pick on the
+            // other device in that moment stays theirs.
+            if !user && !self.pane_gone(&held) && self.hold_outlived(&held) {
+                let until = *self
+                    .attach
+                    .restart_grace_until
+                    .get_or_insert(self.now + RESTART_GRACE);
+                if self.now < until {
+                    return;
+                }
+            }
+            self.attach.restart_grace_until = None;
+            self.attach.hold_server_gone = false;
             self.attach.held_elsewhere = None;
             if self
                 .notice
@@ -374,10 +399,8 @@ impl Client {
         if self.attach.held.pane.as_deref() != Some(pane) {
             self.drop_all_held(true);
         }
-        // A re-ask of the same pane keeps the person's word; the pane the
-        // server's shutdown took from us is ours again (B681).
-        let reclaim = self.attach.reclaim.take().is_some_and(|reclaim| reclaim == pane);
-        self.attach.take_over = user || reclaim || (reasking && self.attach.take_over);
+        // A re-ask of the same pane keeps the person's word.
+        self.attach.take_over = user || (reasking && self.attach.take_over);
         self.attach.target = Some(pane.to_owned());
         self.attach.painted = false;
         self.attach.asked_at = Some(self.now);
@@ -753,9 +776,6 @@ impl Client {
             self.channel_free();
             return;
         }
-        if reason.as_deref().is_some_and(|reason| reason.contains("shutting down")) {
-            self.note_reclaim();
-        }
         let Some(pane) = self.attach.attached.take() else {
             // Nothing of ours is attached: a close from no attach we know.
             return;
@@ -799,20 +819,8 @@ impl Client {
         self.quicken();
     }
 
-    /// The server shut down under our attach (B681): the pane it had, if it
-    /// was ours — painting, not the one another device holds — is asked for
-    /// back with `--takeover` when the next attach names it.
-    fn note_reclaim(&mut self) {
-        if self.attach.painted
-            && self.attach.held_elsewhere.is_none()
-            && let Some(pane) = self.attach.attached.clone()
-        {
-            self.attach.reclaim = Some(pane);
-        }
-    }
-
     /// Whether the server, running and read since, no longer has `pane`.
-    fn pane_gone(&self, pane: &str) -> bool {
+    pub(super) fn pane_gone(&self, pane: &str) -> bool {
         !self.poll.server_not_running
             && !self.poll.snapshot.panes.is_empty()
             && !self.poll.snapshot.panes.contains_key(pane)
@@ -853,9 +861,6 @@ impl Client {
         if message.contains("shutting down")
             || (message.contains("terminal attach") && message.contains("not found"))
         {
-            if message.contains("shutting down") {
-                self.note_reclaim();
-            }
             return self.attach_gone(&message);
         }
         if message.contains("taken over") || crate::launch::held_elsewhere(&message) {
@@ -973,6 +978,8 @@ impl Client {
         self.attach.regained = None;
         self.attach.held_terminal = self.poll.terminal_ids.get(&pane).cloned();
         self.attach.held_elsewhere = Some(pane);
+        self.attach.hold_server_gone = false;
+        self.attach.restart_grace_until = None;
         self.set_notice(Notice::OnAnotherDevice, Some(super::NoticeAction::OpenHere));
     }
 
@@ -980,10 +987,11 @@ impl Client {
     /// terminal is a new one (B467). The other device's attach ended with
     /// the old server.
     fn hold_outlived(&self, pane: &str) -> bool {
-        matches!(
-            (self.attach.held_terminal.as_deref(), self.poll.terminal_ids.get(pane)),
-            (Some(then), Some(now)) if then != now
-        )
+        self.attach.hold_server_gone
+            || matches!(
+                (self.attach.held_terminal.as_deref(), self.poll.terminal_ids.get(pane)),
+                (Some(then), Some(now)) if then != now
+            )
     }
 
     /// What was backed off from is asked for now (B490): the banner's
@@ -1005,17 +1013,13 @@ impl Client {
         self.quicken();
     }
 
-    /// No server: whatever another device held, it holds no more (B467).
+    /// No server: whatever another device held, it holds no more (B467) —
+    /// once the server is back and this device has waited its moment
+    /// (B681): the device that had the pane asks for it first.
     pub(super) fn server_gone_ends_hold(&mut self) {
-        if self.attach.held_elsewhere.take().is_some() {
+        if self.attach.held_elsewhere.is_some() {
             log::warn!("herdr: the server went away: the pane another device held is free");
-            if self
-                .notice
-                .as_ref()
-                .is_some_and(|(notice, _)| *notice == Notice::OnAnotherDevice)
-            {
-                self.clear_notice();
-            }
+            self.attach.hold_server_gone = true;
         }
     }
 

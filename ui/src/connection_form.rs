@@ -455,9 +455,21 @@ pub fn user_is_wrong(state: &FormState) -> bool {
 }
 
 /// The proxy is on and its host is empty, or spaces (B511): saved, every
-/// connect went direct, past the proxy the person turned on.
+/// connect went direct, past the proxy the person turned on. Or it holds
+/// more than a host (B606): a proxy app's `127.0.0.1:1080` or
+/// `socks5://127.0.0.1:1080` pasted whole, as the host field refuses
+/// (B517), never resolved, and every connect failed at the proxy.
+pub fn proxy_host_problem(state: &FormState) -> Option<HostProblem> {
+    if !state.socks {
+        return None;
+    }
+    host_problem(&state.socks_host)
+}
+
+/// The proxy is on and its host holds no host, or more than one
+/// ([`proxy_host_problem`]).
 pub fn proxy_host_is_wrong(state: &FormState) -> bool {
-    state.socks && state.socks_host.trim().is_empty()
+    proxy_host_problem(state).is_some()
 }
 
 /// Why the host's Save failed (`{"op": "failed", …}`, §6.5): the form
@@ -1393,13 +1405,16 @@ fn proxy_rows(draft: &Draft) -> Vec<AnyElement> {
                 .on_change(draft.setter(Field::SocksHost))
                 .on_blur(leave(draft, |c| c.proxy_host = true)),
         )
-        .error(error_once(
-            draft.state,
-            draft.checked,
-            |c| c.proxy_host,
-            proxy_host_is_wrong,
-            required_words,
-        ))
+        .error({
+            let (state, checked) = (draft.state, draft.checked);
+            move || {
+                checked
+                    .with(|c| c.proxy_host)
+                    .then(|| state.with(|s| s.as_ref().and_then(proxy_host_problem)))
+                    .flatten()
+                    .map(|problem| SharedString::from(problem.words()))
+            }
+        })
         .test_id("connection-form-proxy-host")
         .into_element(),
         field(
@@ -1710,5 +1725,42 @@ mod tests {
             duplicate(&state),
             Some(Duplicate::Address("cluas@192.0.2.22".into()))
         );
+    }
+
+    /// B606: the proxy's host holds a host, as the host field does (B517);
+    /// a proxy app's address pasted whole never resolved.
+    #[test]
+    fn the_proxy_host_is_just_a_host() {
+        let proxied = |host: &str| FormState {
+            socks: true,
+            socks_host: host.into(),
+            ..sample()
+        };
+        for pasted in [
+            "127.0.0.1:1080",
+            "socks5://127.0.0.1:1080",
+            "me@proxy.local",
+            "proxy local",
+        ] {
+            assert_eq!(
+                proxy_host_problem(&proxied(pasted)),
+                Some(HostProblem::NotJustAHost),
+                "{pasted}"
+            );
+            assert!(!can_save(&proxied(pasted)), "{pasted}");
+        }
+        for host in ["127.0.0.1", " proxy.local ", "::1"] {
+            assert_eq!(proxy_host_problem(&proxied(host)), None, "{host}");
+        }
+        assert_eq!(
+            proxy_host_problem(&proxied("  ")),
+            Some(HostProblem::Empty),
+            "empty, as before (B511)"
+        );
+        let off = FormState {
+            socks: false,
+            ..proxied("127.0.0.1:1080")
+        };
+        assert_eq!(proxy_host_problem(&off), None, "no proxy, nothing to check");
     }
 }

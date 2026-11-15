@@ -274,7 +274,10 @@ struct MoshpitApp: App {
                     // deliver the ones whose sessions are live, leave the
                     // rest for the next drain (session start re-drains too).
                     Task { await ShareQueueDrainer.drain(hub: hub) }
-                case .background: hub.setForeground(false)
+                case .background:
+                    hub.setForeground(false)
+                    // The widget's horizon starts now (B701).
+                    monitor.leftForeground()
                 case .inactive:   break
                 @unknown default: break
                 }

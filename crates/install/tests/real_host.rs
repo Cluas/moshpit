@@ -298,6 +298,57 @@ fn the_push_test_goes_out_on_the_tested_connections_pairing_alone() {
     assert_eq!(requested(&capture), [PROVED]);
 }
 
+/// B664: a phone with two saved connections to one host holds two pairings
+/// here and gets each push once — on whichever pairing sorted first, so the
+/// card, its tap and its withdrawal named the connection the phone may not
+/// use. The app's look over the host (the drift check, each time it tends
+/// it) marks this device's conf, and the push goes out on the one the phone
+/// used last.
+#[test]
+fn a_phone_with_two_connections_here_is_pushed_on_the_one_it_used_last() {
+    let home = home();
+    let (shell, capture) = paired_host(&home.0, &[pairing(FIRST, PHONE), pairing(PROVED, PHONE)]);
+    let push_d = home.0.join(".moshpit/push.d");
+    let confs: Vec<PathBuf> = std::fs::read_dir(&push_d)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(confs.len(), 2, "{confs:?}");
+    let push = || {
+        for request in std::fs::read_dir(&capture).unwrap() {
+            std::fs::remove_file(request.unwrap().path()).unwrap();
+        }
+        let status = std::process::Command::new("sh")
+            .arg(home.0.join(".moshpit/moshpit-push.sh"))
+            .args(["attention", "claude", "waiting"])
+            .stdin(std::process::Stdio::null())
+            .env_clear()
+            .env("HOME", &home.0)
+            .env("PATH", format!("{}:/usr/bin:/bin", home.0.join("bin").display()))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        requested(&capture)
+    };
+    let used = |conn: &str| {
+        // Both confs an hour old, as from an earlier run of the app.
+        let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for conf in &confs {
+            std::fs::File::options().write(true).open(conf).unwrap().set_modified(earlier).unwrap();
+        }
+        let installer = HostInstaller::new(&shell);
+        let state = block_on(installer.inspect()).expect("inspect");
+        let (_, drifts) = block_on(installer.verify(state, Some(conn))).expect("the look");
+        assert!(drifts.is_empty(), "{drifts:?}");
+    };
+    // The phone uses the connection that sorts last.
+    used(PROVED);
+    assert_eq!(push(), [PROVED]);
+    // Now the other.
+    used(FIRST);
+    assert_eq!(push(), [FIRST]);
+}
+
 /// A test for a connection the host holds no pairing for says so at once,
 /// instead of leaving the phone to wait out its timeout for a push that was
 /// never sent.
@@ -1407,6 +1458,65 @@ fn fully_installed(home: &Path) -> (Shell, PathBuf) {
     std::fs::create_dir_all(home.join(".moshpit/seen")).unwrap();
     std::fs::write(home.join(".moshpit/seen/claude"), "").unwrap();
     (shell, capture)
+}
+
+/// B633: two phones on different builds paired with one host rewrote its
+/// scripts, and the hooks calling them, back and forth at every session's
+/// start. A newer build's scripts are now left as they are — the look reads
+/// their version off the host, in the host's `sh` — and an older build's
+/// (no version line) are brought up to this one's.
+#[test]
+fn a_newer_builds_scripts_are_left_and_an_older_ones_replaced() {
+    use moshpit_install::installer::ComponentStatus;
+    use moshpit_install::scripts;
+    let home = home();
+    let shell = Shell::at(&home.0);
+    let installer = HostInstaller::new(&shell);
+    let now = Date::from_unix(1_762_800_000.0);
+    let state = block_on(installer.inspect()).unwrap();
+    let report = block_on(installer.install_hooks(&claude(), &state, now)).unwrap();
+    assert!(report.succeeded(), "{:?}", report.failures());
+
+    // Another phone's newer build puts its stamp script there.
+    let stamp = home.0.join(".moshpit/moshpit-stamp.sh");
+    let newer = format!(
+        "#!/bin/sh\n# moshpit-scripts: {}\nexit 0",
+        scripts::SCRIPTS_VERSION + 1
+    );
+    std::fs::write(&stamp, &newer).unwrap();
+    let state = block_on(installer.inspect()).unwrap();
+    let (state, _) = block_on(installer.verify(state, None)).unwrap();
+    assert_eq!(
+        state
+            .manifest
+            .get(&InstallComponent::Stamp)
+            .unwrap()
+            .scripts_version,
+        Some(scripts::SCRIPTS_VERSION + 1)
+    );
+    assert_eq!(
+        state.status(&InstallComponent::Stamp),
+        ComponentStatus::Current
+    );
+    let report = block_on(installer.install_hooks(&claude(), &state, now)).unwrap();
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert_eq!(
+        std::fs::read_to_string(&stamp).unwrap(),
+        newer,
+        "a newer build's script was replaced"
+    );
+
+    // An older build's, which says no version, is brought up to this one's.
+    std::fs::write(&stamp, "#!/bin/sh\nexit 0").unwrap();
+    let state = block_on(installer.inspect()).unwrap();
+    let (state, _) = block_on(installer.verify(state, None)).unwrap();
+    assert_ne!(
+        state.status(&InstallComponent::Stamp),
+        ComponentStatus::Current
+    );
+    let report = block_on(installer.install_hooks(&claude(), &state, now)).unwrap();
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert_eq!(std::fs::read_to_string(&stamp).unwrap(), scripts::stamp());
 }
 
 /// B375: nothing took Moshpit off a host — Unpair and Remove left the

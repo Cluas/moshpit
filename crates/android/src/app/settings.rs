@@ -2,7 +2,7 @@
 //! page's state from the stores, a changed setting written back, a row's
 //! page opened.
 
-use moshpit_store::settings::{SettingValue, spec_named};
+use moshpit_store::settings::{SettingValue, Spec, spec_named};
 use moshpit_store::themes::AnsiSlot;
 use moshpit_ui::app_icon::Icon;
 use moshpit_ui::screen::AppearanceChoice;
@@ -45,16 +45,29 @@ const FLAGS: [(&str, &str); 10] = [
     ("voiceInput", "voiceInputEnabled"),
 ];
 
+/// The setting called `name` (its name in `AppSettings`). A name the
+/// store's schema lacks is a mistake here, and was silent: a read gave the
+/// default and a write was dropped (B745, as B510 and B704 were on iOS).
+/// A debug build stops on it; a release one still reads it as unset.
+pub(crate) fn spec(name: &str) -> Option<&'static Spec> {
+    let spec = spec_named(name);
+    debug_assert!(
+        spec.is_some(),
+        "{name} is no setting of moshpit_store::settings::ALL: it would be dropped"
+    );
+    spec
+}
+
 impl App {
     fn setting_string(&self, name: &str) -> String {
-        match spec_named(name).map(|spec| self.settings.get(spec)) {
+        match spec(name).map(|spec| self.settings.get(spec)) {
             Some(SettingValue::String(text)) => text,
             _ => String::new(),
         }
     }
 
     fn setting_int(&self, name: &str) -> i64 {
-        match spec_named(name).map(|spec| self.settings.get(spec)) {
+        match spec(name).map(|spec| self.settings.get(spec)) {
             Some(SettingValue::Int(n)) => n,
             _ => 0,
         }
@@ -131,6 +144,9 @@ pub fn state(app: &App) -> SettingsState {
         keys: app.keys.keys().len() as i64,
         notifications: app.settings_flag("notificationsEnabled"),
         live_activity: app.settings_flag("liveActivityEnabled"),
+        // Android's Settings has no notifications page to say it on.
+        notifications_blocked: false,
+        live_activity_blocked: false,
         alert_sound: app.settings_flag("attentionSoundEnabled"),
         lock_screen_detail: app.settings_flag("lockScreenDetailEnabled"),
         live_session,
@@ -158,7 +174,7 @@ pub(crate) fn appearance_choice(stored: moshpit_store::settings::Appearance) -> 
 /// it does not know.
 pub fn apply(app: &App, key: &str, value: &Value) -> bool {
     let put = |name: &str, value: SettingValue| {
-        spec_named(name).is_some_and(|spec| app.settings.set(spec, value))
+        spec(name).is_some_and(|spec| app.settings.set(spec, value))
     };
     match key {
         "font" => {

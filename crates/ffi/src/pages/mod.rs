@@ -82,6 +82,9 @@ pub enum PageMessage {
     SettingsReveal { anchor: SettingsRevealAnchor },
     /// `{"op": "hosts", …}`: Set up a host's list.
     SettingsHosts { hosts: Vec<SettingsHostEntry> },
+    /// `{"op": "clock", …}`: the local hour (0–23), which the pet's card
+    /// answers a tap by (B607).
+    SettingsClock { hour: u8 },
     /// `{"op": "models", …}`: Voice Input › Model.
     WhisperModel { state: WhisperModelsState },
     /// `{"op": "accents", …}`: Settings › Accent.
@@ -180,6 +183,7 @@ pub fn page_message(message: PageMessage) -> Result<String, PageError> {
         PageMessage::SettingsHosts { hosts } => {
             Settings::Hosts(hosts.into_iter().map(Into::into).collect()).to_json()
         }
+        PageMessage::SettingsClock { hour } => Settings::Clock(hour).to_json(),
         PageMessage::WhisperModel { state } => {
             moshpit_ui::whisper_model::Message::Models(state.into()).to_json()
         }
@@ -354,6 +358,8 @@ mod tests {
             keys: 2,
             notifications: true,
             live_activity: false,
+            notifications_blocked: true,
+            live_activity_blocked: false,
             alert_sound: true,
             lock_screen_detail: false,
             live_session: true,
@@ -404,6 +410,9 @@ mod tests {
             Some("asset:/IconPreview-Pit@3x.png")
         );
         assert!(value.get("filing").is_none(), "none: left out, as before");
+        // What iOS has off crosses too (B741).
+        assert_eq!(value["notificationsBlocked"], true);
+        assert_eq!(value["liveActivityBlocked"], false);
 
         let mut bad = settings_state();
         bad.theme.swatches_hex.push("teal".into());
@@ -438,6 +447,11 @@ mod tests {
             panic!("not hosts");
         };
         assert_eq!(hosts[0].name, "studio");
+        let clock = page_message(PageMessage::SettingsClock { hour: 3 }).unwrap();
+        assert_eq!(
+            screen::Message::parse(&clock),
+            Ok(screen::Message::Clock(3))
+        );
     }
 
     /// What Settings tells is read as the screen wrote it: every setting

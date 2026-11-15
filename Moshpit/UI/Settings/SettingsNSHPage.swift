@@ -1,6 +1,8 @@
+import ActivityKit
 import MoshpitKit
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// A page Settings pushes on its own stack, for a row of the NSH root.
 enum SettingsPage: String, Hashable, Identifiable {
@@ -105,6 +107,8 @@ struct SettingsNSHPage: View {
     @State private var model = SettingsModel()
     @State private var menus = NSHContextMenus()
     @State private var hostsFeed = SettingsHostsFeed()
+    /// What iOS itself has off of the app's alerts (B741).
+    private var permissions = IOSAlertPermissions.shared
     /// This page of the hub couldn't run (the hub's own goes to
     /// `onFailure`).
     @State private var failed = false
@@ -121,7 +125,8 @@ struct SettingsNSHPage: View {
     private var page: some View {
         let snapshot = SettingsSnapshot(
             settings: settings, shortcuts: shortcutStore, keys: keyStore, themes: themes,
-            liveSession: liveSession, showsFilingNumber: showsFilingNumber)
+            liveSession: liveSession, showsFilingNumber: showsFilingNumber,
+            blocked: permissions.blocked)
         NSHPage(
             screen: .settings,
             page: part?.rawValue,
@@ -153,6 +158,13 @@ struct SettingsNSHPage: View {
                 model.updatePet(CompanionPet.shared.message)
             }
             .onChange(of: snapshot) { _, new in model.update(new) }
+            // iOS's answer, read when the page shows and again whenever the
+            // app comes back: from iOS's Settings, most likely (B741).
+            .task { await permissions.refresh() }
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.didBecomeActiveNotification)) { _ in
+                Task { await permissions.refresh() }
+            }
             .onChange(of: CompanionPet.shared.revision) { _, _ in model.updatePet(CompanionPet.shared.message) }
             .onChange(of: hosts) { _, new in hostsFeed.update(new) }
             .navigationDestination(item: $pushed) { page in page.page }
@@ -180,10 +192,60 @@ struct SettingsNSHPage: View {
 /// (`ui/src/settings.rs`'s `SettingsState`), as the page bridge carries it.
 typealias SettingsSnapshot = SettingsPageState
 
+/// What iOS itself has off of the app's alerts (B741): a "Don't Allow" on
+/// its notifications question (asked on the first connection an agent is
+/// tracked on), or Live Activities switched off for the app in iOS's
+/// Settings. The app's own switches can read on while nothing ever shows;
+/// Settings › Notifications says so and opens iOS's settings for it. Read
+/// when Settings shows and whenever the app comes back.
+@MainActor
+@Observable
+final class IOSAlertPermissions {
+    struct Blocked: Equatable {
+        var notifications = false
+        var liveActivity = false
+        static let none = Blocked()
+    }
+
+    static let shared = IOSAlertPermissions()
+
+    private(set) var blocked = Blocked.none
+    @ObservationIgnored private let read: @MainActor () async -> Blocked
+
+    init(read: @escaping @MainActor () async -> Blocked = IOSAlertPermissions.system) {
+        self.read = read
+    }
+
+    func refresh() async {
+        let now = await read()
+        if now != blocked { blocked = now }
+    }
+
+    /// Where iOS's Settings has the switch: its notifications page for the
+    /// app when they are what's off, else the app's own page (Live
+    /// Activities' switch is there).
+    var settingsURL: URL? {
+        URL(string: blocked.notifications
+            ? UIApplication.openNotificationSettingsURLString
+            : UIApplication.openSettingsURLString)
+    }
+
+    /// iOS's answer now. Undecided isn't off: iOS asks when an agent is
+    /// first tracked. Live Activities only count on an iPhone, the one
+    /// device that shows them.
+    static func system() async -> Blocked {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let phone = UIDevice.current.userInterfaceIdiom == .phone
+        return Blocked(notifications: settings.authorizationStatus == .denied,
+                       liveActivity: phone && !ActivityAuthorizationInfo().areActivitiesEnabled)
+    }
+}
+
 extension SettingsPageState {
     @MainActor
     init(settings: AppSettings, shortcuts: ShortcutStore, keys: SSHKeyStore, themes: ThemeStore,
          liveSession: Bool, showsFilingNumber: Bool,
+         blocked: IOSAlertPermissions.Blocked = .none,
          shownIcon: () -> String? = { UIApplication.shared.alternateIconName }) {
         let accent = AppThemeCatalog.theme(for: settings.appThemeId)
         // The icon iOS shows, as the NSH App Icon page ticks it (the
@@ -216,6 +278,8 @@ extension SettingsPageState {
             keys: Int64(keys.keys.count),
             notifications: settings.notificationsEnabled,
             liveActivity: settings.liveActivityEnabled,
+            notificationsBlocked: blocked.notifications,
+            liveActivityBlocked: blocked.liveActivity,
             alertSound: settings.attentionSoundEnabled,
             lockScreenDetail: settings.lockScreenDetailEnabled,
             liveSession: liveSession,
@@ -267,6 +331,8 @@ final class SettingsModel {
         self.surface = surface
         if let snapshot { surface.post(.settings(state: snapshot)) }
         if let pet { surface.post(json: pet) }
+        // The local hour, which the pet's card answers a tap by (B607).
+        surface.post(.settingsClock(hour: UInt8(Calendar.current.component(.hour, from: Date()))))
         #if DEBUG
         // Twice: once the page is up, and again once the native controls
         // have reported their sizes and the text settled, so the shot finds

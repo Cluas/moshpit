@@ -100,6 +100,9 @@ pub struct AgentRowValue {
     pub detail: Option<String>,
     pub state: String,
     pub started_at: f64,
+    /// When its connection dropped (Unix seconds): shown as it was,
+    /// greyed, its time stopped there.
+    pub paused_at: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -160,6 +163,7 @@ fn island(state: agents::IslandState) -> AgentIslandValue {
                 detail: a.detail,
                 state: a.state.raw().to_owned(),
                 started_at: a.started_at,
+                paused_at: a.paused_at,
             })
             .collect(),
         working_count: state.working_count as u32,
@@ -302,6 +306,24 @@ impl AgentMachine {
 
     pub fn bell(&self, conn: String, pane: String, place: AgentPaneWhereValue, now: f64) -> Vec<AgentEffectValue> {
         self.drive(|monitor| monitor.bell(&conn, &pane, place.into(), now))
+    }
+
+    /// `conn`'s link dropped (`up` false) or came back: its agents pause,
+    /// and resume.
+    pub fn link(&self, conn: String, up: bool, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.link(&conn, up, now))
+    }
+
+    /// The person typed into `pane` from the phone: a bell's question is
+    /// answered (B663).
+    pub fn input(&self, conn: String, pane: String, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.input(&conn, &pane, now))
+    }
+
+    /// The system would not start the island the last effect asked for: it
+    /// is asked for again shortly.
+    pub fn island_not_shown(&self, now: f64) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.island_not_shown(now))
     }
 
     /// `visible_conn`/`visible_pane`: the pane on screen (no pane: every

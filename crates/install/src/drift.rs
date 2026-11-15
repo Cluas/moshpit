@@ -9,7 +9,9 @@
 //!
 //! One command looks: a digest for each of Moshpit's files the manifest
 //! records (the two scripts, this device's push conf), and whether each
-//! agent config it names still calls the stamp script. [`reconcile`] makes
+//! agent config it names still calls the stamp script. It writes nothing
+//! but this device's conf's mtime (B664), the sender's mark of the
+//! connection a phone used last. [`reconcile`] makes
 //! the manifest say what was found, so every decision made on it — the
 //! statuses, care's refresh, the pairing's rewrite — sees the host as it
 //! is:
@@ -31,6 +33,7 @@ use crate::commands;
 use crate::hooks::{self, HookAgent};
 use crate::installer::InstallState;
 use crate::manifest::{InstallComponent, InstallManifest};
+use crate::scripts;
 
 /// What a registration's recorded digest says once a look found it isn't
 /// what this build registers ([`Drift::HooksOutdated`]):
@@ -131,6 +134,21 @@ pub fn command(checks: &[Check]) -> Option<String> {
         .map(|(i, check)| {
             let path = &check.path;
             let value = match check.kind {
+                // A script's version too, from its head (B633): `<digest>
+                // <version>`, the version empty when it says none.
+                Kind::File if is_script(&check.component) => format!(
+                    "if [ -f \"{path}\" ]; then printf '%s %s' \"$({})\" \
+                     \"$(head -n 5 \"{path}\" | sed -n 's/^{}//p' | head -n 1)\"; else echo -; fi",
+                    commands::sha256(path),
+                    scripts::MARKER
+                ),
+                // This device's pairing is marked as the one it used last
+                // (its mtime, B664): the sender pushes to a phone on its
+                // newest conf, the connection the phone is on.
+                Kind::File if matches!(check.component, InstallComponent::Pairing { .. }) => format!(
+                    "if [ -f \"{path}\" ]; then touch -c \"{path}\" 2>/dev/null; {}; else echo -; fi",
+                    commands::sha256(path)
+                ),
                 Kind::File => format!(
                     "if [ -f \"{path}\" ]; then {}; else echo -; fi",
                     commands::sha256(path)
@@ -158,6 +176,14 @@ pub fn command(checks: &[Check]) -> Option<String> {
         })
         .collect();
     Some(lines.join("; "))
+}
+
+/// One of the two scripts, whose version a look reads too.
+fn is_script(component: &InstallComponent) -> bool {
+    matches!(
+        component,
+        InstallComponent::Stamp | InstallComponent::Sender
+    )
 }
 
 /// What an agent's config holds for each event this build registers for
@@ -221,16 +247,27 @@ pub fn reconcile(
                 drifts.push(Drift::Missing(check.component.clone()));
             }
             Kind::File => {
-                let found = value.to_ascii_lowercase();
+                let mut parts = value.split_whitespace();
+                let found = parts.next().unwrap_or_default().to_ascii_lowercase();
                 let is_digest = found.len() == 64 && found.bytes().all(|b| b.is_ascii_hexdigit());
-                if is_digest && recorded.digest.as_deref() != Some(found.as_str()) {
-                    let mut edited = recorded;
-                    edited.digest = Some(found.clone());
-                    manifest.set(&check.component, Some(edited));
+                if !is_digest {
+                    continue;
+                }
+                let mut seen = recorded.clone();
+                // A script's version as the host has it (B633): what
+                // decides whether this build may replace it.
+                if is_script(&check.component) {
+                    seen.scripts_version = parts.next().and_then(|v| v.parse().ok());
+                }
+                if recorded.digest.as_deref() != Some(found.as_str()) {
+                    seen.digest = Some(found.clone());
                     drifts.push(Drift::Edited {
                         component: check.component.clone(),
                         found,
                     });
+                }
+                if seen != recorded {
+                    manifest.set(&check.component, Some(seen));
                 }
             }
             Kind::Hooks if value == "no" => {
@@ -347,6 +384,10 @@ mod tests {
             !text.contains("base64 -d >") && !text.contains("rm "),
             "it only reads"
         );
+        // B664: and marks this device's conf as the one it used last, and
+        // nothing else.
+        assert_eq!(text.matches("touch -c").count(), 1, "{text}");
+        assert!(text.contains(&format!("touch -c \"$HOME/.moshpit/push.d/{CONN}.conf\"")), "{text}");
     }
 
     #[test]
@@ -390,6 +431,53 @@ mod tests {
         assert!(drifts.contains(&Drift::HooksGone {
             agent: "claude".into()
         }));
+    }
+
+    /// B633: a look reads each script's version with its digest. A newer
+    /// build's script reads as current (this build leaves it); an older
+    /// one's, with no version line, as stale.
+    #[test]
+    fn a_scripts_version_is_read_with_its_digest() {
+        let looked = checks(&manifest(), Some(CONN));
+        let newer = "a".repeat(64);
+        let older = "b".repeat(64);
+        let output = format!(
+            "0={newer} {}\n1={older} \n2={}\n3=yes\n",
+            scripts::SCRIPTS_VERSION + 1,
+            "c".repeat(64)
+        );
+        let (after, drifts) = reconcile(&state(manifest()), &looked, &output);
+        let stamp = after.manifest.get(&InstallComponent::Stamp).unwrap();
+        assert_eq!(stamp.scripts_version, Some(scripts::SCRIPTS_VERSION + 1));
+        assert_eq!(
+            after.status(&InstallComponent::Stamp),
+            crate::installer::ComponentStatus::Current
+        );
+        let sender = after.manifest.get(&InstallComponent::Sender).unwrap();
+        assert_eq!(sender.scripts_version, None);
+        assert_eq!(
+            after.status(&InstallComponent::Sender),
+            crate::installer::ComponentStatus::Stale { installed: older }
+        );
+        assert_eq!(drifts.len(), 2, "{drifts:?}");
+
+        // This build's own version and digest: nothing drifted.
+        let ours = format!(
+            "0={} {v}\n1={} {v}\n",
+            scripts::digest(&InstallComponent::Stamp).unwrap(),
+            scripts::digest(&InstallComponent::Sender).unwrap(),
+            v = scripts::SCRIPTS_VERSION
+        );
+        let (after, drifts) = reconcile(&state(manifest()), &looked, &ours);
+        assert!(drifts.is_empty(), "{drifts:?}");
+        assert_eq!(
+            after
+                .manifest
+                .get(&InstallComponent::Stamp)
+                .unwrap()
+                .scripts_version,
+            Some(scripts::SCRIPTS_VERSION)
+        );
     }
 
     /// B381: a registration that calls the stamp script but lacks one of

@@ -138,7 +138,7 @@ pub fn on_event(app: &mut App, core: &Core, surface: u64, ev: &str, event: &Valu
         _ => return,
     };
     let set = |app: &App, name: &str, value: String| {
-        if let Some(spec) = moshpit_store::settings::spec_named(name) {
+        if let Some(spec) = super::settings::spec(name) {
             app.settings
                 .set(spec, moshpit_store::settings::SettingValue::String(value));
         }
@@ -229,7 +229,7 @@ pub fn import_themes(app: &mut App, json: &str) {
     match app.themes.import_themes(json) {
         Ok(imported) => {
             if let Some(first) = imported.first()
-                && let Some(spec) = moshpit_store::settings::spec_named("themeId")
+                && let Some(spec) = super::settings::spec("themeId")
             {
                 app.settings.set(
                     spec,
@@ -268,7 +268,7 @@ pub fn on_editor_event(app: &mut App, core: &Core, surface: u64, _ev: &str, even
         _ => return,
     };
     let set = |app: &App, name: &str, value: String| {
-        if let Some(spec) = moshpit_store::settings::spec_named(name) {
+        if let Some(spec) = super::settings::spec(name) {
             app.settings
                 .set(spec, moshpit_store::settings::SettingValue::String(value));
         }

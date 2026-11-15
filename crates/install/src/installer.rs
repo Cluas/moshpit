@@ -78,6 +78,14 @@ impl InstallState {
             }
             return ComponentStatus::Current;
         };
+        // A newer build's scripts are left as they are (B633): this build
+        // has nothing to bring them up to.
+        if recorded
+            .scripts_version
+            .is_some_and(|installed| installed > scripts::SCRIPTS_VERSION)
+        {
+            return ComponentStatus::Current;
+        }
         match &recorded.digest {
             None => ComponentStatus::Stale {
                 installed: "unknown".to_owned(),
@@ -119,6 +127,16 @@ impl InstallState {
                     .iter()
                     .any(|agent| self.hooks_status(agent.id) == ComponentStatus::Current))
     }
+}
+
+/// The version a script this build writes is ([`scripts::SCRIPTS_VERSION`]);
+/// `None` for what isn't one of the two scripts.
+fn scripts_version(component: &InstallComponent) -> Option<u32> {
+    matches!(
+        component,
+        InstallComponent::Stamp | InstallComponent::Sender
+    )
+    .then_some(scripts::SCRIPTS_VERSION)
 }
 
 /// What happened to one component.
@@ -551,6 +569,7 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
                             digest: Some(digest.clone()),
                             connection_id: is_pairing.then(|| conn.clone()),
                             relay_url: is_pairing.then(|| pairing.relay_url.clone()),
+                            scripts_version: scripts_version(&step.component),
                             ..Component::new(now)
                         }),
                     );
@@ -655,6 +674,7 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
                         Some(Component {
                             digest: Some(digest.clone()),
                             config_path: (step.component == component).then(|| path.to_owned()),
+                            scripts_version: scripts_version(&step.component),
                             ..Component::new(now)
                         }),
                     );

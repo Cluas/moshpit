@@ -22,6 +22,10 @@
 # (gpu-01.example.com, build.example.com), each with a tmux of its own
 # (-L moshpit-shots-gpu, -L moshpit-shots-build): their wrappers are
 # MOSHPIT_SEED_TMUX_BIN_GPU and _BUILD.
+# On a CI runner the session signs in as `dev`, a user made for the run, as
+# every fixture names the person: Home's card says dev@devbox.example.com,
+# not the runner's own login, and the repos sit in its home
+# (~/src/payments-api). Anywhere else it is the person running this.
 # Nothing of the person's: the key is thrown away with <work dir>, sshd runs
 # from a config of its own on loopback, tmux on its own socket.
 set -euo pipefail
@@ -32,6 +36,31 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 port=2222
 host=devbox.example.com
 user="$(id -un)"
+# What the session needs (wrappers, scripts, texts, the authorized key) is
+# made in $kit and read from $box: on a runner, dev's home, as the work dir
+# isn't dev's to read; elsewhere the same folder.
+kit="$work/kit"
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    user=dev
+    box=/Users/dev/.moshpit-shots
+    stage=/Users/dev/src
+else
+    box="$kit"
+    stage="$work/stage"
+fi
+built="$work/stage"
+# A command as the session's user (tmux runs as it, so its sockets are its).
+as_user() { if [ "$user" = "$(id -un)" ]; then "$@"; else sudo -u "$user" -H "$@"; fi; }
+t_dev() { as_user "$box/stage-tmux" "$@"; }
+t_gpu() { as_user "$box/stage-tmux-gpu" "$@"; }
+t_build() { as_user "$box/stage-tmux-build" "$@"; }
+# $kit into $box, for the session's user.
+install_kit() {
+    [ "$box" = "$kit" ] && return 0
+    sudo mkdir -p "$box"
+    sudo cp -R "$kit/." "$box/"
+    sudo chown -R "$user:staff" "$box"
+}
 
 log() { echo "▶ $*" >&2; }
 fail() { echo "✘ $*" >&2; exit 1; }
@@ -53,16 +82,16 @@ stamp_all() {
         "$1" set -p -t "$2" @moshpit_since "$5"
         [ -z "${6:-}" ] || "$1" set -p -t "$2" @moshpit_title "$6"
     }
-    stamp "$work/stage-tmux" work:claude attention claude $((now - 95)) \
+    stamp t_dev work:claude attention claude $((now - 95)) \
         "Claude needs your permission to use Edit"
-    stamp "$work/stage-tmux" work:build working codex $((now - 380)) "Running the test suite"
-    stamp "$work/stage-tmux" work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
-    stamp "$work/stage-tmux" work:shell done claude $((now - 1500))
-    stamp "$work/stage-tmux-gpu" train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
-    stamp "$work/stage-tmux-gpu" train:eval attention gemini $((now - 40)) \
+    stamp t_dev work:build working codex $((now - 380)) "Running the test suite"
+    stamp t_dev work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
+    stamp t_dev work:shell done claude $((now - 1500))
+    stamp t_gpu train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
+    stamp t_gpu train:eval attention gemini $((now - 40)) \
         "Allow execution of: 'python eval.py'?"
-    stamp "$work/stage-tmux-build" ci:deploy working claude $((now - 200)) "Planning the bucket move"
-    stamp "$work/stage-tmux-build" ci:codex done codex $((now - 900))
+    stamp t_build ci:deploy working claude $((now - 200)) "Planning the bucket move"
+    stamp t_build ci:codex done codex $((now - 900))
 }
 
 if [ "$cmd" = restamp ]; then
@@ -72,30 +101,50 @@ fi
 
 if [ "$cmd" = stop ]; then
     for wrapper in stage-tmux stage-tmux-gpu stage-tmux-build; do
-        [ -x "$work/$wrapper" ] && "$work/$wrapper" kill-server 2>/dev/null || true
+        [ -x "$box/$wrapper" ] && as_user "$box/$wrapper" kill-server 2>/dev/null || true
     done
     [ -f "$work/sshd.pid" ] && sudo kill "$(cat "$work/sshd.pid")" 2>/dev/null || true
     exit 0
 fi
 [ "$cmd" = start ] || fail "start, restamp or stop, not $cmd"
-mkdir -p "$work"
+mkdir -p "$work" "$kit"
+
+if [ "$user" != "$(id -un)" ] && ! id "$user" >/dev/null 2>&1; then
+    log "a user for the session, $user"
+    uid=$(( $(dscl . -list /Users UniqueID | awk '{print $2}' | sort -n | tail -1) + 1 ))
+    sudo dscl . -create "/Users/$user"
+    sudo dscl . -create "/Users/$user" UserShell /bin/zsh
+    sudo dscl . -create "/Users/$user" RealName Dev
+    sudo dscl . -create "/Users/$user" UniqueID "$uid"
+    sudo dscl . -create "/Users/$user" PrimaryGroupID 20
+    sudo dscl . -create "/Users/$user" NFSHomeDirectory "/Users/$user"
+    sudo dscl . -passwd "/Users/$user" "$(openssl rand -hex 16)"
+    sudo mkdir -p "/Users/$user"
+    sudo chown "$user:staff" "/Users/$user"
+    # Let in by Remote Login if it only lets in its own list.
+    sudo dseditgroup -o edit -a "$user" -t user com.apple.access_ssh 2>/dev/null || true
+    # No first-run wizard from zsh.
+    as_user touch "/Users/$user/.zshrc"
+fi
 
 log "a throwaway key and an sshd of our own on 127.0.0.1:$port"
 ssh-keygen -q -t ed25519 -N '' -C shots -f "$work/id"
-cp "$work/id.pub" "$work/authorized_keys"
-chmod 600 "$work/authorized_keys"
+cp "$work/id.pub" "$kit/authorized_keys"
+chmod 644 "$kit/authorized_keys"
+install_kit
 ssh-keygen -q -t ed25519 -N '' -f "$work/host_ed25519"
 cat > "$work/sshd_config" <<EOF
 Port $port
 ListenAddress 127.0.0.1
 HostKey $work/host_ed25519
-AuthorizedKeysFile $work/authorized_keys
+AuthorizedKeysFile $box/authorized_keys
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
 UsePAM no
 StrictModes no
 PidFile $work/sshd.pid
+Subsystem sftp /usr/libexec/sftp-server
 AllowUsers $user
 EOF
 sudo /usr/sbin/sshd -f "$work/sshd_config" -E "$work/sshd.log"
@@ -113,26 +162,24 @@ log "host key $fingerprint"
 
 tmux_bin="$(command -v tmux)" || fail "no tmux (brew install tmux)"
 wrap() {  # <wrapper> <socket>
-    cat > "$work/$1" <<EOF
+    cat > "$kit/$1" <<EOF
 #!/bin/sh
 exec "$tmux_bin" -L $2 "\$@"
 EOF
-    chmod +x "$work/$1"
+    chmod +x "$kit/$1"
 }
 wrap stage-tmux moshpit-shots
 wrap stage-tmux-gpu moshpit-shots-gpu
 wrap stage-tmux-build moshpit-shots-build
-tmux() { "$work/stage-tmux" "$@"; }
-gpu() { "$work/stage-tmux-gpu" "$@"; }
-build() { "$work/stage-tmux-build" "$@"; }
+tmux() { t_dev "$@"; }
+gpu() { t_gpu "$@"; }
+build() { t_build "$@"; }
 
 log "staged repos and a tmux session on its own socket"
-# On a CI runner the repos sit in its home (~/src/payments-api, as a
-# person's would; the runner is thrown away); anywhere else under the work
-# dir, never in a person's home.
-if [ -n "${GITHUB_ACTIONS:-}" ]; then stage="$HOME/src"; else stage="$work/stage"; fi
 stage_repo() {  # <name> <branch> <file> <content>
-    local dir="$stage/$1"
+    local dir="$built/$1"
+    # Staged again (the iPad's run after the iPhone's, in ~/src): afresh.
+    rm -rf "$dir"
     mkdir -p "$dir"
     git -C "$dir" init -q
     printf '%s\n' "$4" > "$dir/$3"
@@ -149,12 +196,20 @@ stage_repo dashboard main app.tsx 'export default function App() {
 stage_repo infra main main.tf 'resource "aws_s3_bucket" "artifacts" {}'
 stage_repo trainer main train.py 'from schedule import warmup_cosine'
 # The chart the Claude turn says it wrote: the file-preview shot opens it.
-mkdir -p "$stage/payments-api/bench"
-xcrun swift "$root/scripts/shots/stage/latency-chart.swift" "$stage/payments-api/bench/latency.png" \
+mkdir -p "$built/payments-api/bench"
+xcrun swift "$root/scripts/shots/stage/latency-chart.swift" "$built/payments-api/bench/latency.png" \
     || fail "the staged chart wasn't drawn"
+# Into the session user's home (staged again afresh: the iPad's run after
+# the iPhone's).
+if [ "$stage" != "$built" ]; then
+    for repo in payments-api dashboard infra trainer; do sudo rm -rf "${stage:?}/$repo"; done
+    sudo mkdir -p "$stage"
+    sudo cp -R "$built/." "$stage/"
+    sudo chown -R "$user:staff" "$stage"
+fi
 
 # The small panes' text (the big ones replay a turn: stage/*-session.sh).
-text="$work/text"
+text="$kit/text"
 mkdir -p "$text"
 cat > "$text/review-claude.txt" <<'TEXT'
 > add tests for backoff.js: the cap, the jitter, the retry count
@@ -227,26 +282,36 @@ cat > "$text/ci-claude.txt" <<'TEXT'
   ⎿  Refreshing state... [id=artifacts]
      Plan: 2 to add, 0 to change, 2 to destroy.
 TEXT
+cat > "$text/shell.txt" <<'TEXT'
+➜  infra git:(main) terraform fmt -check
+➜  infra git:(main)
+TEXT
 cat > "$text/ci-codex.txt" <<'TEXT'
 • Bumped the Node image to 22 in ci/Dockerfile and the workflow matrix.
 • Ran the build: 3m12s, cache hit on the dependency layer.
 
 ✔ Done. 2 files changed, +4 -4.
 TEXT
-hold="$root/scripts/shots/stage/hold.sh"
+# The pane scripts beside the texts, where the session's user reads them.
+mkdir -p "$kit/scripts"
+cp "$root"/scripts/shots/stage/{hold,claude-session,build-session}.sh "$kit/scripts/"
+install_kit
+text="$box/text"
+scripts="$box/scripts"
+hold="$scripts/hold.sh"
 
 # devbox: the payments work. Its claude asks to edit; codex runs the
 # tests; a window split three ways (claude writing tests, vitest watching,
 # the server's log); a shell where an earlier claude finished.
 tmux kill-server 2>/dev/null || true
 tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
-    "exec sh $root/scripts/shots/stage/claude-session.sh"
-tmux new-window -t work -n build -c "$stage/payments-api" "exec sh $root/scripts/shots/stage/build-session.sh"
+    "exec sh $scripts/claude-session.sh"
+tmux new-window -t work -n build -c "$stage/payments-api" "exec sh $scripts/build-session.sh"
 tmux new-window -t work -n review -c "$stage/payments-api" "exec sh $hold claude $text/review-claude.txt"
 tmux split-window -h -l 45% -t work:review -c "$stage/payments-api" "exec sh $hold vitest $text/review-vitest.txt"
 tmux split-window -v -t work:review.1 -c "$stage/payments-api" "exec sh $hold tail $text/review-tail.txt"
 tmux select-pane -t work:review.0
-tmux new-window -t work -n shell -c "$stage/infra"
+tmux new-window -t work -n shell -c "$stage/infra" "exec sh $hold zsh $text/shell.txt"
 tmux select-window -t work:claude
 
 # gpu-01: a training run (claude at work) and an eval waiting on gemini's
@@ -275,7 +340,7 @@ MOSHPIT_SEED_PORT=$port
 MOSHPIT_SEED_TRUST_FP=$fingerprint
 MOSHPIT_SEED_NAME=devbox
 MOSHPIT_SEED_MUX=tmux
-MOSHPIT_SEED_TMUX_BIN=$work/stage-tmux
-MOSHPIT_SEED_TMUX_BIN_GPU=$work/stage-tmux-gpu
-MOSHPIT_SEED_TMUX_BIN_BUILD=$work/stage-tmux-build
+MOSHPIT_SEED_TMUX_BIN=$box/stage-tmux
+MOSHPIT_SEED_TMUX_BIN_GPU=$box/stage-tmux-gpu
+MOSHPIT_SEED_TMUX_BIN_BUILD=$box/stage-tmux-build
 EOF

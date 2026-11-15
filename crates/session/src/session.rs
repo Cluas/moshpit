@@ -40,7 +40,9 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use crate::attempt::{Attempt, Established, dial, pay_pin_debt, reap_command, reap_mosh_server};
+use crate::attempt::{
+    Attempt, Established, dial, dial_asking, pay_pin_debt, reap_command, reap_mosh_server,
+};
 use crate::event::{
     Degrade, Discarded, EndReason, Event, EventKind, Failure, PaneInfo, ResumeOutcome, SHELL_PANE,
     SessionId, SessionState,
@@ -64,6 +66,15 @@ use crate::tmux_leg::{
 /// How long content delivered on purpose waits for the session to be live
 /// and its pane there (a reconnect after the phone was asleep).
 pub const DELIVERY_WAIT: Duration = Duration::from_secs(20);
+
+/// The generation a side connection's sign-in questions go under (B634):
+/// no attempt's, so the dial's hold on the person is not asked for.
+const SIDE: u64 = u64::MAX;
+
+/// How long a side connection is kept without a borrow (B634): long enough
+/// that care, a borrow and a preview in a row ask the person for a second
+/// factor once, not each.
+const SIDE_IDLE_MS: u64 = 10 * 60 * 1000;
 
 /// How long a disconnect waits for what it owes the host (a retired
 /// attach's pins, a mosh-server to stop) before it says it is done.
@@ -780,6 +791,11 @@ pub(crate) struct Actor {
     /// its own (plain mosh), and who waits for the one being dialled.
     side: Option<Ssh>,
     side_waiting: Vec<oneshot::Sender<Result<Ssh, Failure>>>,
+    /// When the side connection goes for want of a borrow (B634).
+    side_idle_until: Option<u64>,
+    /// The person said no to a side connection's question: not asked
+    /// again in this session, and the side feature fails as it did (B634).
+    side_declined: bool,
     /// Borrowers waiting for mosh + tmux's control plane to come up on the
     /// bootstrap's connection, rather than have a side connection dialled
     /// beside it (`borrow_ssh`).
@@ -861,6 +877,8 @@ impl Actor {
             done: None,
             side: None,
             side_waiting: Vec::new(),
+            side_idle_until: None,
+            side_declined: false,
             control_waiting: Vec::new(),
             orphans: Vec::new(),
             debt_renderer_server: None,
@@ -912,6 +930,7 @@ impl Actor {
                     .values()
                     .map(|s| if s.landed { s.until } else { s.hard })
                     .min(),
+                self.side_idle_until,
             ]
             .into_iter()
             .flatten()
@@ -937,6 +956,7 @@ impl Actor {
                     self.life.tick(now);
                     self.expire_deliveries(now);
                     self.release_settled(now);
+                    self.release_idle_side(now);
                 }
             }
         }
@@ -1014,6 +1034,8 @@ impl Actor {
         for waiting in self.side_waiting.drain(..) {
             let _ = waiting.send(Err(Failure::lost("the session was closed")));
         }
+        // A side dial's question goes with the session (B634).
+        self.withdraw_prompts(SIDE);
         for waiting in self.control_waiting.drain(..) {
             let _ = waiting.send(Err(Failure::lost("the session was closed")));
         }
@@ -1084,7 +1106,9 @@ impl Actor {
             Msg::AnswerQuestion { prompt, answer } => {
                 if let Some((generation, reply)) = self.questions.remove(&prompt) {
                     let _ = reply.send(answer);
-                    self.life.attempt_waits_on_person(generation, false);
+                    if generation != SIDE {
+                        self.life.attempt_waits_on_person(generation, false);
+                    }
                 }
             }
             Msg::Tmux(TmuxAction::ScrollLines(lines)) if self.mosh_renders_tmux() => {
@@ -1203,9 +1227,16 @@ impl Actor {
                 question,
                 reply,
             } => {
-                if generation != self.life.generation()
-                    || self.attempt.as_ref().map(|(g, _)| *g) != Some(generation)
-                {
+                // A side connection's (B634): while its dial is out, unless
+                // the person said no to one.
+                let side = generation == SIDE;
+                let asked = if side {
+                    !self.side_waiting.is_empty() && !self.side_declined
+                } else {
+                    generation == self.life.generation()
+                        && self.attempt.as_ref().map(|(g, _)| *g) == Some(generation)
+                };
+                if !asked {
                     let _ = reply.send(None);
                     return;
                 }
@@ -1213,7 +1244,9 @@ impl Actor {
                 let prompt = self.next_prompt;
                 self.questions.insert(prompt, (generation, reply));
                 // The dial waits on the person's answer, as for a host key.
-                self.life.attempt_waits_on_person(generation, true);
+                if !side {
+                    self.life.attempt_waits_on_person(generation, true);
+                }
                 self.emit(EventKind::SignInQuestion {
                     prompt,
                     host,
@@ -1331,8 +1364,23 @@ impl Actor {
             }
             Msg::BorrowSsh(reply) => self.borrow_ssh(reply),
             Msg::SideSsh { result } => {
-                if let Ok(ssh) = &result {
-                    self.side = Some(ssh.clone());
+                self.withdraw_prompts(SIDE);
+                match &result {
+                    Ok(ssh) => {
+                        self.side = Some(ssh.clone());
+                        self.side_idle_until = Some(self.now() + SIDE_IDLE_MS);
+                    }
+                    // The person said no to its question (B634): the side
+                    // feature fails as before, and nothing asks again.
+                    Err(failure)
+                        if failure.cause
+                            == crate::event::Cause::Credentials(
+                                crate::event::CredentialsWhy::Cancelled,
+                            ) =>
+                    {
+                        self.side_declined = true;
+                    }
+                    Err(_) => {}
                 }
                 for waiting in self.side_waiting.drain(..) {
                     let _ = waiting.send(result.clone());
@@ -1496,6 +1544,7 @@ impl Actor {
         if let Some(side) = &self.side
             && !side.is_closed()
         {
+            self.side_idle_until = Some(self.now() + SIDE_IDLE_MS);
             let _ = reply.send(Ok(side.clone()));
             return;
         }
@@ -1508,11 +1557,29 @@ impl Actor {
         let spec = self.spec.clone();
         let timing = self.timing.clone();
         let me = self.me.clone();
+        // A second factor the host asks is asked of the person, once
+        // (B634): the connection is kept for the borrows after.
+        let questions: Option<Arc<dyn SignInQuestions>> = (!self.side_declined).then(|| {
+            Arc::new(Prompt {
+                session: self.me.clone(),
+                generation: SIDE,
+            }) as Arc<dyn SignInQuestions>
+        });
         tokio::spawn(async move {
             let prompt: Arc<dyn HostKeyPrompt> = Arc::new(DenyAll);
-            let result = dial(&services, &spec, &timing, prompt).await;
+            let result = dial_asking(&services, &spec, &timing, prompt, questions).await;
             let _ = me.send(Msg::SideSsh { result });
         });
+    }
+
+    /// The side connection, kept for borrows, goes once none came for
+    /// [`SIDE_IDLE_MS`] (B634). A borrower still holding it keeps it until
+    /// it is done.
+    fn release_idle_side(&mut self, now: u64) {
+        if self.side_idle_until.is_some_and(|until| now >= until) {
+            self.side_idle_until = None;
+            self.side = None;
+        }
     }
 
     /// Answers the borrowers that waited for mosh + tmux's control plane:
@@ -2367,13 +2434,39 @@ impl Actor {
                 reaped,
                 ..
             } => {
+                // Keys this flow never delivered go with it, said (B618): a
+                // reconnect's server is a fresh shell, which mustn't get
+                // them, and the person must know they weren't sent.
+                let (asked, answer) = oneshot::channel();
+                if mosh.commands.send(MoshCommand::Undelivered(asked)).is_ok()
+                    && let Ok(Ok(bytes)) =
+                        tokio::time::timeout(Duration::from_millis(500), answer).await
+                    && bytes > 0
+                    && let Some(stream) = self.shell.as_ref().map(|shell| shell.stream.id())
+                {
+                    self.emit(EventKind::InputDiscarded {
+                        stream,
+                        bytes,
+                        why: if why == Teardown::Reconnect {
+                            Discarded::Reconnected
+                        } else {
+                            Discarded::SessionEnded
+                        },
+                    });
+                }
                 let _ = mosh.commands.send(MoshCommand::Close);
                 // The person's end of a mosh + tmux session: the renderer
                 // (mosh-server's tmux client) is taken out of the session
                 // before the windows go back (B270).
                 let renderer_server = server_pid
                     .filter(|_| why == Teardown::Disconnect && !reaped && self.control.is_some());
-                self.stop_control(courtesy, renderer_server).await;
+                // An end (a detach, the server's own end) hands the window
+                // pins back at once over the control connection still open,
+                // as the person's Disconnect does (B724, B588's hand-back):
+                // nothing comes to inherit them, and the app may be killed
+                // before the card closes.
+                let hand_back = courtesy || why == Teardown::Ended;
+                self.stop_control(hand_back, renderer_server).await;
                 self.stop_herdr_control().await;
                 self.lend_to_control_waiting();
                 // A server that never heard from us waits forever; one whose
@@ -3448,6 +3541,9 @@ impl Actor {
                         self.timing.clone(),
                         vec![pid],
                     ));
+                    // The flow has no server now: a new one at the next
+                    // path change or return (B721).
+                    self.life.mosh_server_reaped(generation);
                 }
                 if first_report {
                     self.update(|view| view.return_path_dead = true);
@@ -4804,6 +4900,93 @@ mod tests {
         }
     }
 
+    /// B634: a side connection's sign-in question (a host behind a second
+    /// factor, plain mosh having no SSH of its own) is asked of the person
+    /// while its dial is out, and its answer goes back. A no is kept: the
+    /// side feature fails as it did, and no later side dial asks again.
+    #[tokio::test]
+    async fn a_side_connections_question_is_asked_and_a_no_is_kept() {
+        let (mut actor, mut events) = dialing_actor(false);
+        let question = || SignInQuestion {
+            name: String::new(),
+            instructions: String::new(),
+            prompt: "Verification code: ".into(),
+            echo: false,
+        };
+        let ask = |actor: &mut Actor| {
+            let (reply, answer) = oneshot::channel();
+            let message = Msg::Question {
+                generation: SIDE,
+                host: "box".into(),
+                question: question(),
+                reply,
+            };
+            (message, answer, actor.next_prompt)
+        };
+
+        // No side dial out: nothing to ask for.
+        let (message, answer, _) = ask(&mut actor);
+        actor.handle(message).await;
+        assert_eq!(answer.await.unwrap(), None);
+
+        // A borrow waits on a side dial: its question is the person's.
+        let (borrower, _borrowed) = oneshot::channel();
+        actor.side_waiting.push(borrower);
+        let (message, answer, _) = ask(&mut actor);
+        actor.handle(message).await;
+        let prompt = actor.next_prompt;
+        let shown = std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
+            matches!(event.kind, EventKind::SignInQuestion { prompt: p, .. } if p == prompt)
+        });
+        assert!(shown, "the side connection's question wasn't shown");
+        actor
+            .handle(Msg::AnswerQuestion {
+                prompt,
+                answer: Some("424242".into()),
+            })
+            .await;
+        assert_eq!(answer.await.unwrap().as_deref(), Some("424242"));
+
+        // Asked again, and the side dial ends first: the card goes.
+        let (message, answer, _) = ask(&mut actor);
+        actor.handle(message).await;
+        let prompt = actor.next_prompt;
+        actor
+            .handle(Msg::SideSsh {
+                result: Err(Failure::credentials(
+                    crate::event::CredentialsWhy::Cancelled,
+                    "signing in was declined",
+                )),
+            })
+            .await;
+        assert_eq!(answer.await.unwrap(), None);
+        let withdrawn = std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
+            matches!(event.kind, EventKind::SignInQuestionWithdrawn { prompt: p } if p == prompt)
+        });
+        assert!(withdrawn, "the side connection's card was left up");
+
+        // The person said no: a later side dial asks nothing.
+        assert!(actor.side_declined);
+        let (borrower, _borrowed) = oneshot::channel();
+        actor.side_waiting.push(borrower);
+        let (message, answer, _) = ask(&mut actor);
+        actor.handle(message).await;
+        assert_eq!(answer.await.unwrap(), None, "asked again after a no");
+    }
+
+    /// B634: the side connection is let go once no borrow came for ten
+    /// minutes, not before.
+    #[tokio::test]
+    async fn an_idle_side_connection_is_let_go() {
+        let (mut actor, _events) = dialing_actor(false);
+        actor.side_idle_until = Some(1_000 + SIDE_IDLE_MS);
+        actor.release_idle_side(1_000 + SIDE_IDLE_MS - 1);
+        assert!(actor.side_idle_until.is_some(), "let go early");
+        actor.release_idle_side(1_000 + SIDE_IDLE_MS);
+        assert!(actor.side_idle_until.is_none());
+        assert!(actor.side.is_none());
+    }
+
     /// B563: the server's sign-in question goes to the person with its own
     /// words, holds the dial like the host-key card, takes their answer
     /// back; a question the attempt outlived is withdrawn as declined.
@@ -5919,6 +6102,51 @@ mod tests {
         assert!(view.mosh_diagnostics.is_none());
     }
 
+    /// B618: keys a mosh flow never delivered go with it when another server
+    /// replaces it (a reconnect is a fresh shell), and that is said with how
+    /// many: never dropped in silence.
+    #[tokio::test]
+    async fn a_replaced_mosh_flow_says_what_it_never_delivered() {
+        let (mut actor, mut events) = live_actor(false);
+        let generation = actor.life.generation();
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation,
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (stream, input) = moshpit_stream::open();
+        let id = stream.id();
+        actor.shell = Some(ShellChannel {
+            stream: Arc::new(stream),
+            pump: pump(id, input, actor.me.clone()),
+            used: false,
+            written: 0,
+        });
+        tokio::spawn(async move {
+            while let Some(command) = sent.recv().await {
+                if let MoshCommand::Undelivered(reply) = command {
+                    let _ = reply.send(3);
+                }
+            }
+        });
+        actor.teardown(generation, Teardown::Reconnect).await;
+        assert_eq!(
+            discarded(&mut events),
+            [EventKind::InputDiscarded {
+                stream: id,
+                bytes: 3,
+                why: Discarded::Reconnected,
+            }]
+        );
+    }
+
     /// B529: back from the background in place, before the transport
     /// answered: a size change given after keys held for the answer waits
     /// with them and goes out in order (V31). It went at once, ahead of the
@@ -6196,6 +6424,110 @@ mod tests {
                 .filter(|e| e.kind == EventKind::ReturnPathDead)
                 .count();
             assert_eq!(banners, 1, "said once, heard: {heard}");
+        }
+    }
+
+    /// B721: the session's reap of a mosh-server never heard from tells the
+    /// lifecycle, which dials a new server at the return; one that answered
+    /// keeps its flow.
+    #[tokio::test]
+    async fn a_reaped_server_is_replaced_at_the_return() {
+        for heard in [false, true] {
+            let (mut actor, _events) = dialing_actor(false);
+            let generation = actor.life.generation();
+            let now = actor.now();
+            assert!(
+                actor
+                    .life
+                    .attempt_succeeded(generation, Transport::Mosh, now)
+            );
+            while actor.life.poll_action().is_some() {}
+            let (commands, _sent) = mpsc::unbounded_channel();
+            actor.leg = Some(Leg::Mosh {
+                generation,
+                mosh: MoshLoop {
+                    commands,
+                    task: tokio::spawn(async {}),
+                },
+                server_pid: Some(4242),
+                first_contact: heard,
+                return_path_reported: false,
+                reaped: false,
+            });
+            actor
+                .handle(Msg::Mosh {
+                    generation,
+                    note: MoshNote::ReturnPathDead {
+                        first_contact: heard,
+                    },
+                })
+                .await;
+            let now = actor.now();
+            actor.life.background(now);
+            while actor.life.poll_action().is_some() {}
+            actor.life.foreground(now + 2_000);
+            let redial = std::iter::from_fn(|| actor.life.poll_action()).any(|a| {
+                matches!(
+                    a,
+                    Action::Teardown {
+                        why: Teardown::Reconnect,
+                        ..
+                    }
+                )
+            });
+            assert_eq!(redial, !heard, "a new server at the return, heard: {heard}");
+        }
+    }
+
+    /// B724: a mosh + tmux session that ends (a detach, the server's own end)
+    /// hands the window pins back at once, over the control connection
+    /// still open, as the person's Disconnect does (B588's hand-back). The
+    /// debt waited for the card to close or a reconnect: killed first, the
+    /// desktop's windows stayed at the phone's size for good.
+    #[tokio::test]
+    async fn an_ended_mosh_tmux_session_hands_the_pins_back_at_once() {
+        for (why, courteous) in [
+            (Teardown::Ended, true),
+            (Teardown::Disconnect, true),
+            (Teardown::Reconnect, false),
+        ] {
+            let (mut actor, _events, _sent) = on_mosh(4242);
+            let generation = actor.life.generation();
+            let (to_sidecar, mut sidecar) = mpsc::unbounded_channel();
+            actor.control = Some(Control {
+                generation,
+                epoch: 1,
+                ssh: None,
+                sidecar: Some(TmuxLeg::for_tests(to_sidecar)),
+                dialling: false,
+                failures: 0,
+                preferred: None,
+                handoff: Handoff::default(),
+                renderer_pid: None,
+                grid: (80, 24),
+                layouts_before_renderer: None,
+                ready: true,
+                checking: false,
+                holding: false,
+                held: Vec::new(),
+                hold: 0,
+                dropped: false,
+            });
+            let closing = tokio::spawn(async move {
+                while let Some(command) = sidecar.recv().await {
+                    if let TmuxCommand::Close { courtesy, reply } = command {
+                        let _ = reply.send(Handoff::default());
+                        return Some(courtesy);
+                    }
+                }
+                None
+            });
+            actor.teardown(generation, why).await;
+            assert_eq!(
+                closing.await.unwrap(),
+                Some(courteous),
+                "{why:?}: the pins handed back"
+            );
         }
     }
 

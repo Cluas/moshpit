@@ -28,6 +28,15 @@ fn attached() -> Rig {
     rig
 }
 
+/// A focus change the person asked for (B683: the only kind the phone
+/// follows once it shows a pane): they pick the tab, and the server's focus
+/// lands on `pane`.
+fn asked_focus(rig: &mut Rig, pane: &str) {
+    rig.act(Action::SelectWindow("w1:t1".to_owned()));
+    rig.run(300);
+    rig.host.focused = Some(pane.to_owned());
+}
+
 fn count(events: &[Event], wanted: impl Fn(&Event) -> bool) -> usize {
     events.iter().filter(|event| wanted(event)).count()
 }
@@ -406,10 +415,11 @@ fn typing_at_the_pane_just_picked_waits_for_its_attach_and_follows_it() {
 /// before it is). It waits for the attach now, as a pick's does, and
 /// follows it.
 #[test]
-fn typing_at_a_pane_the_desktop_switched_to_waits_for_its_attach() {
+fn typing_at_a_pane_a_followed_focus_switched_to_waits_for_its_attach() {
     let mut rig = attached();
-    // The desktop moves the focus; the next read reports it.
-    rig.host.focused = Some("w1:p2".to_owned());
+    // The focus moves where the person asked (B683: the desktop's own
+    // moves aren't followed); the next read reports it.
+    asked_focus(&mut rig, "w1:p2");
     rig.act(Action::Refresh);
     rig.run(45);
     assert_eq!(rig.client.frame_target(), Some("w1:p2"));
@@ -433,7 +443,7 @@ fn typing_at_a_pane_the_desktop_switched_to_waits_for_its_attach() {
 fn typing_held_for_a_follow_is_dropped_and_said_past_two_seconds() {
     let mut rig = attached();
     rig.frames.attach_ms = 6_000;
-    rig.host.focused = Some("w1:p2".to_owned());
+    asked_focus(&mut rig, "w1:p2");
     rig.act(Action::Refresh);
     rig.run(100);
     assert_eq!(rig.client.frame_target(), Some("w1:p2"));
@@ -744,7 +754,7 @@ fn open_here_sticks_after_the_other_device_moved_the_focus() {
 fn following_the_focus_onto_a_pane_another_device_holds_takes_nothing_and_says_so() {
     let mut rig = attached();
     rig.host.held_elsewhere = vec!["w1:p2".to_owned()];
-    rig.host.focused = Some("w1:p2".to_owned());
+    asked_focus(&mut rig, "w1:p2");
     rig.run(3_000);
     assert_eq!(rig.attach_lines(), ["w1:p1", "w1:p2"]);
     assert_eq!(rig.frames.took_over, [false, false], "a follow took over");
@@ -776,7 +786,7 @@ fn only_a_pick_or_a_reply_takes_over() {
     rig.run(2_000);
     assert_eq!(rig.client.attached_pane(), Some("w1:p2"));
     assert_eq!(rig.host.taken_from_others, ["w1:p2"]);
-    rig.host.focused = Some("w1:p1".to_owned());
+    asked_focus(&mut rig, "w1:p1");
     rig.run(3_000);
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
     let request = rig
@@ -799,7 +809,7 @@ fn only_a_pick_or_a_reply_takes_over() {
 fn a_tap_on_the_pane_a_follow_is_on_its_way_to_takes_it() {
     let mut rig = attached();
     rig.host.held_elsewhere = vec!["w1:p2".to_owned()];
-    rig.host.focused = Some("w1:p2".to_owned());
+    asked_focus(&mut rig, "w1:p2");
     // The read that follows the focus there, until its plain line is out
     // (herdr's refusal is a round trip behind it).
     rig.client.foreground(rig.now);
@@ -1052,6 +1062,53 @@ fn a_release_overtaken_by_the_servers_shutdown_does_not_stall_the_next_attach() 
         "never back on w1:p2 within 2.5 s: {:?}",
         rig.frame_writes()
     );
+}
+
+/// B683: the desktop moves herdr's focus while the phone types: the phone
+/// stays on its pane, as the active one, and nothing typed is dropped. It
+/// switched under the person and dropped what they were typing; herdr's
+/// frame channel stays on an unfocused pane, so nothing is lost by staying.
+#[test]
+fn the_desktop_moving_the_focus_leaves_the_phone_on_its_pane() {
+    let mut rig = attached();
+    rig.host.focused = Some("w1:p2".to_owned());
+    let mut typed = String::new();
+    for i in 0..10 {
+        let text = format!("k{i}");
+        rig.type_text("w1:p1", &text);
+        typed.push_str(&text);
+        rig.run(600);
+    }
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+    assert_eq!(rig.typed("w1:p1"), typed);
+    assert_eq!(rig.typed("w1:p2"), "");
+    assert!(
+        !rig.events()
+            .iter()
+            .any(|e| matches!(e, Event::InputDropped { .. })),
+        "nothing dropped"
+    );
+    assert_eq!(rig.client.snapshot().active_pane_id.as_deref(), Some("w1:p1"));
+    assert_eq!(rig.client.server_focus(), Some("w1:p2"));
+    assert!(
+        rig.client
+            .panes()
+            .iter()
+            .any(|(pane, _, active)| pane == "w1:p1" && *active),
+        "the phone's pane is the active one"
+    );
+}
+
+/// B683: a workspace the phone makes is followed onto the pane it focuses
+/// (the person's own focus change).
+#[test]
+fn a_workspace_the_phone_makes_is_followed() {
+    let mut rig = attached();
+    rig.act(Action::NewSession { name: Some("new".to_owned()) });
+    rig.run(3_000);
+    let focused = rig.host.focused.clone().unwrap();
+    assert_ne!(focused, "w1:p1");
+    assert_eq!(rig.client.attached_pane(), Some(focused.as_str()));
 }
 
 #[test]
@@ -1536,9 +1593,14 @@ fn an_unchanging_tree_eases_the_cadence_and_any_change_snaps_it_back() {
     rig.run(20_000);
     assert_eq!(rig.client.poll_interval_ms(), 8_000);
     rig.host.focused = Some("w1:p2".to_owned());
-    while rig.client.snapshot().active_pane_id.as_deref() != Some("w1:p2") {
+    // The server's focus (B683: the phone keeps its own pane).
+    for _ in 0..1_000 {
+        if rig.client.server_focus() == Some("w1:p2") {
+            break;
+        }
         rig.run(10);
     }
+    assert_eq!(rig.client.server_focus(), Some("w1:p2"));
     assert_eq!(rig.client.poll_interval_ms(), 2_000);
 }
 
@@ -1553,10 +1615,7 @@ fn a_read_that_never_answers_doesnt_stop_the_reads() {
     rig.host.rules.clear();
     rig.host.focused = Some("w1:p2".to_owned());
     rig.run(12_000);
-    assert_eq!(
-        rig.client.snapshot().active_pane_id.as_deref(),
-        Some("w1:p2")
-    );
+    assert_eq!(rig.client.server_focus(), Some("w1:p2"));
 }
 
 #[test]
@@ -2411,7 +2470,8 @@ fn a_server_restarted_elsewhere_ends_the_hold_another_device_had() {
     );
     rig.host_restarted_elsewhere();
     rig.act(Action::Refresh);
-    rig.run(3_000);
+    // After the device that had it has had its moment (B681).
+    rig.run(9_000);
     assert_eq!(rig.client.notice(), None, "the hold ended with the server");
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
 }
@@ -2430,7 +2490,7 @@ fn a_server_seen_down_ends_the_hold_another_device_had() {
     assert!(rig.client.server_not_running());
     rig.host.running = true;
     rig.act(Action::Refresh);
-    rig.run(3_000);
+    rig.run(9_000);
     assert_ne!(
         rig.client.notice().map(|(notice, _)| notice.clone()),
         Some(Notice::OnAnotherDevice)
@@ -2438,33 +2498,40 @@ fn a_server_seen_down_ends_the_hold_another_device_had() {
     assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
 }
 
-/// B681: the server restarts (the desktop upgraded herdr) and every
-/// client's attach ends with it; each device asks for its pane again.
-/// Another device that had only been showing "open on another device" for
-/// this pane asked first, plainly, and got it: the device the person was
-/// using lost its pane to an idle one, and said so. The device that had the
-/// pane asks for it back with `--takeover`, once; the other shows the
-/// notice it showed before.
+/// B681 (reworked): the server restarts (the desktop upgraded herdr) and
+/// every client's attach ends with it; each device asks for its pane again.
+/// Another device that had only been showing "open on another device" asked
+/// first and kept the pane the person was using. A takeover by the device
+/// that had it fixed that race, but would steal the pane from a device
+/// whose person picked it in that moment. Now nobody takes over: the device
+/// that had the pane asks plainly at once, and a pane another device holds
+/// by then stays theirs, said.
 #[test]
-fn a_restart_gives_the_pane_back_to_the_device_that_had_it() {
+fn a_restart_never_takes_a_pane_another_device_picked_meanwhile() {
     let mut rig = attached();
     rig.host_restarted_elsewhere();
-    // The other device asked first.
+    // The other device's person picked it after the restart.
     rig.host.held_elsewhere.push("w1:p1".to_owned());
-    rig.run(3_000);
-    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
-    assert_ne!(
+    let asked = rig.frames.took_over.len();
+    rig.run(10_000);
+    assert!(
+        rig.frames.took_over[asked..].iter().all(|took| !took),
+        "{:?}",
+        rig.frames.took_over
+    );
+    assert!(rig.host.taken_from_others.is_empty());
+    assert_eq!(
         rig.client.notice().map(|(notice, _)| notice.clone()),
         Some(Notice::OnAnotherDevice)
     );
-    assert_eq!(rig.frames.took_over.last(), Some(&true), "{:?}", rig.frames.took_over);
-    assert_eq!(rig.host.taken_from_others, ["w1:p1"]);
 }
 
-/// The other way: a device that was showing the notice when the server
-/// restarted asks plainly (B467), never with `--takeover`.
+/// B681 (reworked), the device that only showed "open on another device"
+/// when the server restarted: it waits a moment before asking for a pane
+/// again — the device that had the pane asks at once and gets it — then
+/// asks plainly, and gets it if nobody has.
 #[test]
-fn a_restart_takes_nothing_for_the_device_that_showed_the_notice() {
+fn a_device_showing_the_notice_waits_its_moment_after_a_restart() {
     let mut rig = attached();
     rig.host_take_over();
     rig.run(2_000);
@@ -2472,15 +2539,19 @@ fn a_restart_takes_nothing_for_the_device_that_showed_the_notice() {
         rig.client.notice().map(|(notice, _)| notice.clone()),
         Some(Notice::OnAnotherDevice)
     );
-    let asked = rig.frames.took_over.len();
+    let lines = rig.attach_lines().len();
     rig.host_restarted_elsewhere();
-    rig.host.held_elsewhere.push("w1:p1".to_owned());
-    rig.run(3_000);
-    assert!(
-        rig.frames.took_over[asked..].iter().all(|took| !took),
-        "{:?}",
-        rig.frames.took_over
+    rig.act(Action::Refresh);
+    rig.run(5_000);
+    assert_eq!(rig.attach_lines().len(), lines, "asked at once: {:?}", rig.attach_lines());
+    assert_eq!(
+        rig.client.notice().map(|(notice, _)| notice.clone()),
+        Some(Notice::OnAnotherDevice),
+        "still said while it waits"
     );
+    rig.run(4_000);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"), "nobody had it: ours");
+    assert_eq!(rig.frames.took_over.last(), Some(&false), "plainly");
 }
 
 // MARK: - B470: a pick whose focus couldn't run

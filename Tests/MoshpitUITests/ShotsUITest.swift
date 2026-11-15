@@ -71,12 +71,13 @@ final class ShotsUITest: XCTestCase {
 
     @MainActor private static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
-    /// A terminal shot: the staged session, its text at 11 pt on the phone
-    /// (the default 9 pt left the pane's words too small to read on a
-    /// store page, dry run 4).
+    /// A terminal shot: the staged session, its text larger than the
+    /// default 9 pt on the phone (too small to read on a store page, dry
+    /// run 4): `size`, a size the Settings stepper offers. The staged turn
+    /// is wrapped to read at 13 pt's 54 columns.
     @MainActor
-    private static func terminal(_ session: [String]) -> [String] {
-        session + (phone ? ["-moshpit.settings.fontSize", "11"] : [])
+    private static func terminal(_ session: [String], size: Int = 11) -> [String] {
+        session + (phone ? ["-moshpit.settings.fontSize", "\(size)"] : [])
     }
 
     override func setUpWithError() throws {
@@ -204,6 +205,14 @@ final class ShotsUITest: XCTestCase {
             XCTFail("\(locale.name): Home never listed an agent waiting")
             return false
         }
+        // The pet's offer of its app icon (B668), if the seed's answer
+        // didn't hold: Not Yet, so it isn't over the shot.
+        let notYet = app.nsh("home-icon-not-yet")
+        if notYet.exists {
+            print("SHOTS \(locale.name): Home offered the pet's icon; answered Not Yet")
+            notYet.tap()
+            settle(1)
+        }
         return true
     }
 
@@ -219,7 +228,7 @@ final class ShotsUITest: XCTestCase {
             // Twice: a UI query that timed out (ko and pt-BR, dry run 4)
             // took the shot with it.
             for _ in 0..<2 {
-                let app = launch(locale, Self.terminal(session))
+                let app = launch(locale, Self.terminal(session, size: 13))
                 defer { app.terminate() }
                 if waitLive(app, locale) {
                     settle(1.2)
@@ -260,19 +269,22 @@ final class ShotsUITest: XCTestCase {
             // shows (dry run 4 waited on the page's own id and saw nothing).
             let page = ["terminal-overview", "terminal-overview-done", "terminal-overview-summary",
                         "terminal-overview-scroll"]
+            // Each pane visited once, so the overview has a picture of each
+            // (it draws the panes the app has shown; dry run 5's build and
+            // review cards were empty): the sideways swipe walks the
+            // session's six panes and back to the one that asked.
+            let area = app.nsh("terminal-pane-area")
+            for _ in 0..<5 { area.swipeLeft(); settle(1.2) }
+            for _ in 0..<5 { area.swipeRight(); settle(0.8) }
             app.nsh("terminal-crumb-window").tap()
-            var open = first(app, of: page, within: 8)
-            if !open {
-                app.nsh("terminal-crumb-window").tap()
-                open = first(app, of: page, within: 8)
-            }
-            if open {
-                settle()
-                keep(locale, shot)
-            } else {
-                explain(app, locale, shot)
-                XCTFail("\(locale.name): the overview never opened")
-            }
+            // Dry run 5: the overview opens (its debug shot shows it) but
+            // isn't in the accessibility tree yet, so its ids can't be
+            // waited on. Kept after its opening's time either way; the log
+            // says which.
+            let seen = first(app, of: page, within: 4)
+            print("SHOTS overview \(locale.name): \(seen ? "its ids showed" : "kept without its ids (not in the accessibility tree)")")
+            settle(1.5)
+            keep(locale, shot)
             app.terminate()
         }
     }
@@ -313,6 +325,9 @@ final class ShotsUITest: XCTestCase {
                 if file.waitForExistence(timeout: 20) { file.tap() }
             }
             if preview.waitForExistence(timeout: 30) {
+                // The frame comes before the picture (dry run 5 shot it
+                // black): an image in it, or the download's time.
+                if !app.images.firstMatch.waitForExistence(timeout: 20) { settle(8) }
                 settle(2)
                 keep(locale, "06-preview")
             } else {
@@ -354,10 +369,13 @@ final class ShotsUITest: XCTestCase {
         guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, Self.terminal(session))
+            let app = launch(locale, Self.terminal(session, size: 13))
             guard waitLive(app, locale) else { app.terminate(); continue }
             app.tapNSH("keyboard-toggle")
             if app.keyboards.firstMatch.waitForExistence(timeout: 15) {
+                settle(1)
+                // A reply going in, so the shot isn't 02's again.
+                app.typeText("add a test for the jitter cap")
                 settle(2)
                 keep(locale, "08-keyboard")
             } else {

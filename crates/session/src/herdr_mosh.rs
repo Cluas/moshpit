@@ -396,6 +396,10 @@ impl Plane {
         if let Some(renderer) = &self.renderer {
             view.pane_switch_in_flight |= renderer.switching();
             view.frame_target = renderer.target().and_then(|t| self.pane_of(t));
+            // B683: the pane the loop keeps is the active one, as shown.
+            if let Some(pane) = view.frame_target.clone() {
+                view.snapshot.show_pane(&pane);
+            }
             view.attached_pane = renderer
                 .on_screen()
                 .filter(|_| renderer.down().is_none())
@@ -689,6 +693,20 @@ impl Plane {
             }
             action => {
                 let fallback = unanswered(&action);
+                // B683: a focus change the person asked for is followed.
+                if matches!(
+                    action,
+                    Action::SelectSession(_)
+                        | Action::SelectWindow(_)
+                        | Action::NewSession { .. }
+                        | Action::NewWindow { .. }
+                        | Action::NewPane
+                        | Action::NewWindowInSession { .. }
+                        | Action::NewPaneInWindow(_)
+                ) && let Some(renderer) = &mut self.renderer
+                {
+                    renderer.follow_focus(self.now);
+                }
                 match (self.client.act(action, self.now), token) {
                     (Some(request), Some(token)) => {
                         self.tokens.insert(request, token);

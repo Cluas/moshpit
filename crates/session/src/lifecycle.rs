@@ -206,6 +206,10 @@ pub struct Lifecycle {
     /// The dial waits on the person: its credential read (Face ID, the
     /// passphrase card) or a host-key question (B395).
     on_person: bool,
+    /// The mosh-server of this generation was stopped, never heard from
+    /// (the return-path watchdog's reap): the flow has no server, and the
+    /// next path change or return dials again (B721).
+    mosh_reaped: bool,
     /// The probe out, and its number: only its own answer counts (B394).
     probe: Option<(ProbePurpose, u64)>,
     /// The last probe's number.
@@ -235,6 +239,7 @@ impl Lifecycle {
             path_kick_at: None,
             path_changed_away: false,
             on_person: false,
+            mosh_reaped: false,
             probe: None,
             probes: 0,
             probe_timeouts: 0,
@@ -514,6 +519,17 @@ impl Lifecycle {
         self.start_probe(ProbePurpose::Delivery, self.timing.foreground_probe_timeout);
     }
 
+    /// The session stopped this generation's mosh-server, never heard from
+    /// (B721): a live mosh flow with no server behind it. Not dialed again
+    /// at once — on a network that drops UDP the new one would go the same
+    /// way, and the banner offers SSH meanwhile — but at the next path
+    /// change or return.
+    pub fn mosh_server_reaped(&mut self, generation: u64) {
+        if generation == self.generation && self.live() == Some(Transport::Mosh) {
+            self.mosh_reaped = true;
+        }
+    }
+
     /// A delivery's question is out: deliveries wait for its answer.
     pub fn delivery_check_pending(&self) -> bool {
         matches!(self.probe, Some((ProbePurpose::Delivery, _)))
@@ -544,6 +560,12 @@ impl Lifecycle {
         // left before it was answered kept input waiting meanwhile; the new
         // one does from here.
         self.probe = None;
+        // A mosh flow whose server was stopped, never heard from: a new
+        // server, however long the app was away (B721).
+        if self.mosh_reaped && self.live() == Some(Transport::Mosh) {
+            self.reconnect(now);
+            return;
+        }
         // In place, a live SSH transport is asked however long the app was
         // away: a socket that survived the suspension is kept.
         let in_place = self.timing.resume_in_place
@@ -647,6 +669,7 @@ impl Lifecycle {
 
     fn begin(&mut self, automatic: bool, now: u64) {
         self.generation += 1;
+        self.mosh_reaped = false;
         self.phase = Phase::Dialing { since: now };
         self.automatic = automatic;
         self.on_person = false;
@@ -789,6 +812,11 @@ impl Lifecycle {
             return;
         }
         match self.phase {
+            // A flow whose server was stopped has nothing to roam to: a
+            // new server (B721).
+            Phase::Live {
+                transport: Transport::Mosh,
+            } if self.mosh_reaped => self.reconnect(now),
             Phase::Live {
                 transport: Transport::Mosh,
             } => self.push(Action::RoamMosh {
@@ -1401,6 +1429,61 @@ mod tests {
             life.next_deadline(),
             None,
             "path changes wait for the return"
+        );
+    }
+
+    /// B721: a mosh flow whose server the watchdog stopped (never heard
+    /// from) is dialed again at the next path change or return, not nudged:
+    /// it stayed Live for good with nothing behind it. The keepalive alone
+    /// doesn't dial it (a network that drops UDP would loop).
+    #[test]
+    fn a_reaped_mosh_server_is_dialed_again_at_the_next_change_or_return() {
+        let mut life = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
+        let generation = live(&mut life, Transport::Mosh, T0);
+        life.mosh_server_reaped(generation);
+        let ticks = run_to(&mut life, T0 + 30 * S);
+        assert!(
+            !ticks.iter().any(|a| matches!(a, Action::Teardown { .. })),
+            "the keepalive doesn't: {ticks:?}"
+        );
+        life.network_changed(T0 + 31 * S);
+        let acted = run_to(&mut life, T0 + 32 * S);
+        assert!(
+            acted.contains(&Action::Teardown {
+                generation,
+                why: Teardown::Reconnect
+            }),
+            "{acted:?}"
+        );
+        assert_eq!(dials(&acted), vec![(generation + 1, true)]);
+
+        let mut life = Lifecycle::new(Timing::default(), Protocol::Mosh, true, T0);
+        let generation = live(&mut life, Transport::Mosh, T0);
+        life.mosh_server_reaped(generation);
+        life.background(T0 + S);
+        drain(&mut life);
+        life.foreground(T0 + 3 * S);
+        let acted = drain(&mut life);
+        assert!(
+            acted.contains(&Action::Teardown {
+                generation,
+                why: Teardown::Reconnect
+            }),
+            "{acted:?}"
+        );
+        assert_eq!(dials(&acted), vec![(generation + 1, true)]);
+
+        // A new generation starts clean.
+        let generation = generation + 1;
+        assert!(life.attempt_succeeded(generation, Transport::Mosh, T0 + 4 * S));
+        drain(&mut life);
+        life.background(T0 + 5 * S);
+        life.foreground(T0 + 6 * S);
+        assert!(
+            !drain(&mut life)
+                .iter()
+                .any(|a| matches!(a, Action::Teardown { .. })),
+            "the new flow has a server"
         );
     }
 

@@ -57,7 +57,8 @@ use crate::wire::{
 /// Timing and size parameters. [`Default`] gives the app's values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportConfig {
-    /// How long an unacked keystroke keeps being retransmitted (10 s).
+    /// How long an unacked keystroke keeps being retransmitted (10 s; the
+    /// app's sessions keep them until acked, `u64::MAX`, B618).
     pub keystroke_ttl_ms: u64,
     /// No datagram at all this long after the channel became ready means
     /// the return path is dead (8 s).
@@ -497,6 +498,21 @@ impl Transport {
         }
         self.rebuild_flow();
         self.nudge(now);
+    }
+
+    /// Keystroke bytes the server hasn't acked: what a flow that another
+    /// server replaces never delivered (B618).
+    pub fn undelivered_keystroke_bytes(&self) -> usize {
+        let acked = self.server_acked_user_num;
+        self.user_states
+            .iter()
+            .filter(|state| state.num > acked)
+            .flat_map(|state| &state.events)
+            .map(|event| match event {
+                UserEvent::Keystroke(bytes) => bytes.len(),
+                _ => 0,
+            })
+            .sum()
     }
 
     /// Stops everything. The driver cancels its flow; waiters are released.

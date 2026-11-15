@@ -48,7 +48,7 @@ use crate::{
         field::{field, number_input, text_input},
         icon::{IconSize, Tone, icon},
         page,
-        row::{GAP, LEADING, PADDING_X, Row, row},
+        row::{GAP, LEADING, PADDING_X, Row, RowTone, row},
         section::{Inset, section},
         status::Status,
         swatch::{self, CursorColor, cursor_colors},
@@ -246,6 +246,14 @@ pub struct SettingsState {
     pub keys: i64,
     pub notifications: bool,
     pub live_activity: bool,
+    /// iOS itself has the app's notifications off (B741): a "Don't Allow"
+    /// on its question, or switched off in its Settings. The app's own
+    /// switch can read on while nothing ever shows.
+    #[serde(default)]
+    pub notifications_blocked: bool,
+    /// iOS itself has the app's Live Activities off (B741).
+    #[serde(default)]
+    pub live_activity_blocked: bool,
     pub alert_sound: bool,
     pub lock_screen_detail: bool,
     /// A session is live, so Set up this host can inspect it.
@@ -303,6 +311,16 @@ pub enum Message {
     /// `{"op": "pet", …}`: the companion (Appearance's group and its card,
     /// [`Part::Companion`]).
     Pet(Box<moshpit_pet::PetView>),
+    /// `{"op": "clock", "hour": …}`: the local hour (0–23), which the pet's
+    /// card answers a tap by as Home does (B607: the small hours' lines).
+    Clock(u8),
+}
+
+/// `{"op": "clock"}`'s fields.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Clock {
+    hour: u8,
 }
 
 /// A saved connection on Set up a host's list.
@@ -350,6 +368,9 @@ impl Message {
                 .map(|hosts| Message::Hosts(hosts.hosts))
                 .map_err(|e| format!("settings: hosts: {e}")),
             "pet" => crate::home::pet::parse(fields).map(|(view, _)| Message::Pet(Box::new(view))),
+            "clock" => serde_json::from_value::<Clock>(fields)
+                .map(|clock| Message::Clock(clock.hour))
+                .map_err(|e| format!("settings: clock: {e}")),
             other => Err(format!("settings: no op {other:?}")),
         }
     }
@@ -369,6 +390,7 @@ impl Message {
                 value["op"] = json!("pet");
                 value.to_string()
             }
+            Message::Clock(hour) => json!({"op": "clock", "hour": hour}).to_string(),
         }
     }
 }
@@ -392,11 +414,14 @@ pub enum Page {
     Feedback,
     GithubIssue,
     Filing,
+    /// iOS's own settings for the app, where its notifications and Live
+    /// Activities are allowed (B741).
+    IosSettings,
 }
 
 impl Page {
     /// Every one.
-    pub const ALL: [Page; 15] = [
+    pub const ALL: [Page; 16] = [
         Page::Accent,
         Page::AppIcon,
         Page::Theme,
@@ -412,6 +437,7 @@ impl Page {
         Page::Feedback,
         Page::GithubIssue,
         Page::Filing,
+        Page::IosSettings,
     ];
 
     /// What the host calls it.
@@ -432,6 +458,7 @@ impl Page {
             Page::Feedback => "feedback",
             Page::GithubIssue => "github-issue",
             Page::Filing => "filing",
+            Page::IosSettings => "ios-settings",
         }
     }
 
@@ -659,6 +686,9 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
     let state = State(signal(None::<SettingsState>));
     let hosts = signal(Vec::<HostEntry>::new());
     let pet = signal(None::<moshpit_pet::PetView>);
+    // Noon until the host says the hour: a host that never does (Android
+    // today) gets every line but the small hours'.
+    let hour = signal(12_u8);
     let anchors = Anchors {
         cursor: element_ref(),
         behavior: element_ref(),
@@ -683,6 +713,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
             Message::Reveal(anchor) => anchors.reveal(anchor),
             Message::Hosts(next) => hosts.set(next),
             Message::Pet(next) => pet.set(Some(*next)),
+            Message::Clock(next) => hour.set(next),
         },
     );
     let tell = tell_host(channel);
@@ -696,7 +727,7 @@ pub fn SettingsScreen(props: ScreenProps) -> impl IntoElement {
         Part::Hub => hub(root, state, tell, anchors, ready),
         part => {
             let back = params.back.clone().unwrap_or_else(|| t!("Settings"));
-            subpage(root, part, back, state, hosts, pet, tell, anchors)
+            subpage(root, part, back, state, hosts, pet, hour, tell, anchors)
         }
     }
 }
@@ -892,7 +923,13 @@ fn hub_groups(state: State, tell: &Tell) -> Vec<AnyElement> {
             group = group.row(
                 row(t!("Notifications"))
                     .leading_tile("bell")
-                    .value_with(move || on_off(state.read(|s| s.notifications)))
+                    .value_with(move || {
+                        // On in the app, off in iOS: not "On" (B741).
+                        match state.read(|s| (s.notifications, s.notifications_blocked)) {
+                            (true, true) => t!("Off in iOS").into(),
+                            (on, _) => on_off(on),
+                        }
+                    })
                     .chevron()
                     .on_press(go(tell, Part::Notifications))
                     .test_id("settings-open-notifications"),
@@ -1048,6 +1085,7 @@ fn subpage(
     state: State,
     hosts: Signal<Vec<HostEntry>>,
     pet: Signal<Option<moshpit_pet::PetView>>,
+    hour: Signal<u8>,
     tell: Tell,
     anchors: Anchors,
 ) -> AnyElement {
@@ -1063,7 +1101,7 @@ fn subpage(
         move || {
             let groups = match part {
                 Part::Appearance => appearance(state, &tell, pet),
-                Part::Companion => companion_card(pet, &tell),
+                Part::Companion => companion_card(pet, hour, &tell),
                 Part::Terminal => terminal(state, &tell, anchors),
                 Part::Connections => connections(state, &tell, anchors),
                 Part::Notifications => notifications(state, &tell, anchors),
@@ -1788,25 +1826,115 @@ fn found_words(id: &str) -> Option<String> {
     }
 }
 
+/// The card's big sprite, on a row of its own: a tap pets it and, as on
+/// Home, it answers with a line in a bubble on its leading side (B607) —
+/// the same lines and rules (Home's [`crate::home::talk::line`]: a tap
+/// always answers, never the same line twice in a row), and screen
+/// readers hear it. The egg takes no taps here: it hatches on Home. The
+/// sides share what the sprite leaves, so the bubble fits beside it, a long
+/// line wrapping, and nothing moves when it comes or goes.
+fn talking_sprite(pet: PetSignal, hour: Signal<u8>) -> AnyElement {
+    use crate::home::pet::{label_of, play_in, say_into};
+    use crate::home::talk::{Fill, line};
+    use crate::ui::companion::Figure;
+    use moshpit_pet::{
+        Pose,
+        talk::{Chatter, Cue},
+    };
+
+    let saying = signal(None::<(u64, String)>);
+    let said = Rc::new(std::cell::Cell::new(0_u64));
+    let chatter = Rc::new(std::cell::RefCell::new(Chatter::default()));
+    let showing = signal(None::<Figure>);
+    let base = Rc::new(pet_figure(pet));
+    let hatched = computed(move || pet.with(|p| p.as_ref().is_some_and(|p| p.pet.is_some())));
+    let press = move || {
+        let Some(view) = pet.get_untracked() else {
+            return;
+        };
+        let Some(look) = view.pet.as_ref().and_then(|p| p.look()) else {
+            return;
+        };
+        haptic(Haptic::Impact(HapticImpact::Light));
+        play_in(
+            showing,
+            Figure::Pet {
+                look,
+                pose: Pose::Petted,
+            },
+        );
+        let now = nsh_core::time::unix_ms() / 1000.0;
+        let said_now = line(
+            &mut chatter.borrow_mut(),
+            Cue::Tap,
+            &view,
+            hour.get_untracked(),
+            Fill::default(),
+            now,
+        );
+        if let Some((name, words)) = said_now {
+            say_into(saying, &said, name, words);
+        }
+    };
+    let sprite = move || {
+        let base = base.clone();
+        view()
+            .w(px(120.0))
+            .h(px(120.0))
+            .rounded(px(number("radius")))
+            .bg(move || token("muted"))
+            .items_center()
+            .justify_center()
+            .test_id("settings-pet-sprite")
+            .child(crate::ui::companion::companion(
+                move || showing.get().unwrap_or_else(|| base()),
+                96.0,
+            ))
+    };
+    let sprite = dynamic(move || {
+        if hatched.get() {
+            let (sprite, press) = (sprite.clone(), press.clone());
+            untracked(move || {
+                sprite()
+                    .role(AccessibilityRole::Button)
+                    .label(move || pet.with(|p| p.as_ref().map(label_of).unwrap_or_default()))
+                    .hint(|| t!("Tap to pet"))
+                    .on_press(press)
+                    .into_element()
+            })
+        } else {
+            let sprite = sprite.clone();
+            untracked(move || sprite().into_element())
+        }
+    });
+    view()
+        .w_full()
+        .flex_row()
+        .items_center()
+        .child(
+            view()
+                .flex_1()
+                .items_end()
+                .justify_center()
+                .pr(px(6.0))
+                .pointer_events(PointerEvents::None)
+                .child(crate::ui::bubble::speech(saying)),
+        )
+        .child(sprite)
+        .child(view().flex_1())
+        .into_element()
+}
+
 /// The pet's card (Appearance › the companion): who it is, how it grows,
 /// what it's made of and what changed. Its own: nothing here is shared.
-fn companion_card(pet: PetSignal, tell: &Tell) -> Vec<AnyElement> {
+fn companion_card(pet: PetSignal, hour: Signal<u8>, tell: &Tell) -> Vec<AnyElement> {
     let info = move || pet.with(|p| p.as_ref().and_then(|p| p.pet.clone()));
     let hero = view()
         .w_full()
         .items_center()
         .gap(px(4.0))
         .py(px(16.0))
-        .child(
-            view()
-                .w(px(120.0))
-                .h(px(120.0))
-                .rounded(px(number("radius")))
-                .bg(move || token("muted"))
-                .items_center()
-                .justify_center()
-                .child(crate::ui::companion::companion(pet_figure(pet), 96.0)),
-        )
+        .child(talking_sprite(pet, hour))
         .child(
             TextToken::Title
                 .apply(text(move || {
@@ -2402,7 +2530,55 @@ fn notifications(state: State, tell: &Tell, anchors: Anchors) -> Vec<AnyElement>
                 .test_id("settings-notification-info"),
         )
         .test_id("settings-notifications-group");
-    vec![anchors.mark(Anchor::Notifications, group.into_element())]
+    vec![
+        ios_off(state, tell),
+        anchors.mark(Anchor::Notifications, group.into_element()),
+    ]
+}
+
+/// What iOS itself has off of what the app's switches have on (B741), and
+/// the way to iOS's settings for it; nothing while iOS allows them all.
+fn ios_off(state: State, tell: &Tell) -> AnyElement {
+    let live_activity = rows(Os::current()).live_activity;
+    let off = move || {
+        state.read(|s| {
+            (
+                s.notifications && s.notifications_blocked,
+                live_activity && s.live_activity && s.live_activity_blocked,
+            )
+        })
+    };
+    let tell = tell.clone();
+    when(
+        move || off() != (false, false),
+        move || {
+            section()
+                .row(
+                    row(t!("Allow in iOS Settings"))
+                        .tone(RowTone::Primary)
+                        .subtitle_with(move || {
+                            match off() {
+                                (true, true) => {
+                                    t!("iOS has notifications and Live Activities off for Moshpit.")
+                                }
+                                (true, false) => t!(
+                                    "iOS has notifications off for Moshpit, so no alert reaches you."
+                                ),
+                                _ => t!(
+                                    "iOS has Live Activities off for Moshpit, so the Dynamic Island stays empty."
+                                ),
+                            }
+                            .into()
+                        })
+                        .wrap_subtitle()
+                        .chevron()
+                        .on_press(open(&tell, Page::IosSettings))
+                        .test_id("settings-ios-off"),
+                )
+                .test_id("settings-ios-off-group")
+        },
+    )
+    .into_element()
 }
 
 // --- Voice input ---------------------------------------------------------------
@@ -2543,6 +2719,8 @@ mod tests {
             keys: 1,
             notifications: true,
             live_activity: true,
+            notifications_blocked: false,
+            live_activity_blocked: false,
             alert_sound: true,
             lock_screen_detail: true,
             live_session: false,

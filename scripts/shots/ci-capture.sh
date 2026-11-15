@@ -89,7 +89,10 @@ pet="<$(printf '%s' "$pet_json" | xxd -p | tr -d '\n')>"
 # companion hatched. The shots inside the app add quiet: no banners (a
 # simulator's never goes by itself), no Live Activity. The lock screen and
 # the island leave both on (ShotsUITest's loud arguments).
-common=(-MOSHPIT_AUTOCARE_OFF -MoshpitPaneSwipeHintSeen YES -moshpit.pet.v1 "$pet")
+# The pet's offer of its own app icon (B668) already answered for its
+# look (the golden tun, shiny, stage 2): Home doesn't ask over the shots.
+common=(-MOSHPIT_AUTOCARE_OFF -MoshpitPaneSwipeHintSeen YES -moshpit.pet.v1 "$pet"
+    -moshpit.pet.iconAsked tun-shiny.2)
 quiet=(-MOSHPIT_SEED_QUIET 1 -moshpit.settings.notifications '<false/>'
     -moshpit.settings.liveActivity '<false/>')
 

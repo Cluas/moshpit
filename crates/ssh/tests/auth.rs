@@ -548,6 +548,44 @@ async fn a_second_factor_after_a_key_is_asked_of_the_person() {
     }
 }
 
+/// B722: a password asked after the key (`AuthenticationMethods
+/// publickey,password`) is the person's, asked as keyboard-interactive's
+/// second factor is (B565): it read as a wrong key ("authentication
+/// failed"), with nothing asked. Declined, it is the person's cancel.
+#[tokio::test]
+async fn a_password_after_a_key_is_asked_of_the_person() {
+    for declines in [false, true] {
+        let host = Host::start(Bench {
+            methods: vec![MethodKind::PublicKey, MethodKind::Password],
+            key_then_password: true,
+            ..Default::default()
+        })
+        .await;
+        let person = Arc::new(Person {
+            declines,
+            ..Default::default()
+        });
+        let connected = Ssh::connect_asking(
+            &host.target(),
+            Auth::key(fixture_key("ed25519")),
+            Arc::new(AcceptAny),
+            Some(person.clone()),
+            &options(),
+        )
+        .await;
+        assert_eq!(person.asked.lock().unwrap().len(), 1, "asked once");
+        if declines {
+            let err = connected.err().expect("declined");
+            assert!(matches!(err, SshError::SignInDeclined { .. }), "{err:?}");
+            assert_eq!(host.seen().password_attempts, 0);
+        } else {
+            let ssh = connected.unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+            assert_eq!(host.seen().password_attempts, 1);
+        }
+    }
+}
+
 /// With nobody to ask, the second factor is said as what it is — a
 /// question only the person can answer — not a wrong key.
 #[tokio::test]

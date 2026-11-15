@@ -53,6 +53,8 @@ pub fn state() -> SettingsState {
         keys: 1,
         notifications: true,
         live_activity: false,
+        notifications_blocked: false,
+        live_activity_blocked: false,
         alert_sound: true,
         lock_screen_detail: true,
         live_session: false,

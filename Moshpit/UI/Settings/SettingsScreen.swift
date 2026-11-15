@@ -171,6 +171,8 @@ struct SettingsScreen: View {
         case "feedback": showFeedback = true
         case "github-issue": openURL(FeedbackChannels.newIssueURL)
         case "filing": openURL(Self.icpFilingURL)
+        case "ios-settings":
+            if let url = IOSAlertPermissions.shared.settingsURL { openURL(url) }
         default: Log.ui.error("settings: no page \(page, privacy: .public)")
         }
     }

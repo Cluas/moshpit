@@ -77,6 +77,11 @@ use timers::{Slot, Timers};
 /// How long a one-off notice stays up (B491), in ms.
 const NOTICE_FLASH: u64 = 3_000;
 
+/// How long a focus change the person asked for (a workspace or tab picked,
+/// a pane, tab or workspace made) is followed onto the pane it focuses
+/// (B683), in ms.
+const FOLLOW_ASKED_FOCUS: u64 = 10_000;
+
 pub type StreamId = u64;
 
 /// One exec the client asked for ([`Output::Exec`]).
@@ -701,6 +706,8 @@ pub struct Client {
     /// The focused pane as the server last said it (a read applied), not
     /// as a pick here already put it in the snapshot (B406).
     server_focus: Option<String>,
+    /// Until when a focus change the person asked for is followed (B683).
+    follow_focus_until: Option<u64>,
 
     // The command lane.
     lane: Lane,
@@ -758,6 +765,7 @@ impl Client {
             last_inbound: None,
             heard_since_restart: false,
             server_focus: None,
+            follow_focus_until: None,
             lane: Lane::default(),
             owned: BTreeMap::new(),
             pane_switch_generation: 0,
@@ -1284,6 +1292,9 @@ impl Client {
             for effect in effects {
                 self.poll_effect(effect);
             }
+            if tree {
+                self.keep_own_pane();
+            }
         }
         if self.refreshing {
             self.refreshing = false;
@@ -1340,10 +1351,59 @@ impl Client {
             }
             PollEffect::FocusedPane(pane) => {
                 self.event(Event::FocusedPane(pane.clone()));
+                let pane = self.pane_to_show(pane);
                 self.retarget(&pane, false);
             }
             PollEffect::HooksUpdated => self.event(Event::AgentHooksUpdated),
             PollEffect::Zoom(pane) => self.send(&control::immersive_zoom(&pane), None),
+        }
+    }
+
+    /// The pane the frame channel goes to on a read that reports the
+    /// server's focus on `focused` (B683). The first attach goes to the
+    /// focus — walking from the desk to the phone shows what you were on —
+    /// and so does the attach after ours ended (the pane closed, the server
+    /// restarted), a focus change the person asked for, and B487's ask for
+    /// a pane another device had. Otherwise the phone keeps its own pane: a
+    /// desktop moving the focus used to switch the phone under the person,
+    /// and drop what they were typing. herdr's frame channel stays on an
+    /// unfocused pane, so nothing is lost by staying.
+    fn pane_to_show(&mut self, focused: String) -> String {
+        let Some(ours) = self.attach.target.clone() else {
+            return focused;
+        };
+        if ours == focused || self.attach.held_elsewhere.is_some() || self.pane_gone(&ours) {
+            return focused;
+        }
+        if self
+            .follow_focus_until
+            .take()
+            .is_some_and(|until| self.now < until)
+        {
+            return focused;
+        }
+        ours
+    }
+
+    /// The person asked for a focus change the server makes (B683): its
+    /// next report is followed.
+    fn follow_asked_focus(&mut self) {
+        self.follow_focus_until = Some(self.now + FOLLOW_ASKED_FOCUS);
+    }
+
+    /// The tree as the phone shows it (B683): the pane it keeps as the
+    /// active one, not the server's focus elsewhere (that stays in
+    /// [`Self::server_focus`]). The panes' list marks it, so the screen
+    /// shows the terminal its frames go to.
+    fn keep_own_pane(&mut self) {
+        if !self.config.frame_channel {
+            return;
+        }
+        let Some(ours) = self.attach.target.clone() else {
+            return;
+        };
+        if self.poll.snapshot.active_pane_id.as_deref() != Some(ours.as_str()) {
+            self.poll.snapshot.show_pane(&ours);
         }
     }
 
@@ -1765,29 +1825,40 @@ impl Client {
                 if self.config.immersive_zoom {
                     self.poll.zoom_after_next_tree();
                 }
+                self.follow_asked_focus();
                 self.send(&control::select_session(&session), None);
             }
             Action::SelectWindow(window) => {
                 if self.config.immersive_zoom {
                     self.poll.zoom_after_next_tree();
                 }
+                self.follow_asked_focus();
                 self.send(&control::select_window(&window), None);
             }
             Action::SelectPane(pane) => self.select_pane(&pane),
-            Action::NewSession { name } => self.new_session(name.as_deref()),
-            Action::NewWindow { name } => self.send(&control::new_window(name.as_deref()), None),
+            Action::NewSession { name } => {
+                self.follow_asked_focus();
+                self.new_session(name.as_deref());
+            }
+            Action::NewWindow { name } => {
+                self.follow_asked_focus();
+                self.send(&control::new_window(name.as_deref()), None);
+            }
             Action::NewPane => {
                 if let Some(command) = control::new_pane(&self.poll.snapshot) {
+                    self.follow_asked_focus();
                     self.send(&command, None);
                 }
             }
             Action::NewWindowInSession { session, name } => {
                 let steps =
                     control::new_window_in_session(&self.poll.snapshot, &session, name.as_deref());
+                self.follow_asked_focus();
                 self.send_sequence(&steps, None);
             }
             Action::NewPaneInWindow(window) => {
                 if let Some(steps) = control::new_pane_in_window(&self.poll.snapshot, &window) {
+                    self.follow_asked_focus();
                     self.send_sequence(&steps, None);
                 }
             }

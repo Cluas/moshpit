@@ -209,6 +209,18 @@ struct TerminalNSHSheetsTests {
         #expect(RemoteFolderFacts(model: model, pushed: false) != edit)
     }
 
+    /// 1.0.8 (1)'s note (B743): in the folder sheet, videos get a cover
+    /// frame and their running time: minutes and seconds, hours once there
+    /// are any.
+    @Test("a video tile's running time reads as a player's clock")
+    func videoRunningTime() {
+        #expect(RemoteVideoCover.label(0.4) == "0:00")
+        #expect(RemoteVideoCover.label(0.6) == "0:01")
+        #expect(RemoteVideoCover.label(65) == "1:05")
+        #expect(RemoteVideoCover.label(59 * 60 + 59.4) == "59:59")
+        #expect(RemoteVideoCover.label(3725) == "1:02:05")
+    }
+
     @Test("a file's menu opens, shares, renames and deletes; a folder's renames and deletes")
     func folderMenus() {
         var picked: [(String, String)] = []

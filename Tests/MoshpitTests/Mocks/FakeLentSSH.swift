@@ -20,6 +20,9 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
         var delay: Duration = .milliseconds(12)
         var sftpAvailable = true
         var files: [String: Data] = [:]
+        /// A size SFTP's stat reports in place of the file's own (a file
+        /// past 50 MB without holding 50 MB).
+        var sizes: [String: UInt64] = [:]
         var folders: Set<String> = []
         var denied: Set<String> = []
         var home = "/home/dev"
@@ -81,6 +84,8 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
     }
 
     func file(_ path: String, _ data: Data) { with { $0.files[path] = data } }
+    /// `path`'s stat says it is `size` bytes, whatever it holds.
+    func reportSize(_ path: String, _ size: UInt64) { with { $0.sizes[path] = size } }
     func folder(_ path: String) { with { _ = $0.folders.insert(path) } }
     func deny(_ path: String) { with { _ = $0.denied.insert(path) } }
     /// Calls on `path` (or the command `path`) never answer.
@@ -169,7 +174,8 @@ final class FakeLentSSH: BorrowedSsh, @unchecked Sendable {
                 return RemoteEntryValue(path: path, isDirectory: true, size: 64, modified: 1_700_000_000)
             }
             guard let data = with({ $0.files[path] }) else { throw notFound(path) }
-            return RemoteEntryValue(path: path, isDirectory: false, size: UInt64(data.count),
+            return RemoteEntryValue(path: path, isDirectory: false,
+                                    size: with({ $0.sizes[path] }) ?? UInt64(data.count),
                                     modified: 1_700_000_000)
         }
     }

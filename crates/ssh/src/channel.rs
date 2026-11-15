@@ -6,6 +6,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bytes::Bytes;
 use russh::client::Msg;
@@ -80,6 +81,40 @@ pub struct ProcessReader {
     /// Events that arrived before the host confirmed the request.
     early: VecDeque<Event>,
     finished: bool,
+    /// The channel's close, owed once neither side is held.
+    channel: Arc<Owned>,
+}
+
+/// A channel the host agreed to open, closed once no one reads or writes
+/// it (B720). A process dropped without a close — a pump given up, herdr's
+/// push abandoned — was only no longer read: the host kept its session
+/// open against MaxSessions until the connection ended.
+struct Owned {
+    /// Taken only to close it, when the last side goes.
+    half: Option<ChannelWriteHalf<Msg>>,
+    /// The host closed it, or our close went: nothing owed.
+    done: AtomicBool,
+}
+
+impl Owned {
+    fn half(&self) -> &ChannelWriteHalf<Msg> {
+        self.half.as_ref().expect("held until the channel is dropped")
+    }
+}
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        if *self.done.get_mut() {
+            return;
+        }
+        if let (Some(half), Ok(runtime)) =
+            (self.half.take(), tokio::runtime::Handle::try_current())
+        {
+            runtime.spawn(async move {
+                let _ = half.close().await;
+            });
+        }
+    }
 }
 
 impl ProcessReader {
@@ -97,6 +132,9 @@ impl ProcessReader {
             match self.half.wait().await {
                 Some(msg) => {
                     if let Some(event) = event_of(msg) {
+                        if event == Event::Closed {
+                            self.channel.done.store(true, Ordering::Relaxed);
+                        }
                         self.finished |= is_last(&event);
                         return Some(event);
                     }
@@ -119,7 +157,7 @@ pub struct ProcessWriter {
 }
 
 struct WriterInner {
-    half: ChannelWriteHalf<Msg>,
+    channel: Arc<Owned>,
     host: String,
     order: tokio::sync::Mutex<()>,
     /// The connection's end. A write waiting for window on a connection
@@ -134,30 +172,32 @@ impl ProcessWriter {
             return Ok(());
         }
         let data = Bytes::copy_from_slice(bytes);
-        self.in_turn(self.inner.half.data_bytes(data)).await
+        self.in_turn(self.inner.channel.half().data_bytes(data)).await
     }
 
     /// Tells the terminal its new size.
     pub async fn resize(&self, cols: u32, rows: u32) -> Result<(), SshError> {
-        self.in_turn(self.inner.half.window_change(cols, rows, 0, 0))
+        self.in_turn(self.inner.channel.half().window_change(cols, rows, 0, 0))
             .await
     }
 
     /// Delivers a signal to the process (OpenSSH honours this for commands
     /// run without a PTY).
     pub async fn signal(&self, signal: Sig) -> Result<(), SshError> {
-        self.in_turn(self.inner.half.signal(signal)).await
+        self.in_turn(self.inner.channel.half().signal(signal)).await
     }
 
     /// Ends the process's stdin.
     pub async fn close_stdin(&self) -> Result<(), SshError> {
-        self.in_turn(self.inner.half.eof()).await
+        self.in_turn(self.inner.channel.half().eof()).await
     }
 
     /// Asks the host to close the channel; the reader then ends with
     /// [`Event::Closed`].
     pub async fn close(&self) -> Result<(), SshError> {
-        self.in_turn(self.inner.half.close()).await
+        let closed = self.in_turn(self.inner.channel.half().close()).await;
+        self.inner.channel.done.store(true, Ordering::Relaxed);
+        closed
     }
 
     /// One operation at a time, in call order, given up if the connection
@@ -207,6 +247,9 @@ impl Process {
             match read.wait().await {
                 Some(ChannelMsg::Success) => break,
                 Some(ChannelMsg::Failure) => {
+                    // Refused, the channel is still open on the host: closed
+                    // here, or it holds a session there (B720).
+                    let _ = write.close().await;
                     return Err(SshError::Refused {
                         host,
                         what: what.to_owned(),
@@ -224,15 +267,20 @@ impl Process {
                 None => return Err(SshError::Closed { host }),
             }
         }
+        let channel = Arc::new(Owned {
+            half: Some(write),
+            done: AtomicBool::new(early.contains(&Event::Closed)),
+        });
         Ok(Self {
             reader: ProcessReader {
                 half: read,
                 early,
                 finished: false,
+                channel: channel.clone(),
             },
             writer: ProcessWriter {
                 inner: Arc::new(WriterInner {
-                    half: write,
+                    channel,
                     host,
                     order: tokio::sync::Mutex::new(()),
                     end,

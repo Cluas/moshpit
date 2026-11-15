@@ -348,6 +348,8 @@ impl Ssh {
             match channel.wait().await {
                 Some(ChannelMsg::Success) => break,
                 Some(ChannelMsg::Failure) => {
+                    // Closed, or it holds a session on the host (B720).
+                    let _ = channel.close().await;
                     return Err(SshError::Refused {
                         host: self.host(),
                         what: "open a terminal".to_owned(),
@@ -514,15 +516,31 @@ impl Ssh {
         self.inner.sftp_unavailable.store(true, Ordering::SeqCst);
     }
 
+    /// The host refused the `sftp` subsystem on this connection (B612).
+    pub(crate) fn sftp_refused(&self) -> bool {
+        self.inner.sftp_refused.load(Ordering::SeqCst)
+    }
+
     pub(crate) fn mark_sftp_refused(&self) {
         self.inner.sftp_refused.store(true, Ordering::SeqCst);
     }
 
+    /// A session channel. Opened in a task of its own (B720): a caller given
+    /// up while the host is still answering (a cancelled read, a timeout)
+    /// left the host's yes to a waiter that was gone, and the channel open
+    /// on both sides; the task closes one nobody took.
     pub(crate) async fn open_session(&self) -> Result<russh::Channel<client::Msg>, SshError> {
-        self.inner
-            .handle
-            .channel_open_session()
+        let (taken, opened) = tokio::sync::oneshot::channel();
+        let ssh = self.clone();
+        tokio::spawn(async move {
+            let result = ssh.inner.handle.channel_open_session().await;
+            if let Err(Ok(channel)) = taken.send(result) {
+                let _ = channel.close().await;
+            }
+        });
+        opened
             .await
+            .map_err(|_| SshError::Closed { host: self.host() })?
             .map_err(|e| match e {
                 russh::Error::ChannelOpenFailure(_) => SshError::Refused {
                     host: self.host(),
@@ -719,6 +737,41 @@ async fn sign_in(
                 "keyboard-interactive",
                 interactive_result(answered, target)?,
             )
+        }
+        // B722: the password as the second factor (`AuthenticationMethods
+        // publickey,password`): the person's, asked as keyboard-interactive's
+        // second factor is — the saved password, if any, was the first
+        // factor's. It read as a wrong key. Declined, it is the person's
+        // cancel, not a failure to dial again.
+        AuthResult::Failure {
+            remaining_methods,
+            partial_success: true,
+        } if remaining_methods.contains(&MethodKind::Password) => {
+            let Some(questions) = asked.questions else {
+                return Err(SshError::InteractivePrompts {
+                    host: target.host.clone(),
+                });
+            };
+            let question = SignInQuestion {
+                name: String::new(),
+                instructions: String::new(),
+                prompt: "Password: ".to_owned(),
+                echo: false,
+            };
+            let Some(password) = asked
+                .waiting
+                .on_person(questions.ask(asked.host, &question))
+                .await
+            else {
+                return Err(SshError::SignInDeclined {
+                    host: target.host.clone(),
+                });
+            };
+            let result = handle
+                .authenticate_password(user.clone(), password.as_str())
+                .await
+                .map_err(closed)?;
+            ("password", result)
         }
         result => (method, result),
     };

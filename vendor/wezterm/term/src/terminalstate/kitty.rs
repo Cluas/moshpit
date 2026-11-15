@@ -387,6 +387,31 @@ impl TerminalState {
         freed
     }
 
+    /// Moshpit (W27): lets go of the stored images among `gone` that no
+    /// cell shows any more (the host took them off the rows it let go of:
+    /// its history's images past their budget), with their placements and
+    /// numbers. Their placements stayed on record after the rows let them
+    /// go, so the store counted them as placed and never pruned them.
+    /// Images a program stored and has not placed yet are not among them.
+    /// Bytes freed.
+    pub fn kitty_drop_data(&mut self, gone: &HashSet<*const ImageData>) -> usize {
+        let st = &mut self.kitty_img;
+        let mut freed = 0;
+        let mut dropped = HashSet::new();
+        st.id_to_data.retain(|id, data| {
+            if !gone.contains(&Arc::as_ptr(data)) || Arc::strong_count(data) > 1 {
+                return true;
+            }
+            freed += data.len();
+            dropped.insert(*id);
+            false
+        });
+        st.used_memory = st.used_memory.saturating_sub(freed);
+        st.placements.retain(|(id, _), _| !dropped.contains(id));
+        st.number_to_id.retain(|_, id| !dropped.contains(id));
+        freed
+    }
+
     /// Moshpit (W20): bytes the stored images take.
     pub fn kitty_image_bytes(&self) -> usize {
         self.kitty_img.used_memory

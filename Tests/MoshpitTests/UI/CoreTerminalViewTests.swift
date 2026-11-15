@@ -80,6 +80,19 @@ struct CoreTerminalViewTests {
 
     private func row(_ view: CoreTerminalView, _ r: Int) -> String { view.rowText(r) }
 
+    /// Waits up to `timeout` for `done`, the main queue running meanwhile:
+    /// what the view defers with `DispatchQueue.main.async` runs only once
+    /// the test's own main-queue job yields (`settle`'s nested run loop
+    /// never runs it — CI run 14, B691).
+    private func eventually(_ timeout: TimeInterval = 2, _ done: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if done() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return done()
+    }
+
     // MARK: Bytes and frames
 
     /// An image that scrolls off the screen (frames that shift the rows) is
@@ -106,6 +119,23 @@ struct CoreTerminalViewTests {
         feed(view, text + "end", until: { $0.rowText($0.rows.gridRows - 1) == "end" })
         #expect(row(view, view.rows.gridRows - 2) == "line 499")
         #expect(view.historyLines > 400)
+    }
+
+    /// B699: Select All in the edit menu (and ⌘A): the history's text to
+    /// the last line's, ready to copy. The core's view had none.
+    @Test func selectAllTakesEverythingThereIs() throws {
+        let (view, _) = makeView(cols: 20, rows: 5)
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        #expect(view.canPerformAction(#selector(UIResponder.selectAll(_:)), withSender: nil),
+                "no Select All in the menu")
+        var text = ""
+        for i in 0..<50 { text += "\(i)\r\n" }
+        feed(view, text + "$", until: { $0.rowText(4) == "$" })
+        view.selectAll(nil)
+        let selected = try #require(view.selectedText)
+        #expect(selected.hasPrefix("0\n1\n") && selected.hasSuffix("48\n49\n$"), "\(selected.suffix(12))")
+        #expect(view.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil))
     }
 
     @Test func aResizeIsReportedOnceAndReachesTheGrid() {
@@ -179,6 +209,28 @@ struct CoreTerminalViewTests {
         #expect(view.pendingCaret != nil)
     }
 
+    /// B695: a third-party keyboard (豆包, Sogou, WeChat) moves its caret
+    /// itself: paired punctuation types `（）` and steps back into the pair.
+    /// Only the view's caret moved; the remote's stayed at the end, and
+    /// `你` went in after the pair: `（）你`. The caret UIKit sets goes to
+    /// the remote as arrows; a selection (a keyboard's delete) doesn't.
+    @Test func aCaretTheKeyboardMovesMovesTheRemotes() throws {
+        let (view, sink) = makeView()
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        view.insertText("（）")
+        #expect(sink.take() == "（）")
+        let back = try #require(view.position(from: view.endOfDocument, offset: -1))
+        view.selectedTextRange = view.textRange(from: back, to: back)
+        #expect(sink.take() == "\u{1b}[D", "the remote's cursor stayed at the end")
+        view.insertText("你")
+        #expect(sink.take() == "你")
+        // A selection is no move.
+        let last = try #require(view.position(from: view.endOfDocument, offset: -1))
+        view.selectedTextRange = view.textRange(from: last, to: view.endOfDocument)
+        #expect(sink.sent.isEmpty)
+    }
+
     /// B573: a bar key pressed while composing. Esc takes the composition
     /// away unsent; any other key commits it first, so the remote gets the
     /// text, then the key. It used to stay composing: the key went out
@@ -224,7 +276,7 @@ struct CoreTerminalViewTests {
         #expect(view.caretRect(for: view.endOfDocument) == view.cursorCellRect(), "nothing composing: the cursor")
         view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
         // A status line redrawn elsewhere: the cursor goes up and stays.
-        feed(view, "\u{1b}[1;1Hworking", until: { $0.rows.info.cursor.row == 0 })
+        feed(view, "\u{1b}[1;1Hworking", until: { $0.rows.info.cursor.row == 0 && $0.rows.info.cursor.col == 7 })
         let caret = view.caretRect(for: view.endOfDocument)
         let label = try #require(view.markedLabel)
         #expect(caret == view.compositionCaret.frame, "the caret is at \(caret), the composition's at \(view.compositionCaret.frame)")
@@ -233,8 +285,9 @@ struct CoreTerminalViewTests {
         view.unmarkText()
         let held = try #require(view.pendingCaret)
         #expect(view.caretRect(for: view.endOfDocument) == held.frame)
-        // The echo moves the cursor: the cursor again.
-        feed(view, "\u{1b}[4;8H", until: { $0.rows.info.cursor.col == 7 })
+        // The echo moves the cursor: the cursor again. (Waiting for column
+        // 7 alone ended at once, on the status line's cursor: CI run 14.)
+        feed(view, "\u{1b}[4;8H", until: { $0.rows.info.cursor.row == 3 && $0.rows.info.cursor.col == 7 })
         #expect(view.pendingCaret == nil)
         #expect(view.caretRect(for: view.endOfDocument) == view.cursorCellRect())
     }
@@ -278,10 +331,12 @@ struct CoreTerminalViewTests {
         })
         view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
         // Fewer rows: the cursor's line stays on the screen, higher up. The
-        // composition is there at once, before any output.
-        view.frame.size.height = view.cellSize.height * 6
+        // core resizes on its own thread, after the bytes pushed so far: the
+        // composition moves with the first frame of the new size (CI run 14:
+        // checked right after the resize, the frame was still the old one).
+        view.frame.size.height = view.cellSize.height * 6 + 1
         view.layoutIfNeeded()
-        #expect(Int(view.rows.info.rows) == 6)
+        #expect(view.settle { Int($0.rows.info.rows) == 6 }, "the core never took the new size")
         var cursor = view.rows.info.cursor
         #expect(cursor.row < 6 && cursor.col == 15, "the core lost the cursor: \(cursor.col),\(cursor.row)")
         var label = try #require(view.markedLabel)
@@ -297,7 +352,7 @@ struct CoreTerminalViewTests {
         // cursor went, on the wrapped line's second row.
         view.frame.size.width = view.cellSize.width * 10 + 1
         view.layoutIfNeeded()
-        #expect(Int(view.rows.info.cols) == 10)
+        #expect(view.settle { Int($0.rows.info.cols) == 10 }, "the core never took the new size")
         cursor = view.rows.info.cursor
         #expect(cursor.col == 5, "the core didn't wrap the line: \(cursor.col),\(cursor.row)")
         label = try #require(view.markedLabel)
@@ -398,38 +453,39 @@ struct CoreTerminalViewTests {
     /// it: no Ctrl-C from the bar. The key the input method would compose is
     /// the chord: the composition goes unsent and ^C goes out. Unarmed, or a
     /// composition already under way, or kana, composing goes on as before.
-    @Test func anArmedCtrlTakesTheKeyAnInputMethodWouldCompose() {
+    @Test func anArmedCtrlTakesTheKeyAnInputMethodWouldCompose() async {
         let (view, _) = makeView()
         let window = inWindow(view)
         defer { window.isHidden = true }
         let coordinator = CoreTerminalHost.Coordinator()
         coordinator.attach(view)
-        var sent = Data()
-        coordinator.onInput = { sent.append($0) }
+        final class Sent { var data = Data() }
+        let sent = Sent()
+        coordinator.onInput = { sent.data.append($0) }
         coordinator.pendingCtrl = true
         view.setMarkedText("c", selectedRange: NSRange(location: 1, length: 0))
-        #expect(view.settle(timeout: 2) { _ in sent == Data([0x03]) }, "sent: \(Array(sent))")
+        #expect(await eventually { sent.data == Data([0x03]) }, "sent: \(Array(sent.data))")
         #expect(view.markedLabel == nil, "the composition went")
         #expect(view.markedTextRange == nil)
         #expect(!coordinator.pendingCtrl, "the Ctrl is spent on its chord")
         // Not armed: Pinyin composes, nothing goes.
-        sent = Data()
+        sent.data = Data()
         view.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0))
-        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(await eventually(0.3) { !sent.data.isEmpty } == false)
         #expect(view.markedLabel?.attributedText?.string == "ni")
         // Armed during a composition: the composition is the person's.
         coordinator.pendingCtrl = true
         view.setMarkedText("nih", selectedRange: NSRange(location: 3, length: 0))
-        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(await eventually(0.3) { !sent.data.isEmpty } == false)
         #expect(view.markedLabel?.attributedText?.string == "nih")
         view.unmarkText()
-        #expect(sent == Data("nih".utf8), "the commit is typed, unfolded (B570: text of more than one character)")
+        #expect(sent.data == Data("nih".utf8), "the commit is typed, unfolded (B570: text of more than one character)")
         #expect(!coordinator.pendingCtrl, "and takes the armed Ctrl, as typing does")
         // Kana is no chord.
-        sent = Data()
+        sent.data = Data()
         coordinator.pendingCtrl = true
         view.setMarkedText("に", selectedRange: NSRange(location: 1, length: 0))
-        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false)
+        #expect(await eventually(0.3) { !sent.data.isEmpty } == false)
         #expect(view.markedLabel?.attributedText?.string == "に")
         #expect(CoreTerminalView.ctrlChordKey("c") == 0x63)
         #expect(CoreTerminalView.ctrlChordKey("你") == nil)

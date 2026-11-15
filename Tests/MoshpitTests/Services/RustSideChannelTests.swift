@@ -318,6 +318,51 @@ struct RustSideChannelTests {
         #expect(await tmux.panePath("%1") == nil, "no session to ask: no answer, at once")
     }
 
+    /// The folder the preview's sheet opened on, once it has (bounded).
+    @MainActor
+    private func openedFolder(_ session: SessionHub.ActiveSession) async throws -> String? {
+        for _ in 0..<300 {
+            switch session.remotePreview?.phase {
+            case .folder(let entry)?: return entry.path
+            case .failed?: return nil
+            default: try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        return nil
+    }
+
+    /// 1.0.8 (1)'s note (B743): the shortcut bar's folder key opens the
+    /// folder sheet at the focused pane's working directory, or the home
+    /// folder when nothing reports one.
+    @Test("the folder key opens the focused pane's working directory, else the home folder")
+    func folderKey() async throws {
+        let ssh = FakeLentSSH()
+        for folder in ["/work/proj", "/home/dev", "/work/osc"] { ssh.folder(folder) }
+        ssh.commands = { command in
+            command.contains("display-message -p -t %1 '#{pane_current_path}'")
+                ? .init(stdout: Data("/work/proj\n".utf8)) : .init()
+        }
+
+        // tmux: its active pane's directory, as tmux says it.
+        var tmuxed = ServerConnection(host: "h", username: "u")
+        tmuxed.multiplexer = .tmux
+        let rig = await rig(tmuxed, lending: ssh)
+        let tmux = try #require(rig.session.tmuxController)
+        tmux.mirror(RustSessionTests.model(active: "%1"))
+        rig.session.openWorkingDirectory()
+        #expect(try await openedFolder(rig.session) == "/work/proj")
+
+        // A plain shell that reported nowhere: the home folder; once it
+        // reports one (OSC 7), there.
+        let plain = await self.rig(lending: ssh)
+        plain.session.openWorkingDirectory()
+        #expect(try await openedFolder(plain.session) == "/home/dev")
+        plain.session.coordinator.onHostDirectoryChange?("file://h/work/osc")
+        for _ in 0..<50 { await Task.yield() }
+        plain.session.openWorkingDirectory()
+        #expect(try await openedFolder(plain.session) == "/work/osc")
+    }
+
     @Test("Install Assist's re-check reads the host over the session's connection")
     func recheck() async throws {
         let ssh = FakeLentSSH()

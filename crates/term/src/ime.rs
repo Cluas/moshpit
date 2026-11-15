@@ -45,6 +45,9 @@ pub enum Typed {
     Text(String),
     Backspace,
     Enter,
+    /// The arrow keys: the caret the input system moved (B695).
+    Left,
+    Right,
 }
 
 /// One call's result.
@@ -404,6 +407,35 @@ impl Ime {
         };
     }
 
+    /// The input system set its caret or selection (UIKit's
+    /// `selectedTextRange`). A caret it moves (a third-party keyboard's
+    /// paired punctuation stepping back into `（）`, a slide on its space
+    /// bar) moves the remote's cursor too: arrows, one per grapheme, as the
+    /// space bar's trackpad sends them (B695); left alone, typing went in at
+    /// the remote's end, `（）你`. The move is bounded by the line typed: the
+    /// caret stays behind the phantom and within the document, so no
+    /// arrow goes into the remote's own text in front of it. A selection
+    /// (a keyboard's delete selects what it deletes, V9), a caret coming
+    /// out of one, and a caret inside a composition send nothing.
+    pub fn input_select(&mut self, start: usize, end: usize) -> Outcome {
+        let before = self.selected;
+        self.select(start, end);
+        let after = self.selected;
+        if self.marked.is_some() || before.0 != before.1 || after.0 != after.1 || after == before {
+            return Outcome::default();
+        }
+        let (arrow, n) = if after.0 < before.0 {
+            (Typed::Left, before.0 - after.0)
+        } else {
+            (Typed::Right, after.0 - before.0)
+        };
+        Outcome {
+            typed: vec![arrow; n.min(self.doc.len())],
+            notify: false,
+            paste: None,
+        }
+    }
+
     fn auto_period_insertion(
         &mut self,
         text: &str,
@@ -484,6 +516,8 @@ mod tests {
                 Typed::Text(s) => s.clone(),
                 Typed::Backspace => "⌫".into(),
                 Typed::Enter => "⏎".into(),
+                Typed::Left => "←".into(),
+                Typed::Right => "→".into(),
             })
             .collect()
     }

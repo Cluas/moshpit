@@ -151,6 +151,7 @@ impl Pane {
         callbacks: Callbacks,
         local: Option<Stream>,
     ) -> Option<Pane> {
+        let ledger_id = term.image_ledger_id();
         let inner = Arc::new(Inner {
             id,
             term: Mutex::new(term),
@@ -163,6 +164,19 @@ impl Pane {
             dirty: AtomicBool::new(false),
             wanted: AtomicUsize::new(0),
         });
+        // Over the process's total of history images, another terminal
+        // asks this one to let some go: at once if it is idle (B733).
+        let shedder = Arc::downgrade(&inner);
+        crate::history_images::set_trimmer(
+            ledger_id,
+            Arc::new(move || {
+                if let Some(inner) = shedder.upgrade()
+                    && let Ok(mut term) = inner.term.try_lock()
+                {
+                    term.shed_history_images();
+                }
+            }),
+        );
         let waker = Arc::downgrade(&inner);
         let attached = view::attach(id, move || {
             if let Some(inner) = waker.upgrade() {

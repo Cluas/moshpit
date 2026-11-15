@@ -130,6 +130,12 @@ pub struct Seen {
     pub connections: usize,
     /// SFTP file and directory handles open right now.
     pub open_handles: usize,
+    /// The next this many SFTP opens for writing are refused (permission
+    /// denied): an upload's failure of its own, not the subsystem's.
+    pub sftp_write_failures: usize,
+    /// Session channels open right now, across connections: one closes
+    /// when the client's CHANNEL_CLOSE arrives (B720).
+    pub open_channels: usize,
 }
 
 /// How the bench's host behaves.
@@ -166,10 +172,16 @@ pub struct Bench {
     /// A key is only the first factor, keyboard-interactive the second
     /// (`AuthenticationMethods publickey,keyboard-interactive`).
     pub key_then_keyboard_interactive: bool,
+    /// A key is only the first factor, the password the second
+    /// (`AuthenticationMethods publickey,password`).
+    pub key_then_password: bool,
     /// Session channels a connection may hold open at once, beyond which
     /// opening one is refused (sshd's `MaxSessions`; `None`: no limit).
     /// One closes when the client's CHANNEL_CLOSE arrives.
     pub max_sessions: Option<usize>,
+    /// How long the host takes to accept a session channel (`None`: at
+    /// once): a client can give up on an open still on its way.
+    pub open_delay: Option<Duration>,
 }
 
 impl Default for Bench {
@@ -188,7 +200,9 @@ impl Default for Bench {
             rsa_signatures: None,
             keyboard_interactive: Vec::new(),
             key_then_keyboard_interactive: false,
+            key_then_password: false,
             max_sessions: None,
+            open_delay: None,
         }
     }
 }
@@ -198,6 +212,7 @@ struct Shared {
     rsa_signatures: Option<Vec<&'static str>>,
     keyboard_interactive: Vec<Vec<(&'static str, bool)>>,
     key_then_keyboard_interactive: bool,
+    key_then_password: bool,
     password: Option<String>,
     methods: Vec<MethodKind>,
     sftp: bool,
@@ -205,6 +220,7 @@ struct Shared {
     exec_noise: Vec<u8>,
     shell_commands: bool,
     max_sessions: Option<usize>,
+    open_delay: Option<Duration>,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
 }
@@ -249,6 +265,7 @@ impl Host {
                 rsa_signatures: bench.rsa_signatures.clone(),
                 keyboard_interactive: bench.keyboard_interactive.clone(),
                 key_then_keyboard_interactive: bench.key_then_keyboard_interactive,
+                key_then_password: bench.key_then_password,
                 password: bench.password.clone(),
                 methods: bench.methods.clone(),
                 sftp: bench.sftp,
@@ -256,6 +273,7 @@ impl Host {
                 exec_noise: bench.exec_noise.clone(),
                 shell_commands: bench.shell_commands,
                 max_sessions: bench.max_sessions,
+                open_delay: bench.open_delay,
                 home: home.path().to_owned(),
                 seen: seen.clone(),
             }),
@@ -391,6 +409,13 @@ impl server::Handler for Connection {
                     partial_success: true,
                 });
             }
+            if self.shared.key_then_password {
+                self.key_taken = true;
+                return Ok(ServerAuth::Reject {
+                    proceed_with_methods: Some(MethodSet::from(&[MethodKind::Password][..])),
+                    partial_success: true,
+                });
+            }
             Ok(ServerAuth::Accept)
         } else {
             Ok(self.reject())
@@ -406,6 +431,9 @@ impl server::Handler for Connection {
             return Ok(self.reject());
         }
         self.shared.seen.lock().unwrap().password_attempts += 1;
+        if self.shared.key_then_password && !self.key_taken {
+            return Ok(self.reject());
+        }
         if user == USER && self.shared.password.as_deref() == Some(password) {
             Ok(ServerAuth::Accept)
         } else {
@@ -493,7 +521,11 @@ impl server::Handler for Connection {
                 .await;
             return Ok(());
         }
+        if let Some(delay) = self.shared.open_delay {
+            tokio::time::sleep(delay).await;
+        }
         self.open_sessions += 1;
+        self.shared.seen.lock().unwrap().open_channels += 1;
         // Kept only until the channel turns out not to be SFTP's: russh
         // also queues every message for this handle, and a full queue
         // nobody reads stalls the whole server.
@@ -508,6 +540,10 @@ impl server::Handler for Connection {
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
         self.open_sessions = self.open_sessions.saturating_sub(1);
+        {
+            let mut seen = self.shared.seen.lock().unwrap();
+            seen.open_channels = seen.open_channels.saturating_sub(1);
+        }
         self.channels.remove(&channel);
         Ok(())
     }
@@ -894,6 +930,13 @@ impl russh_sftp::server::Handler for Files {
             options.create(true);
         }
         options.mode(attrs.permissions.unwrap_or(0o666) & 0o777);
+        if pflags.contains(OpenFlags::WRITE) {
+            let mut seen = self.seen.lock().unwrap();
+            if seen.sftp_write_failures > 0 {
+                seen.sftp_write_failures -= 1;
+                return Err(StatusCode::PermissionDenied);
+            }
+        }
         let file = options.open(self.resolve(&filename)).map_err(status_of)?;
         let handle = self.handle();
         self.files.insert(handle.clone(), file);

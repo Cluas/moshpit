@@ -80,8 +80,14 @@ pub(crate) async fn to_uploads_directory(
         }
     }
     let path = over_exec(ssh, data, filename, progress, cancel).await?;
-    // Remembered only once exec has actually worked.
-    ssh.mark_sftp_unavailable();
+    // SFTP is given up for the connection only when the host refused the
+    // subsystem, and once exec has actually worked (B723). A failure of
+    // this upload's own (a path's permission, the network, a timeout) sent
+    // every later upload over exec too: a third more bytes, a round trip
+    // per chunk.
+    if ssh.sftp_refused() {
+        ssh.mark_sftp_unavailable();
+    }
     Ok(path)
 }
 

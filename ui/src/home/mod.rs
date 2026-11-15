@@ -548,6 +548,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
         },
     ];
     let add: Rc<dyn Fn()> = Rc::new(ctx.asking(Intent::Add));
+    let alone = ctx.clone();
     let toggle: Rc<dyn Fn()> = Rc::new(ctx.asking(Intent::ToggleSidebar));
     let tell = ctx.tell.clone();
     view()
@@ -562,7 +563,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
         ))
         .child(crate::boundary::ready_body(
             move || empty.get(),
-            move || empty_page(bar, add.clone()),
+            move || empty_page(bar, add.clone(), alone.clone()),
             tell,
         ))
         .child(dynamic(move || {
@@ -1045,9 +1046,11 @@ fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
         .into_element()
 }
 
-/// No connections yet (§6.1 states): the grid, the app's mark, what Home
-/// will show, and Add connection.
-fn empty_page(bar: BarMetrics, add: Rc<dyn Fn()>) -> AnyElement {
+/// No connections yet (§6.1 states): the grid, the companion, what Home
+/// will show, and Add connection. The egg the app's icon, What's New and
+/// Settings point at waits here, in the mark's place (B746); the mark is
+/// there while the companion is off.
+fn empty_page(bar: BarMetrics, add: Rc<dyn Fn()>, ctx: Ctx) -> AnyElement {
     view()
         .absolute()
         .inset_0()
@@ -1069,7 +1072,7 @@ fn empty_page(bar: BarMetrics, add: Rc<dyn Fn()>) -> AnyElement {
                         .items_center()
                         .child(
                             empty(t!("No connections yet"))
-                                .mark()
+                                .graphic(pet::alone(ctx))
                                 .message(t!(
                                     "Add a machine you can reach over SSH. Agents running there show up here."
                                 ))

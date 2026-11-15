@@ -188,10 +188,13 @@ extension CoreTerminalView: UITextInput {
     var selectedTextRange: UITextRange? {
         get { CoreTextRange(Int(imeState.sel_start), Int(imeState.sel_end)) }
         set {
-            // The input system moves its own caret: nothing to report (V9).
-            guard let term, let r = newValue as? CoreTextRange else { return }
-            mp_term_ime_select(term, UInt32(clamp(r.lower)), UInt32(clamp(r.upper)))
-            imeState = mp_term_ime_state(term)
+            // The input system moves its own caret: nothing to report to it
+            // (V9). A caret it moves (a third-party keyboard stepping into
+            // `（）`, a slide on its space bar) goes to the remote as arrows,
+            // as the trackpad's do (B695).
+            guard let r = newValue as? CoreTextRange else { return }
+            let (a, b) = (UInt32(clamp(r.lower)), UInt32(clamp(r.upper)))
+            ime { mp_term_ime_input_select($0, a, b) }
         }
     }
 

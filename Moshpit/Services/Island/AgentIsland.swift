@@ -34,6 +34,84 @@ extension AgentIsland {
     func endLeftovers() {}
 }
 
+/// An island the user swiped away, remembered across launches (B705): the
+/// agents it showed and their questions. Kept only in memory, it was
+/// forgotten by the next process — iOS ending the app in the background,
+/// a relaunch — and the agents' same turn asked for a new island at once,
+/// silently undoing the swipe. It keeps the island away while any of those
+/// agents is still listed, until a new question (``IslandReturn``); it goes
+/// once they have all gone, and after ``lifetime``.
+@MainActor
+final class IslandSwipe {
+    struct Record: Codable, Equatable {
+        /// The agents on the island when it was swiped (their ids).
+        var agents: Set<String>
+        /// Their questions then (``IslandReturn/questions(_:)``).
+        var questions: Set<String>
+        var at: Date
+    }
+
+    /// How long a swipe is remembered: an island lives eight hours at most.
+    static let lifetime: TimeInterval = 8 * 60 * 60
+    static let key = "moshpit.island.swiped"
+
+    private let store: UserDefaults
+    private let clock: () -> Date
+    private(set) var record: Record?
+    /// Whether an island state was offered since launch: the "no agents"
+    /// a launch reports before its hosts reconnect says nothing of the
+    /// swiped agents.
+    private var offered = false
+
+    init(store: UserDefaults, clock: @escaping () -> Date = Date.init) {
+        self.store = store
+        self.clock = clock
+        if let data = store.data(forKey: Self.key),
+           let record = try? JSONDecoder().decode(Record.self, from: data),
+           clock().timeIntervalSince(record.at) < Self.lifetime {
+            self.record = record
+        } else {
+            store.removeObject(forKey: Self.key)
+        }
+    }
+
+    var isSwiped: Bool { record != nil }
+
+    /// The user swiped away the island that last showed `shown`.
+    func swiped(_ shown: AgentActivityAttributes.ContentState?) {
+        let record = Record(agents: Set(shown?.agents.map(\.id) ?? []),
+                            questions: shown.map(IslandReturn.questions) ?? [],
+                            at: clock())
+        self.record = record
+        if let data = try? JSONEncoder().encode(record) { store.set(data, forKey: Self.key) }
+    }
+
+    /// Whether an island showing `state` may be asked for: always, unless
+    /// swiped; then once the swiped agents have all gone, or for a new
+    /// question.
+    func allows(_ state: AgentActivityAttributes.ContentState) -> Bool {
+        offered = true
+        guard let record else { return true }
+        let gone = clock().timeIntervalSince(record.at) >= Self.lifetime
+            || record.agents.isDisjoint(with: state.agents.map(\.id))
+        guard gone || IslandReturn.bringsBack(state, swipedWith: record.questions) else { return false }
+        forget()
+        return true
+    }
+
+    /// No agents are listed. Once this process has offered an island, the
+    /// swiped ones have gone; at launch, before the hosts are back, nothing
+    /// is known of them yet.
+    func noAgents() {
+        if offered { forget() }
+    }
+
+    private func forget() {
+        record = nil
+        store.removeObject(forKey: Self.key)
+    }
+}
+
 /// What brings back an island the user swiped away (B665): a question that
 /// was not on it then. Work going on, a finish, an agent going quiet keep
 /// it away; a new "needs you" — what the user most wants to see — brings
@@ -57,9 +135,12 @@ enum IslandReturn {
 @MainActor
 final class ActivityKitIsland: AgentIsland {
     private let settings: AppSettings
+    /// The swipe, remembered across launches (B705).
+    private let swipe: IslandSwipe
 
     init(settings: AppSettings) {
         self.settings = settings
+        self.swipe = IslandSwipe(store: settings.store)
     }
 
     /// How long a state stays fresh on the island. The monitor's poll stops
@@ -71,11 +152,6 @@ final class ActivityKitIsland: AgentIsland {
 
     #if canImport(ActivityKit)
     private var activity: Activity<AgentActivityAttributes>?
-    /// The user swiped the island away while agents were listed.
-    private var dismissed = false
-    /// The questions the island showed when it was swiped away: only a
-    /// question not among them brings it back (B665).
-    private var swipedWith: Set<String> = []
     /// What the island was last sent.
     private var lastSent: AgentActivityAttributes.ContentState?
     /// The update on its way, which the next one waits for.
@@ -106,30 +182,24 @@ final class ActivityKitIsland: AgentIsland {
         // was still listed — for a long-running agent, the rest of the day.
         if let current = activity, !Self.takesUpdates(current.activityState) {
             Log.island.info("island: \(current.id, privacy: .public) is \(String(describing: current.activityState), privacy: .public) — letting it go")
-            if current.activityState == .dismissed {
-                dismissed = true
-                swipedWith = lastSent.map(IslandReturn.questions) ?? []
-            }
+            if current.activityState == .dismissed { swipe.swiped(lastSent) }
             activity = nil
         }
         // Swiped away: not back on the next sweep, two seconds later. It
         // returns once the agents it showed have all gone and new ones come,
         // or when a new question comes (``request(_:)``, B665).
-        guard !dismissed else { return nil }
+        guard !swipe.isSwiped else { return nil }
         if activity == nil { adoptOrphans() }
         return activity?.id
     }
 
     func request(_ state: AgentActivityAttributes.ContentState) -> String? {
         guard enabled else { return nil }
-        if dismissed {
-            // Swiped away (B665): it stayed away for good while any agent
-            // was listed, a new question included.
-            guard IslandReturn.bringsBack(state, swipedWith: swipedWith) else { return nil }
-            Log.island.info("island: a new question brings back the island the user swiped away")
-            dismissed = false
-            swipedWith = []
-        }
+        // Swiped away (B665, B705: in an earlier process too): it stays away
+        // while those agents are listed, until a new question.
+        let swiped = swipe.isSwiped
+        guard swipe.allows(state) else { return nil }
+        if swiped { Log.island.info("island: the island the user swiped away comes back") }
         activity = try? Activity.request(attributes: AgentActivityAttributes(),
                                          content: content(state))
         if activity != nil { lastSent = state }
@@ -156,8 +226,7 @@ final class ActivityKitIsland: AgentIsland {
         }
         end(live)
         activity = nil
-        dismissed = false
-        swipedWith = []
+        swipe.noAgents()
         lastSent = nil
     }
 

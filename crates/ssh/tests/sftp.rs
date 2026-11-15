@@ -497,6 +497,39 @@ async fn a_refused_sftp_gives_its_channel_back() {
     assert!(out.closed, "{out:?}");
 }
 
+/// B723: an SFTP upload that fails for a reason of its own (here a write
+/// refused; a path's permission, the network, a timeout) goes over exec
+/// for that upload only: the next goes over SFTP again. Only the host's
+/// refusal of the subsystem turns SFTP off. One failure sent every later
+/// upload over exec for the connection's life: a third more bytes and a
+/// round trip per 48 KiB.
+#[tokio::test]
+async fn one_failed_sftp_upload_leaves_sftp_on() {
+    let host = Host::start(Bench {
+        shell_commands: true,
+        ..Default::default()
+    })
+    .await;
+    let ssh = connect(&host).await;
+    host.seen.lock().unwrap().sftp_write_failures = 1;
+    let image = noise(1000, 3);
+    ssh.upload_to_uploads_directory(&image, "IMG-1.jpg", &mut |_| true)
+        .await
+        .expect("over exec");
+    let execs = host.seen.lock().unwrap().commands.len();
+    assert!(execs > 0, "the first went over exec");
+    let second = ssh
+        .upload_to_uploads_directory(&image, "IMG-2.jpg", &mut |_| true)
+        .await
+        .expect("uploaded");
+    assert!(second.ends_with("/IMG-2.jpg"), "{second}");
+    assert_eq!(
+        host.seen.lock().unwrap().commands.len(),
+        execs,
+        "the second over SFTP: no command ran"
+    );
+}
+
 /// A host without the SFTP subsystem still takes uploads, over exec
 /// channels and the app's exact commands, and the connection stops trying
 /// SFTP for them.

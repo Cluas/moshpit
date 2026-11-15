@@ -993,6 +993,205 @@ fn a_tap_reaches_the_egg_on_each_cards_edge_and_the_page_asks_to_hatch() {
     }
 }
 
+/// The companion's message: the egg (`taps` so far, `ready`, `may_hatch`)
+/// or, hatched, the pet (`moment` played once at `seq`), `shown` or not.
+fn companion(shown: bool, hatched: Option<(&str, u64)>, taps: u8, may_hatch: bool) -> String {
+    let mut message = json!({
+        "op": "pet", "style": "pixel", "shown": shown, "may_hatch": may_hatch, "seq": 0,
+    });
+    match hatched {
+        None => message["egg"] = json!({"ready": taps >= 2, "taps": taps}),
+        Some((moment, seq)) => {
+            message["pet"] = json!({
+                "seed": "07070707070707070707070707070707", "stage": 1, "hatch_hour": 14,
+                "flags": 0, "crowned": false, "name": "Dot", "species": "tun",
+                "hatched_at": 1_800_000_000, "tasks": 0,
+                "traits": {"fur": "natural", "shiny": false, "pattern": "plain", "eyes": "dot", "size": "regular"},
+                "history": [], "found": []
+            });
+            message["moment"] = json!(moment);
+            message["seq"] = json!(seq);
+        }
+    }
+    message.to_string()
+}
+
+/// How many companions the page draws.
+fn companions(app: &Headless) -> usize {
+    app.screen()
+        .layout_nodes()
+        .iter()
+        .filter(|n| n.test_id.as_deref() == Some("home-pet"))
+        .count()
+}
+
+/// B746, team-lead's call: the app's icon, What's New and Settings all
+/// point at an egg on Home, and a new install's Home had none (the egg
+/// perched only on a card). It waits on the empty page now, in the mark's
+/// place above the title, on a 6.1" iPhone with Add Connection still in
+/// view; the same egg (its 44 pt target, three taps, the hatch asked for),
+/// and the pet that hatches there is the one the first card gets: one
+/// companion, never a second egg.
+#[test]
+fn the_egg_waits_on_the_empty_home_and_goes_to_the_first_card() {
+    // iPhone 16 (6.1"), its safe area.
+    let (mut app, channel, natives) =
+        start_observing_with(Screen::Home, Params::default(), "home", |config| {
+            config.viewport = Size::new(Points(393.0), Points(852.0));
+            config.environment.idiom = Idiom::Phone;
+            config.environment.safe_area = Edges {
+                top: Points(59.0),
+                bottom: Points(34.0),
+                left: Points(0.0),
+                right: Points(0.0),
+            };
+        });
+    let heard = hear(&channel);
+    show(&mut app, &channel, Vec::new());
+    post(&mut app, &channel, &companion(true, None, 0, false));
+    find(&mut app, "id:home-pet");
+    assert_eq!(companions(&app), 1);
+    assert_eq!(
+        natives.count("moshpit/app-icon-mark"),
+        0,
+        "the egg in the mark's place"
+    );
+    let nodes = app.screen().layout_nodes();
+    let egg = node(&nodes, "home-pet");
+    let add = node(&nodes, "home-add-empty");
+    assert!(
+        within(&nodes, egg.id, node(&nodes, "home-empty").id),
+        "on the empty page"
+    );
+    assert!(
+        egg.bounds.size.width.0 >= 44.0 && egg.bounds.size.height.0 >= 44.0,
+        "{:?}",
+        egg.bounds.size
+    );
+    assert!(egg.bounds.origin.y.0 + egg.bounds.size.height.0 <= add.bounds.origin.y.0);
+    assert!(
+        add.bounds.origin.y.0 + add.bounds.size.height.0 <= 852.0 - 34.0,
+        "Add Connection below the fold: {:?}",
+        add.bounds
+    );
+
+    // Three taps, each told; the host says it may, and the page asks.
+    for taps in 0..3u8 {
+        app.press("id:home-pet").unwrap();
+        assert_eq!(next(&heard), json!({"ev": "egg-tap"}), "tap {}", taps + 1);
+        post(&mut app, &channel, &companion(true, None, taps + 1, false));
+    }
+    post(&mut app, &channel, &companion(true, None, 3, true));
+    assert_eq!(next(&heard), json!({"ev": "hatch"}));
+    post(
+        &mut app,
+        &channel,
+        &companion(true, Some(("hatched", 1)), 0, false),
+    );
+    assert_eq!(companions(&app), 1, "the pet where the egg was");
+    // A tap on it answers beside it, on screen: centred, it says its line
+    // in the half of the row on its leading side.
+    let mut talking: serde_json::Value =
+        serde_json::from_str(&companion(true, Some(("hatched", 1)), 0, false)).unwrap();
+    talking["talk"] = json!(true);
+    post(&mut app, &channel, &talking.to_string());
+    post(&mut app, &channel, r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#);
+    app.press("id:home-pet").unwrap();
+    find(&mut app, "id:home-pet-says");
+    let nodes = app.screen().layout_nodes();
+    let (bubble, pet) = (node(&nodes, "home-pet-says"), node(&nodes, "home-pet"));
+    assert!(
+        bubble.bounds.origin.x.0 >= 0.0
+            && bubble.bounds.origin.x.0 + bubble.bounds.size.width.0 <= pet.bounds.origin.x.0,
+        "the bubble {:?} beside the pet {:?}",
+        bubble.bounds,
+        pet.bounds
+    );
+
+    // The first connection: the pet goes to its card, and the empty page
+    // (and anything on it) goes.
+    let saved = Connection {
+        id: "c-first".into(),
+        name: "first".into(),
+        initial: "F".into(),
+        user: "me".into(),
+        host: "first.example.com".into(),
+        link: Link::Saved,
+        ..Connection::default()
+    };
+    show(&mut app, &channel, vec![saved]);
+    find(&mut app, "id:connection-card-first");
+    assert!(!app.screen().matches("id:home-empty").unwrap());
+    assert_eq!(companions(&app), 1, "one companion, never a second egg");
+    let nodes = app.screen().layout_nodes();
+    let (pet, card) = (
+        node(&nodes, "home-pet"),
+        node(&nodes, "connection-card-first"),
+    );
+    let above = card.bounds.origin.y.0 - pet.bounds.origin.y.0;
+    assert!(
+        (0.0..=50.0).contains(&above),
+        "perched on the first card's edge: {:?} over {:?}",
+        pet.bounds,
+        card.bounds
+    );
+    // The hatch it already played isn't played again, and nothing more is
+    // asked of the host.
+    post(
+        &mut app,
+        &channel,
+        &companion(true, Some(("hatched", 1)), 0, false),
+    );
+    assert_eq!(companions(&app), 1);
+    let more: Vec<serde_json::Value> = std::iter::from_fn(|| {
+        heard
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .ok()
+            .and_then(|json| serde_json::from_str(&json).ok())
+    })
+    .collect();
+    assert!(
+        !more
+            .iter()
+            .any(|e| e["ev"] == "egg-tap" || e["ev"] == "hatch"),
+        "{more:?}"
+    );
+    channel.close();
+}
+
+/// B746: the empty page's egg follows the Companion switch, as the cards'
+/// does: off (or minimal), the app's mark is there and no egg; on again,
+/// the egg.
+#[test]
+fn with_the_companion_off_the_empty_home_has_the_mark_and_no_egg() {
+    let (mut app, channel, natives) = phone(Params::default());
+    show(&mut app, &channel, Vec::new());
+    find(&mut app, "id:home-add-empty");
+    assert_eq!(
+        natives.count("moshpit/app-icon-mark"),
+        1,
+        "before the host says: the mark"
+    );
+    post(&mut app, &channel, &companion(false, None, 0, false));
+    app.wait_for("text:No connections yet").unwrap();
+    assert_eq!(companions(&app), 0, "off: no egg");
+    assert_eq!(natives.count("moshpit/app-icon-mark"), 1);
+    let mut minimal: serde_json::Value =
+        serde_json::from_str(&companion(true, None, 0, false)).unwrap();
+    minimal["style"] = json!("minimal");
+    post(&mut app, &channel, &minimal.to_string());
+    app.wait_for("text:No connections yet").unwrap();
+    assert_eq!(companions(&app), 0, "minimal: no egg");
+    post(&mut app, &channel, &companion(true, None, 0, false));
+    find(&mut app, "id:home-pet");
+    assert_eq!(natives.count("moshpit/app-icon-mark"), 0);
+    post(&mut app, &channel, &companion(false, None, 0, false));
+    app.wait_for("text:No connections yet").unwrap();
+    assert_eq!(companions(&app), 0, "off again: gone");
+    assert_eq!(natives.count("moshpit/app-icon-mark"), 1);
+    channel.close();
+}
+
 /// B535: a disconnect flushes the session for up to ~2 s. Until it is
 /// over the card says so — "Disconnecting…", a spinner in ⋯'s place —
 /// and offers nothing to tap: an Open or Connect asked of a session being

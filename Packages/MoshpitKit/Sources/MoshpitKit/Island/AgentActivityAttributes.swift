@@ -66,13 +66,19 @@ public struct AgentActivityAttributes: ActivityAttributes {
         public var state: AgentState
         /// When the pane entered its current state — drives the live timer.
         public var startedAt: Date
+        /// When its connection dropped (B662): shown as it was, greyed, its
+        /// time stopped there. nil while connected, and from older builds.
+        public var pausedAt: Date?
+
+        public var isPaused: Bool { pausedAt != nil }
 
         public init(id: String, connectionId: String, paneId: String, command: String,
                     location: String, place: String? = nil, detail: String? = nil,
-                    state: AgentState, startedAt: Date) {
+                    state: AgentState, startedAt: Date, pausedAt: Date? = nil) {
             self.id = id; self.connectionId = connectionId; self.paneId = paneId
             self.command = command; self.location = location; self.place = place
             self.detail = detail; self.state = state; self.startedAt = startedAt
+            self.pausedAt = pausedAt
         }
 
         /// The agent's name: its command ("claude"), "shell" for none.
@@ -123,17 +129,21 @@ public struct AgentActivityAttributes: ActivityAttributes {
         /// state, which is the most urgent agent's. Anyone needing you wins:
         /// an amber "!" for one, the waiting hand and their count for
         /// several (never a bare number); else the headline working shows
-        /// its elapsed time, done a check, idle its dot.
+        /// its elapsed time, done a check, idle its dot; its connection
+        /// dropped (B662), held.
         public enum CompactSignal: Equatable {
             case waiting(count: Int)
             case working(since: Date)
             case done
             case quiet
+            case paused
         }
 
         public var compactSignal: CompactSignal? {
             if attentionCount > 0 { return .waiting(count: attentionCount) }
             guard let headline else { return nil }
+            // Its connection dropped (B662): held, not counted live.
+            if headline.isPaused { return .paused }
             switch headline.state {
             case .attention: return .waiting(count: 1)
             case .working: return .working(since: headline.startedAt)

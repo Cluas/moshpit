@@ -912,7 +912,7 @@ struct RustSessionTests {
         #expect(RustCopy.failure(kind: .credentialsLocked, cause: .credentials(why: .locked))
                 .contains("locked"))
         #expect(RustCopy.failure(kind: .unreachable,
-                                 cause: .unreachable(host: "h", port: 22, why: .refused))
+                                 cause: .unreachable(host: "h", port: 22, why: .other))
                 == SSHError.connectionFailed.description)
         #expect(RustCopy.failure(kind: .proxy, cause: .proxy(proxy: "p:1080", why: .unreachable))
                 == SSHError.proxyUnreachable("p:1080").description)
@@ -928,6 +928,60 @@ struct RustSessionTests {
         let prompts = RustCopy.failure(kind: .credentials, cause: .credentials(why: .interactivePrompts))
         #expect(prompts.hasPrefix(rejected))
         #expect(prompts != rejected)
+    }
+
+    /// B740: a first connection that reaches nothing says why — a port that
+    /// turned it away, a name that resolves to nothing, a host that never
+    /// answered, no route — instead of one sentence for all of them. A host
+    /// on the local network adds the one cause the person can't see: iOS
+    /// asked whether Moshpit may use the local network, and the answer was
+    /// no (or the question is still up). A denial there fails the connect
+    /// like a host that isn't there; the person's way out is a switch in the
+    /// Settings app.
+    @Test("an unreachable host is worded by why, and a local one points at Local Network (B740)")
+    func unreachableSaysWhy() {
+        func copy(_ host: String, _ why: UnreachableValue, port: UInt16 = 22) -> String {
+            RustCopy.failure(kind: .unreachable, cause: .unreachable(host: host, port: port, why: why))
+        }
+        let generic = SSHError.connectionFailed.description
+        let allow = "Local Network"
+
+        // Each reason has its own words, with the host (and the port, for a
+        // refusal) the person typed.
+        let refused = copy("box.example.com", .refused, port: 2222)
+        #expect(refused.contains("box.example.com") && refused.contains("2222"), "\(refused)")
+        let missing = copy("box.exmaple.com", .noAddress)
+        #expect(missing.contains("box.exmaple.com"), "\(missing)")
+        let silent = copy("box.example.com", .timedOut)
+        let unrouted = copy("203.0.113.5", .noRoute)
+        #expect(Set([refused, missing, silent, unrouted, generic]).count == 5,
+                "one sentence per reason: \([refused, missing, silent, unrouted])")
+
+        // A host on the local network: no route, no answer or anything else
+        // may be the local network permission.
+        let lan = ["192.168.1.20", "10.0.0.5", "172.20.1.1", "169.254.3.4",
+                   "fe80::1", "fd12:3456::1", "studio.local", "Studio.Local.", "studio"]
+        for host in lan {
+            for why in [UnreachableValue.noRoute, .timedOut, .other] {
+                #expect(copy(host, why).contains(allow), "\(host) \(why): \(copy(host, why))")
+                #expect(copy(host, why).contains(host), "\(host) \(why)")
+            }
+        }
+        // A `.local` name is looked up on the local network itself.
+        #expect(copy("studio.local", .noAddress).contains(allow))
+
+        // Elsewhere — the internet, a tailnet address, a refusal (the host
+        // answered), a dotted name that resolves to nothing — the permission
+        // isn't the cause, and isn't named.
+        let elsewhere: [(String, UnreachableValue)] = [
+            ("203.0.113.5", .noRoute), ("box.example.com", .timedOut),
+            ("100.64.0.7", .timedOut), ("172.32.0.1", .noRoute), ("2001:db8::1", .other),
+            ("192.168.1.20", .refused), ("studio.local", .refused), ("box.example.com", .noAddress),
+            ("studio", .noAddress),
+        ]
+        for (host, why) in elsewhere {
+            #expect(!copy(host, why).contains(allow), "\(host) \(why): \(copy(host, why))")
+        }
     }
 
     @Test("a credential the keychain won't give while the device is locked is 'locked' (B201)")

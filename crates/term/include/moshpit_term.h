@@ -13,7 +13,7 @@ extern "C" {
 
 /// Bumped whenever anything below changes shape: a view checks
 /// `mp_term_abi_version() == MP_TERM_ABI_VERSION` before it uses the core.
-#define MP_TERM_ABI_VERSION 15
+#define MP_TERM_ABI_VERSION 17
 uint32_t mp_term_abi_version(void);
 
 typedef struct MpTerm MpTerm;
@@ -320,6 +320,9 @@ void mp_term_select_extend(const MpTerm *_Nonnull t, uint16_t row, uint16_t col,
 /// (B477). False: no selection.
 bool mp_term_select_keep_end(const MpTerm *_Nonnull t, bool end);
 void mp_term_select_clear(const MpTerm *_Nonnull t);
+/// Selects everything: the first row with text, history included, to the
+/// last cell with text (B699). False: no text anywhere.
+bool mp_term_select_all(const MpTerm *_Nonnull t);
 char *_Nullable mp_term_selection_text(const MpTerm *_Nonnull t);
 typedef struct {
     int32_t start_row; ///< viewport rows; negative: above the viewport
@@ -382,7 +385,14 @@ MpImeResult mp_term_ime_set_marked(const MpTerm *_Nonnull t, const char *_Nullab
                                    uint32_t sel_len);
 MpImeResult mp_term_ime_unmark(const MpTerm *_Nonnull t);
 MpImeResult mp_term_ime_replace(const MpTerm *_Nonnull t, uint32_t start, uint32_t end, const char *_Nonnull text);
+/// The view moved the caret itself, sending its own arrows (the space
+/// bar's trackpad).
 void mp_term_ime_select(const MpTerm *_Nonnull t, uint32_t start, uint32_t end);
+/// The input system set its caret or selection (UIKit's
+/// `selectedTextRange`): a caret it moved goes to the remote as arrows,
+/// within the line typed; a selection or a composition's caret sends
+/// nothing (B695).
+MpImeResult mp_term_ime_input_select(const MpTerm *_Nonnull t, uint32_t start, uint32_t end);
 /// The event loop finished the turn of a delete: a Return now is the
 /// person's (B410).
 void mp_term_ime_turn_end(const MpTerm *_Nonnull t);

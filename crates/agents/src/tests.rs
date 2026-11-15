@@ -517,6 +517,286 @@ fn the_widget_s_headline_is_its_first_row_whatever_the_island_cycles_to() {
     assert!(widget_of(&effects).is_none(), "the widget did not change: {effects:?}");
 }
 
+// MARK: - A connection that drops (B662)
+
+fn island_of(effects: &[Effect]) -> Option<IslandState> {
+    effects.iter().rev().find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+}
+
+/// B662: the machine had no "the connection dropped". The polls stopped,
+/// the sweep took that for the stamps going away: a working agent showed
+/// done within seconds, the island ended at half a minute and started again
+/// on reconnect, and a "needs you" a bell had raised stood for good. A
+/// dropped connection's agents stay as they were, paused (the island greys
+/// them and stops their time); a bell's "needs you" goes, as nothing can
+/// tell any more; after fifteen minutes down the paused rows go; back up,
+/// they resume from the real state.
+#[test]
+fn a_dropped_connection_pauses_its_agents_and_resumes_them() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.poll("%1", "working", T0, T0 + 1.0);
+    let aider = PaneWhere { command: "aider".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
+    bench.monitor.bell(CONN, "%3", aider, T0 + 2.0);
+    bench.monitor.take_effects();
+    bench.monitor.link(CONN, false, T0 + 3.0);
+    let state = island_of(&bench.monitor.take_effects()).expect("the island redrawn");
+    assert_eq!(state.agents.len(), 1, "the bell's question is gone: {state:?}");
+    assert_eq!((state.agents[0].state, state.agents[0].paused_at), (AgentState::Working, Some(T0 + 3.0)));
+    assert_eq!((state.working_count, state.attention_count), (0, 0), "paused rows are not counted live");
+    // No polls for a minute: still working, paused; the island stays.
+    let mut effects = Vec::new();
+    for t in (5..=65).step_by(2) {
+        bench.monitor.sweep(None, T0 + t as f64);
+        effects.extend(bench.monitor.take_effects());
+    }
+    assert!(!effects.contains(&Effect::EndIsland), "{effects:?}");
+    assert!(island_of(&effects).is_none(), "nothing changed while down: {effects:?}");
+    assert!(posts(&effects).is_empty(), "no needs-you for the bell's question");
+    // Back up: resumed, and the sweep gives the next poll its hold.
+    bench.monitor.link(CONN, true, T0 + 70.0);
+    let state = island_of(&bench.monitor.take_effects()).expect("the island redrawn");
+    assert_eq!((state.agents[0].state, state.agents[0].paused_at), (AgentState::Working, None));
+    bench.monitor.sweep(None, T0 + 72.0);
+    assert!(island_of(&bench.monitor.take_effects()).is_none(), "still working before the first poll");
+    // The real state from the poll: it finished while the link was down.
+    let mut effects = bench.poll("%1", "idle", T0 + 50.0, T0 + 73.0);
+    for t in 74..=120 {
+        bench.monitor.sweep(None, T0 + t as f64);
+        effects.extend(bench.monitor.take_effects());
+    }
+    let state = island_of(&effects).expect("the island redrawn");
+    assert_ne!(state.agents[0].state, AgentState::Working, "{state:?}");
+    // Down again, past fifteen minutes: the paused rows go, the island ends.
+    bench.poll("%1", "working", T0 + 130.0, T0 + 131.0);
+    bench.monitor.link(CONN, false, T0 + 140.0);
+    bench.monitor.take_effects();
+    bench.monitor.sweep(None, T0 + 140.0 + PAUSED_FOR - 1.0);
+    assert!(!bench.monitor.take_effects().contains(&Effect::EndIsland), "paused for fifteen minutes");
+    bench.monitor.sweep(None, T0 + 140.0 + PAUSED_FOR + 1.0);
+    assert!(bench.monitor.take_effects().contains(&Effect::EndIsland));
+}
+
+/// B662: a question asked just before the drop is not announced while the
+/// link is down (nothing can tell whether it still stands); back up, it
+/// gets its grace again, and is announced if it still stands then.
+#[test]
+fn a_question_the_drop_held_back_is_announced_after_the_reconnect() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.poll("%1", "attention", T0, T0 + 1.0);
+    bench.monitor.link(CONN, false, T0 + 5.0);
+    let mut effects = Vec::new();
+    for t in (6..=68).step_by(2) {
+        bench.monitor.sweep(None, T0 + t as f64);
+        effects.extend(bench.monitor.take_effects());
+    }
+    assert!(posts(&effects).is_empty(), "announced while down: {effects:?}");
+    bench.monitor.link(CONN, true, T0 + 70.0);
+    effects.clear();
+    let mut t = 71.0;
+    while t < 70.0 + 60.0 {
+        effects.extend(bench.poll("%1", "attention", T0, T0 + t));
+        bench.monitor.sweep(None, T0 + t + 1.0);
+        effects.extend(bench.monitor.take_effects());
+        t += 2.0;
+    }
+    assert_eq!(posts(&effects).len(), 1, "{effects:?}");
+}
+
+/// B662: a bell's "needs you" already on a card goes with the drop, card
+/// and all.
+#[test]
+fn a_bell_s_card_is_withdrawn_when_the_link_drops() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let aider = PaneWhere { command: "aider".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
+    bench.monitor.bell(CONN, "%3", aider, T0);
+    let mut effects = Vec::new();
+    for t in (1..=40).step_by(2) {
+        bench.monitor.sweep(None, T0 + t as f64);
+        effects.extend(bench.monitor.take_effects());
+    }
+    assert_eq!(posts(&effects).len(), 1, "{effects:?}");
+    bench.monitor.link(CONN, false, T0 + 41.0);
+    let effects = bench.monitor.take_effects();
+    assert!(withdrawn(&effects).iter().any(|id| id.starts_with(ATTENTION_CARD)), "{effects:?}");
+}
+
+// MARK: - The island kept fresh, and asked for again (B701)
+
+/// B701: an unchanged state is sent again only from a sync, and only a
+/// change or a stamped poll made one. A row a bell raised has no poll
+/// behind it: its island was never sent again, and went stale ("paused")
+/// with the app in front. The sweep sends it again when it is due.
+#[test]
+fn an_island_with_no_poll_behind_it_is_sent_again_before_it_goes_stale() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let aider = PaneWhere { command: "aider".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
+    bench.monitor.bell(CONN, "%3", aider, T0);
+    assert_eq!(islands(&bench.monitor.take_effects()), 1);
+    let mut sent = Vec::new();
+    for t in (2..=130).step_by(2) {
+        bench.monitor.sweep(None, T0 + t as f64);
+        if islands(&bench.monitor.take_effects()) > 0 {
+            sent.push(t);
+        }
+    }
+    assert_eq!(sent, [60, 120], "again inside the island's 120 s stale date");
+}
+
+/// B701: the minute's send keeps a live island fresh. A dropped link's
+/// paused rows can't go out of date: an island of nothing else is sent
+/// once, on the drop, and again only when it changes or the link comes
+/// back, not each minute (it spent ActivityKit's update budget, and moved
+/// the stale date on what is known to be stale). One live row beside them
+/// is still sent each minute.
+#[test]
+fn a_paused_island_is_sent_once_and_again_when_the_link_comes_back() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.poll("%1", "working", T0, T0 + 1.0);
+    bench.monitor.take_effects();
+    bench.monitor.link(CONN, false, T0 + 2.0);
+    let mut sent = islands(&bench.monitor.take_effects());
+    for t in (4..=302).step_by(2) {
+        bench.monitor.sweep(None, T0 + t as f64);
+        sent += islands(&bench.monitor.take_effects());
+    }
+    assert_eq!(sent, 1, "the drop, once, in five minutes down");
+    bench.monitor.link(CONN, true, T0 + 303.0);
+    assert_eq!(islands(&bench.monitor.take_effects()), 1, "back up: at once");
+
+    // One host down, another live: the live row still needs its minute.
+    const OTHER: &str = "0F0E0D0C-0000-4000-8000-000000000003";
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.track(OTHER, "mac");
+    bench.poll("%1", "working", T0, T0 + 1.0);
+    bench.monitor.hooks(OTHER, vec![hook("%2", "working", T0)], T0 + 1.0, TMUX);
+    bench.monitor.link(CONN, false, T0 + 2.0);
+    let effects = bench.monitor.take_effects();
+    let state = effects
+        .iter()
+        .rev()
+        .find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+        .expect("the drop redrawn");
+    assert_eq!(state.agents.iter().filter(|a| a.paused_at.is_some()).count(), 1, "{state:?}");
+    let mut sent = Vec::new();
+    for t in (3..=183).step_by(2) {
+        bench.monitor.hooks(OTHER, vec![hook("%2", "working", T0)], T0 + t as f64, TMUX);
+        bench.monitor.sweep(None, T0 + t as f64 + 0.5);
+        if islands(&bench.monitor.take_effects()) > 0 {
+            sent.push(t);
+        }
+    }
+    assert_eq!(sent, [63, 123, 183], "a live row beside a paused one: each minute");
+}
+
+/// B701: the widget is written only when what it shows changes. An
+/// unchanged state was written again each minute a stamped poll came, and
+/// each write reloads the widget's timelines, which iOS budgets by the
+/// day; the island alone is sent again when due.
+#[test]
+fn an_unchanged_widget_is_not_written_again_while_the_island_is() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let (mut widgets, mut islands_sent) = (0, 0);
+    let mut t = 1.0;
+    while t < 200.0 {
+        let mut effects = bench.poll("%1", "working", T0, T0 + t);
+        bench.monitor.sweep(None, T0 + t + 0.5);
+        effects.extend(bench.monitor.take_effects());
+        widgets += effects.iter().filter(|e| matches!(e, Effect::Widget(_))).count();
+        islands_sent += islands(&effects);
+        t += 2.0;
+    }
+    assert_eq!(widgets, 1, "written once, when it first showed the agent");
+    assert_eq!(islands_sent, 4, "the island: first, then each minute");
+    // A change is written at once.
+    let effects = bench.poll("%1", "attention", T0 + 200.0, T0 + 201.0);
+    assert_eq!(effects.iter().filter(|e| matches!(e, Effect::Widget(_))).count(), 1);
+}
+
+/// B701: an island the system would not start (the app in the background,
+/// too many activities) was taken as shown: nothing asked for it again
+/// until the state changed. It is asked for again fifteen seconds on.
+#[test]
+fn an_island_the_system_refused_is_asked_for_again() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    assert_eq!(islands(&bench.poll("%1", "working", T0, T0 + 1.0)), 1);
+    bench.monitor.island_not_shown(T0 + 1.0);
+    let mut sent = Vec::new();
+    for t in (3..=40).step_by(2) {
+        let mut effects = bench.poll("%1", "working", T0, T0 + t as f64);
+        bench.monitor.sweep(None, T0 + t as f64 + 0.5);
+        effects.extend(bench.monitor.take_effects());
+        if islands(&effects) > 0 {
+            sent.push(t);
+        }
+    }
+    assert_eq!(sent, [17], "fifteen seconds on, and once");
+}
+
+// MARK: - A finished agent leaves the island (B707)
+
+/// B707: a stamped agent's "done" stayed on the island for as long as the
+/// polls read its stamp, which stays until the next turn: the island never
+/// ended while any agent had finished, up to iOS's eight hours. Its finish
+/// is news for the linger the heuristic's rows already had, then the row
+/// goes; at once when its pane is on screen. A new turn shows it again. The
+/// finish card is the turn's, whatever the row does; the widget and Home
+/// keep the finished row.
+#[test]
+fn a_finished_agent_leaves_the_island_after_its_linger_or_when_looked_at() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let mut t = 1.0;
+    while t < 200.0 {
+        bench.poll("%1", "working", T0, T0 + t);
+        t += 2.0;
+    }
+    // A long turn: its finish card rings, whatever the row does.
+    let finished = bench.poll("%1", "done", T0 + 200.0, T0 + 201.0);
+    let card = posts(&finished).into_iter().find(|c| c.id.starts_with(DONE_CARD)).cloned().expect("the finish card");
+    assert!(card.text.sound, "{card:?}");
+    let mut ended = None;
+    let mut widgets = Vec::new();
+    let mut t = 203.0;
+    while t < 400.0 && ended.is_none() {
+        let mut effects = bench.poll("%1", "done", T0 + 200.0, T0 + t);
+        bench.monitor.sweep(None, T0 + t + 0.5);
+        effects.extend(bench.monitor.take_effects());
+        if effects.contains(&Effect::EndIsland) {
+            ended = Some(t);
+        }
+        widgets.extend(effects.into_iter().filter_map(|e| if let Effect::Widget(s) = e { Some(s) } else { None }));
+        t += 2.0;
+    }
+    assert_eq!(ended, Some(227.0), "25 s after the finish, the island ends");
+    assert!(widgets.is_empty(), "the widget keeps its finished row: {widgets:?}");
+    // A new turn: back on the island.
+    let effects = bench.poll("%1", "working", T0 + 500.0, T0 + 501.0);
+    let state = effects
+        .iter()
+        .rev()
+        .find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+        .expect("the island again");
+    assert_eq!(state.agents[0].state, AgentState::Working);
+
+    // Beside a working agent, looked at: the finished row goes at once,
+    // the island stays.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.hooks(CONN, vec![hook("%1", "working", T0), hook("%2", "working", T0)], T0 + 1.0, TMUX);
+    bench.monitor.take_effects();
+    bench.monitor.hooks(CONN, vec![hook("%1", "done", T0 + 2.0), hook("%2", "working", T0)], T0 + 3.0, TMUX);
+    bench.monitor.take_effects();
+    let looked = Visible { conn: CONN.into(), pane: Some("%1".into()) };
+    bench.monitor.sweep(Some(&looked), T0 + 4.0);
+    bench.monitor.hooks(CONN, vec![hook("%1", "done", T0 + 2.0), hook("%2", "working", T0)], T0 + 5.0, TMUX);
+    let effects = bench.monitor.take_effects();
+    assert!(!effects.contains(&Effect::EndIsland));
+    let state = effects
+        .iter()
+        .rev()
+        .find_map(|e| if let Effect::Island(state) = e { Some(state.clone()) } else { None })
+        .expect("redrawn without it");
+    assert_eq!(state.agents.iter().map(|a| a.pane_id.as_str()).collect::<Vec<_>>(), ["%2"]);
+}
+
 // MARK: - A long finish rings once
 
 #[test]
@@ -723,16 +1003,81 @@ fn agent_output_earns_a_row_after_the_promotion_delay_and_goes_done_when_quiet()
     assert!(bench.monitor.take_effects().contains(&Effect::EndIsland));
 }
 
+fn running(command: &str) -> PaneWhere {
+    PaneWhere { command: command.into(), session: None, window: None, name: None, window_index: None, pane_index: None }
+}
+
 #[test]
 fn a_bell_is_attention_at_once_through_the_grace() {
     let mut bench = Bench::new(Settings::default(), &[]);
-    let at = PaneWhere { command: "zsh".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
-    bench.monitor.bell(CONN, "%3", at, T0);
+    bench.monitor.bell(CONN, "%3", running("aider"), T0);
     bench.monitor.sweep(None, T0 + 31.0);
     let effects = bench.monitor.take_effects();
     let card = posts(&effects)[0];
-    assert_eq!(card.text.title, "zsh needs you");
+    assert_eq!(card.text.title, "aider needs you");
     assert_eq!(card.text.body, "devbox");
+}
+
+/// B663: a bell in a plain shell raised "zsh needs you" (a tab completion
+/// with nothing to complete, a build that rings when it ends). Only a
+/// known agent's bell asks for you: one the foreground names, or one a
+/// stamp said is there while no shell is in front.
+#[test]
+fn a_shell_s_bell_asks_nothing() {
+    for shell in ["zsh", "-bash", "fish", ""] {
+        let mut bench = Bench::new(Settings::default(), &[]);
+        bench.monitor.bell(CONN, "%3", running(shell), T0);
+        bench.monitor.sweep(None, T0 + 31.0);
+        let effects = bench.monitor.take_effects();
+        assert!(posts(&effects).is_empty(), "{shell:?}: {effects:?}");
+        assert!(!effects.iter().any(|e| matches!(e, Effect::Island(_))), "{shell:?}: {effects:?}");
+    }
+    // A stamp said claude is there, and it runs as node: its bell counts;
+    // back at the shell, it doesn't.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let mut stamp = hook("%1", "working", T0);
+    stamp.command = Some("node".into());
+    stamp.place.command = "node".into();
+    bench.monitor.hooks(CONN, vec![stamp], T0 + 1.0, TMUX);
+    bench.monitor.take_effects();
+    // The stamp is gone (no poll for its hold): the bell is the only word.
+    bench.monitor.sweep(None, T0 + 20.0);
+    bench.monitor.bell(CONN, "%1", running("node"), T0 + 21.0);
+    bench.monitor.sweep(None, T0 + 52.0);
+    assert_eq!(posts(&bench.monitor.take_effects()).len(), 1, "a stamped agent's bell");
+    bench.monitor.input(CONN, "%1", T0 + 53.0);
+    bench.monitor.take_effects();
+    bench.monitor.bell(CONN, "%1", running("zsh"), T0 + 60.0);
+    bench.monitor.sweep(None, T0 + 91.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty(), "the agent left: its shell's bell");
+}
+
+/// B663: a bell's "needs you" is answered by the next thing typed into the
+/// pane from the phone: the row is back at work and the card goes. A
+/// stamp's question stays until its stamp moves.
+#[test]
+fn typing_into_the_pane_answers_its_bell() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.bell(CONN, "%3", running("claude"), T0);
+    bench.monitor.sweep(None, T0 + 31.0);
+    assert_eq!(posts(&bench.monitor.take_effects()).len(), 1);
+    bench.monitor.input(CONN, "%3", T0 + 40.0);
+    let effects = bench.monitor.take_effects();
+    assert!(withdrawn(&effects).iter().any(|id| id.starts_with(ATTENTION_CARD)), "{effects:?}");
+    let Some(Effect::Island(state)) = effects.iter().rev().find(|e| matches!(e, Effect::Island(_))) else {
+        panic!("no island: {effects:?}")
+    };
+    assert_eq!(state.agents[0].state, AgentState::Working);
+    // Answered before its grace ran out: no card at all.
+    bench.monitor.bell(CONN, "%3", running("claude"), T0 + 50.0);
+    bench.monitor.input(CONN, "%3", T0 + 55.0);
+    bench.monitor.sweep(None, T0 + 81.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty());
+    // A stamp's question: typing is not the answer the stamp gives.
+    bench.poll("%1", "attention", T0 + 90.0, T0 + 91.0);
+    bench.monitor.input(CONN, "%1", T0 + 92.0);
+    let effects = bench.monitor.take_effects();
+    assert!(!effects.iter().any(|e| matches!(e, Effect::Island(_))), "{effects:?}");
 }
 
 #[test]

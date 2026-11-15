@@ -23,7 +23,7 @@ pub type MpTermWaker = unsafe extern "C" fn(ctx: *mut c_void);
 
 /// `MP_TERM_ABI_VERSION` (moshpit_term.h): bumped whenever the C ABI
 /// changes shape, so a view refuses a stale library instead of misreading it.
-pub const ABI_VERSION: u32 = 15;
+pub const ABI_VERSION: u32 = 17;
 
 /// The `MP_TERM_ABI_VERSION` this library was built with.
 #[unsafe(no_mangle)]
@@ -1069,6 +1069,17 @@ pub unsafe extern "C" fn mp_term_select_clear(t: *const MpTerm) {
     guard((), || t.with(|term| term.select_clear()));
 }
 
+/// Selects everything: the first row with text, history included, to the
+/// last cell with text (B699). False: no text anywhere.
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_select_all(t: *const MpTerm) -> bool {
+    let t = term!(t, false);
+    guard(false, || t.with(|term| term.select_all()))
+}
+
 /// The selected text (free with mp_string_free); NULL: nothing selected.
 ///
 /// # Safety
@@ -1404,7 +1415,24 @@ pub unsafe extern "C" fn mp_term_ime_turn_end(t: *const MpTerm) {
     guard((), || t.with(|term| term.ime.turn_end()));
 }
 
-/// The input system moved its caret or selection.
+/// The input system set its caret or selection (UIKit's
+/// `selectedTextRange`): a caret it moved goes to the remote as arrows
+/// (B695, [`crate::Ime::input_select`]).
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_ime_input_select(
+    t: *const MpTerm,
+    start: u32,
+    end: u32,
+) -> MpImeResult {
+    let t = term!(t, MpImeResult::NONE);
+    ime_call(t, |ime| ime.input_select(start as usize, end as usize))
+}
+
+/// The view moved the caret itself, sending its own arrows (the space
+/// bar's trackpad).
 ///
 /// # Safety
 /// `t` live.

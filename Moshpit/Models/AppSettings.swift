@@ -126,13 +126,25 @@ final class AppSettings {
     /// The person picked the icon by hand in the gallery (B668): the pet's
     /// icon card then makes 「先不换」 the default. One picked before this was
     /// kept counts as picked by hand; the card's own switch doesn't.
+    ///
+    /// Kept in ``store``, beside the settings, not as one (B704): the Rust
+    /// store keeps only the settings of its schema, and took this write for
+    /// none — every icon not the primary read as picked by hand, the card's
+    /// own switch too.
     var appIconPickedByHand: Bool {
         get {
             access(keyPath: \.appIconPickedByHand)
-            return get("moshpit.settings.appIconPickedByHand", appIconId != AppIconCatalog.primary.id)
+            return store.object(forKey: Self.appIconPickedByHandKey) as? Bool
+                ?? (appIconId != AppIconCatalog.primary.id)
         }
-        set { withMutation(keyPath: \.appIconPickedByHand) { put(newValue, "moshpit.settings.appIconPickedByHand") } }
+        set {
+            withMutation(keyPath: \.appIconPickedByHand) {
+                store.set(newValue, forKey: Self.appIconPickedByHandKey)
+            }
+        }
     }
+
+    static let appIconPickedByHandKey = "moshpit.appIcon.pickedByHand"
 
     /// Monospaced font family for the terminal. "system" = the SF Mono system
     /// font; otherwise a `UIFont(name:)` family (see TerminalFont.families).

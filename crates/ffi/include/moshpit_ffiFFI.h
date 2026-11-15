@@ -551,9 +551,24 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_delivered(uint64_t ptr, Rus
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_hooks(uint64_t ptr, RustBuffer conn, RustBuffer hooks, double now, double interval, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_INPUT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_INPUT
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_input(uint64_t ptr, RustBuffer conn, RustBuffer pane, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_IS_TRACKING
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_IS_TRACKING
 int8_t uniffi_moshpit_ffi_fn_method_agentmachine_is_tracking(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_ISLAND_NOT_SHOWN
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_ISLAND_NOT_SHOWN
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_island_not_shown(uint64_t ptr, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_LINK
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_LINK
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_link(uint64_t ptr, RustBuffer conn, int8_t up, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_OUTPUT
@@ -3375,9 +3390,27 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_hooks(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_INPUT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_INPUT
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_input(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_IS_TRACKING
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_IS_TRACKING
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_is_tracking(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_ISLAND_NOT_SHOWN
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_ISLAND_NOT_SHOWN
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_island_not_shown(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_LINK
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_LINK
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_link(void
     
 );
 #endif

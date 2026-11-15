@@ -192,17 +192,17 @@ private struct StateAndTime: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(agent.state.label.uppercased())
+            Text(stateLabel(agent).uppercased())
                 .font(.system(size: 10, weight: .bold))
                 .kerning(0.4)
-                .foregroundStyle(stateColor(agent.state).opacity(0.85))
+                .foregroundStyle(agentColor(agent).opacity(0.85))
                 .lineLimit(1)
                 .fixedSize()
             if agent.state == .working || agent.state == .attention {
-                Text(agent.startedAt, style: .timer)
+                elapsed(agent)
                     .font(.system(size: 14, weight: .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(stateColor(agent.state))
+                    .foregroundStyle(agentColor(agent))
                     .frame(maxWidth: 56, alignment: .trailing)
                     .multilineTextAlignment(.trailing)
             }
@@ -316,8 +316,11 @@ struct LockScreenView: View {
         if state.workingCount > 0 {
             parts.append(AppLanguage.string("\(state.workingCount) working", language: language, in: bundle))
         }
-        let done = state.agents.filter { $0.state == .done }.count
+        let done = state.agents.filter { $0.state == .done && !$0.isPaused }.count
         if done > 0 { parts.append(AppLanguage.string("\(done) done", language: language, in: bundle)) }
+        // Their connection dropped (B662): counted apart, not as live.
+        let offline = state.agents.filter(\.isPaused).count
+        if offline > 0 { parts.append(AppLanguage.string("\(offline) offline", language: language, in: bundle)) }
         return parts.joined(separator: " · ")
     }
 }
@@ -335,7 +338,7 @@ private struct AgentRow: View {
                 // The headline: the companion (or, switched off, the mark);
                 // the rest: their state's dot.
                 if compact {
-                    StateDot(state: agent.state)
+                    StateDot(state: agent.state, paused: agent.isPaused)
                 } else {
                     CompanionMark(still: companion, size: 32)
                 }
@@ -443,29 +446,29 @@ private struct StatusBadge: View {
                 // least of three places already saying the same thing: the dot
                 // at the head of the row carries the state as colour, and the
                 // header counts them ("2 needs you · 1 working").
-                Text(agent.startedAt, style: .timer)
+                elapsed(agent)
                     .font(.system(size: 11, weight: .semibold))
                     .monospacedDigit()
-                    .foregroundStyle(stateColor(agent.state))
+                    .foregroundStyle(agentColor(agent))
             } else {
                 VStack(alignment: .trailing, spacing: 0) {
-                    Text(agent.state.label.uppercased())
+                    Text(stateLabel(agent).uppercased())
                         .font(.system(size: compact ? 7 : 8, weight: .bold))
                         .kerning(0.4)
-                        .foregroundStyle(stateColor(agent.state).opacity(0.8))
-                    Text(agent.startedAt, style: .timer)
+                        .foregroundStyle(agentColor(agent).opacity(0.8))
+                    elapsed(agent)
                         .font(.system(size: compact ? 11 : 13, weight: .semibold))
                         .monospacedDigit()
-                        .foregroundStyle(stateColor(agent.state))
+                        .foregroundStyle(agentColor(agent))
                 }
             }
         case .done, .idle:
-            Text(agent.state.label)
+            Text(stateLabel(agent))
                 .font(.system(size: compact ? 10 : 11, weight: .semibold))
-                .foregroundStyle(stateColor(agent.state))
+                .foregroundStyle(agentColor(agent))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
-                .background(stateColor(agent.state).opacity(0.14), in: Capsule())
+                .background(agentColor(agent).opacity(0.14), in: Capsule())
         }
     }
 }
@@ -499,6 +502,11 @@ private struct CompactTrailing: View {
                 .foregroundStyle(stateColor(.done))
         case .quiet:
             StateDot(state: .idle)
+        case .paused:
+            // Its connection dropped (B662): held, grey.
+            Image(systemName: "pause.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(pausedGrey)
         case nil:
             EmptyView()
         }
@@ -520,7 +528,7 @@ private struct OtherAgentRows: View {
                                                                 paneId: agent.paneId))
                  ?? URL(string: "moshpit://")!) {
             HStack(spacing: 6) {
-                StateDot(state: agent.state)
+                StateDot(state: agent.state, paused: agent.isPaused)
                 Text(agent.name)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.primary.opacity(0.85))
@@ -534,16 +542,16 @@ private struct OtherAgentRows: View {
                 Spacer(minLength: 6)
                 switch agent.state {
                 case .working, .attention:
-                    Text(agent.startedAt, style: .timer)
+                    elapsed(agent)
                         .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
-                        .foregroundStyle(stateColor(agent.state))
+                        .foregroundStyle(agentColor(agent))
                         .frame(maxWidth: 48, alignment: .trailing)
                         .multilineTextAlignment(.trailing)
                 case .done, .idle:
-                    Text(agent.state.label)
+                    Text(stateLabel(agent))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(stateColor(agent.state))
+                        .foregroundStyle(agentColor(agent))
                 }
             }
             .contentShape(Rectangle())
@@ -572,26 +580,49 @@ private struct StaleHint: View {
 
 private struct StateDot: View {
     let state: AgentActivityAttributes.AgentState
+    /// Its connection dropped (B662): grey, no glow, no ring.
+    var paused = false
 
     var body: some View {
         // Live Activity / widget views render as static snapshots (no
         // repeatForever animation), so "alive" is conveyed by a stronger glow on
         // the active states rather than a pulse that wouldn't run.
-        let active = state == .working || state == .attention
+        let active = !paused && (state == .working || state == .attention)
+        let color = paused ? pausedGrey : stateColor(state)
         Circle()
-            .fill(stateColor(state))
+            .fill(color)
             .frame(width: 8, height: 8)
-            .shadow(color: stateColor(state).opacity(active ? 0.9 : 0.5),
+            .shadow(color: color.opacity(active ? 0.9 : paused ? 0 : 0.5),
                     radius: active ? 5 : 2)
             .overlay(
                 // Attention gets a ring on top of the glow — the one state
                 // that's actually waiting on a human shouldn't lean on the
                 // same "dot + colour" language as a dot that's merely running.
                 Circle()
-                    .strokeBorder(amber.opacity(state == .attention ? 0.55 : 0), lineWidth: 1.5)
+                    .strokeBorder(amber.opacity(state == .attention && !paused ? 0.55 : 0), lineWidth: 1.5)
                     .frame(width: 14, height: 14)
             )
     }
+}
+
+/// A row whose connection dropped (B662) is grey whatever its state.
+private let pausedGrey = Color.primary.opacity(0.4)
+
+private func agentColor(_ agent: AgentActivityAttributes.Agent) -> Color {
+    agent.isPaused ? pausedGrey : stateColor(agent.state)
+}
+
+/// The state's word; "offline" for a row whose connection dropped (B662).
+private func stateLabel(_ agent: AgentActivityAttributes.Agent) -> String {
+    agent.isPaused ? AppLanguage.string("offline") : agent.state.label
+}
+
+/// The time in its state: live, or, its connection dropped (B662),
+/// stopped where it dropped.
+private func elapsed(_ agent: AgentActivityAttributes.Agent) -> Text {
+    guard let pausedAt = agent.pausedAt else { return Text(agent.startedAt, style: .timer) }
+    return Text(timerInterval: agent.startedAt...max(agent.startedAt, pausedAt),
+                pauseTime: pausedAt, countsDown: false)
 }
 
 private func stateColor(_ state: AgentActivityAttributes.AgentState) -> Color {

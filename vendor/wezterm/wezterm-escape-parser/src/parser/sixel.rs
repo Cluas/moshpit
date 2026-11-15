@@ -5,12 +5,22 @@ use alloc::vec;
 
 const MAX_PARAMS: usize = 5;
 const MAX_SIXEL_SIZE: usize = 100_000_000;
+/// Moshpit (W26): the most sixel commands one image may hold (about 48
+/// MB of them; a 4096×2048 image without a repeat is 1.4 M). Past it the
+/// image is dropped whole: its bytes are still read to its end, what it
+/// held is let go at once, and it is not dispatched.
+pub const MAX_SIXEL_DATA: usize = 4 << 20;
+/// Moshpit (W26): what the raster attributes' size may have reserved up
+/// front, in commands.
+const MAX_SIXEL_RESERVE: usize = 1 << 16;
 
 pub struct SixelBuilder {
     pub sixel: Sixel,
     params: [i64; MAX_PARAMS],
     param_no: usize,
     current_command: u8,
+    /// Moshpit (W26): past `MAX_SIXEL_DATA`; the image is not dispatched.
+    pub dropped: bool,
 }
 
 impl SixelBuilder {
@@ -41,10 +51,19 @@ impl SixelBuilder {
             param_no: 0,
             params: [-1; MAX_PARAMS],
             current_command: 0,
+            dropped: false,
         }
     }
 
     pub fn push(&mut self, data: u8) {
+        if self.dropped {
+            return;
+        }
+        if self.sixel.data.len() >= MAX_SIXEL_DATA {
+            self.dropped = true;
+            self.sixel.data = vec![];
+            return;
+        }
         match data {
             b'$' => {
                 self.finish_command();
@@ -172,7 +191,11 @@ impl SixelBuilder {
                         self.sixel.data.clear();
                         return;
                     }
-                    self.sixel.data.reserve(size);
+                    // Moshpit (W26): the size reserved for at most
+                    // `MAX_SIXEL_RESERVE` commands (a sixel is six pixels):
+                    // a header naming 10000×10000 reserved 100 M commands,
+                    // 762 MB, before a single one came.
+                    self.sixel.data.reserve((size / 6).min(MAX_SIXEL_RESERVE));
                 }
             }
             _ => {}

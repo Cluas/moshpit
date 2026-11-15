@@ -308,3 +308,61 @@ async fn a_ping_and_the_last_word_tell_a_live_link_from_a_dead_one() {
     assert!(within(5, ssh.ended()).await.is_lost());
     assert!(!within(5, ssh.ping(Duration::from_secs(2))).await);
 }
+
+/// The host's count of open session channels, once it settles at `want`
+/// (within 5 s), else what it last was.
+async fn open_channels_settle(host: &Host, want: usize) -> usize {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let open = host.seen.lock().unwrap().open_channels;
+        if open == want || std::time::Instant::now() > deadline {
+            return open;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+/// B720: a command the host refuses gives its channel back. The refusal
+/// returned and left the channel open on the host, a session against its
+/// MaxSessions until the connection ended (B612's class).
+#[tokio::test]
+async fn a_refused_command_gives_its_channel_back() {
+    let host = Host::start(Bench::default()).await;
+    let ssh = connect(&host).await;
+    assert!(ssh.run("refuse").await.is_err());
+    assert_eq!(open_channels_settle(&host, 0).await, 0, "the channel was left open");
+}
+
+/// B720: a process dropped without a close — a pump given up, herdr's push
+/// abandoned — closes its channel. Dropped, it only stopped being read.
+#[tokio::test]
+async fn a_dropped_process_closes_its_channel() {
+    let host = Host::start(Bench::default()).await;
+    let ssh = connect(&host).await;
+    let process = ssh.exec("cat").await.expect("cat runs");
+    assert_eq!(open_channels_settle(&host, 1).await, 1);
+    drop(process);
+    assert_eq!(open_channels_settle(&host, 0).await, 0, "the channel was left open");
+}
+
+/// B720: a read given up while its channel is still being opened (B243's
+/// cancel, a timeout) closes the channel once the host's yes arrives. The
+/// yes went to nobody and the channel stayed open on both sides.
+#[tokio::test]
+async fn an_open_given_up_midway_is_closed_when_it_lands() {
+    let host = Host::start(Bench {
+        open_delay: Some(std::time::Duration::from_millis(300)),
+        ..Default::default()
+    })
+    .await;
+    let ssh = connect(&host).await;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let given_up = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        given_up.cancel();
+    });
+    assert!(matches!(ssh.run_until("echo hi", &cancel).await, Ok(None)));
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert_eq!(open_channels_settle(&host, 0).await, 0, "the late channel was left open");
+}

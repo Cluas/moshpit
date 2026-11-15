@@ -107,6 +107,11 @@ struct AgentStatusWidgetView: View {
         isStale ? Color.primary.opacity(0.35) : color(forState: raw)
     }
 
+    /// An item's dot: grey too when its connection dropped (B662).
+    private func dotColor(_ item: AgentWidgetState.Item) -> Color {
+        item.paused == true ? Color.primary.opacity(0.35) : dotColor(item.state)
+    }
+
     private var total: Int { state.items.count }
     private var headline: AgentWidgetState.Item? { state.items.first }
 
@@ -114,6 +119,8 @@ struct AgentStatusWidgetView: View {
     /// "Bash: npm install" beats "work · 2:rednote" at a glance. Falls back to
     /// the location when no hook detail is present.
     private func secondary(_ item: AgentWidgetState.Item) -> String {
+        // Its connection dropped (B662): what it last did is not news.
+        if item.paused == true { return AppLanguage.string("offline") }
         if let d = item.detail, !d.isEmpty { return d }
         return item.location
     }
@@ -144,7 +151,7 @@ struct AgentStatusWidgetView: View {
             Spacer(minLength: 0)
             if let headline {
                 HStack(spacing: 6) {
-                    Circle().fill(dotColor(headline.state)).frame(width: 8, height: 8)
+                    Circle().fill(dotColor(headline)).frame(width: 8, height: 8)
                     Text(headline.command.isEmpty ? "shell" : headline.command)
                         .font(.system(size: 15, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.primary).lineLimit(1)
@@ -179,13 +186,13 @@ struct AgentStatusWidgetView: View {
             } else {
                 ForEach(state.items.prefix(3)) { item in
                     HStack(spacing: 8) {
-                        Circle().fill(dotColor(item.state)).frame(width: 7, height: 7)
+                        Circle().fill(dotColor(item)).frame(width: 7, height: 7)
                         Text(item.command.isEmpty ? "shell" : item.command)
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.primary).lineLimit(1)
                         Text(secondary(item))
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(item.state == "attention" ? wAmber : Color.primary.opacity(0.5))
+                            .foregroundStyle(item.state == "attention" && item.paused != true ? wAmber : Color.primary.opacity(0.5))
                             .lineLimit(1)
                         Spacer()
                     }
@@ -198,7 +205,7 @@ struct AgentStatusWidgetView: View {
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
-                Circle().fill(dotColor(headline?.state ?? "idle")).frame(width: 7, height: 7)
+                Circle().fill(headline.map { dotColor($0) } ?? dotColor("idle")).frame(width: 7, height: 7)
                 Text(headline.map { $0.command.isEmpty ? "shell" : $0.command } ?? "Moshpit")
                     .font(.system(size: 14, weight: .semibold)).lineLimit(1)
             }

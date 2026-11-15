@@ -62,6 +62,7 @@ use wezterm_term::{
 };
 
 pub mod ffi;
+pub mod history_images;
 mod images;
 pub mod ime;
 pub mod input;
@@ -97,6 +98,9 @@ pub struct Options {
     /// The most RAM the kitty images a program stored may take before the
     /// unplaced ones are let go (a terminal's own: it is protocol state).
     pub kitty_image_storage: usize,
+    /// The most RAM the images of the rows scrolled into the history may
+    /// keep; past it the oldest rows' images are let go (B733).
+    pub history_image_bytes: usize,
     /// The decoded images kept for drawing: `None`, the process's, shared
     /// by every terminal ([`ImageCache::shared`]).
     pub image_cache: Option<ImageCache>,
@@ -117,9 +121,19 @@ impl Default for Options {
             // A terminal's own; six panes' together are what a phone's
             // background budget has to hold (TERMINAL-VIEW.md §5.8).
             kitty_image_storage: 32 << 20,
+            // A terminal's own, as the kitty storage: what six panes'
+            // histories may keep together on a phone.
+            history_image_bytes: 32 << 20,
             image_cache: None,
             scroll_on_clear: ScrollOnClear::EraseDisplay,
         }
+    }
+}
+
+impl Drop for Terminal {
+    /// Its history's images leave the process's ledger with it (B733).
+    fn drop(&mut self) {
+        history_images::unregister(self.image_ledger_id);
     }
 }
 
@@ -533,6 +547,13 @@ struct TextPlace {
     sub: usize,
 }
 
+/// A search's matches, (first cell, last cell), and the moment they were
+/// found: the sequence number, the first row kept, the size.
+type FoundAll = (
+    (SequenceNo, StableRowIndex, (u16, u16)),
+    Vec<(select::Point, select::Point)>,
+);
+
 /// One cell as the link rules read it.
 #[derive(Debug, Clone)]
 struct Cell {
@@ -605,13 +626,24 @@ pub struct Terminal {
     /// Actions of a synchronized update, held until its end or deadline.
     held: Vec<Action>,
     holding_since: Option<Instant>,
+    /// An image arrived since the history's were last weighed (B733).
+    images_arrived: bool,
+    /// This terminal's place in the process's ledger of history images,
+    /// and what the ledger asks of it (B733).
+    image_ledger_id: u64,
+    image_share: Arc<history_images::Share>,
     /// The OSC 52 query being answered (its selection).
     clipboard_query: Option<OscSelection>,
     /// The viewport's top row when scrolled back; `None`: it follows the
     /// bottom.
     view_top: Option<StableRowIndex>,
     selection: Option<select::Selection>,
-    search: Option<(String, regex::Regex)>,
+    /// The pattern, its regex, and whether a match must start and end a
+    /// word (find's options, B730).
+    search: Option<(String, regex::Regex, (bool, bool))>,
+    /// The search's matches and when they were found: the terminal's
+    /// sequence number, its first row and its size then (B734).
+    found_all: Option<FoundAll>,
     found: Option<(StableRowIndex, usize, StableRowIndex, usize)>,
     /// The found match's rows as they read when it was shown, and when:
     /// the mark stays only on its text (B520).
@@ -690,6 +722,7 @@ fn rgb_u32(c: Rgb) -> u32 {
 
 impl Terminal {
     pub fn new(cols: u16, rows: u16, options: Options) -> Self {
+        let (image_ledger_id, image_share) = history_images::register();
         let shared = Shared::default();
         let config = Arc::new(Config {
             scrollback: options.scrollback,
@@ -722,10 +755,14 @@ impl Terminal {
             title: String::new(),
             held: Vec::new(),
             holding_since: None,
+            images_arrived: false,
+            image_ledger_id,
+            image_share,
             clipboard_query: None,
             view_top: None,
             selection: None,
             search: None,
+            found_all: None,
             found: None,
             found_rows: Vec::new(),
             found_seqno: 0,
@@ -775,6 +812,7 @@ impl Terminal {
 
     /// Takes the remote's bytes, cut anywhere.
     pub fn feed(&mut self, bytes: &[u8]) {
+        self.shed_history_images();
         let mut actions = Vec::new();
         self.parser.parse(bytes, |a| actions.push(a));
         let mut batch = Vec::with_capacity(actions.len());
@@ -787,11 +825,142 @@ impl Terminal {
         }
         self.release_held_marks();
         self.predict_settle();
+        if std::mem::take(&mut self.images_arrived) {
+            self.trim_history_images();
+        }
+    }
+
+    /// Lets the images of the oldest rows in the history go, row by row,
+    /// while the history's take more than [`Options::history_image_bytes`]
+    /// (B733); their text stays. Images were kept as long as their rows
+    /// were: 100 sixel plots of 800×600 kept 242 MB, kitty images placed
+    /// and scrolled away were never the kitty storage's to let go. Weighed
+    /// when an image arrives (an image on the screen is not the
+    /// history's, so the history keeps at most the budget and what the
+    /// screen showed then).
+    fn trim_history_images(&mut self) {
+        let kept = self.weigh_history_images(self.options.history_image_bytes);
+        let (own, trims) = history_images::weighed(self.image_ledger_id, kept);
+        if let Some(own) = own {
+            let kept = self.weigh_history_images(own);
+            history_images::settle(self.image_ledger_id, kept);
+        }
+        // Other terminals over the process's total let theirs go now if
+        // they are free (only trying their locks: never a wait on another
+        // terminal while this one's is held), else at their next bytes or
+        // frame.
+        for trim in trims {
+            trim();
+        }
+    }
+
+    /// What the process's ledger asked of this terminal's history images,
+    /// done (B733).
+    pub(crate) fn shed_history_images(&mut self) {
+        use std::sync::atomic::Ordering;
+        if self.image_share.due.swap(false, Ordering::AcqRel) {
+            let target = self.image_share.target.load(Ordering::Relaxed);
+            let kept = self.weigh_history_images(target);
+            history_images::settle(self.image_ledger_id, kept);
+        }
+    }
+
+    /// This terminal's place in the process's ledger of history images.
+    pub(crate) fn image_ledger_id(&self) -> u64 {
+        self.image_ledger_id
+    }
+
+    /// Lets the history's images go, oldest rows first, until they take
+    /// at most `budget`; what they take then.
+    fn weigh_history_images(&mut self, budget: usize) -> usize {
+        use std::collections::HashSet;
+        use wezterm_term::image::ImageData;
+        let seqno = self.term.current_seqno();
+        let screen = self.term.screen_mut();
+        let lines = screen.scrollback_rows();
+        let history = lines.saturating_sub(screen.physical_rows);
+        if history == 0 {
+            return 0;
+        }
+        // Each image the history shows: its bytes, and how many of its
+        // rows show it; the history's rows with images, oldest first.
+        let mut held: HashMap<*const ImageData, (usize, usize)> = HashMap::new();
+        let mut shown: HashSet<*const ImageData> = HashSet::new();
+        let mut rows: Vec<(usize, Vec<*const ImageData>)> = Vec::new();
+        screen.with_phys_lines(0..lines, |all| {
+            for (phys, line) in all.iter().enumerate() {
+                let mut on_row: Vec<*const ImageData> = Vec::new();
+                for cell in line.visible_cells() {
+                    for image in cell.attrs().images().unwrap_or_default() {
+                        let data = image.image_data();
+                        let key = Arc::as_ptr(data);
+                        if on_row.contains(&key) {
+                            continue;
+                        }
+                        on_row.push(key);
+                        if phys < history {
+                            held.entry(key).or_insert((data.len(), 0)).1 += 1;
+                        } else {
+                            shown.insert(key);
+                        }
+                    }
+                }
+                if phys < history && !on_row.is_empty() {
+                    rows.push((phys, on_row));
+                }
+            }
+        });
+        let mut total: usize = held
+            .iter()
+            .filter(|(k, _)| !shown.contains(*k))
+            .map(|(_, (len, _))| len)
+            .sum();
+        let mut trimmed = false;
+        let mut gone: HashSet<*const ImageData> = HashSet::new();
+        for (phys, keys) in rows {
+            if total <= budget {
+                break;
+            }
+            trimmed = true;
+            let line = screen.line_mut(phys);
+            for cell in line.cells_mut_for_attr_changes_only() {
+                cell.attrs_mut().clear_images();
+            }
+            // Back to the compact storage the history keeps its rows in
+            // (clearing took the row out of it: seven times the bytes).
+            line.compress_for_scrollback();
+            line.update_last_change_seqno(seqno);
+            for key in keys {
+                if let Some((len, count)) = held.get_mut(&key) {
+                    *count -= 1;
+                    if *count == 0 && !shown.contains(&key) {
+                        total -= *len;
+                        gone.insert(key);
+                    }
+                }
+            }
+        }
+        if trimmed {
+            // The emulator keeps the last 16 images so an identical one
+            // shares their data, whatever their size: those let go here
+            // stayed in memory through it (W20). And a kitty image's
+            // placement stays on record after its rows let it go: the
+            // store counted it placed and kept it (W27).
+            self.term.release_image_dedup();
+            self.term.kitty_drop_data(&gone);
+        }
+        total
     }
 
     /// Sorts one action: held (inside a synchronized update), handled here,
     /// or into `batch` for the emulator.
     fn route(&mut self, action: Action, batch: &mut Vec<Action>) {
+        if matches!(&action, Action::Sixel(_) | Action::KittyImage(_))
+            || matches!(&action, Action::OperatingSystemCommand(osc)
+                if matches!(**osc, OperatingSystemCommand::ITermProprietary(_)))
+        {
+            self.images_arrived = true;
+        }
         match &action {
             Action::CSI(CSI::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
                 DecPrivateModeCode::SynchronizedOutput,
@@ -1260,13 +1429,37 @@ impl Terminal {
 
     /// A kept row's cells and wrap mark, for selection, search and links.
     fn row_cells(&self, row: StableRowIndex) -> Option<select::RowCells> {
-        self.with_line(row, |l| {
+        let (mut cells, wrapped): select::RowCells = self.with_line(row, |l| {
             let cells = l
                 .visible_cells()
                 .map(|c| (c.cell_index(), c.width().max(1), c.str().to_string()))
                 .collect();
             (cells, l.last_cell_was_wrapped())
-        })
+        })?;
+        // The cell a wide character left at the right margin when it went
+        // on to the next row is nothing (B697). Erased with the pen's
+        // background (the fork's wrap of a wide character, as xterm does),
+        // it is kept as a blank cell, and a copy of a coloured Chinese line
+        // that wrapped there read `一二三四 五`. A blank there before a wide
+        // character is taken for that cell: a space the program printed in
+        // the last column before one reads the same, and goes too.
+        let cols = self.size().0 as usize;
+        if wrapped
+            && cells
+                .last()
+                .is_some_and(|(i, w, s)| *i + 1 == cols && *w == 1 && s == " ")
+            && self
+                .with_line(row + 1, |l| {
+                    l.visible_cells()
+                        .next()
+                        .map(|c| (c.cell_index(), c.width()))
+                })
+                .flatten()
+                .is_some_and(|(i, w)| i == 0 && w > 1)
+        {
+            cells.pop();
+        }
+        Some((cells, wrapped))
     }
 
     fn line_text(line: &Line) -> (String, bool) {
@@ -1427,6 +1620,7 @@ impl Terminal {
     /// change), copied, with the images on them, and the cursor. Resets
     /// the damage.
     pub fn frame(&mut self) -> Frame {
+        self.shed_history_images();
         self.sync_scroll();
         // Whether the selection still stands, before the rows to draw are
         // picked: one that goes takes every row it covered with it (B484).
@@ -1917,7 +2111,15 @@ impl Terminal {
         });
         if stands {
             if rewritten {
-                self.stamp_selection();
+                // Every row was just checked: unchanged, or rewritten to what
+                // it read. The noted text stands; only the moment moves on
+                // (B698: noting it again read every row the selection
+                // covers, each frame a program repainted a row as it was —
+                // 10 000 rows of history selected cost 9–34 ms a frame).
+                let seqno = self.term.current_seqno();
+                if let Some(sel) = self.selection.as_mut() {
+                    sel.seqno = seqno;
+                }
             }
             range
         } else {
@@ -2044,6 +2246,44 @@ impl Terminal {
         }
     }
 
+    /// Everything there is (the edit menu's Select All, B699): from the
+    /// first row with text, the history's included, to the last cell with
+    /// text on the last row that has any — not down the blank rows under
+    /// it (B98). False: no text anywhere.
+    pub fn select_all(&mut self) -> bool {
+        let first = self.first_row();
+        let last = self.screen_top() + self.size().1 as StableRowIndex - 1;
+        let has_text = |row: StableRowIndex| {
+            self.with_line(row, |l| !Self::line_text(l).0.trim().is_empty())
+                .unwrap_or(false)
+        };
+        let Some(top) = (first..=last).find(|&r| has_text(r)) else {
+            return false;
+        };
+        let bottom = (top..=last).rev().find(|&r| has_text(r)).unwrap_or(top);
+        let end = self
+            .row_cells(bottom)
+            .and_then(|(cells, _)| {
+                cells
+                    .iter()
+                    .rev()
+                    .find(|(_, _, s)| !s.trim().is_empty())
+                    .map(|(i, w, _)| i + w - 1)
+            })
+            .unwrap_or(0);
+        let mut sel = select::Selection::new(
+            SelectKind::Cells,
+            (top, 0),
+            false,
+            self.term.current_seqno(),
+        );
+        sel.extend((bottom, end), true);
+        self.selection = Some(sel);
+        self.stamp_selection();
+        self.full_damage = true;
+        true
+    }
+
     /// The selected text (wrapped rows joined, a line break between rows).
     pub fn selection_text(&mut self) -> Option<String> {
         let range = self.selection_range()?;
@@ -2100,17 +2340,31 @@ impl Terminal {
         if !body.contains('\n') {
             return None;
         }
-        let content: Vec<Cell> = (range.start.0..=range.end.0)
-            .flat_map(|row| self.link_cells(row).unwrap_or_default())
-            .filter(|x| !x.blank && range.contains(x.row, x.col, x.width))
-            .collect();
-        let (first, last) = (content.first()?, content.last()?);
+        // The first and last cells with content, looked for from either
+        // end: every cell of the selection gathered first cost a big
+        // selection's copy 50 MB for 10 000 rows, to learn that it was no
+        // link (B732).
+        let content = |row: StableRowIndex| -> Vec<Cell> {
+            self.link_cells(row)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|x| !x.blank && range.contains(x.row, x.col, x.width))
+                .collect()
+        };
+        let first =
+            (range.start.0..=range.end.0).find_map(|row| content(row).into_iter().next())?;
         let (uri, runs) = self.link_span(first.row, first.col)?;
         let covers = |x: &Cell| {
             runs.iter()
                 .any(|r| r.0 == x.row && x.col >= r.1 && x.col + x.width - 1 <= r.2)
         };
-        if !covers(first) || !covers(last) {
+        if !covers(&first) {
+            return None;
+        }
+        let last = (range.start.0..=range.end.0)
+            .rev()
+            .find_map(|row| content(row).pop())?;
+        if !covers(&last) {
             return None;
         }
         let joined: String = body
@@ -2137,7 +2391,7 @@ impl Terminal {
     /// after the last one, or from the bottom of the view; the view
     /// scrolls to it. `None`: no match (or a bad pattern).
     pub fn search(&mut self, pattern: &str, forward: bool) -> Option<Match> {
-        self.use_pattern(pattern)?;
+        self.use_pattern(pattern, (false, false))?;
         let matches = self.matches();
         let pick = match (self.found, forward) {
             (Some(f), true) => matches.iter().find(|(s, _)| *s > (f.0, f.1)).copied(),
@@ -2148,12 +2402,18 @@ impl Terminal {
         Some(self.show_found(pick, 0))
     }
 
-    /// `pattern` is the search's from now on (a new one forgets the match
-    /// shown). `None`: not a pattern.
-    fn use_pattern(&mut self, pattern: &str) -> Option<()> {
-        if self.search.as_ref().is_none_or(|(p, _)| p != pattern) {
+    /// `pattern` is the search's from now on, its matches starting and
+    /// ending words as `edges` says (a new one forgets the match shown).
+    /// `None`: not a pattern.
+    fn use_pattern(&mut self, pattern: &str, edges: (bool, bool)) -> Option<()> {
+        if self
+            .search
+            .as_ref()
+            .is_none_or(|(p, _, e)| p != pattern || *e != edges)
+        {
             let re = regex::Regex::new(pattern).ok()?;
-            self.search = Some((pattern.to_string(), re));
+            self.search = Some((pattern.to_string(), re, edges));
+            self.found_all = None;
             if self.found.take().is_some() {
                 self.full_damage = true;
             }
@@ -2162,21 +2422,61 @@ impl Terminal {
     }
 
     /// Every match of the search's pattern, history and screen, oldest
-    /// first: (first cell, last cell).
-    fn matches(&self) -> Vec<(select::Point, select::Point)> {
-        let Some((_, re)) = &self.search else {
+    /// first: (first cell, last cell). Kept until the terminal changes
+    /// (B734): each step of a find looked through the whole history again
+    /// — 26 ms and 20 MB a step over 10 000 rows — though nothing had
+    /// changed since the last.
+    fn matches(&mut self) -> Vec<(select::Point, select::Point)> {
+        let key = (self.term.current_seqno(), self.first_row(), self.size());
+        if let Some((k, found)) = &self.found_all
+            && *k == key
+        {
+            return found.clone();
+        }
+        let found = self.find_all();
+        self.found_all = Some((key, found.clone()));
+        found
+    }
+
+    fn find_all(&self) -> Vec<(select::Point, select::Point)> {
+        let Some((_, re, (starts, ends))) = &self.search else {
             return Vec::new();
         };
         let first = self.first_row();
         let last = self.screen_top() + self.size().1 as StableRowIndex - 1;
-        let lines = select::logical_lines(first, last, |row| self.row_cells(row));
         let mut matches = Vec::new();
-        for line in &lines {
-            for m in re.find_iter(&line.text) {
-                if m.is_empty() {
+        // The text first; where its characters sit only for the lines with
+        // a match.
+        for line in select::logical_texts(first, last, |row| self.row_cells(row)) {
+            if !re.is_match(&line.text) {
+                continue;
+            }
+            let Some(line) =
+                select::logical_lines(line.rows.0, line.rows.1, |row| self.row_cells(row))
+                    .into_iter()
+                    .next()
+            else {
+                continue;
+            };
+            let text = &line.text;
+            let mut from = 0;
+            while let Some(m) = re.find_at(text, from) {
+                let (a, b) = (m.start(), m.end());
+                if a == b {
+                    from = b + text[b..].chars().next().map_or(1, char::len_utf8);
                     continue;
                 }
-                let (Some(s), Some(e)) = (line.at(m.start()), line.at(m.end() - 1)) else {
+                let start_ok =
+                    !starts || word_edge(text[..a].chars().last(), text[a..].chars().next());
+                let end_ok = !ends || word_edge(text[b..].chars().next(), text[..b].chars().last());
+                if !(start_ok && end_ok) {
+                    // Not on word edges: a match starting a character on
+                    // may be.
+                    from = a + text[a..].chars().next().map_or(1, char::len_utf8);
+                    continue;
+                }
+                from = b;
+                let (Some(s), Some(e)) = (line.at(a), line.at(b - 1)) else {
                     continue;
                 };
                 matches.push((s, e));
@@ -2187,7 +2487,7 @@ impl Terminal {
 
     /// The match shown, as what a reflow keeps: its place among the
     /// matches, and how many there are.
-    fn found_place(&self) -> Option<(usize, usize)> {
+    fn found_place(&mut self) -> Option<(usize, usize)> {
         let f = self.found?;
         let matches = self.matches();
         let at = matches.iter().position(|(s, _)| *s == (f.0, f.1))?;
@@ -2295,14 +2595,8 @@ impl Terminal {
         if !options.case_sensitive {
             pattern.push_str("(?i)");
         }
-        if options.word_start {
-            pattern.push_str(r"\b");
-        }
         pattern.push_str(&regex::escape(text));
-        if options.word_end {
-            pattern.push_str(r"\b");
-        }
-        self.use_pattern(&pattern)?;
+        self.use_pattern(&pattern, (options.word_start, options.word_end))?;
         let matches = self.matches();
         if matches.is_empty() {
             if self.found.take().is_some() {
@@ -2331,6 +2625,7 @@ impl Terminal {
 
     pub fn search_clear(&mut self) {
         self.search = None;
+        self.found_all = None;
         if self.found.take().is_some() {
             self.full_damage = true;
         }
@@ -2825,6 +3120,8 @@ impl Terminal {
                 }
                 Typed::Backspace => out.extend(self.key(Key::Backspace, 0, true, 1)),
                 Typed::Enter => out.extend(self.key(Key::Enter, 0, true, 1)),
+                Typed::Left => out.extend(self.key(Key::Left, 0, true, 1)),
+                Typed::Right => out.extend(self.key(Key::Right, 0, true, 1)),
             }
         }
         if !out.is_empty() {
@@ -3394,5 +3691,33 @@ mod predict_screen {
                 .cloned()
                 .unwrap_or_else(|| predict::PCell::blank(CellAttributes::blank()))
         }
+    }
+}
+
+/// Whether a match's edge — `inside` its first (last) character, `outside`
+/// the one before (after) it — is a word's edge, for find's "starts with"
+/// and "whole words" (B730). The regex's `\b` stood there: a text that
+/// begins or ends with punctuation (`--force`, `./run`, `-v`) has no `\b`
+/// after a space, so it was never found; and Chinese and Japanese have no
+/// spaces between words, so a word inside a sentence (世界 in 你好世界) was
+/// never one either. A punctuation mark is an edge; so is any side of a
+/// CJK character (there is no telling where a word there ends), and a
+/// letter next to one.
+fn word_edge(outside: Option<char>, inside: Option<char>) -> bool {
+    fn word(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+    fn cjk(c: char) -> bool {
+        matches!(c,
+            '\u{3040}'..='\u{30FF}'
+            | '\u{31F0}'..='\u{31FF}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{4E00}'..='\u{9FFF}'
+            | '\u{F900}'..='\u{FAFF}'
+            | '\u{20000}'..='\u{2FA1F}')
+    }
+    match (outside, inside) {
+        (None, _) | (_, None) => true,
+        (Some(o), Some(i)) => !word(o) || !word(i) || cjk(o) || cjk(i),
     }
 }

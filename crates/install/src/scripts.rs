@@ -12,6 +12,26 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::InstallComponent;
 
+/// The version of the two scripts, on their second line as
+/// `# moshpit-scripts: <n>` ([`MARKER`]): bumped with every change to
+/// either (a test holds the two together). A host whose scripts carry a
+/// higher one was set up by a newer build, and is left as it is (B633):
+/// two phones on different builds paired with one host rewrote its scripts
+/// (and their agents' hooks) back and forth at every session's start. A
+/// script without the line is older than any that has it.
+pub const SCRIPTS_VERSION: u32 = 1;
+
+/// What the version line starts with.
+pub const MARKER: &str = "# moshpit-scripts: ";
+
+/// The version a script's text says it is, if it says one.
+pub fn version_of(text: &str) -> Option<u32> {
+    text.lines()
+        .take(5)
+        .find_map(|line| line.strip_prefix(MARKER))
+        .and_then(|rest| rest.trim().parse().ok())
+}
+
 const STAMP_FILE: &str = include_str!("../../../scripts/host/moshpit-stamp.sh");
 const SENDER_FILE: &str = include_str!("../../../scripts/host/moshpit-push.sh");
 
@@ -51,6 +71,44 @@ pub fn body(component: &InstallComponent) -> Option<&'static str> {
 mod tests {
     use super::*;
     use crate::commands::SELF_TEST_AGENT;
+
+    /// What the scripts were at [`SCRIPTS_VERSION`]. A change to either
+    /// script fails this until the version moves with it (and these with
+    /// the version): a host's newer scripts are kept by version alone
+    /// (B633), so the same version must mean the same scripts.
+    const PINNED: (u32, &str, &str) = (
+        1,
+        "04a492ea982ea480b46ceacf0b329c9b7b40180ae09ab7b722693f8da3f7bb09",
+        "172be927f7b44addfadf32420e814cedeaaaa4697396067e706e141c01409bea",
+    );
+
+    #[test]
+    fn the_scripts_say_their_version_and_it_moves_with_them() {
+        for (name, script) in [("stamp", stamp()), ("sender", sender())] {
+            assert_eq!(version_of(script), Some(SCRIPTS_VERSION), "{name}");
+        }
+        let (version, stamp_digest, sender_digest) = PINNED;
+        assert_eq!(
+            (
+                SCRIPTS_VERSION,
+                content_digest(stamp()).as_str(),
+                content_digest(sender()).as_str()
+            ),
+            (version, stamp_digest, sender_digest),
+            "a script changed: bump SCRIPTS_VERSION, and PINNED with it"
+        );
+    }
+
+    #[test]
+    fn a_version_is_read_from_the_head_only() {
+        assert_eq!(
+            version_of("#!/bin/sh\n# moshpit-scripts: 7\nexit 0"),
+            Some(7)
+        );
+        assert_eq!(version_of("#!/bin/sh\nexit 0"), None);
+        assert_eq!(version_of("#!/bin/sh\n# moshpit-scripts: x\n"), None);
+        assert_eq!(version_of("1\n2\n3\n4\n5\n# moshpit-scripts: 9\n"), None);
+    }
 
     /// `HostScriptsTests.hookSafety`.
     #[test]

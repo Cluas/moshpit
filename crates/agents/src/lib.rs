@@ -101,9 +101,14 @@ pub struct Tunables {
     pub announce_grace: f64,
     /// Announced-episode records older than this are dropped on load.
     pub announced_ttl: f64,
-    /// An unchanged state is sent again after this, inside the island's
-    /// 120 s stale date and the widget's 180 s horizon.
+    /// An unchanged state is sent to the island again after this, inside
+    /// its 120 s stale date. Not to the widget (B701): each write reloads
+    /// its timelines, from a daily budget; it is written when it changes,
+    /// and goes stale by its own timeline.
     pub resend_unchanged_after: f64,
+    /// An island the system would not start is asked for again after this
+    /// (B701).
+    pub retry_island_after: f64,
     /// A finished turn this long or longer is worth a sound.
     pub done_threshold: i64,
 }
@@ -119,6 +124,7 @@ impl Default for Tunables {
             announce_grace: 30.0,
             announced_ttl: 24.0 * 60.0 * 60.0,
             resend_unchanged_after: 60.0,
+            retry_island_after: 15.0,
             done_threshold: 180,
         }
     }
@@ -200,7 +206,14 @@ pub struct Agent {
     pub state: AgentState,
     /// Unix seconds.
     pub started_at: f64,
+    /// When its connection dropped (B662), Unix seconds: shown as it was,
+    /// greyed, its time stopped there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paused_at: Option<f64>,
 }
+
+/// How long a dropped connection's agents stay paused before they go.
+pub const PAUSED_FOR: f64 = 15.0 * 60.0;
 
 /// What the island (and the widget) shows.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -314,6 +327,8 @@ pub struct Monitor {
     panes: BTreeMap<Key, Pane>,
     announced: BTreeMap<Key, f64>,
     pending: BTreeMap<Key, (f64, f64)>,
+    /// Connections whose link is down, since when (B662).
+    down: BTreeMap<String, f64>,
     posted_attention: BTreeSet<Key>,
     /// Connections a poll has come in for since they were tracked: what
     /// stands there can be told.
@@ -361,6 +376,7 @@ impl Monitor {
             panes: BTreeMap::new(),
             announced,
             pending: BTreeMap::new(),
+            down: BTreeMap::new(),
             posted_attention: BTreeSet::new(),
             polled: BTreeSet::new(),
             unjudged: BTreeSet::new(),
@@ -493,6 +509,7 @@ impl Monitor {
             self.effects.push(Effect::Withdraw(format!("{ATTENTION_CARD}{conn}")));
         }
         self.conns.remove(conn);
+        self.down.remove(conn);
         self.trees.remove(conn);
         self.polled.remove(conn);
         self.unjudged.remove(conn);
@@ -576,6 +593,62 @@ impl Monitor {
         }
     }
 
+    /// `conn`'s link dropped (`up` false) or came back (B662). The machine
+    /// had no such input: the polls stopped, the sweep took that for the
+    /// stamps going away, and a working agent showed done within seconds,
+    /// the island ended and started again. Down, its agents keep the state
+    /// they had, paused; a "needs you" only a bell raised goes (nothing can
+    /// tell any more), and no grace runs out into a card; past
+    /// [`PAUSED_FOR`] they go. Back up, they resume: the next poll says
+    /// the real state, and a question still unannounced gets its grace
+    /// again.
+    pub fn link(&mut self, conn: &str, up: bool, now: f64) {
+        if !self.conns.contains_key(conn) {
+            return;
+        }
+        if up {
+            if self.down.remove(conn).is_none() {
+                return;
+            }
+            let mut asking: Vec<(Key, f64)> = Vec::new();
+            for (key, p) in &mut self.panes {
+                if key.0 == conn {
+                    // The next poll has its hold to arrive in.
+                    p.last_hook_seen = now;
+                    p.last_output = now;
+                    if p.state == AgentState::Attention {
+                        asking.push((key.clone(), p.since));
+                    }
+                }
+            }
+            self.effects.push(Effect::Note(format!("link up: {conn} — its agents resume")));
+            // A question the drop kept from being announced gets a grace
+            // from now: the polls say by then whether it still stands.
+            for (key, episode) in asking {
+                if should_announce(AgentState::Attention, episode, self.announced.get(&key).copied()) {
+                    self.schedule_announce(key, episode, now);
+                }
+            }
+        } else {
+            if self.down.contains_key(conn) {
+                return;
+            }
+            self.down.insert(conn.to_owned(), now);
+            let rung: Vec<Key> = self
+                .panes
+                .iter()
+                .filter(|(key, p)| key.0 == conn && !p.hook_owned && p.state == AgentState::Attention)
+                .map(|(key, _)| key.clone())
+                .collect();
+            for key in &rung {
+                self.panes.remove(key);
+            }
+            self.pending.retain(|key, _| key.0 != conn);
+            self.effects.push(Effect::Note(format!("link down: {conn} — its agents paused")));
+        }
+        self.sync(now);
+    }
+
     /// Rotate which agent the pill shows.
     pub fn cycle_headline(&mut self, now: f64) {
         self.headline_offset += 1;
@@ -656,12 +729,25 @@ impl Monitor {
         self.sync(now);
     }
 
-    /// A bell from a pane: attention at once, through the same grace.
+    /// A bell from a pane: attention at once, through the same grace. Only
+    /// a known agent's (B663): one the pane's foreground names, or one whose
+    /// stamp said it is there while no shell is in front. A shell's bell (a
+    /// tab completion with nothing to complete, a build that rings when it
+    /// ends, `printf '\a'`) asks nothing: it used to raise "zsh needs you".
     pub fn bell(&mut self, conn: &str, pane: &str, place: PaneWhere, now: f64) {
         let key: Key = (conn.to_owned(), pane.to_owned());
         if let Some(p) = self.panes.get(&key)
             && hook_governs(p, now)
         {
+            return;
+        }
+        let foreground = display_command(&place.command);
+        let stamped = self.panes.get(&key).is_some_and(|p| p.last_hook_state.is_some());
+        if !AGENT_COMMANDS.contains(&foreground) && !(stamped && !is_shell(foreground)) {
+            self.effects.push(Effect::Note(format!(
+                "bell: pane {pane} runs no known agent ({}) — not a question",
+                if foreground.is_empty() { "nothing" } else { foreground }
+            )));
             return;
         }
         let command = place.command.clone();
@@ -693,6 +779,25 @@ impl Monitor {
         self.sync(now);
     }
 
+    /// The person typed into `pane` from the phone (B663): a "needs you"
+    /// only a bell raised is answered, and the pane is back at work (its
+    /// card goes). A stamp's question is the stamp's to clear.
+    pub fn input(&mut self, conn: &str, pane: &str, now: f64) {
+        let key: Key = (conn.to_owned(), pane.to_owned());
+        let Some(p) = self.panes.get_mut(&key) else {
+            return;
+        };
+        if p.hook_owned || p.state != AgentState::Attention {
+            return;
+        }
+        p.state = AgentState::Working;
+        p.since = now;
+        p.last_output = now;
+        self.pending.remove(&key);
+        self.effects.push(Effect::Note(format!("input: pane {pane} answered its bell")));
+        self.sync(now);
+    }
+
     // MARK: - The hooks
 
     /// One poll of `conn`'s hook stamps. The stamp is authoritative for
@@ -706,6 +811,10 @@ impl Monitor {
     pub fn hooks(&mut self, conn: &str, hooks: Vec<Hook>, now: f64, interval: f64) {
         if !self.conns.contains_key(conn) {
             return;
+        }
+        // A poll came: the link is up (B662).
+        if self.down.contains_key(conn) {
+            self.link(conn, true, now);
         }
         let hold = stamp_hold(interval, self.tunables.stamp_margin);
         let mut changed = false;
@@ -945,7 +1054,25 @@ impl Monitor {
         let tunables = self.tunables;
         let mut changed = false;
         let mut forget: Vec<Key> = Vec::new();
+        // A connection down past its pause: its agents go (B662).
+        let expired: Vec<String> = self
+            .down
+            .iter()
+            .filter(|(_, since)| now - **since > PAUSED_FOR)
+            .map(|(conn, _)| conn.clone())
+            .collect();
+        for conn in &expired {
+            self.down.remove(conn);
+            let before = self.panes.len();
+            self.panes.retain(|key, _| &key.0 != conn);
+            changed |= self.panes.len() != before;
+            self.effects.push(Effect::Note(format!("link down past its pause: {conn} — its agents go")));
+        }
         for (key, p) in &mut self.panes {
+            // A dropped connection's agents hold still (B662).
+            if self.down.contains_key(&key.0) {
+                continue;
+            }
             if p.hook_owned && now - p.last_hook_seen > p.hold {
                 p.hook_owned = false;
                 p.last_output = now;
@@ -985,8 +1112,29 @@ impl Monitor {
             self.save_announced();
             changed = true;
         }
-        if changed {
+        // Or the island due again (B701): only a change or a stamped poll
+        // made a sync, and the sync is what sends an unchanged island again.
+        // Rows a bell or output raised have no poll behind them: their island
+        // was never sent again and went stale ("paused") with the app in
+        // front. Once a minute, not every sweep.
+        let resend = self.tunables.resend_unchanged_after;
+        let island_due = self
+            .island_sent
+            .as_ref()
+            .is_some_and(|(sent, at)| keeps_fresh(sent) && (now - at >= resend || now < *at));
+        if changed || island_due {
             self.sync(now);
+        }
+    }
+
+    /// The system would not start the island the last [`Effect::Island`]
+    /// asked for (B701): it was taken as shown, and not asked for again
+    /// until the state changed — for good, with nothing to change it. It is
+    /// asked for again after [`Tunables::retry_island_after`].
+    pub fn island_not_shown(&mut self, now: f64) {
+        if let Some((_, at)) = self.island_sent.as_mut() {
+            *at = now - self.tunables.resend_unchanged_after + self.tunables.retry_island_after;
+            self.effects.push(Effect::Note("island not shown — asked for again shortly".to_owned()));
         }
     }
 
@@ -1221,14 +1369,19 @@ impl Monitor {
             }
         }
 
-        let state = self.build_state();
+        let state = self.build_state(now, true);
         // The widget draws its first row, the most urgent agent, and opens
         // that one (B594); the headline is the island's, which cycling
         // moves. Its state said the island's, and the app's widget its
-        // first row: the two disagreed in every script with a cycle.
-        let mut widget = state.clone();
+        // first row: the two disagreed in every script with a cycle. Its
+        // finished agents stay (B707 is the island's).
+        let mut widget = self.build_state(now, false);
         widget.headline_id = widget.agents.first().map(|agent| agent.id.clone());
-        if needs_sending(&widget, self.widget_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
+        // Only when it changed (B701): an unchanged state was written again
+        // each minute a stamped poll came, every write a reload of the
+        // widget's timelines, which iOS budgets by the day. Its own timeline
+        // turns it stale when the app stops writing.
+        if needs_sending(&widget, self.widget_sent.as_ref(), now, f64::INFINITY) {
             self.effects.push(Effect::Widget(widget.clone()));
             self.widget_sent = Some((widget, now));
         }
@@ -1246,18 +1399,43 @@ impl Monitor {
             return;
         }
         self.island_ended = false;
-        if needs_sending(&state, self.island_sent.as_ref(), now, self.tunables.resend_unchanged_after) {
+        let resend = match &self.island_sent {
+            Some((sent, _)) if keeps_fresh(sent) => self.tunables.resend_unchanged_after,
+            _ => f64::INFINITY,
+        };
+        if needs_sending(&state, self.island_sent.as_ref(), now, resend) {
             self.effects.push(Effect::Island(state.clone()));
             self.island_sent = Some((state, now));
         }
     }
 
-    fn build_state(&self) -> IslandState {
-        let mut visible: Vec<(&Key, &Pane)> = self.panes.iter().filter(|(_, p)| p.visible).collect();
+    /// What the island shows (`island`), or the widget.
+    fn build_state(&self, now: f64, island: bool) -> IslandState {
+        // A finished agent's row on the island (B707): its finish is news
+        // for a moment, then the row goes — at once when its pane is on
+        // screen. A stamped pane kept its "done" for as long as the polls
+        // read the stamp, and the stamp stays until the next turn: the
+        // island never ended while any agent had finished, up to iOS's
+        // eight hours. The heuristic's rows already went after the same
+        // linger. The widget keeps them (it keeps nothing alive), and so
+        // does Home, which reads the stamps itself.
+        let linger = self.tunables.done_linger;
+        let on_screen = |key: &Key| {
+            self.on_screen
+                .as_ref()
+                .is_some_and(|v| v.conn == key.0 && v.pane.as_deref().is_none_or(|pane| pane == key.1))
+        };
+        let shows = |key: &Key, p: &Pane| {
+            p.visible && !(island && p.state == AgentState::Done && (now - p.since > linger || on_screen(key)))
+        };
+        let mut visible: Vec<(&Key, &Pane)> = self.panes.iter().filter(|(key, p)| shows(key, p)).collect();
+        let paused = |key: &Key| self.down.contains_key(&key.0);
+        let paused_at = |key: &Key| self.down.get(&key.0).copied();
+        // Paused rows (a dropped connection's, B662) after the live ones.
         visible.sort_by(|a, b| {
-            a.1.state
-                .rank()
-                .cmp(&b.1.state.rank())
+            paused(a.0)
+                .cmp(&paused(b.0))
+                .then(a.1.state.rank().cmp(&b.1.state.rank()))
                 .then(b.1.since.partial_cmp(&a.1.since).unwrap_or(std::cmp::Ordering::Equal))
         });
         let agents: Vec<Agent> = visible
@@ -1277,6 +1455,7 @@ impl Monitor {
                 },
                 state: p.state,
                 started_at: p.since,
+                paused_at: paused_at(key),
             })
             .collect();
         let agents = tell_apart(agents, &visible);
@@ -1286,8 +1465,14 @@ impl Monitor {
             Some(agents[self.headline_offset % agents.len()].id.clone())
         };
         IslandState {
-            working_count: visible.iter().filter(|(_, p)| p.state == AgentState::Working).count(),
-            attention_count: visible.iter().filter(|(_, p)| p.state == AgentState::Attention).count(),
+            working_count: visible
+                .iter()
+                .filter(|(key, p)| !paused(key) && p.state == AgentState::Working)
+                .count(),
+            attention_count: visible
+                .iter()
+                .filter(|(key, p)| !paused(key) && p.state == AgentState::Attention)
+                .count(),
             agents,
             headline_id,
         }
@@ -1546,6 +1731,14 @@ pub fn is_turn_ending(
 /// Whether `state` goes out, given what was last sent there and when — and
 /// again when the clock was set back past that send, rather than not until
 /// it is a minute past it again.
+/// Whether an unchanged island is sent again when due (B701): one showing
+/// a live row, to keep its stale date ahead. Paused rows (a dropped link,
+/// B662) can't go out of date: sent once, then only when they change or
+/// the link comes back.
+pub fn keeps_fresh(state: &IslandState) -> bool {
+    state.agents.iter().any(|agent| agent.paused_at.is_none())
+}
+
 pub fn needs_sending(state: &IslandState, last: Option<&(IslandState, f64)>, now: f64, resend_after: f64) -> bool {
     match last {
         None => true,

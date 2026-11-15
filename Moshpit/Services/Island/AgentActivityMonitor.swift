@@ -64,6 +64,11 @@ final class AgentActivityMonitor {
         /// stamps are on the protocol; tmux's output and bells are wired in
         /// `track`, because only tmux has them.
         weak var controller: (any MultiplexerControlling)?
+        /// The session, for whether its link is up (B662); nil for one
+        /// tracked without it (a test's), taken as up.
+        weak var session: SessionHub.ActiveSession?
+        /// What the machine was last told of the link.
+        var linkUp = true
     }
 
     /// Where the announced-episode record lives.
@@ -73,6 +78,8 @@ final class AgentActivityMonitor {
     /// The machine: Home's record reads its clock (`homeMessage`).
     @ObservationIgnored let machine: AgentMachine
     @ObservationIgnored private var sweepTimer: Timer?
+    /// The widget's snapshot as last written (B701).
+    @ObservationIgnored private var lastWidget: AgentWidgetState?
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let island: AgentIsland
     @ObservationIgnored private let notifier: Notifier
@@ -110,25 +117,12 @@ final class AgentActivityMonitor {
                                announceGrace: Self.announceGrace,
                                now: (clock?() ?? Date()).timeIntervalSince1970)
         // What a killed process left up: none of its agents is known here
-        // yet (B441).
+        // yet (B441). The widget's snapshot is not the island's: it stays
+        // (B709). The share sheet and Shortcuts offer its agents as the
+        // last known, with how old the list is, and the widget turns it
+        // stale on its own timeline. B667 emptied it at a launch that
+        // connected nowhere, and left them nothing to offer.
         self.island.endLeftovers()
-        // Its widget too (B667): the snapshot stayed on the Home Screen
-        // until this process had a state of its own to write, which a
-        // launch that connects nowhere never has. A test's widget is its
-        // own (`writeWidget`).
-        if writeWidget == nil, let cleared = Self.leftoverWidgetCleared(AgentWidgetStore.read(),
-                                                                         at: clock?() ?? Date()) {
-            self.writeWidget(cleared)
-        }
-    }
-
-    /// What the widget shows at launch in place of `stored`, an earlier
-    /// process's snapshot (B667): no agents, as this process knows none
-    /// yet; nil when it shows none already.
-    static func leftoverWidgetCleared(_ stored: AgentWidgetState, at now: Date) -> AgentWidgetState? {
-        guard !stored.items.isEmpty else { return nil }
-        return AgentWidgetState(items: [], attentionCount: 0, workingCount: 0,
-                                headlineDeepLink: nil, updatedAt: now)
     }
 
     private var now: Double { (clock?() ?? Date()).timeIntervalSince1970 }
@@ -183,15 +177,20 @@ final class AgentActivityMonitor {
     /// turning either on later did nothing for it until it reconnected, and
     /// Home had no "since" for its agents. The machine decides what reaches
     /// the phone, from the settings as they are then.
-    func track<C: MultiplexerControlling>(connection: ServerConnection, controller: C) {
+    func track<C: MultiplexerControlling>(connection: ServerConnection, controller: C,
+                                          session: SessionHub.ActiveSession? = nil) {
         let id = connection.id
-        conns[id] = ConnRef(connection: connection, controller: controller)
+        conns[id] = ConnRef(connection: connection, controller: controller,
+                            session: session ?? conns[id]?.session)
         if let tmux = controller as? RustTmuxController {
             tmux.onPaneActivity = { [weak self] paneId in
                 self?.output(connectionId: id, paneId: paneId)
             }
             tmux.onPaneBell = { [weak self] paneId in
                 self?.bell(connectionId: id, paneId: paneId)
+            }
+            tmux.onPaneInput = { [weak self] paneId in
+                self?.input(connectionId: id, paneId: paneId)
             }
         }
         controller.onAgentHooksUpdated = { [weak self] in
@@ -201,6 +200,29 @@ final class AgentActivityMonitor {
         drive { $0.track(conn: id.uuidString, label: connection.displayName) }
         sendTree(connectionId: id)
         sweepDelivered()
+    }
+
+    /// The app left the foreground (B701). The widget is written only when
+    /// what it shows changes: each write reloads its timelines, which iOS
+    /// budgets by the day. Its timeline turns it stale on its own, a
+    /// horizon after the snapshot's date — the last change, maybe long
+    /// before. Written once more now, it stays fresh while the app could
+    /// still be watching, and goes stale a horizon after the app stopped.
+    /// Not with no agents listed: nothing there to go stale.
+    func leftForeground() {
+        guard let snapshot = Self.widgetRefreshedAtLeaving(lastWidget, at: Date()),
+              readiness.isReadable(settings.store)
+        else { return }
+        lastWidget = snapshot
+        writeWidget(snapshot)
+    }
+
+    /// The snapshot to write again as the app leaves the foreground: the
+    /// last one, when it lists agents; nil otherwise.
+    static func widgetRefreshedAtLeaving(_ last: AgentWidgetState?, at now: Date) -> AgentWidgetState? {
+        guard var snapshot = last, !snapshot.items.isEmpty else { return nil }
+        snapshot.updatedAt = now
+        return snapshot
     }
 
     /// Hand the machine the agent cards the notification center holds, so a
@@ -225,12 +247,12 @@ final class AgentActivityMonitor {
     /// every controller it ever wires: a reconnect rebuilds it, and the weak
     /// ref `track` keeps goes nil with the old one.
     func trackWhenReady(connection: ServerConnection, session: SessionHub.ActiveSession) {
-        session.onMultiplexerControlChanged = { [weak self] controller in
-            self?.track(connection: connection, controller: controller)
+        session.onMultiplexerControlChanged = { [weak self, weak session] controller in
+            self?.track(connection: connection, controller: controller, session: session)
         }
-        Task { [weak self] in
-            guard let controller = await session.awaitMultiplexerControl() else { return }
-            self?.track(connection: connection, controller: controller)
+        Task { [weak self, weak session] in
+            guard let session, let controller = await session.awaitMultiplexerControl() else { return }
+            self?.track(connection: connection, controller: controller, session: session)
         }
     }
 
@@ -276,6 +298,13 @@ final class AgentActivityMonitor {
         drive { $0.bell(conn: connectionId.uuidString, pane: paneId, place: place, now: now) }
     }
 
+    /// The person typed into a pane (B663): a bell's "needs you" there is
+    /// answered.
+    private func input(connectionId: UUID, paneId: String) {
+        let now = self.now
+        drive { $0.input(conn: connectionId.uuidString, pane: paneId, now: now) }
+    }
+
     private func applyAgentHooks(connectionId: UUID) {
         guard let controller = conns[connectionId]?.controller else { return }
         sendTree(connectionId: connectionId)
@@ -314,6 +343,16 @@ final class AgentActivityMonitor {
     /// machine's sweep with the pane on screen.
     func sweep() {
         for (id, ref) in conns {
+            // The link (B662): a session reconnecting or offline pauses its
+            // agents in the machine, which no longer takes the polls'
+            // silence for their stamps going away; live again, they resume.
+            let up = ref.session.map { $0.viewModel.connState == .live } ?? true
+            if up != ref.linkUp {
+                conns[id]?.linkUp = up
+                let now = self.now
+                drive { $0.link(conn: id.uuidString, up: up, now: now) }
+            }
+            guard up else { continue }
             ref.controller?.pollAgentHooks()
             sendTree(connectionId: id)
         }
@@ -370,8 +409,12 @@ final class AgentActivityMonitor {
             }
             if island.live() != nil {
                 island.update(content)
-            } else {
-                _ = island.request(content)
+            } else if island.request(content) == nil {
+                // Not shown (B701): the system refused it, or the user
+                // swiped it away. It used to count as shown, and wasn't
+                // asked for again until the state changed.
+                let now = self.now
+                drive { $0.islandNotShown(now: now) }
             }
         case .endIsland:
             island.endAll()
@@ -388,6 +431,7 @@ final class AgentActivityMonitor {
                 return
             }
             heldWidget = nil
+            lastWidget = snapshot
             writeWidget(snapshot)
         case .post(let card):
             notifier.add(Self.request(card))
@@ -450,7 +494,8 @@ final class AgentActivityMonitor {
                 id: row.id, connectionId: row.connectionId, paneId: row.paneId,
                 command: row.command, location: row.location, place: row.place, detail: row.detail,
                 state: AgentActivityAttributes.AgentState(rawValue: row.state) ?? .working,
-                startedAt: Date(timeIntervalSince1970: row.startedAt))
+                startedAt: Date(timeIntervalSince1970: row.startedAt),
+                pausedAt: row.pausedAt.map { Date(timeIntervalSince1970: $0) })
         }
         let headline = agents.first { $0.id == state.headlineId }
         return AgentActivityAttributes.ContentState(
@@ -470,7 +515,8 @@ final class AgentActivityMonitor {
                                   detail: $0.detail, state: $0.state.rawValue,
                                   startedAt: $0.startedAt,
                                   deepLink: AgentDeepLink.string(connectionId: $0.connectionId,
-                                                                 paneId: $0.paneId))
+                                                                 paneId: $0.paneId),
+                                  paused: $0.isPaused ? true : nil)
         }
         // The widget draws the most urgent agent, its first row, and opens
         // that one (B594): it used to open the island's headline, which

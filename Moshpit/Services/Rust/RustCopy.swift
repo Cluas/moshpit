@@ -31,8 +31,8 @@ enum RustCopy {
     /// The card's text for a failed connect.
     static func failure(kind: FailureKindValue, cause: FailureCauseValue) -> String {
         switch cause {
-        case .unreachable:
-            return SSHError.connectionFailed.description
+        case .unreachable(let host, let port, let why):
+            return unreachable(host: host, port: port, why: why)
         case .proxy(let proxy, let why):
             if case .unreachable = why { return SSHError.proxyUnreachable(proxy).description }
             return SSHError.proxyFailed.description
@@ -61,6 +61,38 @@ enum RustCopy {
                 return credentials(.locked)
             default:
                 return SSHError.underlying(RustCoreFailure()).description
+            }
+        }
+    }
+
+    /// Why nothing answered, in the words of what the person can check
+    /// (B740). A host on the local network that didn't answer may be the
+    /// permission iOS asks for on the first connect there: denied (or still
+    /// unanswered), the connect fails as if the host weren't there, so that
+    /// copy names where to allow it. A refusal came from the host itself,
+    /// so the permission isn't it.
+    static func unreachable(host: String, port: UInt16, why: UnreachableValue) -> String {
+        switch why {
+        case .refused:
+            // A port is a name, not a quantity: 2222, never "2,222".
+            return String(localized: "\(host) refused the connection on port \(String(port)). Check the port, and that SSH is running there.")
+        case .noAddress:
+            // A `.local` name is looked up on the local network itself.
+            if LocalNetworkHost.isMulticastName(host) {
+                return String(localized: "Couldn't find \(host) on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.")
+            }
+            return String(localized: "Couldn't find \(host). Check the host name.")
+        case .timedOut, .noRoute, .other:
+            if LocalNetworkHost.contains(host) {
+                return String(localized: "Couldn't reach \(host) on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.")
+            }
+            switch why {
+            case .timedOut:
+                return String(localized: "\(host) didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.")
+            case .noRoute:
+                return String(localized: "There's no route to \(host) from this network. Check your connection, and your VPN if the host sits behind one.")
+            default:
+                return SSHError.connectionFailed.description
             }
         }
     }
@@ -224,5 +256,56 @@ enum RustCopy {
             return .wouldDowngrade(HerdrVersionReport(client: client, server: server))
         case .unneeded: return .unneeded
         }
+    }
+}
+
+/// Whether a host the person typed is on the local network as iOS's Local
+/// Network permission counts it (B740): a private or link-local address, a
+/// `.local` name (multicast DNS), or a one-word name the network's own
+/// resolver answers. A tailnet address (100.64/10) or a public one goes out
+/// through a route iOS doesn't ask about.
+enum LocalNetworkHost {
+    static func contains(_ host: String) -> Bool {
+        let name = normalized(host)
+        if let bytes = ipv4(name) {
+            switch (bytes[0], bytes[1]) {
+            case (10, _), (192, 168), (169, 254): return true
+            case (172, let second): return (16...31).contains(second)
+            default: return false
+            }
+        }
+        if let bytes = ipv6(name) {
+            // fe80::/10 link-local, fc00::/7 unique local.
+            return (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) || bytes[0] & 0xfe == 0xfc
+        }
+        if isMulticastName(name) { return true }
+        return !name.isEmpty && !name.contains(".") && name != "localhost"
+    }
+
+    /// A name looked up with multicast DNS, on the local network itself.
+    static func isMulticastName(_ host: String) -> Bool {
+        normalized(host).hasSuffix(".local")
+    }
+
+    /// Lowercased, without the brackets, zone or trailing dot a host may be
+    /// typed with.
+    private static func normalized(_ host: String) -> String {
+        var name = host.trimmingCharacters(in: .whitespaces).lowercased()
+        if name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
+        if let zone = name.firstIndex(of: "%") { name = String(name[..<zone]) }
+        while name.hasSuffix(".") { name.removeLast() }
+        return name
+    }
+
+    private static func ipv4(_ name: String) -> [UInt8]? {
+        var address = in_addr()
+        guard inet_pton(AF_INET, name, &address) == 1 else { return nil }
+        return withUnsafeBytes(of: address) { Array($0) }
+    }
+
+    private static func ipv6(_ name: String) -> [UInt8]? {
+        var address = in6_addr()
+        guard inet_pton(AF_INET6, name, &address) == 1 else { return nil }
+        return withUnsafeBytes(of: address) { Array($0) }
     }
 }

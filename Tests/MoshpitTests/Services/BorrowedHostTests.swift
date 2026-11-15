@@ -195,6 +195,134 @@ struct BorrowedHostTests {
         }
     }
 
+    // MARK: A tapped path (1.0.8's files, B743)
+
+    /// A tapped path's preview over `ssh`, started.
+    @MainActor
+    private func preview(_ path: String, on ssh: FakeLentSSH) -> RemotePreviewModel {
+        let host = BorrowedHost(ssh)
+        let model = RemotePreviewModel(path: path,
+                                       files: RemoteFileAccess(scope: "b743-\(UUID().uuidString)") { host })
+        model.start()
+        return model
+    }
+
+    /// The phase the preview settles on once it stops looking (or
+    /// downloading): what the card, Quick Look, the player or the folder
+    /// sheet takes from there.
+    @MainActor
+    private func settled(_ model: RemotePreviewModel) async throws -> RemotePreviewModel.Phase {
+        for _ in 0..<600 {
+            switch model.phase {
+            case .looking, .downloading: try await Task.sleep(for: .milliseconds(5))
+            default: return model.phase
+            }
+        }
+        return model.phase
+    }
+
+    /// 1.0.8 (1)'s note: a tapped file downloads over the file-transfer
+    /// connection and opens in Quick Look; one over 50 MB asks first.
+    @Test("a tapped file opens at once up to 50 MB; past that it asks first, and a yes fetches it")
+    @MainActor
+    func fiftyMegabytesAsk() async throws {
+        #expect(RemotePreviewModel.confirmAbove == 50 * 1024 * 1024)
+        let ssh = FakeLentSSH()
+        let bytes = Data("PNG!".utf8)
+        for name in ["small.png", "edge.png", "big.png"] { ssh.file("/work/\(name)", bytes) }
+        ssh.reportSize("/work/edge.png", RemotePreviewModel.confirmAbove)
+        ssh.reportSize("/work/big.png", RemotePreviewModel.confirmAbove + 1)
+
+        for name in ["small.png", "edge.png"] {
+            let model = preview("/work/\(name)", on: ssh)
+            guard case .ready(let url) = try await settled(model) else {
+                Issue.record("\(name) didn't open at once: \(model.phase)")
+                continue
+            }
+            #expect(try Data(contentsOf: url) == bytes)
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        }
+
+        let big = preview("/work/big.png", on: ssh)
+        guard case .confirm(let entry) = try await settled(big) else {
+            Issue.record("past 50 MB it didn't ask: \(big.phase)")
+            return
+        }
+        #expect(entry.size == RemotePreviewModel.confirmAbove + 1)
+        #expect(big.showsHUD, "the card asks")
+        big.confirm()
+        guard case .ready(let url) = try await settled(big) else {
+            Issue.record("a yes didn't fetch it: \(big.phase)")
+            return
+        }
+        #expect(try Data(contentsOf: url) == bytes)
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    /// 1.0.8 (1): a tapped .mp4/.mov/.m4v starts playing at once, reading
+    /// only the bytes the player needs; a host without SFTP falls back to
+    /// downloading (asking first past 50 MB, as any file).
+    @Test("a video streams at once whatever its size; without SFTP it downloads instead")
+    @MainActor
+    func videoStreamsOrDownloads() async throws {
+        let ssh = FakeLentSSH()
+        let clip = Data((0..<4096).map { UInt8($0 % 251) })
+        for name in ["a.mp4", "b.MOV", "c.m4v"] { ssh.file("/work/\(name)", clip) }
+        ssh.reportSize("/work/a.mp4", RemotePreviewModel.confirmAbove * 4)
+        for name in ["a.mp4", "b.MOV", "c.m4v"] {
+            let model = preview("/work/\(name)", on: ssh)
+            guard case .stream(let entry, let file) = try await settled(model) else {
+                Issue.record("\(name) didn't stream: \(model.phase)")
+                continue
+            }
+            #expect(entry.name == name)
+            #expect(!model.showsHUD, "nothing to wait for or confirm: the player takes it")
+            let range = try await file.read(from: 1000, length: 16)
+            #expect(Data(range) == clip.subdata(in: 1000..<1016), "a range, read where the player asks")
+            await file.close()
+        }
+
+        let plain = FakeLentSSH()
+        plain.sftpAvailable = false
+        let big = RemotePreviewModel.confirmAbove + 1
+        plain.commands = { command in
+            switch command {
+            case RemoteFileCommands.stat("/work/small.mp4"): return .init(stdout: Data("f 4\n".utf8))
+            case RemoteFileCommands.cat("/work/small.mp4"): return .init(stdout: Data("TINY".utf8).base64EncodedData() + Data("\n".utf8))
+            case RemoteFileCommands.stat("/work/big.mp4"): return .init(stdout: Data("f \(big)\n".utf8))
+            default: return .init(status: 1)
+            }
+        }
+        let small = preview("/work/small.mp4", on: plain)
+        guard case .ready(let url) = try await settled(small) else {
+            Issue.record("without SFTP a video didn't download: \(small.phase)")
+            return
+        }
+        #expect(try Data(contentsOf: url) == Data("TINY".utf8))
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        let large = preview("/work/big.mp4", on: plain)
+        guard case .confirm = try await settled(large) else {
+            Issue.record("without SFTP a big video didn't ask first: \(large.phase)")
+            return
+        }
+    }
+
+    /// 1.0.8 (1): a tapped folder opens the folder sheet.
+    @Test("a tapped folder hands over to the folder sheet")
+    @MainActor
+    func folderOpensTheSheet() async throws {
+        let ssh = FakeLentSSH()
+        ssh.folder("/work/out")
+        ssh.file("/work/out/a.png", Data("PNG!".utf8))
+        let model = preview("/work/out", on: ssh)
+        guard case .folder(let entry) = try await settled(model) else {
+            Issue.record("a folder didn't open its sheet: \(model.phase)")
+            return
+        }
+        #expect(entry.isDirectory && entry.path == "/work/out")
+        #expect(!model.showsHUD)
+    }
+
     // MARK: Changing the folder
 
     @Test("the folder sheet's changes over SFTP, and their exec forms read by marker")

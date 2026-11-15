@@ -6,7 +6,7 @@
 mod common;
 use common::*;
 use moshpit_term::{
-    Announcement, Ime, ScrollAction, SelectKind, Tap, Typed, cell_flags as F, ime::Outcome,
+    Announcement, Ime, Key, ScrollAction, SelectKind, Tap, Typed, cell_flags as F, ime::Outcome,
 };
 
 fn typed(o: &Outcome) -> String {
@@ -16,6 +16,8 @@ fn typed(o: &Outcome) -> String {
             Typed::Text(s) => s.clone(),
             Typed::Backspace => "⌫".into(),
             Typed::Enter => "⏎".into(),
+            Typed::Left => "←".into(),
+            Typed::Right => "→".into(),
         })
         .collect()
 }
@@ -252,6 +254,67 @@ fn graphemes_are_one_character() {
     assert_eq!(ime.len(), 3);
     assert_eq!(typed(&ime.delete_backward()), "⌫");
     assert_eq!(ime.text(), "\n👨‍👩‍👧");
+}
+
+/// B695: a third-party keyboard (豆包, Sogou, WeChat) moves its caret
+/// itself: paired punctuation types `（）` and steps back into the pair; a
+/// slide on its space bar moves along the line. Only the shadow's caret
+/// moved, the remote's stayed at the end: `你` typed into the pair went
+/// after it, `（）你`. A caret the input system moves goes to the remote as
+/// arrows, one per grapheme, as the space bar's trackpad sends them —
+/// never past the line typed (not into the remote's own text in front of
+/// it), never for a selection (a keyboard's delete, V9) or inside a
+/// composition.
+#[test]
+fn b695_a_caret_the_keyboard_moves_moves_on_the_remote() {
+    let mut ime = focused();
+    assert_eq!(typed(&ime.insert("（）")), "（）");
+    let (c, _) = ime.selected();
+    assert_eq!(typed(&ime.input_select(c - 1, c - 1)), "←", "into the pair");
+    assert_eq!(typed(&ime.insert("你")), "你");
+    assert_eq!(ime.text(), "\n（你）");
+    // A slide along the line, either way.
+    let (c, _) = ime.selected();
+    assert_eq!(typed(&ime.input_select(c + 1, c + 1)), "→");
+    assert_eq!(typed(&ime.input_select(1, 1)), "←←←");
+    // Never in front of the phantom, never past the end: the line at most.
+    assert_eq!(
+        typed(&ime.input_select(0, 0)),
+        "",
+        "in front of the phantom"
+    );
+    assert_eq!(typed(&ime.input_select(99, 99)), "→→→", "past the end");
+    // Where it already is: nothing.
+    let (c, _) = ime.selected();
+    assert_eq!(typed(&ime.input_select(c, c)), "");
+    // A selection is no move: a keyboard's delete selects, then deletes.
+    assert_eq!(typed(&ime.input_select(c - 1, c)), "");
+    assert_eq!(typed(&ime.delete_backward()), "⌫");
+    // Nor is a selection let go (its caret is where the delete left it).
+    ime.input_select(1, 2);
+    assert_eq!(typed(&ime.input_select(2, 2)), "");
+    // Inside a composition the input method moves its own caret.
+    ime.input_select(3, 3);
+    ime.set_marked(Some("ni"), (2, 0));
+    let (c, _) = ime.selected();
+    assert_eq!(typed(&ime.input_select(c - 1, c - 1)), "");
+    ime.set_marked(None, (0, 0));
+    // As the program asked: application cursor keys, kitty's protocol.
+    let mut t = term(20, 4, 10);
+    t.ime_apply(|ime| ime.focus(true));
+    t.ime_apply(|ime| ime.insert("ab"));
+    assert_eq!(t.ime_apply(|ime| ime.input_select(2, 2)).bytes, b"\x1b[D");
+    t.feed(b"\x1b[?1h");
+    assert_eq!(t.ime_apply(|ime| ime.input_select(3, 3)).bytes, b"\x1bOC");
+    // Under kitty's protocol, the Left key as the core encodes it for the
+    // trackpad (`CSI 1;1 D` here), twice.
+    t.feed(b"\x1b[?1l\x1b[>1u");
+    let left = t.key(Key::Left, 0, true, 1);
+    assert_eq!(left, b"\x1b[1;1D");
+    assert_eq!(
+        t.ime_apply(|ime| ime.input_select(1, 1)).bytes,
+        [left.clone(), left].concat()
+    );
 }
 
 #[test]

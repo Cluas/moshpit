@@ -466,7 +466,9 @@ final class RustSettings: AppSettingsBacking {
         case .double(let value): return value
         case .string(let value): return value
         case .stringSet(let values): return values
-        case nil: return nil
+        case nil:
+            Self.unknown(key)
+            return nil
         }
     }
 
@@ -483,11 +485,28 @@ final class RustSettings: AppSettingsBacking {
             return
         }
         if !handle.setValue(key: key, value: setting) {
-            Log.store.error("rust store: settings: \(key, privacy: .public) refused that value")
+            if handle.value(key: key) == nil {
+                Self.unknown(key)
+            } else {
+                Log.store.fault("rust store: settings: \(key, privacy: .public) refused a \(String(describing: type(of: value)), privacy: .public): not the setting's type")
+                assertionFailure("AppSettings wrote \(key) as \(type(of: value)), not the type its schema keeps")
+            }
         }
     }
 
     func reloadIfNeeded() { handle.reloadIfNeeded() }
+
+    /// A key the store's schema (`crates/store/src/settings.rs`'s `ALL`)
+    /// lacks: its writes are dropped and its reads find nothing, so the
+    /// setting never sticks and nothing fails (B510, B704). Loud in every
+    /// build, and a stop in a debug one (B745); the store's own test
+    /// (`crates/store/tests/app_settings_keys.rs`) reads `AppSettings` for
+    /// keys like it.
+    private static func unknown(_ key: String) {
+        Log.store.fault("rust store: settings: \(key, privacy: .public) is no setting of the store's schema: dropped")
+        assertionFailure("AppSettings used \(key), which the Rust settings store's schema (crates/store/src/settings.rs ALL) lacks: "
+                         + "it would be dropped. Add it to ALL, or keep it in `store` beside the settings (B704, B745).")
+    }
 }
 
 // MARK: - Push pairings

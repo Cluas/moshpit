@@ -202,7 +202,17 @@ impl Rig {
         self.drain();
     }
 
+    /// The focus report after a focus change the person asked for (a tab
+    /// or workspace picked, B683): followed.
     fn show(&mut self, terminal: &str) {
+        self.renderer.follow_focus(self.now);
+        self.renderer.show(terminal, self.now);
+        self.drain();
+    }
+
+    /// The focus report as every poll repeats it — the desktop's moves
+    /// included (B683: not followed once the loop is on a pane).
+    fn report(&mut self, terminal: &str) {
         self.renderer.show(terminal, self.now);
         self.drain();
     }
@@ -506,6 +516,29 @@ impl Rig {
             .filter(|(_, output)| matches!(output, Output::Veil))
             .count()
     }
+}
+
+// MARK: - B683: the desktop's focus
+
+/// The first report lands the loop on the focused pane; after that, the
+/// desktop moving the focus no longer moves it (the phone switched under
+/// the person and dropped what they typed); a focus change the person
+/// asked for still does, and so does the pane on screen going away.
+#[test]
+fn the_desktops_focus_moves_the_loop_only_at_first() {
+    let mut rig = Rig::new();
+    rig.report("t-1");
+    rig.run_for(50);
+    assert_eq!(rig.host.landed, ["t-1"], "the first report lands");
+    for _ in 0..3 {
+        rig.report("t-2");
+        rig.run_for(100);
+    }
+    assert_eq!(rig.host.landed, ["t-1"], "the desktop's moves don't");
+    assert!(rig.renderer.typed(b"x", rig.now), "typing goes on");
+    rig.show("t-3");
+    rig.run_for(100);
+    assert_eq!(rig.host.landed, ["t-1", "t-3"], "the person's own move does");
 }
 
 // MARK: - Round twenty-five (B208)

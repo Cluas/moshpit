@@ -75,6 +75,23 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    /// `pane`, its tab and its workspace as the active ones, as the phone
+    /// shows them (B683: the phone keeps its own pane while the server's
+    /// focus moves elsewhere). False, and nothing changed, for a pane the
+    /// tree doesn't have.
+    pub fn show_pane(&mut self, pane: &str) -> bool {
+        let Some(window) = self.panes.get(pane).map(|pane| pane.window_id.clone()) else {
+            return false;
+        };
+        let session = self.windows.get(&window).map(|window| window.session_id.clone());
+        self.active_pane_id = Some(pane.to_owned());
+        self.active_window_id = Some(window);
+        if session.is_some() {
+            self.active_session_id = session;
+        }
+        true
+    }
+
     /// Panes in the active window, by id.
     pub fn active_panes(&self) -> Vec<&Pane> {
         let Some(window) = &self.active_window_id else {

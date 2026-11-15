@@ -108,6 +108,10 @@ pub enum MoshCommand {
     /// whole screen (`Transport::request_full_redraw`), the field check for
     /// a screen that drifted from the server's (B338).
     Repaint,
+    /// The keystroke bytes the server hasn't acked, asked as the leg goes
+    /// (B618): what a flow replaced by another server never delivered is
+    /// said, never dropped in silence.
+    Undelivered(tokio::sync::oneshot::Sender<usize>),
     /// mosh with tmux, a scroll over a pane whose program doesn't want the
     /// mouse (B362): page tmux's history in copy-mode on the client mosh
     /// renders — `prefix` + `[` to enter it (only when not in it), then
@@ -625,6 +629,9 @@ async fn run(
                     transport.on_better_path(true, clock.now());
                 }
                 MoshCommand::Repaint => transport.request_full_redraw(now),
+                MoshCommand::Undelivered(reply) => {
+                    let _ = reply.send(transport.undelivered_keystroke_bytes());
+                }
                 MoshCommand::Close => transport.close(),
             },
             Woke::Command(None) => {
@@ -1065,7 +1072,7 @@ mod tests {
             MoshStart {
                 server: server_addr(),
                 key: KEY,
-                config: TransportConfig::default(),
+                config: crate::Timing::default().mosh,
                 grid: (80, 24),
                 painted: None,
             },
@@ -1753,6 +1760,30 @@ mod tests {
             })
             .unwrap();
         bench.read_until(b"ok").await;
+    }
+
+    /// B618: keys the server hasn't acked are never dropped while the
+    /// session is the same one: a silence of 20 s (past the 10 s TTL the
+    /// app had) and they still arrive, in order, as mosh-client delivers
+    /// them. They were held, then dropped without a word.
+    #[tokio::test(start_paused = true)]
+    async fn keys_wait_out_a_long_silence_and_arrive() {
+        let (net, end) = fake::network();
+        let mut bench = start(net);
+        tokio::spawn(EchoServer::new(end).serve());
+        bench.until(|n| *n == MoshNote::FirstContact).await;
+        bench.net.drop_up(true);
+        bench
+            .mosh
+            .commands
+            .send(MoshCommand::Keys {
+                bytes: b"late".to_vec(),
+                end: 4,
+            })
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        bench.net.drop_up(false);
+        bench.read_until(b"late").await;
     }
 
     #[tokio::test(start_paused = true)]

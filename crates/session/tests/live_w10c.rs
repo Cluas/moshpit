@@ -11,7 +11,8 @@
 //!   lifting), a reply to an unfocused pane, the pane on screen closed, herdr
 //!   restarted, a reply over a silent UDP path;
 //! - two devices on one herdr: following the focus never takes a pane,
-//!   "Open here" does;
+//!   another device's pick never moves the phone (B683), the phone's own
+//!   pick takes the pane back;
 //! - a switch storm: typing reaches only the pane asked for;
 //! - the connect's cleanup kills only a renderer.
 //!
@@ -393,7 +394,7 @@ async fn herdr_over_mosh_on_the_core() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd, mosh-server and herdr; see the module docs"]
-async fn two_devices_following_the_focus_never_takes_and_open_here_does() {
+async fn two_devices_a_follow_never_takes_and_another_devices_pick_never_moves_the_phone() {
     need!();
     let herdr = PrivateHerdr::start();
     let (a, b) = two_panes(&herdr);
@@ -421,7 +422,7 @@ async fn two_devices_following_the_focus_never_takes_and_open_here_does() {
     assert_eq!(notice(&bench, phone), None, "the phone lost A to a follow");
 
     // The iPad's person picks B: theirs. The server's focus is B now; the
-    // phone follows it — refused, said, and the iPad keeps B.
+    // phone keeps A (B683: another device's focus change never moves it).
     bench
         .sessions
         .herdr(ipad, HerdrAction::SelectPane(b.clone()));
@@ -430,29 +431,20 @@ async fn two_devices_following_the_focus_never_takes_and_open_here_does() {
             == Some(b.as_str()))
         .await
     );
-    let follow = Instant::now();
-    assert!(
-        eventually(20, || notice(&bench, phone)
-            == Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere))))
-        .await,
-        "{:?} on {:?}",
-        notice(&bench, phone),
-        on_screen(&bench, phone)
-    );
-    let follow_ms = ms(follow);
     tokio::time::sleep(Duration::from_secs(8)).await;
-    assert_eq!(
-        on_screen(&bench, ipad).as_deref(),
-        Some(b.as_str()),
-        "the follow took B"
-    );
+    assert_eq!(on_screen(&bench, phone).as_deref(), Some(a.as_str()), "the phone kept A");
+    assert_eq!(notice(&bench, phone), None);
+    assert_eq!(on_screen(&bench, ipad).as_deref(), Some(b.as_str()));
     assert_eq!(notice(&bench, ipad), None);
     ipad_screen.write(b"echo ipad-$((6*7))\r");
     assert!(eventually(10, || herdr.read(&b).contains("ipad-42")).await);
 
-    // "Open here" on the phone takes B; the iPad says so in turn.
+    // The phone's person picks B: theirs (the pick takes it); the iPad says
+    // so.
     let opened = Instant::now();
-    bench.sessions.herdr(phone, HerdrAction::NoticeAction);
+    bench
+        .sessions
+        .herdr(phone, HerdrAction::SelectPane(b.clone()));
     assert!(
         eventually(10, || on_screen(&bench, phone).as_deref()
             == Some(b.as_str()))
@@ -465,10 +457,7 @@ async fn two_devices_following_the_focus_never_takes_and_open_here_does() {
             == Some((Notice::OnAnotherDevice, Some(NoticeAction::OpenHere))))
         .await
     );
-    eprintln!(
-        "two devices (Rust core): a follow onto the other device's pane said so in {follow_ms} ms \
-         and took nothing; Open here took it in {open_ms} ms"
-    );
+    eprintln!("two devices (Rust core): the phone's pick took B from the iPad in {open_ms} ms");
     let _ = bench.sessions.disconnect(phone).await;
     let _ = bench.sessions.disconnect(ipad).await;
 }

@@ -130,8 +130,7 @@ struct HomeView: View {
             nshModel.revealNeedsYou()
         }
         .onChange(of: router.paneRequest, initial: true) { _, request in
-            guard let request, store.connections.contains(where: { $0.id == request.connectionId })
-            else { return }
+            guard let id = Self.landing(request, saved: store.connections) else { return }
             // Only push if we're not already there — reassigning `path` to its
             // current value is a no-op for NavigationStack (this closure won't
             // re-run), which is exactly why TerminalScreen owns the pane
@@ -140,7 +139,7 @@ struct HomeView: View {
             // still owns prepare/start + the host-key prompt for that path
             // (idempotent — re-entry from a card tap won't re-handshake).
             Log.island.info("land: home opens terminal path=\(path.count, privacy: .public)")
-            open(request.connectionId)
+            open(id)
         }
         .alert("Connection Error", isPresented: $showConnectError) {
             Button("OK") {
@@ -163,6 +162,15 @@ struct HomeView: View {
         .onChange(of: store.connections) { _, saved in
             for connection in saved where hub.sessions[connection.id] != nil {
                 hub.adopt(connection)
+            }
+            // A tap that came before the saved connections could be read
+            // (B706: a launch before the first unlock, its stores reloaded
+            // only as the app comes forward, and the tap's request often
+            // first): it was left unclaimed, and the tap opened Home. It
+            // lands now that its connection is known.
+            if let id = Self.landing(router.paneRequest, saved: saved) {
+                Log.island.info("land: the tapped connection is known now; home opens its terminal")
+                open(id)
             }
         }
         .onChange(of: erroredSession?.viewModel.errorMessage) { _, message in
@@ -350,6 +358,15 @@ struct HomeView: View {
                             onLeave: usesSplitLayout ? { leaveSessions() } : nil)
                 .id(id)
         }
+    }
+
+    /// The connection a tap's request opens: its own, once the saved
+    /// connections include it; nil before (B706: the request waits, and
+    /// lands when they do).
+    nonisolated static func landing(_ request: DeepLinkRouter.PaneRequest?,
+                                    saved: [ServerConnection]) -> UUID? {
+        guard let request, saved.contains(where: { $0.id == request.connectionId }) else { return nil }
+        return request.connectionId
     }
 
     /// A connection's terminal pushed on the phone's stack.
