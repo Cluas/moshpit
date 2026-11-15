@@ -99,6 +99,22 @@ tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
 tmux new-window -t work -n build -c "$stage/payments-api" "sh $root/scripts/shots/stage/build-session.sh"
 tmux new-window -t work -n shell -c "$stage/infra"
 tmux select-window -t work:claude
+
+# The agents' states, stamped as the host's hooks stamp them
+# (scripts/host/moshpit-stamp.sh: the pane's @moshpit_state, _agent, _since,
+# _title): one waiting on the person, one working, one done. The panes'
+# foreground is the staged script's `sleep`, never a shell, so the app takes
+# the stamps as they are (crates/agents' reclassify).
+now=$(date +%s)
+stamp() {  # <pane> <state> <agent> <since> [title]
+    tmux set -p -t "$1" @moshpit_state "$2"
+    tmux set -p -t "$1" @moshpit_agent "$3"
+    tmux set -p -t "$1" @moshpit_since "$4"
+    [ -z "${5:-}" ] || tmux set -p -t "$1" @moshpit_title "$5"
+}
+stamp work:claude attention claude $((now - 95)) "Claude needs your permission to use Edit"
+stamp work:build working codex $((now - 380)) "Running the test suite"
+stamp work:shell done claude $((now - 1500))
 tmux list-windows -t work >&2
 
 cat <<EOF

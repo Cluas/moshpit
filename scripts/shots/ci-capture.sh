@@ -74,8 +74,19 @@ session=(-MOSHPIT_SEED_USER "$user" -MOSHPIT_SEED_KEY_B64 "$key_b64"
     -MOSHPIT_SEED_HOST "$host" -MOSHPIT_SEED_PORT "$port"
     -MOSHPIT_SEED_TRUST_FP "$fingerprint" -MOSHPIT_SEED_NAME devbox
     -MOSHPIT_SEED_MUX tmux -MOSHPIT_SEED_TMUX_BIN "$stage_tmux")
-quiet=(-MOSHPIT_SEED_QUIET 1 -MOSHPIT_AUTOCARE_OFF
-    -moshpit.settings.notifications '<false/>' -moshpit.settings.liveActivity '<false/>')
+# The companion, hatched and grown: the golden "tun" (crates/pet/tests/
+# golden.json), as its record is stored (crates/store pet.rs, moshpit.pet.v1,
+# JSON bytes), passed as plist data in the launch's argument domain, which
+# the app reads and never writes.
+day=86400; t=$(date +%s)
+pet_json="{\"version\":1,\"seed\":\"ca9e919a9b819ab94bb856496e95c9eb\",\"hatched_at\":$((t - 20 * day)),\"hatch_hour\":14,\"name\":\"\",\"name_at\":0,\"finishes\":{\"shots\":40},\"stage\":2,\"stage_at\":[$((t - 20 * day)),$((t - 12 * day)),$((t - 3 * day))],\"flags\":0}"
+pet="<$(printf '%s' "$pet_json" | xxd -p | tr -d '\n')>"
+
+# No banners, no prompts, no first-run hints (the pane swipe's toast); the
+# companion hatched.
+quiet=(-MOSHPIT_SEED_QUIET 1 -MOSHPIT_AUTOCARE_OFF -MoshpitPaneSwipeHintSeen YES
+    -moshpit.settings.notifications '<false/>' -moshpit.settings.liveActivity '<false/>'
+    -moshpit.pet.v1 "$pet")
 
 # Home: the runner, connected, beside two hosts that aren't.
 home_fixture="$(python3 -I - "$key_b64" "$fingerprint" "$port" "$user" "$stage_tmux" "$host" <<'EOF'
@@ -132,13 +143,14 @@ shoot() {  # <locale> <name> <seconds> <launch args…>
 sizes_wrong=0
 for locale in "${locales[@]}"; do
     log "$device · $locale"
-    shoot "$locale" 01-home 12 "${quiet[@]}" -MOSHPIT_SEED_HOME_FIXTURE "$home_fixture"
+    # Home: long enough to connect to the staged host and poll its agents.
+    shoot "$locale" 01-home 24 "${quiet[@]}" -MOSHPIT_SEED_HOME_FIXTURE "$home_fixture"
     shoot "$locale" 02-agent-pane 14 "${quiet[@]}" "${session[@]}"
     if [ "$device" = iphone ]; then
         shoot "$locale" 06-keyboard 18 "${quiet[@]}" "${session[@]}" -MOSHPIT_TERMINAL_DIRECTOR shots
     fi
-    shoot "$locale" 09-themes 6 "${quiet[@]}" -MOSHPIT_SEED_SCREEN theme-nsh
-    shoot "$locale" 12-icons 6 "${quiet[@]}" -MOSHPIT_SEED_SCREEN app-icon-nsh
+    shoot "$locale" 09-themes 9 "${quiet[@]}" -MOSHPIT_SEED_SCREEN theme
+    shoot "$locale" 12-icons 9 "${quiet[@]}" -MOSHPIT_SEED_SCREEN app-icon
 done
 xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
 

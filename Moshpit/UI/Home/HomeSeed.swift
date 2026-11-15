@@ -82,8 +82,17 @@ enum HomeSeed {
 
     /// The store Home shows in place of the saved one: the seeded
     /// connections, for this launch only (``launchOnlyStore(_:suite:)``).
+    ///
+    /// Made before Home is, so it is also where the fixture's hosts are
+    /// trusted: Home's record asks the core for each host's trusted key (its
+    /// face), and the core keeps the trusted map from its first read on, so
+    /// a trust added after Home appeared (``prepare()``) came too late and
+    /// the New Host card asked anyway (the first screenshot run).
     static let store: ConnectionStore? = {
-        guard fixture != nil else { return nil }
+        guard let fixture else { return nil }
+        for trust in fixture.trust ?? [] {
+            LaunchTrust.trust(host: trust.host, port: trust.port, fingerprint: trust.fingerprint)
+        }
         return launchOnlyStore(connections, suite: "moshpit.home-seed")
     }()
 

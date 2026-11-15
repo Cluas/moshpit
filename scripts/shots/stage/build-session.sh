@@ -77,3 +77,6 @@ printf "  %b10 delivered, 1 retried, 0 dropped%b\n\n" "$B" "$R"
 
 printf "%b➜%b  %bpayments-api%b %bgit:(%bfix-webhook-retry%b)%b " \
   "$G" "$R" "$C" "$R" "$D" "$C" "$D" "$R"
+# Hold the frame, as claude-session.sh does: a returning shell would end the
+# window.
+while :; do sleep 3600; done
