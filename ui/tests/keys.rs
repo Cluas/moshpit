@@ -37,6 +37,7 @@ fn keys(device: Vec<Key>, imported: Vec<Key>, deleting: Option<&str>) -> String 
     ssh_keys::Message::Keys(Keys {
         device,
         imported,
+        missing: vec![],
         deleting: deleting.map(Into::into),
         notice: None,
     })
@@ -164,6 +165,95 @@ fn a_key_the_app_cant_sign_in_with_says_so_and_still_deletes() {
     assert!(
         app.screen()
             .shows("暂时还不能用 ECDSA brainpoolP256r1 密钥登录")
+    );
+    channel.close();
+}
+
+/// B781: keys whose private half isn't on this phone (restored from a
+/// backup) have a group of their own, after the others, each saying so; a
+/// press says why and offers Import Again… for an imported key, Delete for
+/// either — one made in another device's Secure Enclave can't be moved.
+/// The group isn't there while nothing is missing. In Chinese too.
+#[test]
+fn keys_not_on_this_iphone_say_so_and_offer_import_again() {
+    let gone = Key {
+        hosts: vec!["nas".into()],
+        ..key("GONE", "work", Avatar::Imported)
+    };
+    let enclave = key("SE02", "old phone", Avatar::SecureEnclave);
+    let page = |missing: Vec<Key>| {
+        ssh_keys::Message::Keys(Keys {
+            device: vec![],
+            imported: vec![laptop()],
+            missing,
+            deleting: None,
+            notice: None,
+        })
+        .to_json()
+    };
+    let (mut app, channel) = start(Screen::SshKeys, Params::default(), "ssh-keys");
+    app.answer_dialogs_myself();
+    let told = hear(&channel);
+    post(&mut app, &channel, &page(vec![]));
+    app.wait_for("id:ssh-key-row-1A2B").unwrap();
+    assert!(
+        !app.screen().matches("id:ssh-keys-missing").unwrap(),
+        "nothing missing, no group"
+    );
+    post(
+        &mut app,
+        &channel,
+        &page(vec![gone.clone(), enclave.clone()]),
+    );
+    app.wait_for("id:ssh-keys-missing").unwrap();
+    assert!(app.screen().shows("NOT ON THIS IPHONE"));
+    assert!(
+        app.screen()
+            .matches("label:work, ED25519, This key isn't on this iPhone, Used for nas")
+            .unwrap(),
+        "{:?}",
+        app.screen().texts()
+    );
+    app.press("id:ssh-key-row-GONE").unwrap();
+    assert!(wait_dialog(&mut app), "the row's actions never showed");
+    let sheet = app.pending_dialog().cloned().unwrap();
+    assert_eq!(sheet.title.as_deref(), Some("work"));
+    assert_eq!(
+        sheet.message.as_deref(),
+        Some(
+            "Keys stay on the device they were imported on. Import it again or delete this entry."
+        )
+    );
+    assert_eq!(
+        common::dialog_buttons(&sheet),
+        ["Import Again…", "Delete Key", "Cancel"]
+    );
+    app.answer_dialog(DialogAnswer::Press("Import Again…".into()))
+        .unwrap();
+    assert_eq!(next(&told), json!({"ev": "import-again", "id": "GONE"}));
+    app.press("id:ssh-key-row-SE02").unwrap();
+    assert!(wait_dialog(&mut app));
+    let sheet = app.pending_dialog().cloned().unwrap();
+    assert_eq!(
+        sheet.message.as_deref(),
+        Some(
+            "This key was made in another device's Secure Enclave and can't be moved. Delete it and make a new one."
+        )
+    );
+    assert_eq!(common::dialog_buttons(&sheet), ["Delete Key", "Cancel"]);
+    app.answer_dialog(DialogAnswer::Press("Delete Key".into()))
+        .unwrap();
+    assert_eq!(next(&told), json!({"ev": "confirm-delete", "id": "SE02"}));
+    quiet(&told);
+    channel.close();
+
+    let (mut app, channel) = start(Screen::SshKeys, zh_hans(), "ssh-keys");
+    post(&mut app, &channel, &page(vec![gone]));
+    app.wait_for("id:ssh-keys-missing").unwrap();
+    assert!(
+        app.screen().shows("这台 iPhone 上没有这把密钥"),
+        "{:?}",
+        app.screen().texts()
     );
     channel.close();
 }
@@ -300,6 +390,7 @@ fn the_notice_the_host_sends_when_a_key_stays() {
     let message = ssh_keys::Message::Keys(Keys {
         device: vec![],
         imported: vec![laptop()],
+        missing: vec![],
         deleting: None,
         notice: Some(Notice {
             title: "Key in use".into(),
@@ -367,7 +458,34 @@ mod picker {
             name: name.into(),
             badge: "ED25519".into(),
             refused: refused.map(Into::into),
+            missing: false,
         }
+    }
+
+    /// B781: a key whose private half isn't on this phone says so and can't
+    /// be picked — unless it is the one the connection already has.
+    #[test]
+    fn a_key_not_on_this_iphone_says_so_and_cant_be_picked() {
+        let (mut app, channel) = start(Screen::KeyPicker, Params::default(), "key-picker");
+        let told = hear(&channel);
+        let gone = PickerKey {
+            missing: true,
+            ..saved("g", "work", None)
+        };
+        post(
+            &mut app,
+            &channel,
+            &picker(vec![saved("a", "laptop", None), gone.clone()], None),
+        );
+        app.wait_for("id:key-picker-key-g").unwrap();
+        assert!(app.screen().shows("This key isn't on this iPhone"));
+        let _ = app.press("id:key-picker-key-g");
+        quiet(&told);
+        post(&mut app, &channel, &picker(vec![gone], Some("g")));
+        app.wait_for("id:key-picker-key-g").unwrap();
+        app.press("id:key-picker-key-g").unwrap();
+        assert_eq!(next(&told), json!({"ev": "select", "id": "g"}));
+        channel.close();
     }
 
     #[test]
@@ -480,6 +598,7 @@ mod add {
             working: false,
             fingerprint: None,
             error: None,
+            again: false,
         }
     }
 
@@ -621,6 +740,36 @@ mod add {
             next(&told),
             json!({"ev": "import-file", "target": "public"})
         );
+        channel.close();
+    }
+
+    /// B781: Import Again brings a key's private half back into its own
+    /// record, which keeps its name: the form is the private key alone — no
+    /// Generate or Import to pick, no name or comment to give.
+    #[test]
+    fn import_again_asks_for_the_private_key_alone() {
+        let (mut app, channel, natives) =
+            start_observing(Screen::AddKey, Params::default(), "add-key");
+        post_form(
+            &mut app,
+            &channel,
+            AddKey {
+                method: Method::Import,
+                name: "work".into(),
+                again: true,
+                ..form()
+            },
+        );
+        app.wait_for("id:add-key-import-file").unwrap();
+        assert_eq!(natives.count("moshpit/key-pem"), 1, "the host's editor");
+        assert!(app.screen().shows("PRIVATE KEY"));
+        assert!(
+            !app.screen().shows("KEY DETAILS"),
+            "{:?}",
+            app.screen().texts()
+        );
+        assert!(!app.screen().matches("id:add-key-name").unwrap());
+        assert!(!app.screen().matches("id:add-key-method").unwrap());
         channel.close();
     }
 

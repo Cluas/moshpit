@@ -37,13 +37,13 @@
 @15 recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
 @16 take
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|1758000000"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @17 settle
 @18 recv %output %0 MINE-AGAIN\n
 . note activity %0
 . pane %0 MINE-AGAIN
-@19 recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
+@19 recv %layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\n
 > resize-window -t @0 -x 70 -y 35
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
@@ -54,6 +54,6 @@
 @22 dump
 = attached=1 ever=1 session=$0 window=@0 pane=%0 fwd=1 swiped=0
 = s $0 att=1 name=main
-= w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=main layout=c71d,200x50,0,0,0
+= w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=main layout=c71e,201x50,0,0,0
 = p %0 w=@0 idx=0 act=1 200x50 cmd=bash
 = follow=@0/iPad notice=- refreshing=0 resized=@0 mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=

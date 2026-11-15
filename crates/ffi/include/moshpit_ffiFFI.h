@@ -1728,6 +1728,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_connectionstorehandle_keychain_refs(uint
 void uniffi_moshpit_ffi_fn_method_connectionstorehandle_load(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_MARK_CONNECTED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_MARK_CONNECTED
+int8_t uniffi_moshpit_ffi_fn_method_connectionstorehandle_mark_connected(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_NAMES_USING_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_NAMES_USING_KEY
 RustBuffer uniffi_moshpit_ffi_fn_method_connectionstorehandle_names_using_key(uint64_t ptr, RustBuffer key, RustBuffer keychain_ref, RustCallStatus *_Nonnull out_status
@@ -1806,6 +1811,11 @@ int8_t uniffi_moshpit_ffi_fn_method_keystorehandle_learn_facts(uint64_t ptr, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_MARK_USED
 int8_t uniffi_moshpit_ffi_fn_method_keystorehandle_mark_used(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_REFILL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_REFILL
+RustBuffer uniffi_moshpit_ffi_fn_method_keystorehandle_refill(uint64_t ptr, RustBuffer id, RustBuffer algorithm, RustBuffer bits, RustBuffer public_key, RustBuffer fingerprint, int8_t require_biometry, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_KEYSTOREHANDLE_RELOAD_IF_NEEDED
@@ -2521,6 +2531,11 @@ int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuf
 int8_t uniffi_moshpit_ffi_fn_func_store_hold_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ITEM_MOVES_WITH_BACKUPS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ITEM_MOVES_WITH_BACKUPS
+int8_t uniffi_moshpit_ffi_fn_func_store_item_moves_with_backups(RustBuffer account, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_LEARN_KEY_FACTS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_LEARN_KEY_FACTS
 RustBuffer uniffi_moshpit_ffi_fn_func_store_learn_key_facts(uint64_t keys, uint64_t keychain, RustCallStatus *_Nonnull out_status
@@ -2529,6 +2544,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_learn_key_facts(uint64_t keys, uint6
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MARK_DEFAULTS_READABLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MARK_DEFAULTS_READABLE
 void uniffi_moshpit_ffi_fn_func_store_mark_defaults_readable(uint64_t host, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MISSING_ITEMS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_MISSING_ITEMS
+RustBuffer uniffi_moshpit_ffi_fn_func_store_missing_items(uint64_t connections, uint64_t keys, uint64_t keychain, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_NEW_KEYCHAIN_REF
@@ -3298,6 +3318,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_hold_release(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ITEM_MOVES_WITH_BACKUPS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ITEM_MOVES_WITH_BACKUPS
+uint16_t uniffi_moshpit_ffi_checksum_func_store_item_moves_with_backups(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_LEARN_KEY_FACTS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_LEARN_KEY_FACTS
 uint16_t uniffi_moshpit_ffi_checksum_func_store_learn_key_facts(void
@@ -3307,6 +3333,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_learn_key_facts(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_MARK_DEFAULTS_READABLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_MARK_DEFAULTS_READABLE
 uint16_t uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_MISSING_ITEMS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_MISSING_ITEMS
+uint16_t uniffi_moshpit_ffi_checksum_func_store_missing_items(void
     
 );
 #endif
@@ -4468,6 +4500,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_load(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_MARK_CONNECTED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_MARK_CONNECTED
+uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_mark_connected(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_NAMES_USING_KEY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_NAMES_USING_KEY
 uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_names_using_key(void
@@ -4543,6 +4581,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_learn_facts(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_MARK_USED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_MARK_USED
 uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_REFILL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_KEYSTOREHANDLE_REFILL
+uint16_t uniffi_moshpit_ffi_checksum_method_keystorehandle_refill(void
     
 );
 #endif

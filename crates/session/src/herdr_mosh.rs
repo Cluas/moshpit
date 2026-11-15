@@ -236,6 +236,11 @@ pub enum PlaneOut {
         landed: bool,
     },
     AgentHooksUpdated,
+    /// A pane's screen, for the overview's picture (B751).
+    Snapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
 }
 
 /// One step of the lane into mosh.
@@ -1085,6 +1090,9 @@ impl Plane {
                 names,
                 answered,
             } => self.answer_request(request, HerdrAnswer::Agents { names, answered }),
+            ClientEvent::PaneRead { pane, rows } => {
+                self.outputs.push_back(PlaneOut::Snapshot { pane, rows })
+            }
             ClientEvent::Restart { request, outcome } => {
                 self.answer_request(request, HerdrAnswer::Restart(outcome))
             }
@@ -1828,6 +1836,11 @@ pub(crate) enum HerdrMoshNote {
         answer: HerdrAnswer,
     },
     AgentHooksUpdated,
+    /// A pane's screen, for the overview's picture (B751).
+    Snapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
     InputDropped {
         bytes: usize,
     },
@@ -2097,6 +2110,9 @@ impl Task {
                     }
                 }
                 PlaneOut::AgentHooksUpdated => (self.notes)(HerdrMoshNote::AgentHooksUpdated),
+                PlaneOut::Snapshot { pane, rows } => {
+                    (self.notes)(HerdrMoshNote::Snapshot { pane, rows })
+                }
             }
         }
         if self.plane.take_dirty() || self.view_sent.is_none() {

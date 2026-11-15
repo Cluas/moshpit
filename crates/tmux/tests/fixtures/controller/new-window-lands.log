@@ -36,7 +36,7 @@
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @16 new-window logs
 > new-window -P -F '#{window_id}' -n "logs"
@@ -78,10 +78,10 @@
 > set-option -u -w -t @0 window-size
 > set-option -wu -t @0 @moshpit_size_owner
 > set-option -w -t @1 @moshpit_size_owner "moshpit-a|iPhone|1758000000"
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @1 -x 70 -y 35
 > select-window -t @1
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > display-message -p -t %1 '#{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %1
 > capture-pane -p -e -t %1

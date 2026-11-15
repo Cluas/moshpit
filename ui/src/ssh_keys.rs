@@ -106,6 +106,12 @@ pub struct Keys {
     pub device: Vec<Key>,
     /// The others.
     pub imported: Vec<Key>,
+    /// Keys whose private half isn't on this device (B781): a phone
+    /// restored from a backup has the records and none of the keys — a
+    /// Secure Enclave key never leaves its chip. Their own group, after the
+    /// others; not shown while there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub missing: Vec<Key>,
     /// The key the delete card asks about, while it shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleting: Option<String>,
@@ -172,6 +178,7 @@ pub fn SshKeysScreen(props: ScreenProps) -> impl IntoElement {
     let bar = BarMetrics::or_standard(channel.as_ref().and_then(|c| c.params().bar));
     let device = signal(Vec::<Key>::new());
     let imported = signal(Vec::<Key>::new());
+    let missing = signal(Vec::<Key>::new());
     let deleting = signal(None::<String>);
     let notice = signal(None::<Notice>);
     let ready = signal(false);
@@ -182,6 +189,7 @@ pub fn SshKeysScreen(props: ScreenProps) -> impl IntoElement {
         move |Message::Keys(keys)| {
             device.set(keys.device);
             imported.set(keys.imported);
+            missing.set(keys.missing);
             deleting.set(keys.deleting);
             notice.set(keys.notice);
             ready.set(true);
@@ -196,6 +204,7 @@ pub fn SshKeysScreen(props: ScreenProps) -> impl IntoElement {
         device
             .with(|d| d.iter().find(|k| k.id == id).cloned())
             .or_else(|| imported.with(|i| i.iter().find(|k| k.id == id).cloned()))
+            .or_else(|| missing.with(|m| m.iter().find(|k| k.id == id).cloned()))
     });
     ask_once(asked, deleting, tell.clone());
     say_once(notice, tell.clone());
@@ -209,6 +218,7 @@ pub fn SshKeysScreen(props: ScreenProps) -> impl IntoElement {
                 [
                     group(Group::Device, device, tell.clone(), toasts),
                     group(Group::Imported, imported, tell.clone(), toasts),
+                    group(Group::Missing, missing, tell.clone(), toasts),
                 ],
             )
             .into_element()
@@ -341,6 +351,8 @@ enum Group {
     Device,
     /// The others.
     Imported,
+    /// The keys not on this device (B781).
+    Missing,
 }
 
 /// A group of keys: a row for each, or, with none, what to do about it.
@@ -350,6 +362,9 @@ fn group(which: Group, keys: Signal<Vec<Key>>, tell: Tell, toasts: Toasts) -> An
         let keys = keys.get();
         let tell = tell.clone();
         untracked(move || {
+            if which == Group::Missing && keys.is_empty() {
+                return view().into_element();
+            }
             let (header, footer, id) = match which {
                 Group::Device => (
                     device_title(Os::current()),
@@ -357,6 +372,7 @@ fn group(which: Group, keys: Signal<Vec<Key>>, tell: Tell, toasts: Toasts) -> An
                     "ssh-keys-device",
                 ),
                 Group::Imported => (t!("IMPORTED"), None, "ssh-keys-imported"),
+                Group::Missing => (t!("NOT ON THIS IPHONE"), None, "ssh-keys-missing"),
             };
             let mut section = section().header(header).test_id(id);
             if let Some(footer) = footer {
@@ -365,9 +381,10 @@ fn group(which: Group, keys: Signal<Vec<Key>>, tell: Tell, toasts: Toasts) -> An
             if keys.is_empty() {
                 section = section.item(empty_group(which, tell), Inset::Content);
             } else {
+                let missing = which == Group::Missing;
                 section = section.rows(
                     keys.into_iter()
-                        .map(|key| key_row(key, tell.clone(), toasts)),
+                        .map(|key| key_row(key, missing, tell.clone(), toasts)),
                 );
             }
             section.into_element()
@@ -388,7 +405,7 @@ fn empty_group(which: Group, tell: Tell) -> AnyElement {
             "ssh-keys-no-device",
             "ssh-keys-generate",
         ),
-        Group::Imported => (
+        Group::Imported | Group::Missing => (
             t!("No imported keys"),
             t!("Import key"),
             "import",
@@ -416,10 +433,16 @@ fn empty_group(which: Group, tell: Tell) -> AnyElement {
 /// hear the badge right after the name: for someone who can't see the
 /// rows it is what tells two keys apart. A press opens its actions in the
 /// system's action sheet; so does a long press.
-fn key_row(key: Key, tell: Tell, toasts: Toasts) -> Row {
+fn key_row(key: Key, missing: bool, tell: Tell, toasts: Toasts) -> Row {
     let open = {
         let key = key.clone();
-        move || actions(&key, tell.clone(), toasts)
+        move || {
+            if missing {
+                missing_actions(&key, tell.clone());
+            } else {
+                actions(&key, tell.clone(), toasts);
+            }
+        }
     };
     let detail = if !key.hosts.is_empty() {
         Some(t!("Used for %@", arg1 = key.hosts.join(", ")))
@@ -443,7 +466,11 @@ fn key_row(key: Key, tell: Tell, toasts: Toasts) -> Row {
         .on_press(open.clone())
         .on_long_press(open)
         .test_id(&format!("ssh-key-row-{}", key.id));
-    if let Some(kind) = &key.refused {
+    if missing {
+        // B781: its private half stayed on the device it was made or
+        // imported on.
+        row = row.subtitle(t!("This key isn't on this iPhone"));
+    } else if let Some(kind) = &key.refused {
         // B780: one the app can't sign in with says why, before a sign-in
         // fails; it can still go (Delete Key).
         row = row.subtitle(t!("Can't sign in with %@ keys yet", arg1 = kind));
@@ -487,6 +514,41 @@ fn actions(key: &Key, tell: Tell, toasts: Toasts) {
             _ => return,
         }
         tell(json!({"ev": &*choice, "id": id}));
+    }));
+}
+
+/// A key not on this device's actions (B781), in the system's action sheet,
+/// with why: one imported can be imported again (the same record, its name
+/// and its connections kept), one made in a Secure Enclave can't be moved;
+/// either can be deleted. The pick goes to the host (`{"ev": "import-again"
+/// | "confirm-delete", "id": …}`).
+fn missing_actions(key: &Key, tell: Tell) {
+    let enclave = key.avatar == Avatar::SecureEnclave;
+    let why = if enclave {
+        t!(
+            "This key was made in another device's Secure Enclave and can't be moved. Delete it and make a new one."
+        )
+    } else {
+        t!("Keys stay on the device they were imported on. Import it again or delete this entry.")
+    };
+    let mut sheet = alert_dialog()
+        .title(key.name.clone())
+        .description(why)
+        .action_sheet();
+    if !enclave {
+        sheet = sheet.action("import-again", t!("Import Again…"));
+    }
+    let answer = sheet
+        .destructive("confirm-delete", t!("Delete Key"))
+        .cancel("cancel", t!("Cancel"))
+        .show();
+    let id = key.id.clone();
+    drop(spawn(async move {
+        let Ok(answer) = answer.await else { return };
+        let Some(choice) = answer.action else { return };
+        if matches!(&*choice, "import-again" | "confirm-delete") {
+            tell(json!({"ev": &*choice, "id": id}));
+        }
     }));
 }
 
@@ -536,6 +598,7 @@ mod tests {
             Keys {
                 device: vec![],
                 imported: vec![],
+                missing: vec![],
                 deleting: None,
                 notice: None,
             },
@@ -550,6 +613,7 @@ mod tests {
                         ..key("b", Avatar::Gray)
                     },
                 ],
+                missing: vec![key("gone", Avatar::SecureEnclave)],
                 deleting: Some("a".into()),
                 notice: Some(Notice {
                     title: "Key in use".into(),

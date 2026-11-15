@@ -25,6 +25,6 @@ rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 200 50 1 0 0 bash
 rule ok capture-pane => READY
 rule ok display-message => 0 0
 config quiet=0.1
-recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
+recv %layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\n
 waitsettle 600 30
 dump

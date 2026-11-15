@@ -501,6 +501,39 @@ for a memory warning, takes those too).
 
 **Upstream:** ours (the host's budget is ours).
 
+## W28. A count runs no longer than the screen it acts on
+
+**Touches:** `term/src/terminalstate/mod.rs` (`perform_csi_edit`: ICH and
+REP; `Cursor::ForwardTabulation`, `Cursor::BackwardTabulation`),
+`term/src/terminalstate/performer.rs` (`Cursor::Left`,
+`Keyboard::PopKittyState`), `term/src/terminalstate/sixel.rs`
+(`SixelData::Repeat`).
+
+**Why:** seven sequences ran a loop once per unit of their count, whatever
+the screen (B791, found by tests/fuzz.rs): ICH (`CSI n @`) inserted a
+cell n times (999999999: 80 s), REP (`CSI n b`) wrote n cells, wrapping
+and scrolling whatever DECAWM says (4294967295: 82 s), CHT and CBT
+(`CSI n I`, `CSI n Z`) moved one stop n times (999999999: 2 s), CUB
+(`CSI n D`) backspaced n times (4294967295: 73 s), a kitty keyboard pop
+(`CSI < n u`) popped n times (4294967295: 8 s), and a sixel repeat
+(`!n`) drew n columns, most of them past the image's edge (up to 14 s a
+case; its column overflowed, a panic in a debug build). One line of a
+broken program's output, or `cat` of the wrong file, froze the pane for
+that long. Each count is cut to what can still change anything, and
+means what it meant: ICH to the right margin; CHT and CBT to the number
+of columns; a pop to the stack's depth; a sixel repeat to the image's
+width (the column still moves the whole count, saturating); REP to the
+point where the scroll region and the history are full of the cell, past
+which every margin's width more only scrolls a line of it away and brings
+the cursor back where it was (the rest counts modulo the width); CUB, which
+moves only the cursor (column, row, pending wrap) over margins it doesn't
+change, runs as far as the cursor has places, by which point it is going
+round a cycle, then measures the cycle and skips its whole turns (exact
+for any margins, origin mode and reverse wraparound). DCH, ECH, IL, DL, SU
+and SD were already bounded by the margins.
+
+**Upstream:** worth offering.
+
 ## W0. deprecated `max_value()`
 
 **Touches:** `wezterm-escape-parser/src/*.rs`, `bidi/src/lib.rs`.

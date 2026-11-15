@@ -17,8 +17,8 @@ settle
 resize 70 35
 wait 200
 settle
-recv %layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n
+recv %layout-change @0 200x24,0,0,2\n%layout-change @0 70x35,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 70x35,0,0,2\n%layout-change @0 200x24,0,0,2\n
 settle
 wait 5100
-recv %layout-change @0 200x24,0,0,2\n
+recv %layout-change @0 201x24,0,0,2\n
 settle

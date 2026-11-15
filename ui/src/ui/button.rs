@@ -261,6 +261,9 @@ impl IntoElement for Button {
         let mut content = view()
             .flex_row()
             .items_center()
+            // Inside the button, which is inside its container (B749).
+            .flex_shrink(1.0)
+            .max_w(relative(1.0))
             .gap(px(size.gap()))
             .opacity({
                 let loading = loading.clone();
@@ -270,12 +273,18 @@ impl IntoElement for Button {
             content = content.child(icon(name).size(size.icon()).tone(ink));
         }
         // A bar's words are the bar's: they stop growing at extra extra
-        // large, on one line, as UIKit's bar items do (B748); a page's
-        // follow the user's size.
+        // large, on one line, as UIKit's bar items do (B748). A page's
+        // follow the user's size; what doesn't fit on one line goes onto a
+        // second, centered, then is cut at its tail, never shrunk (B749). A
+        // label that fits is one line, as it was.
         let words = if variant.in_bar() {
             crate::nav_bar::bar_text(label.clone()).flex_shrink(1.0)
         } else {
-            size.text().apply(text(label.clone()))
+            size.text()
+                .apply(text(label.clone()))
+                .number_of_lines(2u32)
+                .flex_shrink(1.0)
+                .text_center()
         };
         content = content.child(
             words
@@ -292,6 +301,8 @@ impl IntoElement for Button {
             .flex_row()
             .items_center()
             .justify_center()
+            // Never wider than what holds it (B749).
+            .max_w(relative(1.0))
             .min_h(px(height))
             .px(px(padding))
             .rounded(px(number(size.radius())))

@@ -253,6 +253,31 @@ struct KeysShortcutsSetupNSHTests {
 
     }
 
+    /// B781: a key whose private half isn't on this phone (restored from a
+    /// backup) is grouped apart in SSH Keys — a Secure Enclave one out of
+    /// THIS DEVICE — and the picker shows it missing and won't pick it,
+    /// unless the connection already has it.
+    @Test("a key not on this iPhone is grouped apart, and the picker won't pick it")
+    func missingKeys() {
+        let ok = Self.key("laptop")
+        var gone = Self.key("work")
+        gone.missing = true
+        var enclave = Self.key("old phone", source: .secureEnclave, algorithm: .seP256)
+        enclave.missing = true
+        let state = SSHKeysModel.state(SSHKeysSnapshot(device: [], imported: [ok], missing: [gone, enclave]),
+                                       deleting: nil)
+        #expect(state.device.isEmpty && state.imported.map(\.name) == ["laptop"])
+        #expect(state.missing.map(\.name) == ["work", "old phone"])
+        #expect(state.missing[1].avatar == .secureEnclave, "says why it can't be moved")
+        let message = KeyPickerModel.message(KeyPickerSnapshot(keys: [ok, gone], selected: nil))
+        let keys = message["keys"] as? [[String: Any]]
+        #expect(keys?[0]["missing"] == nil)
+        #expect(keys?[1]["missing"] as? Bool == true)
+        #expect(KeyPickerModel.pick(["ev": "select", "id": gone.id.uuidString], among: [ok, gone], selected: nil) == nil)
+        #expect(KeyPickerModel.pick(["ev": "select", "id": gone.id.uuidString], among: [ok, gone], selected: gone.id)
+                == .key(gone.id), "unless it is the one already picked")
+    }
+
     @Test("Select Key's state is a message the Rust screen takes; a key the app can't sign with can't be picked")
     func keyPicker() {
         let ok = Self.key("laptop")

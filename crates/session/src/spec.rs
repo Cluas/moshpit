@@ -49,6 +49,10 @@ pub struct ConnectionSpec {
     /// depend on anyone's dotfiles.
     #[doc(hidden)]
     pub pty_command: Option<String>,
+    /// This phone connected to the host before (the connection's
+    /// `lastConnectedAt`, B783): a new host's card says so instead of
+    /// "First connection" — its trusted key gone with a restore.
+    pub connected_before: bool,
 }
 
 impl ConnectionSpec {
@@ -67,6 +71,7 @@ impl ConnectionSpec {
             locale: "en_US.UTF-8".to_owned(),
             initial_grid: (80, 24),
             pty_command: None,
+            connected_before: false,
         }
     }
 
@@ -196,6 +201,7 @@ impl Timing {
             channel_timeout: self.channel_timeout,
             proxy,
             keepalive: None,
+            receive_window: moshpit_ssh::RECEIVE_WINDOW,
         }
     }
 }

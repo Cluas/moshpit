@@ -36,7 +36,7 @@
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @16 resize 70 35
 = resize 1
@@ -52,7 +52,7 @@
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . pane %0 \x1b[2;3H
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-@19 recv %layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n
+@19 recv %layout-change @0 200x24,0,0,2\n%layout-change @0 70x35,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 70x35,0,0,2\n%layout-change @0 200x24,0,0,2\n
 > resize-window -t @0 -x 70 -y 35
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
@@ -63,7 +63,7 @@
 . view %0 extend 2.000
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
-@22 recv %layout-change @0 200x24,0,0,2\n
+@22 recv %layout-change @0 201x24,0,0,2\n
 > resize-window -t @0 -x 70 -y 35
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner

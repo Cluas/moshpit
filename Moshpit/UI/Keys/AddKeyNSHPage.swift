@@ -36,6 +36,14 @@ struct AddKeyNSHPage: View {
         _model = State(initialValue: AddKeyModel(method: method))
     }
 
+    /// Import Again (B781): `record`'s private key, which isn't on this
+    /// phone, imported into the record itself.
+    init(refilling record: SSHKeyRecord) {
+        self.method = .importKey
+        self.onCreated = nil
+        _model = State(initialValue: AddKeyModel(refilling: record))
+    }
+
     var body: some View {
         if failed {
             NSHSheetFailed { failed = false }
@@ -48,7 +56,7 @@ struct AddKeyNSHPage: View {
                     onEvent: { if case .addKey(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
-                    .navigationTitle("Add Key")
+                    .navigationTitle(model.refilling == nil ? "Add Key" : "Import Again")
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
                 model.importFile(result)
@@ -108,8 +116,22 @@ final class AddKeyModel {
     /// The private key's editor while the page shows one.
     fileprivate weak var pemEditor: KeyPEMEditor?
 
+    /// The key Import Again brings back into its own record (B781): its
+    /// name and comment are kept, not asked for.
+    let refilling: SSHKeyRecord?
+
     init(method: AddKeyMethod = .generate) {
         self.method = method
+        self.refilling = nil
+    }
+
+    /// Import Again of `record` (B781): Face ID as it had it.
+    init(refilling record: SSHKeyRecord) {
+        self.method = .importKey
+        self.refilling = record
+        self.name = record.name
+        self.comment = record.comment
+        self.requireFaceID = record.requireBiometry
     }
 
     /// The pasted key is behind a passphrase, which has to be entered to read it.
@@ -233,6 +255,10 @@ final class AddKeyModel {
             post()
         }
         do {
+            if let refilling {
+                return try await SSHKeyCreation.importAgain(request, into: refilling, keychain: keychain,
+                                                             store: store)
+            }
             let record = try await SSHKeyCreation.create(request, keychain: keychain) { fingerprint in
                 self.generatedFingerprint = fingerprint
             }
@@ -265,7 +291,8 @@ final class AddKeyModel {
             requireFaceId: requireFaceID, secureEnclave: storeInSecureEnclave,
             pem: AddKeyPem(empty: importPEM.isEmpty, encrypted: needsPassphrase),
             name: name, comment: comment, publicLine: importPublicLine, fields: fields,
-            canSubmit: canSubmit, working: working, fingerprint: generatedFingerprint, error: errorMessage)
+            canSubmit: canSubmit, working: working, fingerprint: generatedFingerprint, error: errorMessage,
+            again: refilling != nil)
     }
 
     /// What the screen calls a method.
@@ -310,18 +337,7 @@ enum SSHKeyCreation {
                        generated: (String) -> Void) async throws -> SSHKeyRecord {
         let key: SSHKeyFactory.Generated
         if request.importing {
-            let (pem, passphrase, publicLine, comment) =
-                (request.privateKey, request.passphrase, request.publicKeyLine, request.comment)
-            // Off the main thread: unlocking a passphrase-protected OpenSSH
-            // key is bcrypt, a deliberately slow fraction of a second
-            // (longer for keys made with more rounds).
-            key = try await Task.detached(priority: .userInitiated) {
-                try SSHKeyFactory.importKey(
-                    privatePEM: pem,
-                    passphrase: passphrase.isEmpty ? nil : passphrase,
-                    publicKeyLine: publicLine.isEmpty ? nil : publicLine,
-                    comment: comment)
-            }.value
+            key = try await imported(request)
         } else {
             let (algorithm, comment) = (request.algorithm, request.comment.isEmpty ? request.name : request.comment)
             // Off the main thread too, as an import is (B605): an RSA-4096
@@ -345,6 +361,60 @@ enum SSHKeyCreation {
             source: request.importing ? .imported : (request.secureEnclave ? .secureEnclave : .generated),
             keychainRef: ref,
             requireBiometry: request.requireFaceID)
+    }
+}
+
+extension SSHKeyCreation {
+    /// The key `request` pastes, read in any format the app reads — off the
+    /// main thread: unlocking a passphrase-protected OpenSSH key is bcrypt,
+    /// a deliberately slow fraction of a second (longer for keys made with
+    /// more rounds).
+    static func imported(_ request: Request) async throws -> SSHKeyFactory.Generated {
+        let (pem, passphrase, publicLine, comment) =
+            (request.privateKey, request.passphrase, request.publicKeyLine, request.comment)
+        return try await Task.detached(priority: .userInitiated) {
+            try SSHKeyFactory.importKey(
+                privatePEM: pem,
+                passphrase: passphrase.isEmpty ? nil : passphrase,
+                publicKeyLine: publicLine.isEmpty ? nil : publicLine,
+                comment: comment)
+        }.value
+    }
+
+    /// Why Import Again kept nothing.
+    enum ImportAgainError: LocalizedError {
+        /// The key isn't the one the record was made with.
+        case differentKey
+
+        var errorDescription: String? {
+            String(localized: "That's a different key from the one this entry was made with. Import that key, or delete this entry.")
+        }
+    }
+
+    /// Import Again (B781): `record`'s private key, which didn't come with a
+    /// restore, imported into the record itself — its item under the
+    /// record's own keychain account, so every connection that signs in
+    /// with it (by key or by item) does again; its name, comment and
+    /// connections kept. A key with another fingerprint is refused before
+    /// anything is written (and again by the store).
+    @MainActor
+    static func importAgain(_ request: Request, into record: SSHKeyRecord, keychain: KeychainService,
+                            store: SSHKeyStore) async throws -> SSHKeyRecord {
+        let key = try await imported(request)
+        guard record.fingerprint.isEmpty || record.fingerprint == key.fingerprint else {
+            throw ImportAgainError.differentKey
+        }
+        // A key found missing names the item it was missing (B781).
+        guard let ref = record.keychainRef else { throw KeychainError.notFound }
+        try await keychain.saveSecret(key.privateBlob, forRef: ref, requireBiometry: request.requireFaceID)
+        switch store.refill(record.id, with: key, requireBiometry: request.requireFaceID) {
+        case .refilled:
+            return store.keys.first { $0.id == record.id } ?? record
+        case .differentKey:
+            throw ImportAgainError.differentKey
+        case .unknown:
+            throw KeychainError.notFound
+        }
     }
 }
 

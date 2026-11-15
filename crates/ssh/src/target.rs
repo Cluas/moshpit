@@ -100,7 +100,16 @@ pub struct ConnectOptions {
     /// None by default: the app has never sent SSH keepalives (the session
     /// layer probes with exec channels instead).
     pub keepalive: Option<Keepalive>,
+    /// What each channel lets the host send ahead of what has been read
+    /// (its receive window): russh's 2 MB. A smaller one drains a flood
+    /// faster after a ^C but costs every transfer about as much, since
+    /// russh sets one window for the whole connection and transfers share
+    /// the terminal's (B790, measured and kept: PROGRESS has the numbers).
+    pub receive_window: u32,
 }
+
+/// Each channel's receive window: see [`ConnectOptions::receive_window`].
+pub const RECEIVE_WINDOW: u32 = 2 << 20;
 
 impl Default for ConnectOptions {
     fn default() -> Self {
@@ -110,6 +119,7 @@ impl Default for ConnectOptions {
             channel_timeout: Duration::from_secs(15),
             proxy: None,
             keepalive: None,
+            receive_window: RECEIVE_WINDOW,
         }
     }
 }

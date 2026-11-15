@@ -222,6 +222,10 @@ impl Runner {
                 Output::Notify(note) => {
                     let line = match note {
                         Notification::StateChanged => continue,
+                        // The leg's cue to ask the server (B786); the Swift
+                        // controller these scenarios were recorded on had
+                        // none to print.
+                        Notification::ControlExited { .. } => continue,
                         Notification::PaneActivity { pane } => format!("note activity {pane}"),
                         Notification::PaneBell { pane } => format!("note bell {pane}"),
                         Notification::AgentHooksUpdated => "note hooks".to_owned(),

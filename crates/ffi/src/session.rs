@@ -178,6 +178,9 @@ pub struct SessionSpec {
     /// The terminal's grid before the view has reported one.
     pub cols: u16,
     pub rows: u16,
+    /// The connection was connected to before (its `lastConnectedAt`,
+    /// B783): a new host's card says so.
+    pub connected_before: bool,
 }
 
 impl SessionSpec {
@@ -221,6 +224,7 @@ impl SessionSpec {
             spec.locale = self.locale.clone();
         }
         spec.initial_grid = (self.cols.max(1), self.rows.max(1));
+        spec.connected_before = self.connected_before;
         spec
     }
 }
@@ -280,6 +284,9 @@ pub enum SessionEventKind {
         /// An earlier version stored two different keys for the host, and it
         /// presents one of them (B725).
         conflicting: bool,
+        /// A new host this phone connected to before (B783): the card says
+        /// so instead of "First connection".
+        connected_before: bool,
     },
     /// The connection had to use an older host-key algorithm (B564).
     OlderHostKeyAlgorithm {
@@ -1321,6 +1328,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
             previous,
             older_algorithm,
             conflicting,
+            connected_before,
         } => SessionEventKind::HostKeyPrompt {
             prompt,
             host,
@@ -1329,6 +1337,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
             previous,
             older_algorithm,
             conflicting,
+            connected_before,
         },
         EventKind::OlderHostKeyAlgorithm { algorithm } => {
             SessionEventKind::OlderHostKeyAlgorithm { algorithm }
@@ -1739,6 +1748,7 @@ mod tests {
             locale: String::new(),
             cols: 0,
             rows: 40,
+            connected_before: false,
         };
         let core = spec.core();
         assert_eq!(core.connection_id, spec.connection_id);
@@ -1778,6 +1788,7 @@ mod tests {
             locale: String::new(),
             cols: 80,
             rows: 24,
+            connected_before: false,
         };
         let core = spec.core();
         assert_eq!(core.target, Target::new("me", "2001:db8::1", 22));

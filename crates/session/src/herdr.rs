@@ -258,6 +258,11 @@ pub(crate) enum HerdrNote {
         token: u64,
         answer: HerdrAnswer,
     },
+    /// A pane's screen, for the overview's picture (B751).
+    Snapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
     /// The frame channel or the connection is gone: the session redials.
     Lost(String),
 }
@@ -689,6 +694,9 @@ impl Task {
                 names,
                 answered,
             } => self.answer(request, HerdrAnswer::Agents { names, answered }),
+            ClientEvent::PaneRead { pane, rows } => {
+                (self.notes)(HerdrNote::Snapshot { pane, rows });
+            }
             ClientEvent::Restart { request, outcome } => {
                 self.answer(request, HerdrAnswer::Restart(outcome))
             }

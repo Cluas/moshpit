@@ -26,8 +26,12 @@
 //!   every fingerprint.
 //!
 //! The item is not secret but must not be tampered with: on iOS it is a
-//! generic password, `WhenUnlockedThisDeviceOnly`, no biometry — out of
-//! backups and bound to the device.
+//! generic password, no biometry, `AfterFirstUnlock` — it moves with a
+//! backup ([`moves_with_backups`], B783). It was `WhenUnlockedThisDeviceOnly`,
+//! like every item the app writes, and a phone restored from a backup (or
+//! set up by Quick Start) started with no trusted host: every host asked to
+//! be trusted again, a fresh trust-on-first-use window on each, which is
+//! weaker, not safer. The keys in it are public.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -40,6 +44,19 @@ use crate::stored_list;
 
 /// The keychain account of the map.
 pub const ACCOUNT: &str = "moshpit.knownHosts";
+
+/// Whether the item `account` holds trusted host keys — the map, or a copy
+/// of one kept before it was written over (`<ACCOUNT>.backup`,
+/// `<ACCOUNT>.backup-<n>`) — and so moves with a backup to a new phone
+/// (B783): public keys, the trust anchors a restored phone should keep.
+/// Every other item the app writes stays on the device that wrote it.
+pub fn moves_with_backups(account: &str) -> bool {
+    let Some(rest) = account.strip_prefix(ACCOUNT) else {
+        return false;
+    };
+    let copy = |n: &str| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit() || c == '-');
+    rest.is_empty() || rest == ".backup" || rest.strip_prefix(".backup-").is_some_and(copy)
+}
 
 /// The trusted map: entry ([`entry`]) → fingerprint.
 pub type Table = BTreeMap<String, String>;
@@ -253,6 +270,35 @@ impl KnownHostsStore for KeychainKnownHosts {
                 KeychainError::InteractionNotAllowed => StoreError::Locked,
                 other => StoreError::Unavailable(other.to_string()),
             })
+    }
+}
+
+#[cfg(test)]
+mod moves_with_backups_tests {
+    use super::*;
+
+    /// B783: the map and the copies kept of it move with a backup; a
+    /// password, a private key or anything else named like it never does.
+    #[test]
+    fn only_the_trusted_host_keys_move_with_a_backup() {
+        for account in [
+            ACCOUNT,
+            "moshpit.knownHosts.backup",
+            "moshpit.knownHosts.backup-1790000000",
+            "moshpit.knownHosts.backup-1790000000-2",
+        ] {
+            assert!(moves_with_backups(account), "{account}");
+        }
+        for account in [
+            "moshpit.secret.0f0e0d0c-0000-4000-8000-000000000001",
+            "moshpit.knownHostsX",
+            "moshpit.knownHosts.backupX",
+            "moshpit.knownHosts.extra",
+            "x.moshpit.knownHosts",
+            "",
+        ] {
+            assert!(!moves_with_backups(account), "{account}");
+        }
     }
 }
 

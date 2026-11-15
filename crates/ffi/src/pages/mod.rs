@@ -782,6 +782,7 @@ mod tests {
         let state = SshKeysPageState {
             device: vec![],
             imported: vec![ssh_key("A1")],
+            missing: vec![ssh_key("B2")],
             deleting: Some("A1".into()),
             notice: Some(SshKeysNotice {
                 title: "Key kept".into(),
@@ -794,6 +795,10 @@ mod tests {
         assert_eq!(keys.imported[0].avatar, moshpit_ui::ssh_keys::Avatar::Gray);
         assert_eq!(keys.imported[0].unused_since.as_deref(), Some("Mar 2026"));
         assert_eq!(keys.deleting.as_deref(), Some("A1"));
+        assert_eq!(
+            keys.missing[0].id, "B2",
+            "B781: the keys not on this device"
+        );
         assert_eq!(keys.notice.unwrap().title, "Key kept");
         let value: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["imported"][0]["avatar"], "gray");
@@ -828,6 +833,10 @@ mod tests {
             (
                 json!({"ev": "confirm-delete", "id": "A1"}),
                 SshKeysEvent::ConfirmDelete { id: "A1".into() },
+            ),
+            (
+                json!({"ev": "import-again", "id": "B2"}),
+                SshKeysEvent::ImportAgain { id: "B2".into() },
             ),
             (json!({"ev": "cancel-delete"}), SshKeysEvent::CancelDelete),
             (
@@ -1201,6 +1210,7 @@ mod tests {
             working: false,
             fingerprint: None,
             error: Some("Wrong passphrase".into()),
+            again: false,
         };
         let json = page_message(PageMessage::AddKey {
             state: state.clone(),

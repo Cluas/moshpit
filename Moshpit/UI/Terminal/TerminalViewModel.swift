@@ -38,6 +38,9 @@ final class TerminalViewModel {
         /// An earlier version stored two different keys for the host, and it
         /// sent one of them (B725): the card asks in its own words.
         var conflicting: Bool = false
+        /// A new host this phone connected to before (B783): its trusted key
+        /// isn't here any more; the card says so instead of "First connection".
+        var connectedBefore: Bool = false
         let decide: (Bool) -> Void
     }
 

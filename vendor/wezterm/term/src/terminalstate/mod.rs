@@ -2469,7 +2469,10 @@ impl TerminalState {
                 {
                     let margin = self.left_and_right_margins.end;
                     let screen = self.screen_mut();
-                    for _ in 0..n as usize {
+                    // Moshpit (W28): no more than reach the margin (more
+                    // only pushes blanks past it): a count of 999999999
+                    // inserted a cell that many times, 80 s.
+                    for _ in 0..(n as usize).min(margin.saturating_sub(x)) {
                         screen.insert_cell(x, y, margin, seqno);
                     }
                 }
@@ -2527,6 +2530,19 @@ impl TerminalState {
                     }
                 };
 
+                // Moshpit (W28): once the scroll region and the history
+                // behind it are full of the cell, each margin's width more
+                // only scrolls a line of it away and brings the cursor back
+                // where it was: the count past that point counts modulo the
+                // width. A count of 4294967295 wrote that many cells, 82 s.
+                let width = left_and_right_margins
+                    .end
+                    .saturating_sub(left_and_right_margins.start)
+                    .max(1);
+                let height = (top_and_bottom_margins.end - top_and_bottom_margins.start).max(1) as usize;
+                let full = (height + self.config.scrollback_size() + 1) * width;
+                let n = n as usize;
+                let n = if n > full { full + (n - full) % width } else { n };
                 for _ in 0..n {
                     {
                         let screen = self.screen_mut();
@@ -2608,13 +2624,15 @@ impl TerminalState {
                 self.set_left_and_right_margins(left, right);
             }
 
+            // Moshpit (W28): no more tabs than columns (past the last stop
+            // a tab stays put): a count of 999999999 took 2 s.
             Cursor::ForwardTabulation(n) => {
-                for _ in 0..n {
+                for _ in 0..(n as usize).min(self.screen().physical_cols) {
                     self.c0_horizontal_tab();
                 }
             }
             Cursor::BackwardTabulation(n) => {
-                for _ in 0..n {
+                for _ in 0..(n as usize).min(self.screen().physical_cols) {
                     let x = match self.tabs.find_prev_tab_stop(self.cursor.x) {
                         Some(x) => x,
                         None => 0,

@@ -609,8 +609,36 @@ impl<'a> Performer<'a> {
                 // We treat CUB (Cursor::Left) the same as Backspace as
                 // that is what xterm does.
                 // <https://github.com/wezterm/wezterm/issues/1273>
-                for _ in 0..n {
+                //
+                // Moshpit (W28): a backspace moves the cursor alone (its
+                // column, row and pending wrap) over a screen and margins
+                // it doesn't change, so a run of them falls into a round
+                // within as many steps as the cursor has places: go that
+                // far, measure the round, and skip its whole turns. One by
+                // one, a count of 4294967295 took 73 s.
+                let places =
+                    2 * (self.screen().physical_cols + 1) * self.screen().physical_rows.max(1);
+                let mut n = n as usize;
+                let lead = n.min(places);
+                for _ in 0..lead {
                     self.control(ControlCode::Backspace);
+                }
+                n -= lead;
+                if n > 0 {
+                    let place = |s: &Self| (s.cursor.x, s.cursor.y, s.wrap_next);
+                    let start = place(self);
+                    let mut round = 0;
+                    while n > 0 {
+                        self.control(ControlCode::Backspace);
+                        n -= 1;
+                        round += 1;
+                        if place(self) == start {
+                            break;
+                        }
+                    }
+                    for _ in 0..n % round {
+                        self.control(ControlCode::Backspace);
+                    }
                 }
             }
             CSI::Cursor(cursor) => self.state.perform_csi_cursor(cursor),
@@ -668,6 +696,9 @@ impl<'a> Performer<'a> {
                 }
             }
             CSI::Keyboard(Keyboard::PopKittyState(n)) => {
+                // Moshpit (W28): no more pops than the stack holds (it keeps
+                // 128 at most): 4294967295 popped that many times, 8 s.
+                let n = (n as usize).min(self.screen().keyboard_stack.len());
                 for _ in 0..n {
                     self.screen_mut().keyboard_stack.pop();
                 }

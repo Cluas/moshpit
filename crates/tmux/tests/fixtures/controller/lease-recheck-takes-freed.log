@@ -45,12 +45,12 @@
 @23 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 200 50 1 0 0 bash
 @24 rule ok capture-pane => READY
 @25 rule ok display-message => 0 0
-@27 recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
+@27 recv %layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\n
 @28 waitsettle 600 30
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
@@ -75,6 +75,6 @@
 @29 dump
 = attached=1 ever=1 session=$0 window=@0 pane=%0 fwd=1 swiped=0
 = s $0 att=1 name=main
-= w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=main layout=c71d,200x50,0,0,0
+= w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=main layout=c71e,201x50,0,0,0
 = p %0 w=@0 idx=0 act=1 200x50 cmd=bash
 = follow=- notice=- refreshing=0 resized=@0 mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=

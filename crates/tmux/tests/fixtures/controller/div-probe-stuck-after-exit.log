@@ -35,7 +35,7 @@
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @15 rules-clear
 @16 resize 60 30
@@ -54,9 +54,9 @@
 > display-message -p 'self=#{client_name}'
 > list-clients -F 'cc=#{client_control_mode} #{session_id} #{client_name}'
 > show-options -sqv @moshpit_cc
-> list-windows -t '$0' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> list-windows -t '$0' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > refresh-client -C 60x30
-> list-windows -t '$0' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> list-windows -t '$0' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > display-message -p '#{client_name}'
 > list-clients -F '#{client_name}'
 > show-options -wqv @moshpit_size_owner
@@ -83,7 +83,7 @@
 > new-session -t '$0' -s 'main~mp-iPhone-0-1hc' -P -F '#{session_id}'
 > set-option -t '=main~mp-iPhone-0-1hc:' destroy-unattached on
 > set-option -t '=main~mp-iPhone-0-1hc:' @moshpit_group_of '$0'
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 60 -y 30
 @31 recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
 > resize-window -t @0 -x 60 -y 30

@@ -263,7 +263,7 @@ impl Rig {
                 PlaneOut::InputDropped { bytes } => self.dropped += bytes,
                 PlaneOut::Landed { token, landed } => self.pastes.push((self.now, token, landed)),
                 PlaneOut::InputHeld(held) => self.held_said.push((self.now, held)),
-                PlaneOut::AgentHooksUpdated => {}
+                PlaneOut::AgentHooksUpdated | PlaneOut::Snapshot { .. } => {}
             }
         }
     }

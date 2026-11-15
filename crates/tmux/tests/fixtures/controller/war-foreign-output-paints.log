@@ -36,7 +36,7 @@
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 69 -y 60
 @16 recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n
 > resize-window -t @0 -x 69 -y 60

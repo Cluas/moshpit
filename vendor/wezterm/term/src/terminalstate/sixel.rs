@@ -58,14 +58,20 @@ impl TerminalState {
             match d {
                 SixelData::Data(d) => {
                     emit_sixel(d, &foreground_color, x, y);
-                    x += 1;
+                    x = x.saturating_add(1);
                 }
 
+                // Moshpit (W28): no more than reach the image's width (past
+                // it nothing is drawn): a repeat of 4294967295 in an image
+                // whose raster says 10 pixels wrote that many, and ran x
+                // past u32 (a panic where overflow is checked).
                 SixelData::Repeat { repeat_count, data } => {
-                    for _ in 0..*repeat_count {
+                    let drawn = (*repeat_count).min(width.saturating_sub(x));
+                    for _ in 0..drawn {
                         emit_sixel(data, &foreground_color, x, y);
                         x += 1;
                     }
+                    x = x.saturating_add(repeat_count - drawn);
                 }
 
                 SixelData::CarriageReturn => x = 0,

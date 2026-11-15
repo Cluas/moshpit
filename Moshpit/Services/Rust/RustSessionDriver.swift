@@ -200,7 +200,9 @@ final class RustSessionDriver: RustSessionListener {
             herdrPath: connection.herdrPath,
             locale: "en_US.UTF-8",
             cols: UInt16(clamping: grid.cols),
-            rows: UInt16(clamping: grid.rows))
+            rows: UInt16(clamping: grid.rows),
+            // B783: a new host's card says it was connected to before.
+            connectedBefore: connection.lastConnectedAt != nil)
     }
 
     /// Closes the session for good, holding the process awake while the
@@ -302,6 +304,7 @@ final class RustSessionDriver: RustSessionListener {
             tmux?.onPaneBell?(pane)
         case .paneSnapshot(let pane, let rows):
             tmux?.onPaneSnapshot?(pane, rows)
+            herdrSurface?.onPaneSnapshot?(pane, rows)
         case .agentHooksUpdated:
             mirrorTree()
             tmux?.onAgentHooksUpdated?()
@@ -314,10 +317,11 @@ final class RustSessionDriver: RustSessionListener {
             // plane down, B401; the connection dialled again, B483) waited
             // past their bound; an attach is back now.
             tmux?.noteRefused(RustCopy.tmuxActionsDropped)
-        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous, let older, let conflicting):
+        case .hostKeyPrompt(let prompt, let host, let port, let fingerprint, let previous, let older,
+                            let conflicting, let connectedBefore):
             presentHostKey(prompt: prompt, host: host, port: Int(port),
                            fingerprint: fingerprint, previous: previous, older: older,
-                           conflicting: conflicting)
+                           conflicting: conflicting, connectedBefore: connectedBefore)
         case .olderHostKeyAlgorithm(let algorithm):
             // B564: for the diagnostics, once a session.
             if !saidOlderHostKey {
@@ -983,14 +987,15 @@ final class RustSessionDriver: RustSessionListener {
     // MARK: Cards
 
     private func presentHostKey(prompt: UInt64, host: String, port: Int, fingerprint: String,
-                                previous: String?, older: String?, conflicting: Bool) {
+                                previous: String?, older: String?, conflicting: Bool,
+                                connectedBefore: Bool = false) {
         hostKeyPrompt = prompt
         // In the background, a notification says it waits (B632).
         PromptNotifier.shared.asked(.hostKey(connection: connection.id, host: host,
                                              changed: previous != nil || conflicting))
         viewModel.hostKeyPrompt = TerminalViewModel.HostKeyPrompt(
             host: host, port: port, fingerprint: fingerprint, previousFingerprint: previous,
-            olderAlgorithm: older, conflicting: conflicting
+            olderAlgorithm: older, conflicting: conflicting, connectedBefore: connectedBefore
         ) { [weak self] trusted in
             guard let self else { return }
             // B631: only the prompt still up is cleared, and only its no is

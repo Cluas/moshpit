@@ -20803,6 +20803,110 @@
         }
       }
     },
+    "Import Again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut importieren"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a importar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importer de nouveau"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再インポート"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 가져오기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar de novo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新匯入"
+          }
+        }
+      }
+    },
+    "Import Again…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut importieren…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a importar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importer de nouveau…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再インポート…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 가져오기…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importar de novo…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新导入…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新匯入…"
+          }
+        }
+      }
+    },
     "Import File…": {
       "localizations": {
         "de": {
@@ -23191,6 +23295,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "存在 Android Keystore 裡的金鑰拿不出來，每次簽章都在 Keystore 裡完成。"
+          }
+        }
+      }
+    },
+    "Keys stay on the device they were imported on. Import it again or delete this entry.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schlüssel bleiben auf dem Gerät, auf dem sie importiert wurden. Importiere ihn erneut oder lösche diesen Eintrag."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las claves se quedan en el dispositivo donde se importaron. Vuelve a importarla o elimina esta entrada."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les clés restent sur l'appareil où elles ont été importées. Importez-la de nouveau ou supprimez cette entrée."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーはインポートしたデバイスにだけ残ります。もう一度インポートするか、この項目を削除してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키는 가져온 기기에만 남아 있습니다. 다시 가져오거나 이 항목을 삭제하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As chaves ficam no dispositivo em que foram importadas. Importe-a de novo ou apague este item."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥只留在导入它的那台设备上。可以重新导入，或删掉这条记录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金鑰只留在匯入它的那台裝置上。可以重新匯入，或刪掉這筆記錄。"
           }
         }
       }
@@ -27237,6 +27393,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "移動"
+          }
+        }
+      }
+    },
+    "NOT ON THIS IPHONE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NICHT AUF DIESEM IPHONE"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NO ESTÁ EN ESTE IPHONE"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PAS SUR CET IPHONE"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone にはありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone에 없음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NÃO ESTÁ NESTE IPHONE"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不在这台 iPhone 上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不在這台 iPhone 上"
           }
         }
       }
@@ -45441,6 +45649,58 @@
         }
       }
     },
+    "That's a different key from the one this entry was made with. Import that key, or delete this entry.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das ist ein anderer Schlüssel als der, mit dem dieser Eintrag erstellt wurde. Importiere diesen Schlüssel oder lösche den Eintrag."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No es la clave con la que se creó esta entrada. Importa esa clave o elimina esta entrada."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas la clé avec laquelle cette entrée a été créée. Importez cette clé ou supprimez cette entrée."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を作ったときのキーとは別のキーです。そのキーをインポートするか、この項目を削除してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목을 만들 때 쓴 키와 다른 키입니다. 그 키를 가져오거나 이 항목을 삭제하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta não é a chave com que este item foi criado. Importe essa chave ou apague este item."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是当初这条记录用的那把密钥。请导入那把，或者删掉这条记录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這不是當初這筆記錄用的那把金鑰。請匯入那把，或者刪掉這筆記錄。"
+          }
+        }
+      }
+    },
     "That's a wrap.": {
       "localizations": {
         "de": {
@@ -48817,6 +49077,110 @@
           "stringUnit": {
             "state": "translated",
             "value": "這把金鑰設了密碼短語。密碼短語只在匯入時用一次，解開後金鑰存進鑰匙圈，開了「需要 Face ID」就得先過 Face ID。"
+          }
+        }
+      }
+    },
+    "This key isn't on this iPhone": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Schlüssel ist nicht auf diesem iPhone"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta clave no está en este iPhone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette clé n'est pas sur cet iPhone"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキーはこの iPhone にありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 키는 이 iPhone에 없습니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta chave não está neste iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上没有这把密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 iPhone 上沒有這把金鑰"
+          }
+        }
+      }
+    },
+    "This key was made in another device's Secure Enclave and can't be moved. Delete it and make a new one.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Schlüssel wurde in der Secure Enclave eines anderen Geräts erstellt und kann nicht übertragen werden. Lösche ihn und erstelle einen neuen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta clave se creó en el Secure Enclave de otro dispositivo y no se puede trasladar. Elimínala y crea una nueva."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette clé a été créée dans la Secure Enclave d'un autre appareil et ne peut pas être déplacée. Supprimez-la et créez-en une nouvelle."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキーは別のデバイスの Secure Enclave で作られたため、移せません。削除して新しいキーを作ってください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 키는 다른 기기의 Secure Enclave에서 만들어져 옮길 수 없습니다. 삭제하고 새로 만드세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta chave foi criada no Secure Enclave de outro dispositivo e não pode ser transferida. Apague-a e crie uma nova."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这把密钥生成在另一台设备的安全芯片里，带不过来。删掉它，再新建一把。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這把金鑰產生在另一台裝置的安全晶片裡，帶不過來。刪掉它，再新增一把。"
           }
         }
       }
@@ -52353,6 +52717,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "你沒有信任這台伺服器的主機金鑰，所以 Moshpit 沒有連線。"
+          }
+        }
+      }
+    },
+    "You've connected to this server before, but its key isn't saved on this iPhone. Compare the fingerprint with the server before trusting it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du hast dich schon einmal mit diesem Server verbunden, aber sein Schlüssel ist auf diesem iPhone nicht gespeichert. Vergleiche den Fingerabdruck mit dem auf dem Server, bevor du ihm vertraust."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya te conectaste a este servidor antes, pero su clave no está guardada en este iPhone. Compara la huella con la del servidor antes de confiar en ella."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous vous êtes déjà connecté à ce serveur, mais sa clé n'est pas enregistrée sur cet iPhone. Comparez l'empreinte avec celle du serveur avant de lui faire confiance."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーには以前接続したことがありますが、この iPhone にはそのキーが保存されていません。信頼する前に、サーバー側のフィンガープリントと照らし合わせてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 서버에 접속한 적이 있지만, 이 iPhone에는 서버 키가 저장되어 있지 않습니다. 신뢰하기 전에 서버의 지문과 비교하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você já se conectou a este servidor, mas a chave dele não está salva neste iPhone. Compare a impressão digital com a do servidor antes de confiar nela."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你以前连过这台服务器，但这台 iPhone 上没存它的密钥。信任之前，先和服务器上的指纹核对一下。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你以前連過這台伺服器，但這台 iPhone 上沒存它的金鑰。信任之前，先和伺服器上的指紋核對一下。"
           }
         }
       }

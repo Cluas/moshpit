@@ -1200,6 +1200,8 @@ mod tests {
             "tmux set-option -u -w -t @0 window-size".to_owned(),
             "tmux resize-window -t @0 -x 200 -y 60".to_owned(),
             format!("tmux select-layout -t @0 '{split}'"),
+            // B772: the shared record goes with the pin.
+            "tmux set-option -wu -t @0 @moshpit_layout".to_owned(),
             "tmux set-option -u -w -t @0 window-size".to_owned(),
             "true".to_owned(),
         ];
@@ -1236,7 +1238,8 @@ mod tests {
             "tmux set-option -u -w -t @0 window-size".to_owned(),
             format!(
                 "case \"$l0\" in \"{split}\"|\"{squashed}\") tmux resize-window -t @0 -x 200 -y 60; \
-                 tmux select-layout -t @0 '{split}'; tmux set-option -u -w -t @0 window-size;; esac"
+                 tmux select-layout -t @0 '{split}'; tmux set-option -wu -t @0 @moshpit_layout; \
+                 tmux set-option -u -w -t @0 window-size;; esac"
             ),
             "true".to_owned(),
         ];

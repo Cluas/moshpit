@@ -1,0 +1,46 @@
+//! B751 on a private herdr (`--session mw10b-…` under a temp HOME, its
+//! socket checked to be its own): `herdr pane read <id> --format text`, the
+//! overview's picture of a herdr pane never shown, moves nothing. Not the
+//! focus (B683 pinned who moves it), not the layout, not a pane's size, not
+//! who owns the size: herdr's whole snapshot reads the same after reading
+//! every pane.
+//!
+//! ```sh
+//! CARGO_BUILD_JOBS=2 cargo test -p moshpit-session --test live_b751_herdr_read -- --ignored --nocapture
+//! ```
+
+mod support;
+
+use support::PrivateHerdr;
+
+#[test]
+#[ignore = "live: a private herdr server"]
+fn reading_a_pane_moves_nothing() {
+    if !PrivateHerdr::available() {
+        eprintln!("skipped: no herdr");
+        return;
+    }
+    let herdr = PrivateHerdr::start();
+    let a = herdr.panes()[0].clone();
+    herdr.run(&["pane", "split", &a, "--direction", "right"]);
+    let b = herdr
+        .panes()
+        .into_iter()
+        .find(|pane| *pane != a)
+        .expect("the split's pane");
+    if herdr.run(&["agent", "focus", &a]).1 != 0 || herdr.focused().as_deref() != Some(&a) {
+        herdr.run(&["pane", "zoom", "--pane", &a, "--on"]);
+        herdr.run(&["pane", "zoom", "--pane", &a, "--off"]);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let focused = herdr.focused();
+    let (before, _) = herdr.run(&["api", "snapshot"]);
+    for pane in [&a, &b, &a, &b] {
+        let (text, code) = herdr.run(&["pane", "read", pane, "--format", "text"]);
+        assert_eq!(code, 0, "{pane}: {text}");
+        println!("read {pane}: {} lines", text.lines().count());
+    }
+    let (after, _) = herdr.run(&["api", "snapshot"]);
+    assert_eq!(herdr.focused(), focused, "the focus stayed");
+    assert_eq!(before, after, "the snapshot is the same after the reads");
+}

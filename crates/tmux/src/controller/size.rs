@@ -135,6 +135,11 @@ impl PinLedger {
 pub(super) struct SizeState {
     /// Between `release_window_pins` and the next repin: backgrounded.
     pub pins_released: bool,
+    /// The layout each window's last `%layout-change` reported (B771,
+    /// B775): the same one again is another session's copy of it. A window
+    /// listing's layout is not one: it can show a resize whose notification
+    /// is still on its way.
+    pub reported_layouts: BTreeMap<String, String>,
     /// Windows pinned to our grid (`resizedWindows`).
     pub resized_windows: BTreeSet<String>,
     pub pristine_layouts: BTreeMap<String, PristineLayout>,
@@ -693,6 +698,15 @@ impl Controller {
 
     /// File a probe reply as a window's record, if it qualifies: more than
     /// one pane, and a layout that is plainly a layout.
+    ///
+    /// B772: a window pinned already (`window-size manual`, another Moshpit
+    /// device's pin) is found squashed to that device's grid: the record is
+    /// what that device found before its pin, shared on the window
+    /// ([`SHARED_LAYOUT_OPTION`]), and what is found now is one of
+    /// Moshpit's own layouts. A record of the window as found, unpinned, is
+    /// shared for the next device. The second phone took the first one's
+    /// squashed layout for the window's: both gone, the window stayed in
+    /// it, at the first phone's grid.
     fn note_pristine_layout(&mut self, window: &str, fields: &[String]) {
         if self.size.pristine_layouts.contains_key(window) || fields.len() < 4 {
             return;
@@ -703,7 +717,36 @@ impl Controller {
         if !is_plausible_layout(&fields[3]) {
             return;
         }
+        let pinned = fields.get(4).is_some_and(|size| size == "manual");
+        if pinned
+            && let Some(shared) = fields
+                .get(5)
+                .and_then(|raw| SharedLayout::parse(raw))
+                .filter(|shared| shared.pane_count == panes)
+        {
+            self.size.pristine_layouts.insert(
+                window.to_owned(),
+                PristineLayout {
+                    layout: shared.layout,
+                    zoomed_pane: shared.zoomed_pane,
+                    pane_count: panes,
+                    ours: vec![fields[3].clone()],
+                },
+            );
+            return;
+        }
         let zoomed_pane = (fields[1] == "1" && is_valid_id(&fields[2])).then(|| fields[2].clone());
+        if !pinned && fields.len() >= 5 && is_valid_id(window) {
+            let shared = SharedLayout {
+                pane_count: panes,
+                zoomed_pane: zoomed_pane.clone(),
+                layout: fields[3].clone(),
+            };
+            self.send(format!(
+                "set-option -w -t {window} {SHARED_LAYOUT_OPTION} '{}'",
+                shared.encoded()
+            ));
+        }
         self.size.pristine_layouts.insert(
             window.to_owned(),
             PristineLayout {
@@ -773,6 +816,8 @@ impl Controller {
                 .insert(window.to_owned(), pristine);
             return None;
         }
+        // B772: put back, the shared record is nobody's any more.
+        self.send(format!("set-option -wu -t {window} {SHARED_LAYOUT_OPTION}"));
         Some(pristine)
     }
 
@@ -1342,6 +1387,21 @@ impl Controller {
                 snapshot.windows.insert(window.to_owned(), info);
             }
         }
+        // B771: tmux reports a change once per session holding the window
+        // (each phone's group, B459): the same layout again is no change,
+        // and no drift. Each copy re-pinned and counted for the war guard.
+        // B775: the same as the last NOTIFICATION, never as a listing that
+        // already showed the resize (the drift went unhandled: no reclaim,
+        // no lease read, two phones stuck with nobody following).
+        if self
+            .size
+            .reported_layouts
+            .insert(window.to_owned(), layout.to_owned())
+            .as_deref()
+            == Some(layout)
+        {
+            return;
+        }
         // Our layouts, followed through a resize (round thirty-four): a
         // window of ours (its record's layout, or one our sizing left it in)
         // reflowed to another size is still ours — the phone's grid moved
@@ -1389,6 +1449,11 @@ impl Controller {
                     .is_some_and(|f| f.window_id == window)
                 {
                     self.set_follow(None);
+                    // B774: the holder let go and the window came back to
+                    // us: ours now, claimed as the quiet re-check claims a
+                    // freed window — unclaimed, the next device attaching
+                    // took it from the person using it.
+                    self.request_pin(window, PinReason::Recheck);
                 }
                 // Back at our width: repaint whatever the war painted.
                 self.size.active_window_at_foreign_width = false;
@@ -1714,8 +1779,7 @@ impl Controller {
 
 /// The window id, then [`PRISTINE_PROBE_FORMAT`]'s fields: a session's
 /// layouts around our size request (B150).
-pub const SIZE_PROBE_FORMAT: &str =
-    "#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}";
+pub const SIZE_PROBE_FORMAT: &str = "#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}";
 
 /// A size probe's rows (window id, then [`PRISTINE_PROBE_FORMAT`]'s fields),
 /// by window.
@@ -1740,6 +1804,8 @@ fn window_restore_commands(window: &str, pristine: &PristineLayout, sized: bool)
         commands.push(format!("resize-window -t {window} -x {cols} -y {rows}"));
     }
     commands.push(format!("select-layout -t {window} '{}'", pristine.layout));
+    // B772: put back, the shared record is nobody's any more.
+    commands.push(format!("set-option -wu -t {window} {SHARED_LAYOUT_OPTION}"));
     if size.is_some() {
         commands.push(format!("set-option -u -w -t {window} window-size"));
     }
@@ -1759,9 +1825,49 @@ fn is_plain_client_name(name: &str) -> bool {
 }
 
 /// `#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}`: one
-/// probe for the zoom and the layout record.
-pub const PRISTINE_PROBE_FORMAT: &str =
-    "#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}";
+/// probe for the zoom and the layout record; then whether the window is
+/// pinned (`#{window-size}`) and the record shared on it (B772).
+pub const PRISTINE_PROBE_FORMAT: &str = "#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}";
+
+/// The window option a window's record is shared in (B772), for a device
+/// that comes while another one has it pinned: [`SharedLayout`].
+pub const SHARED_LAYOUT_OPTION: &str = "@moshpit_layout";
+
+/// A record shared on a window (B772): `<panes>|<the user's zoomed pane, or
+/// ->|<window_layout>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SharedLayout {
+    pane_count: i64,
+    zoomed_pane: Option<String>,
+    layout: String,
+}
+
+impl SharedLayout {
+    fn parse(raw: &str) -> Option<Self> {
+        let mut parts = raw.splitn(3, '|');
+        let pane_count = swift_int(parts.next()?).filter(|&panes| panes > 1)?;
+        let zoomed_pane = match parts.next()? {
+            "-" => None,
+            pane if is_valid_id(pane) => Some(pane.to_owned()),
+            _ => return None,
+        };
+        let layout = parts.next().filter(|layout| is_plausible_layout(layout))?;
+        Some(Self {
+            pane_count,
+            zoomed_pane,
+            layout: layout.to_owned(),
+        })
+    }
+
+    fn encoded(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            self.pane_count,
+            self.zoomed_pane.as_deref().unwrap_or("-"),
+            self.layout
+        )
+    }
+}
 
 /// Zoom a window's active pane: a toggle, sent only on a probe that saw it
 /// unzoomed and is newer than every zoom change we sent

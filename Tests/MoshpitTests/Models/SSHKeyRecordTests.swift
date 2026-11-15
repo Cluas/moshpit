@@ -250,5 +250,46 @@ struct SSHKeyRecordTests {
                 "stored")
         #expect(!store.learnFacts(for: connection, privateKey: key), "once: it has its facts now")
     }
-}
 
+    /// B781: a key whose private half didn't come with a restore is imported
+    /// again into its own record — the same id, name, comment and Face ID
+    /// choice, its item under the record's own keychain account, no longer
+    /// missing. Another key (another fingerprint) is refused and nothing is
+    /// written.
+    @Test("Import Again fills the key's own record, and refuses another key")
+    @MainActor
+    func importAgainFillsTheSameRecord() async throws {
+        let (defaults, name) = Self.makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = SSHKeyStore(defaults: defaults)
+        var work = SSHKeyRecord(name: "work", algorithm: .ecdsa, comment: "dev@example.com",
+                                fingerprint: "SHA256:Y82atu0ehMoZKkgZksBoszn80yjGIvGqADbZjBF3FYg",
+                                publicKey: "ecdsa-sha2-nistp256 AAAA work", source: .imported)
+        work.keychainRef = "moshpit.secret.work"
+        store.add(work)
+        store.setMissing([work.id])
+        #expect(store.missingKeys.map(\.id) == [work.id] && store.importedKeys.isEmpty)
+        let keychain = KeychainService.inMemory()
+        let request = { (text: String) in
+            SSHKeyCreation.Request(importing: true, name: "ignored", algorithm: .ed25519, comment: "",
+                                   requireFaceID: false, secureEnclave: false, privateKey: text,
+                                   passphrase: "", publicKeyLine: "")
+        }
+        let other = try String(decoding: TestFixtures.data("keys-written-by-rust/imported-ed25519---openssh"),
+                               as: UTF8.self)
+        await #expect(throws: SSHKeyCreation.ImportAgainError.self) {
+            _ = try await SSHKeyCreation.importAgain(request(other), into: work, keychain: keychain, store: store)
+        }
+        let wroteForAnother = await keychain.contains(ref: "moshpit.secret.work")
+        #expect(!wroteForAnother, "nothing written for another key")
+        let key = try String(decoding: TestFixtures.data("keys-written-by-rust/imported-ecdsa-p-256---openssh"),
+                             as: UTF8.self)
+        let back = try await SSHKeyCreation.importAgain(request(key), into: work, keychain: keychain, store: store)
+        #expect(back.id == work.id && back.name == "work" && back.comment == "dev@example.com")
+        #expect(back.keychainRef == "moshpit.secret.work" && !back.requireBiometry && !back.missing)
+        #expect(back.publicKey.hasPrefix("ecdsa-sha2-nistp256 AAAA") && back.publicKey != work.publicKey)
+        let wrote = await keychain.contains(ref: "moshpit.secret.work")
+        #expect(wrote)
+        #expect(store.keys.count == 1 && store.missingKeys.isEmpty && store.importedKeys.map(\.id) == [work.id])
+    }
+}

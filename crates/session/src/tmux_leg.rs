@@ -476,6 +476,11 @@ struct Task {
     /// The server answered that it has no session (B228), and nothing has
     /// attached since.
     no_session: bool,
+    /// tmux's control client said `%exit` this pump (B786): the server is
+    /// asked whether it still has a session.
+    exited: bool,
+    /// The `has-session` out is about an exit, not a stalled first attach.
+    after_exit: bool,
 }
 
 /// What the writer is given, in order.
@@ -531,6 +536,8 @@ async fn run(
         ssh: ssh.clone(),
         tmux: tmux.clone(),
         no_session: false,
+        exited: false,
+        after_exit: false,
     };
     let now = (task.clock)();
     task.controller
@@ -578,6 +585,12 @@ async fn run(
     loop {
         if task.pump() {
             break;
+        }
+        // The control client ended under a live channel (B786): the shell
+        // runs on after it, so nothing reads as dead. Asked which it was.
+        if std::mem::take(&mut task.exited) && asked.is_none() {
+            task.after_exit = true;
+            asked = Some(task.ask_has_session());
         }
         let deadline = task
             .controller
@@ -637,11 +650,27 @@ async fn run(
                 }
             }
             told = answer(&mut asked) => {
+                let after_exit = std::mem::take(&mut task.after_exit);
                 if !task.controller.snapshot().is_attached {
                     if told.flatten() == Some(false) {
                         task.no_session = true;
+                        // No session on the server, or no server: one that
+                        // died under the attach (killed, crashed, its last
+                        // session gone, B786) takes its sessions, panes and
+                        // agents' stamps with it, and the empty state offers
+                        // a new session — never a dead server's tree on Home
+                        // and a blank pane behind its row.
+                        task.controller.forget_server();
+                        task.pump();
                         let view = task.view();
                         (task.notes)(TmuxNote::Tree(Box::new(view)));
+                    } else if after_exit {
+                        // The server still has sessions: this client was
+                        // detached. Attached again, as a dropped attach is.
+                        (task.notes)(TmuxNote::Lost(
+                            "the tmux control client was detached".to_owned(),
+                        ));
+                        break;
                     } else {
                         (task.notes)(TmuxNote::AttachStalled);
                     }
@@ -851,6 +880,10 @@ impl Task {
                         if let Some(reply) = self.prefixes.remove(&request) {
                             let _ = reply.send(key);
                         }
+                    }
+                    Notification::ControlExited { reason } => {
+                        log::info!("tmux control client ended: {reason:?}");
+                        self.exited = true;
                     }
                     Notification::ClientCount { .. }
                     | Notification::PanePath { .. }

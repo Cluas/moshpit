@@ -232,8 +232,10 @@ fn a_fresh_attach_polls_hooks_behind_the_tree() {
     assert_eq!(rig.commands[0], "display-message -p 'self=#{client_name}'");
     assert!(rig.commands[1].starts_with("list-clients -F 'cc="));
     assert_eq!(rig.commands[2], "show-options -sqv @moshpit_cc");
-    let layouts = "list-windows -t '$0' -F '#{window_id} #{window_panes} \
-                   #{window_zoomed_flag} #{pane_id} #{window_layout}'";
+    let layouts = format!(
+        "list-windows -t '$0' -F '{}'",
+        moshpit_tmux::controller::SIZE_PROBE_FORMAT
+    );
     assert_eq!(rig.commands[3], layouts);
     assert!(rig.commands[4].starts_with("refresh-client -C 80x24"));
     assert_eq!(rig.commands[5], layouts);
@@ -1346,6 +1348,30 @@ fn exit_detaches_and_client_detached_does_not() {
     assert!(rig.controller.snapshot().is_attached);
     rig.push("%exit detached\n");
     assert!(!rig.controller.snapshot().is_attached);
+}
+
+/// B786: `%exit` says the control client ended, with tmux's reason, for
+/// the leg to ask the server which it was; a server found gone is
+/// forgotten — its tree emptied (that it was attached once stays), each
+/// pane's terminal closed, the agents' stamps dropped.
+#[test]
+fn an_exit_is_told_and_a_gone_server_is_forgotten() {
+    let mut rig = attached();
+    rig.push("%exit server exited unexpectedly\n");
+    assert!(rig.notes().contains(&Notification::ControlExited {
+        reason: Some("server exited unexpectedly".into())
+    }));
+    rig.controller.forget_server();
+    let snapshot = rig.controller.snapshot();
+    assert!(
+        snapshot.sessions.is_empty() && snapshot.windows.is_empty() && snapshot.panes.is_empty()
+    );
+    assert!(snapshot.active_pane_id.is_none() && !snapshot.is_attached);
+    assert!(
+        !snapshot.ever_attached,
+        "a forgotten server's next session is its first"
+    );
+    assert!(rig.controller.agent_hooks().is_empty());
 }
 
 // MARK: - listings

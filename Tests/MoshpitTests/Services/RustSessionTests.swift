@@ -513,7 +513,7 @@ struct RustSessionTests {
         session.endedSink = { retired = true }
         let task = await started(driver, fake)
         driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil,
-                                     olderAlgorithm: nil, conflicting: false))
+                                     olderAlgorithm: nil, conflicting: false, connectedBefore: false))
         #expect(session.viewModel.hostKeyPrompt?.fingerprint == "SHA256:x")
         #expect(session.viewModel.hostKeyPrompt?.olderAlgorithm == nil)
         session.viewModel.hostKeyPrompt?.decide(false)
@@ -572,7 +572,7 @@ struct RustSessionTests {
         let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
         let task = await started(driver, fake)
         driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:x", previous: nil,
-                                     olderAlgorithm: "ssh-rsa", conflicting: false))
+                                     olderAlgorithm: "ssh-rsa", conflicting: false, connectedBefore: false))
         #expect(session.viewModel.hostKeyPrompt?.olderAlgorithm == "ssh-rsa")
         session.viewModel.hostKeyPrompt?.decide(true)
         driver.handle(.olderHostKeyAlgorithm(algorithm: "ssh-rsa"))
@@ -683,11 +683,11 @@ struct RustSessionTests {
         let (driver, session, fake) = driver(ServerConnection(host: "h", username: "u"))
         let task = await started(driver, fake)
         driver.handle(.hostKeyPrompt(prompt: 3, host: "h", port: 22, fingerprint: "SHA256:a", previous: nil,
-                                     olderAlgorithm: nil, conflicting: false))
+                                     olderAlgorithm: nil, conflicting: false, connectedBefore: false))
         let first = try #require(session.viewModel.hostKeyPrompt)
         driver.handle(.hostKeyPromptWithdrawn(prompt: 3))
         driver.handle(.hostKeyPrompt(prompt: 4, host: "h", port: 22, fingerprint: "SHA256:b", previous: nil,
-                                     olderAlgorithm: nil, conflicting: false))
+                                     olderAlgorithm: nil, conflicting: false, connectedBefore: false))
         first.decide(false)
         #expect(session.viewModel.hostKeyPrompt?.fingerprint == "SHA256:b")
         #expect(fake.answers.last.map { $0.1 == 3 && !$0.2 } == true)

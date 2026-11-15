@@ -37,13 +37,13 @@
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @16 recv %window-close @0\n
 . close %0
 . view %1 veil
 . view %1 extend 2.000
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > capture-pane -p -e -t %1
 > display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 @17 dump
@@ -53,7 +53,7 @@
 = p %1 w=@1 idx=0 act=1 80x24 cmd=vim
 = follow=- notice=- refreshing=0 resized=@0 mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=
 @18 recv %session-window-changed $0 @1\n
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 @19 settle
 . pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %1 reveal

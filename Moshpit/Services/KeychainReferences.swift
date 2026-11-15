@@ -190,6 +190,24 @@ enum KeychainReferences {
         account.hasPrefix(KeychainService.refPrefix) && !KeychainService.mintedThisLaunch(account)
     }
 
+    /// Whether this launch has moved the trusted host keys
+    /// (``moveTrustedHostKeysOnce(keychain:)``).
+    private static var movedHostKeys = false
+
+    /// The trusted host keys onto the class that moves with a backup (B783),
+    /// once a launch: a phone restored from an encrypted backup or set up by
+    /// Quick Start keeps them, not a fresh trust on first use for every host.
+    /// A keychain that refuses (locked) is tried again the next launch.
+    static func moveTrustedHostKeysOnce(keychain: KeychainService) async {
+        guard !movedHostKeys else { return }
+        do {
+            try await keychain.moveTrustedHostKeysWithBackups()
+            movedHostKeys = true
+        } catch {
+            Log.store.info("trusted host keys: not moved yet (\(String(describing: error), privacy: .public)) — next launch")
+        }
+    }
+
     /// Whether this launch has put right what keys show
     /// (``learnKeyFactsOnce(keys:keychain:)``).
     private static var learnedFacts = false
@@ -213,12 +231,33 @@ enum KeychainReferences {
         return learned
     }
 
+    /// What this phone's keychain doesn't hold of what the records name
+    /// (B781, B782; `store_missing_items`): a phone restored from a backup
+    /// has every connection and key record and none of their items, all
+    /// `ThisDeviceOnly`. Asked without reading an item, and again at each
+    /// return to the foreground — an item imported again since is there;
+    /// nothing is judged while either store can't be trusted. The keys go
+    /// to their store, which groups them apart in SSH Keys and keeps them
+    /// out of the picker.
+    static func findMissing(connections: ConnectionStore, keys: SSHKeyStore, keychain: KeychainService) {
+        guard let connectionsHandle = connections.rustHandle, let keysHandle = keys.rustHandle,
+              let missing = storeMissingItems(connections: connectionsHandle, keys: keysHandle,
+                                              keychain: keychain.storeHost)
+        else { return }
+        let missingKeys = Set(missing.keys.compactMap(UUID.init(uuidString:)))
+        if !missingKeys.isEmpty {
+            Log.store.notice("keychain: \(missingKeys.count, privacy: .public) key(s) whose private half isn't on this device")
+        }
+        keys.setMissing(missingKeys)
+    }
+
     #if DEBUG
     /// Tests look, and settle, more than once a process.
     static func resetForTesting() {
         looked = false
         settled = false
         learnedFacts = false
+        movedHostKeys = false
     }
     #endif
 }

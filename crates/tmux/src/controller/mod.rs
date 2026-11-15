@@ -212,6 +212,11 @@ pub enum Notification {
     /// byte it sent before the answer has been read by then), `false` when
     /// the channel closed first or nothing was attached to ask.
     Pong { request: u64, alive: bool },
+    /// tmux's control client ended (`%exit`): its server died — killed,
+    /// crashed — or this client was detached. Nothing is attached any more,
+    /// and the channel carries on with the shell run after it (B786), so it
+    /// never reads as dead: the leg asks the server which it was.
+    ControlExited { reason: Option<String> },
 }
 
 /// Whether a pane is on the alternate screen and in copy-mode, from discovery
@@ -857,6 +862,19 @@ impl Controller {
     }
 
     /// The snapshot, to change it.
+    /// The server this controller was attached to is gone (B786): its
+    /// sessions, windows and panes, and the agents stamped on them, are no
+    /// longer anywhere. The tree is emptied — as never attached: the next
+    /// session is a server's first, which the terminal's empty state makes
+    /// (its "awaiting the first session" reads that) — each pane's terminal
+    /// closed, and the stamps dropped.
+    pub fn forget_server(&mut self) {
+        *self.snap() = Snapshot::default();
+        self.close_streams_of_dead_panes();
+        self.agent_hooks.clear();
+        self.notify(Notification::StateChanged);
+    }
+
     fn snap(&mut self) -> &mut Snapshot {
         self.dirty = true;
         &mut self.snapshot
@@ -1018,6 +1036,9 @@ impl Controller {
         self.watchdog = None;
         self.timers.cancel(&Slot::Watchdog);
         self.parser.reset();
+        // What a dead connection's notifications said is no measure of the
+        // next one's (B775).
+        self.size.reported_layouts.clear();
         self.snap().is_attached = false;
         self.close_pending_commands();
         // The next connection makes a group of its own (this one tmux
@@ -1187,9 +1208,10 @@ impl Controller {
                 }
             }
             Event::ClientDetached { payload } => self.client_detached(&payload),
-            Event::Exit { .. } => {
+            Event::Exit { reason } => {
                 self.snap().is_attached = false;
                 self.close_pending_commands();
+                self.notify(Notification::ControlExited { reason });
             }
             Event::CommandResponse(response) => self.handle_command_response(response),
             Event::ProtocolError(_) => {}
@@ -2576,6 +2598,14 @@ impl Controller {
         }
         self.sync_status_line();
         if self.config.renders_output {
+            // B770: the window on screen, when it is another session's: the
+            // phone leaves it.
+            let leaving = self.snapshot.active_window_id.clone().filter(|window| {
+                self.snapshot
+                    .windows
+                    .get(window)
+                    .is_some_and(|info| info.session_id != session_id)
+            });
             // B150: the switch sizes the session's windows by us (its
             // latest client): what it squashes is read on both sides.
             self.probe_switch_layouts(session_id);
@@ -2598,6 +2628,13 @@ impl Controller {
                 self.enter_group(session_id, &name);
             } else {
                 self.send(format!("switch-client -t {session_id}"));
+            }
+            // B770: handed back as a window switch hands it back — its pin,
+            // our lease, the layout found — once the phone no longer sizes
+            // its session (behind the switch). It stayed at the phone's grid,
+            // a desktop on that session seeing its window squashed.
+            if let Some(window) = leaving {
+                self.release_window_pin(&window);
             }
         } else {
             self.sidecar_switch(session_id, left, left_window);

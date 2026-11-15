@@ -151,6 +151,8 @@ pub fn keys_message(app: &App, deleting: Option<Uuid>, notice: Option<Notice>) -
     let keys = Keys {
         device: app.keys.device_keys().into_iter().map(row).collect(),
         imported: app.keys.imported_keys().into_iter().map(row).collect(),
+        // B781's missing keys are iOS's restore; the Keystore's never move.
+        missing: vec![],
         deleting: deleting.map(|id| id.to_string()),
         notice,
     };
@@ -270,6 +272,7 @@ pub fn add_key_message(draft: &AddKeyDraft) -> String {
         working: draft.working,
         fingerprint: draft.fingerprint.clone(),
         error: draft.error.clone(),
+        again: false,
     };
     moshpit_ui::add_key::Message::AddKey(form).to_json()
 }
@@ -583,6 +586,7 @@ pub fn picker_message(app: &App) -> String {
                         && !k.public_key.starts_with("ecdsa-sha2-"))
                     .then(|| "security key".to_owned())
                 }),
+                missing: false,
             })
             .collect(),
         selected: selected.map(|id| id.to_string()),

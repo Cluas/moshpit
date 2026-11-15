@@ -507,6 +507,13 @@ impl ConnectionStoreHandle {
         Ok(())
     }
 
+    /// Connection `id` signed in now (B783): its `last_connected_at`,
+    /// written at most once a day (`ConnectionStore::mark_connected`) —
+    /// what tells a host connected to before. Whether it was written.
+    pub fn mark_connected(&self, id: String) -> Result<bool, StoreError> {
+        Ok(lock(&self.0).mark_connected(uuid(&id)?, Date::now()))
+    }
+
     pub fn reload_if_needed(&self) {
         lock(&self.0).reload_if_needed();
     }
@@ -770,17 +777,32 @@ impl From<&SshKeyRecord> for KeyRecord {
     }
 }
 
+/// What importing a key's private key again did (`ssh_keys::Refill`, B781).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum StoreRefill {
+    /// The record has the key again.
+    Refilled,
+    /// Another key than the record's: nothing changed.
+    DifferentKey,
+    /// No such key, or a list that can't be trusted: nothing changed.
+    Unknown,
+}
+
+fn ssh_algorithm(a: KeyAlgorithm) -> ssh_keys::SshKeyAlgorithm {
+    match a {
+        KeyAlgorithm::Ed25519 => ssh_keys::SshKeyAlgorithm::Ed25519,
+        KeyAlgorithm::EcdsaSk => ssh_keys::SshKeyAlgorithm::EcdsaSk,
+        KeyAlgorithm::Rsa => ssh_keys::SshKeyAlgorithm::Rsa4096,
+        KeyAlgorithm::SeP256 => ssh_keys::SshKeyAlgorithm::SeP256,
+        KeyAlgorithm::Ecdsa => ssh_keys::SshKeyAlgorithm::Ecdsa,
+    }
+}
+
 impl TryFrom<KeyRecord> for SshKeyRecord {
     type Error = StoreError;
 
     fn try_from(k: KeyRecord) -> Result<Self, StoreError> {
-        let algorithm = match k.algorithm {
-            KeyAlgorithm::Ed25519 => ssh_keys::SshKeyAlgorithm::Ed25519,
-            KeyAlgorithm::EcdsaSk => ssh_keys::SshKeyAlgorithm::EcdsaSk,
-            KeyAlgorithm::Rsa => ssh_keys::SshKeyAlgorithm::Rsa4096,
-            KeyAlgorithm::SeP256 => ssh_keys::SshKeyAlgorithm::SeP256,
-            KeyAlgorithm::Ecdsa => ssh_keys::SshKeyAlgorithm::Ecdsa,
-        };
+        let algorithm = ssh_algorithm(k.algorithm);
         let source = match k.source {
             KeySource::SecureEnclave => ssh_keys::SshKeySource::SecureEnclave,
             KeySource::Generated => ssh_keys::SshKeySource::Generated,
@@ -852,6 +874,37 @@ impl KeyStoreHandle {
         Ok(lock(&self.0)
             .keychain_refs(excluding)
             .map(|refs| refs.into_iter().collect()))
+    }
+
+    /// Key `id`'s private key imported again on a phone that didn't have it
+    /// (B781): the key's facts kept on the same record — its name, comment,
+    /// hosts and connections kept — with Face ID as `require_biometry`
+    /// says, unless it is another key (`SshKeyStore::refill`). Its item is
+    /// already saved under the record's keychain account.
+    #[allow(clippy::too_many_arguments)]
+    pub fn refill(
+        &self,
+        id: String,
+        algorithm: KeyAlgorithm,
+        bits: Option<i64>,
+        public_key: String,
+        fingerprint: String,
+        require_biometry: bool,
+    ) -> Result<StoreRefill, StoreError> {
+        let facts = secrets::KeyFacts {
+            algorithm: ssh_algorithm(algorithm),
+            source: ssh_keys::SshKeySource::Imported,
+            bits,
+            public_key,
+            fingerprint,
+        };
+        Ok(
+            match lock(&self.0).refill(uuid(&id)?, &facts, require_biometry) {
+                ssh_keys::Refill::Refilled => StoreRefill::Refilled,
+                ssh_keys::Refill::DifferentKey => StoreRefill::DifferentKey,
+                ssh_keys::Refill::Unknown => StoreRefill::Unknown,
+            },
+        )
     }
 
     /// Key `id`'s facts, read off `private_key` — its keychain item, as
@@ -1031,6 +1084,15 @@ pub fn store_learn_key_facts(
     .collect()
 }
 
+/// Whether the keychain item `account` moves with a backup to a new phone
+/// (`known_hosts::moves_with_backups`, B783): the trusted host keys alone —
+/// public, the trust anchors a restored phone should keep. The platform
+/// gives those the class that moves; every other item stays on the device.
+#[uniffi::export]
+pub fn store_item_moves_with_backups(account: String) -> bool {
+    moshpit_store::known_hosts::moves_with_backups(&account)
+}
+
 /// What a stored secret is, if it is an unencrypted private key of a kind
 /// that signs in, in any form the app reads (the facts a key record shows;
 /// `moshpit_ssh::keyfile::describe_stored`, as the app's Swift recovery
@@ -1045,6 +1107,36 @@ fn describe_private_key(secret: &[u8]) -> Option<secrets::KeyFacts> {
         bits: key.bits,
         public_key: key.info.public_key,
         fingerprint: key.info.fingerprint,
+    })
+}
+
+/// What this device's keychain doesn't hold of what the saved records name
+/// (`secrets::MissingItems`, B781, B782): connections whose own password
+/// or pasted key isn't here, key records whose private key isn't.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StoreMissingItems {
+    pub connections: Vec<String>,
+    pub keys: Vec<String>,
+}
+
+/// [`StoreMissingItems`] now (`secrets::missing_items`), asked without
+/// reading an item — no prompt; one behind Face ID, or on a locked device,
+/// is there. `None` while either store's read can't be trusted. A phone
+/// restored from a backup has the records and none of their items, all of
+/// which are `ThisDeviceOnly`.
+#[uniffi::export]
+pub fn store_missing_items(
+    connections: Arc<ConnectionStoreHandle>,
+    keys: Arc<KeyStoreHandle>,
+    keychain: Arc<dyn KeychainHost>,
+) -> Option<StoreMissingItems> {
+    let connections = lock(&connections.0);
+    let keys = lock(&keys.0);
+    secrets::missing_items(&connections, &keys, &HostKeychain(keychain)).map(|missing| {
+        StoreMissingItems {
+            connections: missing.connections.iter().map(Uuid::to_string).collect(),
+            keys: missing.keys.iter().map(Uuid::to_string).collect(),
+        }
     })
 }
 

@@ -216,6 +216,7 @@ mod tests {
             locale: "en_US.UTF-8".into(),
             cols: 80,
             rows: 24,
+            connected_before: false,
         });
         let deadline = Instant::now() + Duration::from_secs(20);
         while !matches!(

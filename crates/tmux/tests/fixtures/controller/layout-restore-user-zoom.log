@@ -53,7 +53,7 @@
 > show-options -wqv -t @0 @moshpit_size_owner
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
-> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
 @18 release
 > refresh-client -f ignore-size
@@ -61,4 +61,5 @@
 > set-option -u -w -t @0 window-size
 > select-layout -t '@0' '4b9d,203x60,0,0[203x30,0,0,0,203x29,0,31{101x29,0,31,1,101x29,102,31,2}]'
 > resize-pane -Z -t '%2'
+> set-option -wu -t @0 @moshpit_layout
 @19 settle

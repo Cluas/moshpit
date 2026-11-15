@@ -51,6 +51,11 @@ pub struct PickerKey {
     /// that is this key's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<String>,
+    /// Its private half isn't on this device (B781: a phone restored from a
+    /// backup): its row says so and can't be picked, unless it is the one
+    /// already picked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing: bool,
 }
 
 /// What the page shows.
@@ -244,10 +249,11 @@ fn saved_row(key: PickerKey, selected: Signal<Option<String>>, tell: Tell) -> Ro
         move || selected.with(|s| s.as_deref() == Some(id.as_str()))
     };
     let meta = match &key.refused {
+        _ if key.missing => t!("This key isn't on this iPhone"),
         Some(kind) => t!("Can't sign in with %@ keys yet", arg1 = kind),
         None => key.badge.clone(),
     };
-    let refused = key.refused.is_some();
+    let refused = key.refused.is_some() || key.missing;
     let id = key.id.clone();
     row(key.name.clone())
         .subtitle(meta)
@@ -269,6 +275,7 @@ mod tests {
             name: format!("key {id}"),
             badge: "ED25519".into(),
             refused: refused.map(Into::into),
+            missing: false,
         }
     }
 

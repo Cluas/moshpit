@@ -459,6 +459,9 @@ impl App {
                     previous,
                     older_algorithm,
                     conflicting,
+                    // Android's specs never say a connection was used
+                    // before (B783 is iOS's restore).
+                    connected_before: _,
                 } => {
                     host_key = Some(HostKeyAsk {
                         prompt,

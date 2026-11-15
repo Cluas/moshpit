@@ -209,16 +209,21 @@ struct SystemKeychainBackendSaveTests {
     final class FakeKeychain: @unchecked Sendable {
         private let lock = NSLock()
         private var items: [String: Data]
+        /// Each item's `kSecAttrAccessible`, as last added or updated.
+        private var classes: [String: String] = [:]
         private var callsLeft: Int?
         private var _calls: [String] = []
 
-        init(items: [String: Data] = [:], callsBeforeLock: Int? = nil) {
+        init(items: [String: Data] = [:], callsBeforeLock: Int? = nil,
+             classes: [String: String] = [:]) {
             self.items = items
             self.callsLeft = callsBeforeLock
+            self.classes = classes
         }
 
         var calls: [String] { lock.withLock { _calls } }
         func item(_ account: String) -> Data? { lock.withLock { items[account] } }
+        func protectionClass(_ account: String) -> String? { lock.withLock { classes[account] } }
 
         var writes: KeychainWrites {
             KeychainWrites(
@@ -247,6 +252,7 @@ struct SystemKeychainBackendSaveTests {
                       let data = fields[kSecValueData as String] as? Data else { return errSecParam }
                 guard items[account] == nil else { return errSecDuplicateItem }
                 items[account] = data
+                classes[account] = fields[kSecAttrAccessible as String] as? String
                 return errSecSuccess
             }
         }
@@ -254,10 +260,12 @@ struct SystemKeychainBackendSaveTests {
         private func update(_ query: CFDictionary, _ changes: CFDictionary) -> OSStatus {
             let account = Self.fields(query)[kSecAttrAccount as String] as? String
             let data = Self.fields(changes)[kSecValueData as String] as? Data
+            let access = Self.fields(changes)[kSecAttrAccessible as String] as? String
             return lock.withLock {
                 guard unlocked("update") else { return errSecInteractionNotAllowed }
                 guard let account, items[account] != nil else { return errSecItemNotFound }
                 if let data { items[account] = data }
+                if let access { classes[account] = access }
                 return errSecSuccess
             }
         }
@@ -299,6 +307,41 @@ struct SystemKeychainBackendSaveTests {
 
         #expect(keychain.item(account) == updated)
         #expect(!keychain.calls.contains("delete"), "the overwrite went through a moment with no item: \(keychain.calls)")
+    }
+
+    /// B783: the trusted host keys are public, the trust anchors a phone
+    /// restored from a backup should keep: they are saved `AfterFirstUnlock`,
+    /// which moves with an encrypted backup and Quick Start — every other
+    /// item stays `ThisDeviceOnly`. A `ThisDeviceOnly` map an earlier build
+    /// saved is moved where it stands: one update of its class, every byte
+    /// kept; refused (the device locked), it stays exactly as it was.
+    @Test("The trusted host keys move with a backup; nothing else does; an earlier map is moved in place")
+    func trustedHostKeysMoveWithBackups() throws {
+        let thisDevice = kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+        let moves = kSecAttrAccessibleAfterFirstUnlock as String
+        let keychain = FakeKeychain()
+        let backend = SystemKeychainBackend(service: "test", writes: keychain.writes)
+        try backend.save(secret: trusted, account: account, requireBiometry: false)
+        try backend.save(secret: trusted, account: "moshpit.knownHosts.backup", requireBiometry: false)
+        try backend.save(secret: Data("hunter2".utf8), account: "moshpit.secret.nas", requireBiometry: false)
+        #expect(keychain.protectionClass(account) == moves)
+        #expect(keychain.protectionClass("moshpit.knownHosts.backup") == moves)
+        #expect(keychain.protectionClass("moshpit.secret.nas") == thisDevice)
+
+        // A map 1.0.8 (or an earlier 1.0.9) saved.
+        let earlier = FakeKeychain(items: [account: trusted], classes: [account: thisDevice])
+        let upgraded = SystemKeychainBackend(service: "test", writes: earlier.writes)
+        try upgraded.moveWithBackups(account: account)
+        #expect(earlier.protectionClass(account) == moves)
+        #expect(earlier.item(account) == trusted, "every byte kept")
+        #expect(earlier.calls == ["update"], "never deleted and added again: \(earlier.calls)")
+        try upgraded.moveWithBackups(account: "moshpit.knownHosts.backup")   // none: nothing to move
+
+        let locked = FakeKeychain(items: [account: trusted], callsBeforeLock: 0, classes: [account: thisDevice])
+        #expect(throws: KeychainError.interactionNotAllowed) {
+            try SystemKeychainBackend(service: "test", writes: locked.writes).moveWithBackups(account: account)
+        }
+        #expect(locked.item(account) == trusted && locked.protectionClass(account) == thisDevice)
     }
 
     @Test("With no item yet, a save adds one")

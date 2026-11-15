@@ -112,6 +112,18 @@ impl SshKeyAlgorithm {
     }
 }
 
+/// What importing a key's private key again did ([`SshKeyStore::refill`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refill {
+    /// The record has the key again, its facts read off it.
+    Refilled,
+    /// The key isn't the one the record was made with (its fingerprint
+    /// differs): nothing changed.
+    DifferentKey,
+    /// No such key, or a list that can't be trusted: nothing changed.
+    Unknown,
+}
+
 /// Public metadata for one key.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SshKeyRecord {
@@ -537,6 +549,34 @@ impl SshKeyStore {
         self.is_authoritative
     }
 
+    /// Key `id`'s private key imported again on a phone that didn't have it
+    /// (B781: a restore, a re-sign) — `facts` read off the key, its item
+    /// already saved under the record's `keychain_ref` — with Face ID as
+    /// `require_biometry` says. The record stays the same key: its name,
+    /// its comment, its hosts and every connection that signs in with it
+    /// are kept, and a key whose fingerprint isn't the one the record has
+    /// is [`Refill::DifferentKey`] and changes nothing.
+    pub fn refill(&mut self, id: Uuid, facts: &KeyFacts, require_biometry: bool) -> Refill {
+        self.reload_if_needed();
+        if !self.is_authoritative {
+            return Refill::Unknown;
+        }
+        let Some(key) = self.keys.iter_mut().find(|k| k.id == id) else {
+            return Refill::Unknown;
+        };
+        if !key.fingerprint.is_empty() && key.fingerprint != facts.fingerprint {
+            return Refill::DifferentKey;
+        }
+        key.algorithm = facts.algorithm;
+        key.bits = facts.bits;
+        key.public_key = facts.public_key.clone();
+        key.fingerprint = facts.fingerprint.clone();
+        key.require_biometry = require_biometry;
+        key.refused = None;
+        self.persist();
+        Refill::Refilled
+    }
+
     /// Key `id` is a kind no connect path signs in with (`kind`, read off
     /// its private key, B780), for a record that
     /// [lacks its facts](SshKeyRecord::lacks_facts): kept, so the key list
@@ -821,6 +861,106 @@ mod tests {
         r.algorithm = SshKeyAlgorithm::Rsa4096;
         r.bits = Some(4096);
         assert_eq!(r.badge_text(), "RSA-4096");
+    }
+
+    /// B781: a key whose private half didn't come with a restore, imported
+    /// again, is the same record: its name, comment and hosts kept, its
+    /// facts read off the key, Face ID as asked, and no longer refused. A
+    /// different key (another fingerprint) changes nothing; a record that
+    /// never had a fingerprint (1.0.8 kept none for a key pasted without its
+    /// public half) takes the key it is given.
+    #[test]
+    fn a_key_imported_again_fills_the_same_record() {
+        let defaults = Arc::new(MemoryDefaults::new());
+        let mut store = SshKeyStore::new(defaults.clone(), Readiness::Always);
+        let mut laptop = record(
+            "laptop",
+            SshKeyAlgorithm::Ed25519,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== laptop",
+            SshKeySource::Imported,
+        );
+        laptop.fingerprint = "SHA256:laptop".into();
+        laptop.comment = "dev@example.com".into();
+        laptop.bound_hosts = vec!["192.0.2.7".into()];
+        laptop.keychain_ref = Some("moshpit.secret.laptop".into());
+        laptop.require_biometry = true;
+        let mut pasted = record(
+            "router",
+            SshKeyAlgorithm::Ed25519,
+            "",
+            SshKeySource::Imported,
+        );
+        pasted.keychain_ref = Some("moshpit.secret.router".into());
+        pasted.refused = Some("DSA".into());
+        store.add(laptop.clone());
+        store.add(pasted.clone());
+        let facts = |fingerprint: &str, line: &str| KeyFacts {
+            algorithm: SshKeyAlgorithm::Ed25519,
+            source: SshKeySource::Imported,
+            public_key: line.into(),
+            fingerprint: fingerprint.into(),
+            bits: None,
+        };
+
+        assert_eq!(
+            store.refill(
+                laptop.id,
+                &facts("SHA256:other", "ssh-ed25519 AAAAother"),
+                false
+            ),
+            Refill::DifferentKey
+        );
+        assert_eq!(store.keys()[0], laptop, "a different key changed nothing");
+        assert_eq!(
+            store.refill(
+                laptop.id,
+                &facts(
+                    "SHA256:laptop",
+                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== again"
+                ),
+                false
+            ),
+            Refill::Refilled
+        );
+        let reread = SshKeyStore::new(defaults.clone(), Readiness::Always);
+        let again = reread.keys().iter().find(|k| k.id == laptop.id).unwrap();
+        assert_eq!(
+            (
+                again.name.as_str(),
+                again.comment.as_str(),
+                again.bound_hosts.clone(),
+                again.keychain_ref.clone()
+            ),
+            (
+                "laptop",
+                "dev@example.com",
+                vec!["192.0.2.7".to_owned()],
+                laptop.keychain_ref.clone()
+            )
+        );
+        assert_eq!(
+            again.public_key,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA== again"
+        );
+        assert!(!again.require_biometry, "Face ID as asked this time");
+
+        let rsa = KeyFacts {
+            algorithm: SshKeyAlgorithm::Rsa4096,
+            bits: Some(2048),
+            ..facts("SHA256:router", "ssh-rsa AAAArouter")
+        };
+        assert_eq!(store.refill(pasted.id, &rsa, true), Refill::Refilled);
+        let router = store.keys().iter().find(|k| k.id == pasted.id).unwrap();
+        assert_eq!(
+            (
+                router.algorithm,
+                router.bits,
+                router.fingerprint.as_str(),
+                router.refused.clone()
+            ),
+            (SshKeyAlgorithm::Rsa4096, Some(2048), "SHA256:router", None)
+        );
+        assert_eq!(store.refill(Uuid::new_v4(), &rsa, true), Refill::Unknown);
     }
 
     #[test]

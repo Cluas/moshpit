@@ -1235,6 +1235,10 @@ impl Actor {
                 self.prompts.insert(prompt, (generation, reply));
                 // The dial waits on the person's answer (B395).
                 self.life.attempt_waits_on_person(generation, true);
+                // A new host only: a changed key or two stored ones have
+                // their own words (B783).
+                let connected_before =
+                    self.spec.connected_before && previous.is_none() && !conflicting;
                 self.emit(EventKind::HostKeyPrompt {
                     prompt,
                     host,
@@ -1243,6 +1247,7 @@ impl Actor {
                     previous,
                     older_algorithm: older_algorithm.map(str::to_owned),
                     conflicting,
+                    connected_before,
                 });
             }
             Msg::Question {
@@ -3240,6 +3245,9 @@ impl Actor {
                 let now = self.now();
                 self.show_held(now);
             }
+            HerdrMoshNote::Snapshot { pane, rows } => {
+                self.emit(EventKind::PaneSnapshot { pane, rows })
+            }
             HerdrMoshNote::InputDropped { bytes } => {
                 let stream = self.shell.as_ref().map_or(0, |shell| shell.stream.id());
                 self.emit(EventKind::InputDiscarded {
@@ -3505,6 +3513,7 @@ impl Actor {
             }
             HerdrNote::FirstFrame => self.first_frame(),
             HerdrNote::AgentHooksUpdated => self.emit(EventKind::AgentHooksUpdated),
+            HerdrNote::Snapshot { pane, rows } => self.emit(EventKind::PaneSnapshot { pane, rows }),
             HerdrNote::InputDropped { stream, bytes } => self.emit(EventKind::InputDiscarded {
                 stream,
                 bytes,
@@ -5094,6 +5103,51 @@ mod tests {
                     _ => None,
                 });
             assert_eq!(said, Some(older.map(str::to_owned)));
+        }
+    }
+
+    /// B783: a new host on a connection used before — its trusted key gone
+    /// with a restore — has its card say so; a changed key and two stored
+    /// ones keep their own words, and a connection never used reads as a
+    /// first connection.
+    #[tokio::test]
+    async fn a_new_host_on_a_connection_used_before_says_so_on_its_card() {
+        let said = |events: &mut mpsc::UnboundedReceiver<Event>| {
+            std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event.kind {
+                EventKind::HostKeyPrompt {
+                    connected_before, ..
+                } => Some(connected_before),
+                _ => None,
+            })
+        };
+        for (used, previous, conflicting, expected) in [
+            (true, None, false, true),
+            (true, Some("SHA256:old"), false, false),
+            (true, None, true, false),
+            (false, None, false, false),
+        ] {
+            let (mut actor, mut events) = dialing_actor(false);
+            actor.spec.connected_before = used;
+            let generation = actor.life.generation();
+            actor.attempt = Some((generation, tokio::spawn(async {})));
+            let (reply, _answer) = oneshot::channel();
+            actor
+                .handle(Msg::Ask {
+                    generation,
+                    host: "box".into(),
+                    port: 22,
+                    fingerprint: "SHA256:x".into(),
+                    previous: previous.map(str::to_owned),
+                    older_algorithm: None,
+                    conflicting,
+                    reply,
+                })
+                .await;
+            assert_eq!(
+                said(&mut events),
+                Some(expected),
+                "used {used}, previous {previous:?}, conflicting {conflicting}"
+            );
         }
     }
 

@@ -75,6 +75,13 @@ struct SSHKeyRecord: Identifiable, Codable, Equatable {
     /// hasn't been read.
     var refused: String?
 
+    /// Its private half isn't in this device's keychain (B781): a phone
+    /// restored from a backup has the record and not the key — every item
+    /// the app writes stays on its device, and a Secure Enclave key never
+    /// leaves its chip. Told by the store (``SSHKeyStore/setMissing(_:)``),
+    /// never stored.
+    var missing = false
+
     /// The kind of key a connect path can't sign in with, when this is one:
     /// what its private key said (``refused``), else what its public key
     /// line says (``StoredKey/refusedType(ofPublicKeyLine:)``).
@@ -200,13 +207,35 @@ final class SSHKeyStore {
 
     /// Take what the backing holds now, changing only what changed.
     private func adopt() {
-        let held = backing.keys
+        var held = backing.keys
+        for index in held.indices where missingIds.contains(held[index].id) {
+            held[index].missing = true
+        }
         if held != keys { keys = held }
         isAuthoritative = backing.isAuthoritative
     }
 
-    var deviceKeys: [SSHKeyRecord] { keys.filter { $0.source == .secureEnclave } }
-    var importedKeys: [SSHKeyRecord] { keys.filter { $0.source != .secureEnclave } }
+    /// The keys whose private half isn't in this device's keychain (B781),
+    /// as ``KeychainReferences/findMissing(connections:keys:keychain:)`` last
+    /// told; never stored.
+    @ObservationIgnored private var missingIds: Set<UUID> = []
+
+    /// These keys' private halves aren't here (B781): each record says so
+    /// (``SSHKeyRecord/missing``) and SSH Keys groups them apart.
+    func setMissing(_ ids: Set<UUID>) {
+        guard ids != missingIds else { return }
+        missingIds = ids
+        adopt()
+    }
+
+    /// The Rust store under this one, for a call that reads more than one
+    /// store (``KeychainReferences/findMissing(connections:keys:keychain:)``).
+    var rustHandle: KeyStoreHandle? { (backing as? RustSSHKeyStore)?.handle }
+
+    var deviceKeys: [SSHKeyRecord] { keys.filter { $0.source == .secureEnclave && !$0.missing } }
+    var importedKeys: [SSHKeyRecord] { keys.filter { $0.source != .secureEnclave && !$0.missing } }
+    /// The keys whose private half isn't on this device (B781).
+    var missingKeys: [SSHKeyRecord] { keys.filter(\.missing) }
 
     /// Every keychain ref a stored key record holds, the carried ones' too —
     /// each the only handle on a private key. nil when that can't be known
@@ -257,6 +286,18 @@ final class SSHKeyStore {
         return true
     }
 
+    /// Key `id`'s private key, imported again into its own record (B781):
+    /// `key` read off it, its item already saved under the record's
+    /// `keychainRef`. The record keeps its name and every connection that
+    /// signs in with it; a key with another fingerprint is refused. Whether
+    /// it was written; the key is no longer missing once it was.
+    func refill(_ id: UUID, with key: SSHKeyFactory.Generated, requireBiometry: Bool) -> StoreRefill {
+        let refill = backing.refill(id: id, key: key, requireBiometry: requireBiometry)
+        if refill == .refilled { missingIds.remove(id) }
+        adopt()
+        return refill
+    }
+
     /// Read again if the last read could not be trusted; a no-op otherwise.
     func reloadIfNeeded() {
         backing.reloadIfNeeded()
@@ -301,6 +342,9 @@ protocol SSHKeyStoreBacking: AnyObject {
     /// Key `id`'s facts off `privateKey`, if its record lacks them (B726);
     /// whether they were written.
     func learnFacts(id: UUID, privateKey: String) -> Bool
+    /// Key `id`'s private key imported again (B781): `key`'s facts kept on
+    /// the same record, unless it is another key.
+    func refill(id: UUID, key: SSHKeyFactory.Generated, requireBiometry: Bool) -> StoreRefill
 }
 
 #if DEBUG

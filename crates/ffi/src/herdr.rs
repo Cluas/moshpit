@@ -90,6 +90,13 @@ pub enum HerdrIntent {
     ConfirmFocus {
         budget_ms: u64,
     },
+    /// The overview's pictures of panes the phone doesn't show (B751),
+    /// answered as `SessionEventKind::PaneSnapshot`.
+    ReadPanes {
+        panes: Vec<String>,
+    },
+    /// The overview closed.
+    StopReads,
     /// A drag or wheel over `pane` (`page_keys`: the paging keys).
     Scroll {
         pane: String,
@@ -159,6 +166,8 @@ impl HerdrIntent {
             HerdrIntent::RestartServer => Action::RestartServer,
             HerdrIntent::NoticeAction => Action::NoticeAction,
             HerdrIntent::ConfirmFocus { budget_ms } => Action::ConfirmFocus { budget_ms },
+            HerdrIntent::ReadPanes { panes } => Action::ReadPanes(panes),
+            HerdrIntent::StopReads => Action::StopReads,
             HerdrIntent::Scroll {
                 pane,
                 lines,

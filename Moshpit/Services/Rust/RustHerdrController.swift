@@ -147,6 +147,23 @@ final class RustHerdrController: MultiplexerControlling {
     func pollAgentHooks() {}
     func refresh() { driver?.herdr(.refresh) }
 
+    // MARK: The overview's pictures (B751)
+
+    /// A pane's screen, read for the overview's picture: text rows, never
+    /// fed to the terminal.
+    @ObservationIgnored var onPaneSnapshot: ((String, [String]) -> Void)?
+
+    /// Reads the screens of the overview's `panes` the phone doesn't show
+    /// (`herdr pane read`, which takes no pane and moves no focus), two at
+    /// a time, answered through ``onPaneSnapshot``.
+    func snapshotPanes(_ panes: [String]) {
+        guard !panes.isEmpty else { return }
+        driver?.herdr(.readPanes(panes: panes))
+    }
+
+    /// The overview closed: nothing more is read.
+    func stopSnapshots() { driver?.herdr(.stopReads) }
+
     func selectSession(_ sessionId: String) { driver?.herdr(.selectSession(id: sessionId)) }
     func selectWindow(_ windowId: String) { driver?.herdr(.selectWindow(id: windowId)) }
     func selectPane(_ paneId: String) { driver?.herdr(.selectPane(id: paneId)) }

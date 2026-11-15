@@ -68,6 +68,11 @@ pub struct HostKey {
     /// changed key is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub conflicting: bool,
+    /// This phone connected to the host before, and its key isn't saved
+    /// here any more (B783: a phone restored from a backup, a re-signed
+    /// app): a new host's sheet says so instead of "First connection".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub connected_before: bool,
 }
 
 impl HostKey {
@@ -155,6 +160,10 @@ pub fn message(key: &HostKey) -> String {
             "The key for %@:%@ does **not** match what's stored here. The server may have been reinstalled — or the connection is being intercepted.",
             arg1 = key.host,
             arg2 = port
+        )
+    } else if key.connected_before {
+        t!(
+            "You've connected to this server before, but its key isn't saved on this iPhone. Compare the fingerprint with the server before trusting it."
         )
     } else {
         t!(
@@ -425,6 +434,7 @@ mod tests {
             previous: None,
             older_algorithm: None,
             conflicting: false,
+            connected_before: false,
         }
     }
 

@@ -106,6 +106,7 @@ final class KeyPickerModel {
             "keys": snapshot.keys.map { key -> [String: Any] in
                 var entry: [String: Any] = ["id": key.id.uuidString, "name": key.name, "badge": key.badgeText]
                 if let refused = key.refusedType { entry["refused"] = refused }
+                if key.missing { entry["missing"] = true }
                 return entry
             },
             "selected": snapshot.selected.map { $0.uuidString as Any } ?? NSNull(),
@@ -134,7 +135,7 @@ final class KeyPickerModel {
         guard let id = (message["id"] as? String).flatMap(UUID.init(uuidString:)),
               let key = keys.first(where: { $0.id == id })
         else { return nil }
-        let refused = key.refusedType != nil
+        let refused = key.refusedType != nil || key.missing
         guard !refused || key.id == selected else { return nil }
         return .key(id)
     }

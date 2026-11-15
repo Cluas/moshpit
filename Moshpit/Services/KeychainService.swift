@@ -67,9 +67,16 @@ protocol KeychainBackend: Sendable {
     /// The item's bytes if they can be had without asking anyone: an item
     /// behind Face ID throws (`.interactionNotAllowed`) instead of prompting.
     func loadSilently(account: String) throws -> Data
+    /// Give the item `account` the protection class that moves with a
+    /// backup, where it stands (B783: the trusted host keys).
+    func moveWithBackups(account: String) throws
 }
 
 extension KeychainBackend {
+    /// A backend with no protection classes (the simulator's file vault, a
+    /// test's memory) has nothing to move.
+    func moveWithBackups(account: String) throws {}
+
     /// A backend that can't change an item in place leaves it alone.
     func replace(secret: Data, account: String, prompt: String) throws {
         throw KeychainError.unhandled(errSecUnimplemented)
@@ -157,7 +164,7 @@ final class SystemKeychainBackend: KeychainBackend {
     /// the keychain requires for changing one; no caller does that today
     /// (biometry-gated keys are saved under a fresh ref).
     func save(secret: Data, account: String, requireBiometry: Bool) throws {
-        let protection = try Self.protection(requireBiometry: requireBiometry)
+        let protection = try Self.protection(requireBiometry: requireBiometry, account: account)
 
         var item = baseQuery(account: account)
         item[kSecValueData as String] = secret
@@ -178,9 +185,17 @@ final class SystemKeychainBackend: KeychainBackend {
     }
 
     /// How an item is protected: gated by `.userPresence`, or plainly
-    /// `WhenUnlockedThisDeviceOnly`. Exactly one of the two attributes —
-    /// the keychain refuses an item that carries both.
-    private static func protection(requireBiometry: Bool) throws -> [String: Any] {
+    /// `WhenUnlockedThisDeviceOnly` — both stay on this device — except the
+    /// trusted host keys (`storeItemMovesWithBackups`, B783): public keys,
+    /// the trust anchors a phone restored from a backup should keep,
+    /// `AfterFirstUnlock`, which moves with an encrypted backup and Quick
+    /// Start. Kept `ThisDeviceOnly`, a restored phone started with no
+    /// trusted host, every host a fresh trust on first use. Exactly one of
+    /// the two attributes — the keychain refuses an item that carries both.
+    static func protection(requireBiometry: Bool, account: String) throws -> [String: Any] {
+        if storeItemMovesWithBackups(account: account) {
+            return [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock]
+        }
         guard requireBiometry else {
             return [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         }
@@ -230,6 +245,19 @@ final class SystemKeychainBackend: KeychainBackend {
         query[kSecUseAuthenticationContext as String] = context
         let status = writes.update(query as CFDictionary, [kSecValueData as String: secret] as CFDictionary)
         guard status == errSecSuccess else {
+            throw KeychainError(osStatus: status)
+        }
+    }
+
+    /// Give the item `account` the class that moves with a backup, where
+    /// it stands (B783): one `SecItemUpdate` of the class alone, so the
+    /// item keeps every byte, and a refusal (the device locked) leaves it
+    /// as it was. No item: nothing to move.
+    func moveWithBackups(account: String) throws {
+        let status = writes.update(
+            baseQuery(account: account) as CFDictionary,
+            [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(osStatus: status)
         }
     }
@@ -633,5 +661,18 @@ actor KeychainService {
     /// (``KeychainBackend/loadSilently(account:)``).
     func loadSecretSilently(forRef ref: String) throws -> Data {
         try backend.loadSilently(account: ref)
+    }
+
+    /// The trusted host keys given the class that moves with a backup, where
+    /// they stand (B783): every item `storeItemMovesWithBackups` names —
+    /// the map and the copies kept of it — retagged without a byte of it
+    /// rewritten. Items saved before 1.0.9 (and by 1.0.9 builds before this)
+    /// were `ThisDeviceOnly`; a save moves the map too, this moves one no
+    /// trust has rewritten yet. Throws while the device is locked (a
+    /// `WhenUnlocked` item can't change then), for the next launch to try.
+    func moveTrustedHostKeysWithBackups() throws {
+        for account in try backend.accounts() where storeItemMovesWithBackups(account: account) {
+            try backend.moveWithBackups(account: account)
+        }
     }
 }

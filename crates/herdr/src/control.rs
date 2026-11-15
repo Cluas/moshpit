@@ -311,6 +311,13 @@ pub fn kill_pane(pane_id: &str) -> String {
     format!("pane close {}", quote(pane_id))
 }
 
+/// What a pane's screen shows, as text (`pane read`): the overview's
+/// picture of a pane the phone doesn't show (B751). Takes no pane, moves no
+/// focus.
+pub fn pane_read(pane_id: &str) -> String {
+    format!("pane read {} --format text", quote(pane_id))
+}
+
 /// Semantic keys for `pane id`, encoded by herdr against the pane's real
 /// terminal modes (the local emulator never learns DECCKM over herdr, so
 /// `ESC[A` vs `ESC OA` can't be chosen here). One exec for a run of keys;

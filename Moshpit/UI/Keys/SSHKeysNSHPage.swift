@@ -34,6 +34,8 @@ struct SSHKeysNSHPage: View {
     @State private var showAdd = false
     /// The method Add Key opens on: an empty group's button picks it.
     @State private var addMethod: AddKeyMethod = .generate
+    /// The key Import Again… brings back (B781), while its sheet is up.
+    @State private var importingAgain: SSHKeyRecord?
 
     var body: some View {
         if failed {
@@ -59,6 +61,7 @@ struct SSHKeysNSHPage: View {
                     .onChange(of: snapshot) { _, new in model.update(new) }
             }
             .appSheet(isPresented: $showAdd) { AddKeyNSHPage(method: addMethod) }
+            .appSheet(item: $importingAgain) { AddKeyNSHPage(refilling: $0) }
         }
     }
 
@@ -95,6 +98,9 @@ struct SSHKeysNSHPage: View {
             if let key = key(id) {
                 model.requestDelete(key, SSHKeyDeletion.check(key, connections: connections.store, keys: keyStore))
             }
+        case .importAgain(let id):
+            // B781: a key whose private half didn't come with a restore.
+            if let key = key(id), key.missing, key.source != .secureEnclave { importingAgain = key }
         case .cancelDelete:
             model.cancelDelete()
         case .delete(let id):
@@ -117,6 +123,9 @@ struct SSHKeysNSHPage: View {
 struct SSHKeysSnapshot: Equatable {
     var device: [SSHKeyRecord]
     var imported: [SSHKeyRecord]
+    /// Keys whose private half isn't on this device (B781): their own group,
+    /// a Secure Enclave key's out of THIS DEVICE.
+    var missing: [SSHKeyRecord] = []
     /// The names of the connections that sign in with each key, by key id;
     /// none for a key while that can't be told.
     var users: [UUID: [String]]
@@ -124,19 +133,22 @@ struct SSHKeysSnapshot: Equatable {
     init(store: SSHKeyStore, connections: ConnectionStore) {
         device = store.deviceKeys
         imported = store.importedKeys
+        missing = store.missingKeys
         users = Dictionary(store.keys.map {
             ($0.id, connections.names(usingKey: $0.id, ref: $0.keychainRef) ?? [])
         }, uniquingKeysWith: { first, _ in first })
     }
 
-    init(device: [SSHKeyRecord], imported: [SSHKeyRecord], users: [UUID: [String]] = [:]) {
+    init(device: [SSHKeyRecord], imported: [SSHKeyRecord], missing: [SSHKeyRecord] = [],
+         users: [UUID: [String]] = [:]) {
         self.device = device
         self.imported = imported
+        self.missing = missing
         self.users = users
     }
 
     func contains(_ id: UUID) -> Bool {
-        device.contains { $0.id == id } || imported.contains { $0.id == id }
+        device.contains { $0.id == id } || imported.contains { $0.id == id } || missing.contains { $0.id == id }
     }
 }
 
@@ -268,6 +280,7 @@ final class SSHKeysModel {
         SshKeysPageState(
             device: snapshot.device.map { key($0, users: snapshot.users[$0.id] ?? [], now: now) },
             imported: snapshot.imported.map { key($0, users: snapshot.users[$0.id] ?? [], now: now) },
+            missing: snapshot.missing.map { key($0, users: snapshot.users[$0.id] ?? [], now: now) },
             deleting: deleting?.uuidString,
             notice: notice.map { SshKeysNotice(title: $0.title, message: $0.message) })
     }

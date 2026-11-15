@@ -31,9 +31,9 @@ struct TerminalNSHPage<Anchors: View>: View {
     let dictation: VoiceDictationController?
     let attachment: ImageAttachmentController?
     let preview: RemotePreviewModel?
-    /// What asks tmux for the screens of panes never shown (B751): the
-    /// session's tmux control, SSH's or mosh's.
-    var snapshots: RustTmuxController? = nil
+    /// What asks for the screens of panes the phone doesn't show (B751):
+    /// the session's tmux control (SSH's or mosh's), or its herdr's.
+    var snapshots: (any PaneSnapshotting)? = nil
     /// What the slot shows, and how the keyboard and a sheet's hold treat it.
     let target: TerminalNSHStage.Target?
     let focus: TerminalFocusPolicy
@@ -76,7 +76,7 @@ struct TerminalNSHPage<Anchors: View>: View {
         .onChange(of: dictation.map(ObjectIdentifier.init)) { model.watch(dictation: dictation) }
         .onChange(of: attachment.map(ObjectIdentifier.init)) { model.watch(attachment: attachment) }
         .onChange(of: preview.map(ObjectIdentifier.init)) { model.watch(preview: preview) }
-        .onChange(of: snapshots.map(ObjectIdentifier.init)) { model.watch(snapshots: snapshots) }
+        .onChange(of: snapshots.map { ObjectIdentifier($0) }) { model.watch(snapshots: snapshots) }
         // A protocol switch's swap is at once (`chrome.still`): the two
         // change in one value, so the swap reads the switch it belongs to.
         .onChange(of: StageShown(target: target, instant: chrome.still)) { _, new in
@@ -327,12 +327,12 @@ final class TerminalNSHModel {
         show("preview", panel)
     }
 
-    /// The session's tmux control, for the overview's snapshots of panes
-    /// never shown (B751): each one, while the overview is open, posted as
-    /// that pane's picture.
-    @ObservationIgnored private weak var snapshots: RustTmuxController?
+    /// The session's tmux or herdr control, for the overview's snapshots of
+    /// panes not shown (B751): each one, while the overview is open, posted
+    /// as that pane's picture.
+    @ObservationIgnored private weak var snapshots: (any PaneSnapshotting)?
 
-    func watch(snapshots control: RustTmuxController?) {
+    func watch(snapshots control: (any PaneSnapshotting)?) {
         guard control !== snapshots else { return }
         snapshots?.onPaneSnapshot = nil
         snapshots = control
@@ -817,3 +817,16 @@ struct TerminalNSHChrome: Equatable {
         }
     }
 }
+
+/// What asks a session's multiplexer for the screens of panes the phone
+/// doesn't show, for the overview's pictures (B751): tmux's control (one
+/// `capture-pane` each) or herdr's (`pane read`). Never fed to a pane.
+@MainActor
+protocol PaneSnapshotting: AnyObject {
+    var onPaneSnapshot: ((String, [String]) -> Void)? { get set }
+    func snapshotPanes(_ panes: [String])
+    func stopSnapshots()
+}
+
+extension RustTmuxController: PaneSnapshotting {}
+extension RustHerdrController: PaneSnapshotting {}

@@ -216,3 +216,54 @@ fn two_stored_keys_are_asked_about_in_their_own_words() {
         assert!(screen.shows(text), "{text}: {:?}", screen.texts());
     }
 }
+
+/// B783: a host this phone connected to before whose key isn't saved here
+/// any more — a phone restored from a backup the trusted keys didn't ride,
+/// a re-signed app — is asked about as a new host, plain trust on first
+/// use, but not as a first connection: the sheet says it was connected to
+/// before and to check the fingerprint. A host never connected to still
+/// reads as a first connection. In Chinese too.
+#[test]
+fn a_host_connected_to_before_is_not_called_a_first_connection() {
+    let before = "You've connected to this server before, but its key isn't saved on this iPhone. Compare the fingerprint with the server before trusting it.";
+    let (mut app, channel) = start(Screen::HostKey, Params::default(), "host-key");
+    let heard = hear(&channel);
+    post(
+        &mut app,
+        &channel,
+        &prompt(json!({"connectedBefore": true})),
+    );
+    app.wait_for("id:host-key-fingerprint").unwrap();
+    let screen = app.screen();
+    for text in ["New Host", before, "Trust", "Cancel"] {
+        assert!(screen.shows(text), "{text:?}: {:?}", screen.texts());
+    }
+    assert!(
+        !screen
+            .texts()
+            .iter()
+            .any(|t| t.starts_with("First connection")),
+        "{:?}",
+        screen.texts()
+    );
+    post(&mut app, &channel, &prompt(json!({})));
+    app.wait_for("id:host-key-fingerprint").unwrap();
+    assert!(!app.screen().shows(before));
+    quiet(&heard);
+
+    let (mut app, channel) = start(Screen::HostKey, zh_hans(), "host-key");
+    post(
+        &mut app,
+        &channel,
+        &prompt(json!({"connectedBefore": true})),
+    );
+    app.wait_for("id:host-key-fingerprint").unwrap();
+    assert!(
+        app.screen().shows(
+            "你以前连过这台服务器，但这台 iPhone 上没存它的密钥。信任之前，先和服务器上的指纹核对一下。"
+        ),
+        "{:?}",
+        app.screen().texts()
+    );
+    channel.close();
+}

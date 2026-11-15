@@ -17,7 +17,7 @@ recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
 take
 settle
 recv %output %0 MINE-AGAIN\n
-recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n
+recv %layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\n
 input %0 78
 settle
 dump

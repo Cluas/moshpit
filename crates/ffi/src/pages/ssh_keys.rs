@@ -13,6 +13,8 @@ pub struct SshKeysPageState {
     pub device: Vec<SshKeyRow>,
     /// The others.
     pub imported: Vec<SshKeyRow>,
+    /// Keys whose private half isn't on this device (B781).
+    pub missing: Vec<SshKeyRow>,
     /// The key the delete card asks about, while it shows.
     pub deleting: Option<String>,
     /// Why a key wasn't deleted, while the card saying so shows.
@@ -88,6 +90,10 @@ pub enum SshKeysEvent {
     ConfirmDelete {
         id: String,
     },
+    /// A key not on this device: Import Again… (B781).
+    ImportAgain {
+        id: String,
+    },
     /// The delete alert's Cancel.
     CancelDelete,
     /// The delete alert's Delete.
@@ -103,6 +109,7 @@ impl From<SshKeysPageState> for Keys {
         Keys {
             device: s.device.into_iter().map(Into::into).collect(),
             imported: s.imported.into_iter().map(Into::into).collect(),
+            missing: s.missing.into_iter().map(Into::into).collect(),
             deleting: s.deleting,
             notice: s.notice.map(|n| Notice {
                 title: n.title,
@@ -159,6 +166,7 @@ impl SshKeysEvent {
             "copy-fingerprint" => SshKeysEvent::CopyFingerprint { id: id()? },
             "share-public-key" => SshKeysEvent::SharePublicKey { id: id()? },
             "confirm-delete" => SshKeysEvent::ConfirmDelete { id: id()? },
+            "import-again" => SshKeysEvent::ImportAgain { id: id()? },
             "cancel-delete" => SshKeysEvent::CancelDelete,
             "delete" => SshKeysEvent::Delete { id: id()? },
             "dismiss-notice" => SshKeysEvent::DismissNotice,

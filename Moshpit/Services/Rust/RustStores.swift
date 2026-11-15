@@ -22,7 +22,7 @@ import MoshpitKit
 
 /// ``ConnectionStore`` on the Rust store.
 final class RustConnectionStore: ConnectionStoreBacking {
-    private let handle: ConnectionStoreHandle
+    let handle: ConnectionStoreHandle
 
     init(preferences: PreferencesHost, mode: ReadinessMode) {
         handle = ConnectionStoreHandle(host: preferences, mode: mode)
@@ -45,6 +45,10 @@ final class RustConnectionStore: ConnectionStoreBacking {
 
     func load() { handle.load() }
     func reloadIfNeeded() { handle.reloadIfNeeded() }
+
+    func markConnected(id: UUID) -> Bool {
+        RustStoreCall.value("connections: mark connected") { try handle.markConnected(id: id.uuidString) } ?? false
+    }
 
     var savedIds: Set<UUID>? {
         handle.savedIds().map { Set($0.compactMap(UUID.init(uuidString:))) }
@@ -114,7 +118,7 @@ extension ServerConnection {
 /// ``SSHKeyStore`` on the Rust store: the records only — every private key
 /// stays in the keychain, named by its record's `keychainRef`.
 final class RustSSHKeyStore: SSHKeyStoreBacking {
-    private let handle: KeyStoreHandle
+    let handle: KeyStoreHandle
 
     init(preferences: PreferencesHost, mode: ReadinessMode) {
         handle = KeyStoreHandle(host: preferences, mode: mode)
@@ -137,6 +141,14 @@ final class RustSSHKeyStore: SSHKeyStoreBacking {
 
     func learnKeyFacts(keychain: KeychainHost) -> [SSHKeyRecord] {
         storeLearnKeyFacts(keys: handle, keychain: keychain).compactMap(SSHKeyRecord.init)
+    }
+
+    func refill(id: UUID, key: SSHKeyFactory.Generated, requireBiometry: Bool) -> StoreRefill {
+        RustStoreCall.value("keys: refill") {
+            try handle.refill(id: id.uuidString, algorithm: KeyAlgorithm(key.algorithm),
+                              bits: key.bits.map(Int64.init), publicKey: key.publicKeyLine,
+                              fingerprint: key.fingerprint, requireBiometry: requireBiometry)
+        } ?? .unknown
     }
 
     func learnFacts(id: UUID, privateKey: String) -> Bool {

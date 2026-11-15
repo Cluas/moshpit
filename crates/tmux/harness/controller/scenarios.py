@@ -232,6 +232,9 @@ LEASE_WORLD = world(["$0 1 main"], ["$0 @0 0 200x50,0,0,0 1 1 main"], ["%0 @0 0 
 CLIENTS_AB = "rule ok list-clients -F '#{client_name}' => moshpit-a\\nmoshpit-b"
 CLIENTS_A = "rule ok list-clients -F '#{client_name}' => moshpit-a"
 DRIFT = "recv %layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\\n"
+# The holder's window changing again: tmux reports a layout only when it
+# changes (the same one again is another session's copy of it, B771).
+DRIFT_AGAIN = "recv %layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\\n"
 
 
 def lease_rig(clients, lease):
@@ -246,13 +249,13 @@ S["lease-live-holder"] = lease_rig(CLIENTS_AB, "moshpit-b|iPad|1757999998") + [
 S["lease-idle-holder"] = lease_rig(CLIENTS_AB, "moshpit-b|iPad|1757999940") + ["dump"]
 S["lease-ghost"] = lease_rig(CLIENTS_A, "moshpit-b|iPad|1757999999") + ["dump"]
 S["lease-recheck-never-steals"] = lease_rig(CLIENTS_AB, "moshpit-b|iPad|1757999998") + [
-    DRIFT, "settle", "config quiet=0.1", DRIFT, "waitsettle 600 30", "dump"]
+    DRIFT, "settle", "config quiet=0.1", DRIFT_AGAIN, "waitsettle 600 30", "dump"]
 S["lease-recheck-takes-freed"] = lease_rig(CLIENTS_AB, "moshpit-b|iPad|1757999998") + [
     DRIFT, "settle", "rules-clear", CLIENTS_AB, "rule ok show-options -wqv => -", *LEASE_WORLD,
-    "rule ok capture-pane => READY", "rule ok display-message => 0 0", "config quiet=0.1", DRIFT,
+    "rule ok capture-pane => READY", "rule ok display-message => 0 0", "config quiet=0.1", DRIFT_AGAIN,
     "waitsettle 600 30", "dump"]
 S["lease-tap-and-keystroke"] = lease_rig(CLIENTS_AB, "moshpit-b|iPad|1757999998") + [
-    DRIFT, "take", "settle", "recv %output %0 MINE-AGAIN\\n", DRIFT, "input %0 78", "settle", "dump"]
+    DRIFT, "take", "settle", "recv %output %0 MINE-AGAIN\\n", DRIFT_AGAIN, "input %0 78", "settle", "dump"]
 S["lease-stamp-throttle"] = lease_rig(CLIENTS_A, None) + [
     "config stamp=0.3", "input %0 61", "input %0 62", "wait 100", "input %0 63", "wait 300",
     "input %0 64", "paste %0 x", "dump"]
@@ -268,12 +271,17 @@ S["lease-foreground-probe-timeout"] = lease_rig(CLIENTS_A, None) + [
 
 S["war-backoff"] = ssh(*ONE, *CAPTURES) + [
     "settle", "resize 70 35", "wait 200", "settle",
-    "recv %layout-change @0 200x24,0,0,2\\n%layout-change @0 200x24,0,0,2\\n%layout-change @0 200x24,0,0,2\\n%layout-change @0 200x24,0,0,2\\n",
-    "settle", "wait 5100", "recv %layout-change @0 200x24,0,0,2\\n", "settle"]
+    # The desktop's width and our pin's landing in turn (a war); the third
+    # drift trips the backoff, so no pin lands after it.
+    "recv %layout-change @0 200x24,0,0,2\\n%layout-change @0 70x35,0,0,2\\n%layout-change @0 200x24,0,0,2\\n%layout-change @0 70x35,0,0,2\\n%layout-change @0 200x24,0,0,2\\n",
+    "settle", "wait 5100", "recv %layout-change @0 201x24,0,0,2\\n", "settle"]
 S["war-quiet-repin"] = ssh(*ONE, "rule ok capture-pane => QUIET-REPAIRED", "rule ok display-message => 0 0",
                            size=(69, 60)) + [
     "config quiet=0.15", "settle"] + ["recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\\n",
-                                      "wait 30"] * 4 + [
+                                      "wait 30",
+                                      "recv %layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\\n",
+                                      "wait 30"] * 2 + [
+    "recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\\n", "wait 30",
     "settle", "waitsettle 400 50", "recv %layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\\n",
     "waitsettle 1500 50", "recv %output %0 live-after-quiet\\n", "dump"]
 S["war-foreign-output-paints"] = ssh(*ONE, *CAPTURES, size=(69, 60)) + [

@@ -98,6 +98,9 @@ fn ipad_typing(rig: &Rig) -> Tmux {
 }
 
 const DRIFT: &str = "%layout-change @0 c71d,200x50,0,0,0 c71d,200x50,0,0,0 *\n";
+/// The holder's window changing again: tmux reports a layout only when it
+/// changes (the same one again is another session's copy of it, B771).
+const DRIFT_AGAIN: &str = "%layout-change @0 c71e,201x50,0,0,0 c71e,201x50,0,0,0 *\n";
 
 fn screen(rig: &Rig) -> String {
     String::from_utf8_lossy(&rig.pane_bytes("%0")).into_owned()
@@ -372,7 +375,7 @@ fn a_recheck_never_steals_from_a_live_holder() {
     tmux.borrow_mut().lease = Some(lease(&rig, "moshpit-b", 60));
     let before = rig.commands.len();
     rig.controller.config_mut().foreign_quiet_repin_delay = 0.1;
-    rig.push(DRIFT);
+    rig.push(DRIFT_AGAIN);
     rig.wait_settled(600, 30);
     let after = rig.since(before);
     assert!(after.iter().filter(|c| c.starts_with(PROBE)).count() >= 2);
@@ -389,7 +392,7 @@ fn a_recheck_takes_a_freed_window_and_drops_the_veil() {
     tmux.borrow_mut().lease = None;
     let before = rig.commands.len();
     rig.controller.config_mut().foreign_quiet_repin_delay = 0.1;
-    rig.push(DRIFT);
+    rig.push(DRIFT_AGAIN);
     rig.wait_settled(300, 30);
     assert_eq!(rig.controller.size_follow(), None);
     let after = rig.since(before);
@@ -410,7 +413,7 @@ fn a_recheck_takes_the_window_of_a_vanished_holder() {
     tmux.borrow_mut().clients = vec!["moshpit-a".into()];
     let before = rig.commands.len();
     rig.controller.config_mut().foreign_quiet_repin_delay = 0.1;
-    rig.push(DRIFT);
+    rig.push(DRIFT_AGAIN);
     rig.wait_settled(300, 30);
     assert_eq!(rig.controller.size_follow(), None);
     let after = rig.since(before);
@@ -622,7 +625,11 @@ fn repeated_drift_backs_off_after_a_few_reclaims() {
     rig.wait(200);
     assert!(rig.has(PIN));
     let base = rig.commands.len();
-    rig.push("%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n");
+    // The desktop's width, our pin landing, the desktop's again: a war.
+    // (The same change reported again is no new drift, B771.)
+    for _ in 0..4 {
+        rig.push("%layout-change @0 200x24,0,0,2\n%layout-change @0 70x35,0,0,2\n");
+    }
     let reclaims = rig
         .since(base)
         .iter()
@@ -631,6 +638,93 @@ fn repeated_drift_backs_off_after_a_few_reclaims() {
     assert_eq!(
         reclaims, 2,
         "the third trips the backoff, the fourth is suppressed"
+    );
+}
+
+/// B771: a window in more than one session (each phone views a session
+/// through its own group, B459) is reported by `%layout-change` once per
+/// session holding it: one change, one drift. Each copy was taken for a
+/// drift of its own, re-pinned and counted by the war guard: two phones
+/// settling who holds a window bounced it between their sizes several times
+/// and could trip the guard, stopping with the lease naming one phone and the
+/// window at the other's size, nobody following (live, a private tmux 3.6a:
+/// six copies of each change, a `resize-window` sent per copy).
+#[test]
+fn a_change_reported_once_per_session_is_one_drift() {
+    let mut rig = Rig::new(Config::default());
+    rig.attach();
+    rig.push("%begin 1 1 1\n$0 1 main\n%end 1 1 1\n%begin 2 2 1\n$0 @0 0 81x24,0,0,0 1 1 main\n%end 2 2 1\n%begin 3 3 1\n%0 @0 0 80 24 1 0 0 bash\n%end 3 3 1\n\n");
+    rig.answered = 3;
+    rig.with(|c, now| c.resize_client(35, 70, now));
+    rig.wait(200);
+    assert!(rig.has(PIN));
+    let base = rig.commands.len();
+    rig.push("%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n%layout-change @0 200x24,0,0,2\n");
+    let reclaims = rig
+        .since(base)
+        .iter()
+        .filter(|c| c.starts_with(PIN))
+        .count();
+    assert_eq!(reclaims, 1, "{:#?}", rig.since(base));
+}
+
+/// B775: a window listing answered after another device's resize, but before
+/// that resize's `%layout-change` arrives, already shows the window at the
+/// other size; the notification that follows is the drift all the same. It
+/// was taken for the same layout reported again (B771's check read the
+/// layout the listing had written): no reclaim, no lease read, and two
+/// phones stopped with the lease naming one and the window at the other's
+/// size, nobody following (live, under load: about 1 run in 12).
+#[test]
+fn a_drift_a_listing_saw_first_is_still_a_drift() {
+    let (mut rig, tmux) = rig_with(|_| Tmux::default());
+    let mut inner = responder(tmux.clone());
+    rig.respond(Box::new(move |command, n| {
+        if command.starts_with("list-windows -a -F '#{session_id}") {
+            return ok(["$0 @0 0 c71d,200x50,0,0,0 1 1 main"]);
+        }
+        inner(command, n)
+    }));
+    rig.with(|c, now| c.refresh(now));
+    rig.settle();
+    assert_eq!(
+        rig.controller.snapshot().windows["@0"].layout,
+        "c71d,200x50,0,0,0",
+        "the listing saw the other device's size"
+    );
+    let before = rig.commands.len();
+    rig.push(DRIFT);
+    rig.settle();
+    let after = rig.since(before);
+    assert!(after.iter().any(|c| c.starts_with(PIN)), "{after:#?}");
+}
+
+/// B774: the holder letting go (its leave unpins the window, and tmux sizes
+/// it back to the follower) brings the window back to the follower's width:
+/// the veil dropped, and the follower now sizes the window — but its lease
+/// stayed unset, so a device attaching next took the window from under the
+/// person using it. Taking a freed window claims it, as the quiet re-check
+/// does (live: the iPhone left, the iPad's veil went, `@moshpit_size_owner`
+/// empty).
+#[test]
+fn a_freed_window_back_at_our_width_is_claimed() {
+    let (mut rig, tmux) = rig_with(ipad_typing);
+    rig.push(DRIFT);
+    rig.settle();
+    assert!(rig.controller.size_follow().is_some());
+    // The iPad leaves: its lease unset, the window back at our width.
+    tmux.borrow_mut().lease = None;
+    tmux.borrow_mut().clients = vec!["moshpit-a".into()];
+    let before = rig.commands.len();
+    rig.push("%layout-change @0 c71d,70x35,0,0,0 c71d,70x35,0,0,0 *\n");
+    rig.settle();
+    assert_eq!(rig.controller.size_follow(), None);
+    let after = rig.since(before);
+    assert!(
+        after
+            .iter()
+            .any(|c| c.starts_with(&format!("{CLAIM} \"moshpit-a|iPhone|0\""))),
+        "{after:#?}"
     );
 }
 
@@ -808,6 +902,76 @@ fn a_users_own_zoom_comes_back_with_the_layout() {
     assert!(restore < zoom);
 }
 
+/// B772: a window another Moshpit device has pinned (`window-size manual`)
+/// is found squashed to that device's grid. What that device found before
+/// its pin — shared on the window, `@moshpit_layout` — is the record, and
+/// the squashed layout is one of Moshpit's own. The second phone recorded
+/// the first one's squashed layout as the window's: both phones gone, the
+/// window was left in it, at the first phone's grid (live, two phones on a
+/// private tmux 3.6a: 50x20 where 120x40 had been).
+#[test]
+fn a_window_another_device_pinned_is_recorded_as_it_was_before_that_pin() {
+    let mut rig = pinned_split(&format!("3 0 %0 {SQUASHED} manual 3|-|{SPLIT}"));
+    assert!(
+        !rig.has("set-option -w -t @0 @moshpit_layout"),
+        "the shared record stays the first device's"
+    );
+    let restore = rig.controller.pristine_layout_restore_commands();
+    assert!(
+        restore.contains(&format!("select-layout -t @0 '{SPLIT}'")),
+        "{restore:#?}"
+    );
+}
+
+/// B772: the layout found before the first pin (the probe goes ahead of
+/// it) is shared on the window, for a device that comes while it is pinned.
+#[test]
+fn the_layout_found_is_shared_with_the_next_device() {
+    let rig = pinned_split(&format!("3 0 %0 {SPLIT} latest"));
+    assert!(
+        rig.has(&format!("set-option -w -t @0 @moshpit_layout '3|-|{SPLIT}'")),
+        "{:#?}",
+        rig.commands
+    );
+    // A reply of the old shape (no `window-size` read) shares nothing.
+    let rig = pinned_split(&format!("3 0 %0 {SPLIT}"));
+    assert!(!rig.has("set-option -w -t @0 @moshpit_layout"));
+}
+
+/// B772: a shared record that describes other panes is somebody's old one:
+/// what is found is the record.
+#[test]
+fn a_shared_record_of_other_panes_is_not_taken() {
+    let mut rig = pinned_split(&format!("3 0 %0 {SQUASHED} manual 2|-|{OTHER_SPLIT}"));
+    let restore = rig.controller.pristine_layout_restore_commands();
+    assert!(
+        restore.contains(&format!("select-layout -t @0 '{SQUASHED}'")),
+        "{restore:#?}"
+    );
+}
+
+/// B772: the replay of the record drops the shared one: nobody's pin is on
+/// the window any more.
+#[test]
+fn the_replay_drops_the_shared_record() {
+    let mut rig = pinned_split(&format!("3 0 %0 {SPLIT} latest"));
+    rig.with(|c, now| c.release_window_pins(now));
+    let restore = rig.index_of("select-layout -t '@0'").unwrap();
+    let unshare = rig
+        .index_of("set-option -wu -t @0 @moshpit_layout")
+        .unwrap_or_else(|| panic!("{:#?}", rig.commands));
+    assert!(restore < unshare);
+    let mut rig = pinned_split(&format!("3 0 %0 {SPLIT} latest"));
+    let script = rig
+        .controller
+        .pin_hand_back_script("tmux", &[])
+        .expect("a hand-back");
+    assert!(
+        script.contains("tmux set-option -wu -t @0 @moshpit_layout"),
+        "{script}"
+    );
+}
+
 #[test]
 fn a_single_pane_window_has_nothing_to_restore() {
     let mut rig = pinned_split(&format!("1 0 %0 {SPLIT}"));
@@ -849,6 +1013,7 @@ fn teardown_hands_the_restore_out_once() {
             "refresh-client -t '/dev/ttys003' -f ignore-size".to_owned(),
             "refresh-client -t '/dev/ttys003' -C 203x60".to_owned(),
             format!("select-layout -t @0 '{SPLIT}'"),
+            "set-option -wu -t @0 @moshpit_layout".to_owned(),
             "resize-pane -Z -t %1".to_owned()
         ]
     );
@@ -867,6 +1032,7 @@ fn a_ledgers_restore_sizes_each_window_to_its_record() {
         [
             "resize-window -t @0 -x 203 -y 60".to_owned(),
             format!("select-layout -t @0 '{SPLIT}'"),
+            "set-option -wu -t @0 @moshpit_layout".to_owned(),
             "set-option -u -w -t @0 window-size".to_owned(),
             "resize-pane -Z -t %1".to_owned()
         ]
@@ -1052,6 +1218,37 @@ fn a_session_switch_records_what_it_squashes() {
         restore.contains(&format!("select-layout -t @5 '{OTHER_SPLIT}'")),
         "{restore:#?}"
     );
+}
+
+/// B770: switching to another session hands back the window left, as
+/// switching windows does — its pin, our lease, the layout we found. It
+/// stayed at the phone's grid (`window-size manual`): a desktop on that
+/// session saw its window squashed until the phone came back to it or left
+/// (live, a private tmux 3.6a: a desktop on main, the phone onto dev, main's
+/// window stayed 50×20).
+#[test]
+fn a_session_switch_hands_back_the_window_left() {
+    let mut rig = pinned_split(&format!("3 0 %0 {SPLIT}"));
+    assert!(rig.controller.resized_windows().contains("@0"));
+    let base = rig.commands.len();
+    rig.with(|c, now| c.select_session("$1", now));
+    rig.settle();
+    let fresh = rig.since(base).to_vec();
+    let switch = fresh
+        .iter()
+        .position(|c| c.starts_with("new-session -t '$1'"))
+        .expect("into $1's group");
+    let unpin = fresh
+        .iter()
+        .position(|c| c == "set-option -u -w -t @0 window-size")
+        .unwrap_or_else(|| panic!("@0 handed back: {fresh:#?}"));
+    let layout = fresh
+        .iter()
+        .position(|c| *c == format!("select-layout -t '@0' '{SPLIT}'"))
+        .unwrap_or_else(|| panic!("@0's layout back: {fresh:#?}"));
+    // Once the phone no longer sizes main: after the switch.
+    assert!(switch < unpin && unpin < layout, "{fresh:#?}");
+    assert!(!rig.controller.resized_windows().contains("@0"));
 }
 
 /// Round thirty-four: tmux sizes a session for a switch at the end of its
@@ -1472,6 +1669,7 @@ fn the_hand_back_replays_a_record_only_over_a_layout_of_ours() {
         format!(
             "case \"$l0\" in \"{SPLIT}\"|\"{SQUASHED}\"|\"{SQUASHED_SHORTER}\") \
              tmux resize-window -t @0 -x 203 -y 60; tmux select-layout -t @0 '{SPLIT}'; \
+             tmux set-option -wu -t @0 @moshpit_layout; \
              tmux set-option -u -w -t @0 window-size;; esac"
         ),
         "true".to_owned(),

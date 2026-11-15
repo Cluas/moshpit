@@ -426,6 +426,32 @@ impl ConnectionStore {
         }
     }
 
+    /// How close two writes of a connection's `last_connected_at` may come.
+    pub const LAST_CONNECTED_GRANULARITY: f64 = 24.0 * 60.0 * 60.0;
+
+    /// Connection `id` signed in `now` (B783): its `last_connected_at`,
+    /// written at most once a day. No build wrote it before, so a host
+    /// asked about again on a phone restored from a backup (its trusted
+    /// keys gone) couldn't be told from one never connected to. Whether it
+    /// was written; false for an unknown connection, a day not yet out, or
+    /// a list that can't be trusted.
+    pub fn mark_connected(&mut self, id: Uuid, now: Date) -> bool {
+        self.reload_if_needed();
+        let Some(connection) = self.connections.iter_mut().find(|c| c.id == id) else {
+            return false;
+        };
+        if let Some(last) = connection.last_connected_at {
+            let since = now.seconds_since(last);
+            // A clock set back leaves the stored day ahead: written again.
+            if (0.0..Self::LAST_CONNECTED_GRANULARITY).contains(&since) {
+                return false;
+            }
+        }
+        connection.last_connected_at = Some(now);
+        self.persist();
+        self.is_authoritative
+    }
+
     /// Delete connection `id`, and what sessions remember about it
     /// (`session_memory`: its last tmux selection, its host's
     /// capabilities) — once the list is trusted, as the delete itself.
@@ -634,6 +660,40 @@ mod tests {
 
     fn defaults() -> Arc<MemoryDefaults> {
         Arc::new(MemoryDefaults::new())
+    }
+
+    /// B783: a sign-in records the connection's last one, once a day, kept
+    /// for the next launch: what tells a host connected to before.
+    #[test]
+    fn a_sign_in_records_the_connections_last_one_once_a_day() {
+        let defaults = defaults();
+        let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        let nas = sample("nas");
+        store.add(nas.clone());
+        assert_eq!(
+            store.connections()[0].last_connected_at,
+            None,
+            "never written before"
+        );
+        let first = Date::from_unix(1_790_000_000.0);
+        assert!(store.mark_connected(nas.id, first));
+        let reread = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        assert_eq!(
+            reread.connections()[0].last_connected_at,
+            Some(first),
+            "kept"
+        );
+        assert!(
+            !store.mark_connected(nas.id, first.adding(3600.0)),
+            "once a day"
+        );
+        let next_day = first.adding(ConnectionStore::LAST_CONNECTED_GRANULARITY + 1.0);
+        assert!(store.mark_connected(nas.id, next_day));
+        assert_eq!(store.connections()[0].last_connected_at, Some(next_day));
+        assert!(
+            !store.mark_connected(Uuid::new_v4(), next_day),
+            "an unknown connection"
+        );
     }
 
     fn sample(name: &str) -> ServerConnection {

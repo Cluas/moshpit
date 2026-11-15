@@ -2258,6 +2258,13 @@ public protocol ConnectionStoreHandleProtocol: AnyObject, Sendable {
     func load() 
     
     /**
+     * Connection `id` signed in now (B783): its `last_connected_at`,
+     * written at most once a day (`ConnectionStore::mark_connected`) —
+     * what tells a host connected to before. Whether it was written.
+     */
+    func markConnected(id: String) throws  -> Bool
+    
+    /**
      * The names of the saved connections that sign in with key `key` (or
      * name its keychain item `keychain_ref`), carried ones included; `None`
      * when that can't be known (`ConnectionStore::names_using_key`).
@@ -2419,6 +2426,20 @@ open func load()  {try! rustCall() {
             self.uniffiCloneHandle(),$0
     )
 }
+}
+    
+    /**
+     * Connection `id` signed in now (B783): its `last_connected_at`,
+     * written at most once a day (`ConnectionStore::mark_connected`) —
+     * what tells a host connected to before. Whether it was written.
+     */
+open func markConnected(id: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
+    uniffi_moshpit_ffi_fn_method_connectionstorehandle_mark_connected(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+})
 }
     
     /**
@@ -4818,6 +4839,15 @@ public protocol KeyStoreHandleProtocol: AnyObject, Sendable {
      */
     func markUsed(id: String) throws  -> Bool
     
+    /**
+     * Key `id`'s private key imported again on a phone that didn't have it
+     * (B781): the key's facts kept on the same record — its name, comment,
+     * hosts and connections kept — with Face ID as `require_biometry`
+     * says, unless it is another key (`SshKeyStore::refill`). Its item is
+     * already saved under the record's keychain account.
+     */
+    func refill(id: String, algorithm: KeyAlgorithm, bits: Int64?, publicKey: String, fingerprint: String, requireBiometry: Bool) throws  -> StoreRefill
+    
     func reloadIfNeeded() 
     
     /**
@@ -4986,6 +5016,27 @@ open func markUsed(id: String)throws  -> Bool  {
     uniffi_moshpit_ffi_fn_method_keystorehandle_mark_used(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),$0
+    )
+})
+}
+    
+    /**
+     * Key `id`'s private key imported again on a phone that didn't have it
+     * (B781): the key's facts kept on the same record — its name, comment,
+     * hosts and connections kept — with Face ID as `require_biometry`
+     * says, unless it is another key (`SshKeyStore::refill`). Its item is
+     * already saved under the record's keychain account.
+     */
+open func refill(id: String, algorithm: KeyAlgorithm, bits: Int64?, publicKey: String, fingerprint: String, requireBiometry: Bool)throws  -> StoreRefill  {
+    return try  FfiConverterTypeStoreRefill_lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
+    uniffi_moshpit_ffi_fn_method_keystorehandle_refill(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterTypeKeyAlgorithm_lower(algorithm),
+        FfiConverterOptionInt64.lower(bits),
+        FfiConverterString.lower(publicKey),
+        FfiConverterString.lower(fingerprint),
+        FfiConverterBool.lower(requireBiometry),$0
     )
 })
 }
@@ -9362,6 +9413,10 @@ public struct AddKeyPageState: Equatable, Hashable {
      * Why the key could not be made.
      */
     public var error: String?
+    /**
+     * Import Again (B781): into a key's own record, which keeps its name.
+     */
+    public var again: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -9386,7 +9441,10 @@ public struct AddKeyPageState: Equatable, Hashable {
          */fingerprint: String?, 
         /**
          * Why the key could not be made.
-         */error: String?) {
+         */error: String?, 
+        /**
+         * Import Again (B781): into a key's own record, which keeps its name.
+         */again: Bool) {
         self.method = method
         self.algorithm = algorithm
         self.requireFaceId = requireFaceId
@@ -9400,6 +9458,7 @@ public struct AddKeyPageState: Equatable, Hashable {
         self.working = working
         self.fingerprint = fingerprint
         self.error = error
+        self.again = again
     }
 
     
@@ -9430,7 +9489,8 @@ public struct FfiConverterTypeAddKeyPageState: FfiConverterRustBuffer {
                 canSubmit: FfiConverterBool.read(from: &buf), 
                 working: FfiConverterBool.read(from: &buf), 
                 fingerprint: FfiConverterOptionString.read(from: &buf), 
-                error: FfiConverterOptionString.read(from: &buf)
+                error: FfiConverterOptionString.read(from: &buf), 
+                again: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -9448,6 +9508,7 @@ public struct FfiConverterTypeAddKeyPageState: FfiConverterRustBuffer {
         FfiConverterBool.write(value.working, into: &buf)
         FfiConverterOptionString.write(value.fingerprint, into: &buf)
         FfiConverterOptionString.write(value.error, into: &buf)
+        FfiConverterBool.write(value.again, into: &buf)
     }
 }
 
@@ -13546,6 +13607,11 @@ public struct SessionSpec: Equatable, Hashable {
      */
     public var cols: UInt16
     public var rows: UInt16
+    /**
+     * The connection was connected to before (its `lastConnectedAt`,
+     * B783): a new host's card says so.
+     */
+    public var connectedBefore: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -13562,7 +13628,11 @@ public struct SessionSpec: Equatable, Hashable {
          */locale: String, 
         /**
          * The terminal's grid before the view has reported one.
-         */cols: UInt16, rows: UInt16) {
+         */cols: UInt16, rows: UInt16, 
+        /**
+         * The connection was connected to before (its `lastConnectedAt`,
+         * B783): a new host's card says so.
+         */connectedBefore: Bool) {
         self.connectionId = connectionId
         self.user = user
         self.host = host
@@ -13579,6 +13649,7 @@ public struct SessionSpec: Equatable, Hashable {
         self.locale = locale
         self.cols = cols
         self.rows = rows
+        self.connectedBefore = connectedBefore
     }
 
     
@@ -13612,7 +13683,8 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
                 herdrPath: FfiConverterOptionString.read(from: &buf), 
                 locale: FfiConverterString.read(from: &buf), 
                 cols: FfiConverterUInt16.read(from: &buf), 
-                rows: FfiConverterUInt16.read(from: &buf)
+                rows: FfiConverterUInt16.read(from: &buf), 
+                connectedBefore: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -13633,6 +13705,7 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
         FfiConverterString.write(value.locale, into: &buf)
         FfiConverterUInt16.write(value.cols, into: &buf)
         FfiConverterUInt16.write(value.rows, into: &buf)
+        FfiConverterBool.write(value.connectedBefore, into: &buf)
     }
 }
 
@@ -14696,6 +14769,10 @@ public struct SshKeysPageState: Equatable, Hashable {
      */
     public var imported: [SshKeyRow]
     /**
+     * Keys whose private half isn't on this device (B781).
+     */
+    public var missing: [SshKeyRow]
+    /**
      * The key the delete card asks about, while it shows.
      */
     public var deleting: String?
@@ -14714,6 +14791,9 @@ public struct SshKeysPageState: Equatable, Hashable {
          * The others.
          */imported: [SshKeyRow], 
         /**
+         * Keys whose private half isn't on this device (B781).
+         */missing: [SshKeyRow], 
+        /**
          * The key the delete card asks about, while it shows.
          */deleting: String?, 
         /**
@@ -14721,6 +14801,7 @@ public struct SshKeysPageState: Equatable, Hashable {
          */notice: SshKeysNotice?) {
         self.device = device
         self.imported = imported
+        self.missing = missing
         self.deleting = deleting
         self.notice = notice
     }
@@ -14743,6 +14824,7 @@ public struct FfiConverterTypeSshKeysPageState: FfiConverterRustBuffer {
             try SshKeysPageState(
                 device: FfiConverterSequenceTypeSshKeyRow.read(from: &buf), 
                 imported: FfiConverterSequenceTypeSshKeyRow.read(from: &buf), 
+                missing: FfiConverterSequenceTypeSshKeyRow.read(from: &buf), 
                 deleting: FfiConverterOptionString.read(from: &buf), 
                 notice: FfiConverterOptionTypeSshKeysNotice.read(from: &buf)
         )
@@ -14751,6 +14833,7 @@ public struct FfiConverterTypeSshKeysPageState: FfiConverterRustBuffer {
     public static func write(_ value: SshKeysPageState, into buf: inout [UInt8]) {
         FfiConverterSequenceTypeSshKeyRow.write(value.device, into: &buf)
         FfiConverterSequenceTypeSshKeyRow.write(value.imported, into: &buf)
+        FfiConverterSequenceTypeSshKeyRow.write(value.missing, into: &buf)
         FfiConverterOptionString.write(value.deleting, into: &buf)
         FfiConverterOptionTypeSshKeysNotice.write(value.notice, into: &buf)
     }
@@ -14769,6 +14852,65 @@ public func FfiConverterTypeSshKeysPageState_lift(_ buf: RustBuffer) throws -> S
 #endif
 public func FfiConverterTypeSshKeysPageState_lower(_ value: SshKeysPageState) -> RustBuffer {
     return FfiConverterTypeSshKeysPageState.lower(value)
+}
+
+
+/**
+ * What this device's keychain doesn't hold of what the saved records name
+ * (`secrets::MissingItems`, B781, B782): connections whose own password
+ * or pasted key isn't here, key records whose private key isn't.
+ */
+public struct StoreMissingItems: Equatable, Hashable {
+    public var connections: [String]
+    public var keys: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(connections: [String], keys: [String]) {
+        self.connections = connections
+        self.keys = keys
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension StoreMissingItems: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStoreMissingItems: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StoreMissingItems {
+        return
+            try StoreMissingItems(
+                connections: FfiConverterSequenceString.read(from: &buf), 
+                keys: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StoreMissingItems, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.connections, into: &buf)
+        FfiConverterSequenceString.write(value.keys, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreMissingItems_lift(_ buf: RustBuffer) throws -> StoreMissingItems {
+    return try FfiConverterTypeStoreMissingItems.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreMissingItems_lower(_ value: StoreMissingItems) -> RustBuffer {
+    return FfiConverterTypeStoreMissingItems.lower(value)
 }
 
 
@@ -18338,6 +18480,16 @@ public enum HerdrIntent: Equatable, Hashable {
     case confirmFocus(budgetMs: UInt64
     )
     /**
+     * The overview's pictures of panes the phone doesn't show (B751),
+     * answered as `SessionEventKind::PaneSnapshot`.
+     */
+    case readPanes(panes: [String]
+    )
+    /**
+     * The overview closed.
+     */
+    case stopReads
+    /**
      * A drag or wheel over `pane` (`page_keys`: the paging keys).
      */
     case scroll(pane: String, lines: Int64, pageKeys: Bool
@@ -18422,10 +18574,15 @@ public struct FfiConverterTypeHerdrIntent: FfiConverterRustBuffer {
         case 21: return .confirmFocus(budgetMs: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 22: return .scroll(pane: try FfiConverterString.read(from: &buf), lines: try FfiConverterInt64.read(from: &buf), pageKeys: try FfiConverterBool.read(from: &buf)
+        case 22: return .readPanes(panes: try FfiConverterSequenceString.read(from: &buf)
         )
         
-        case 23: return .mouse(pane: try FfiConverterString.read(from: &buf), action: try FfiConverterTypeHerdrMouseAction.read(from: &buf), button: try FfiConverterTypeHerdrMouseButton.read(from: &buf), column: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf), modifiers: try FfiConverterUInt8.read(from: &buf)
+        case 23: return .stopReads
+        
+        case 24: return .scroll(pane: try FfiConverterString.read(from: &buf), lines: try FfiConverterInt64.read(from: &buf), pageKeys: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 25: return .mouse(pane: try FfiConverterString.read(from: &buf), action: try FfiConverterTypeHerdrMouseAction.read(from: &buf), button: try FfiConverterTypeHerdrMouseButton.read(from: &buf), column: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf), modifiers: try FfiConverterUInt8.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -18542,15 +18699,24 @@ public struct FfiConverterTypeHerdrIntent: FfiConverterRustBuffer {
             FfiConverterUInt64.write(budgetMs, into: &buf)
             
         
-        case let .scroll(pane,lines,pageKeys):
+        case let .readPanes(panes):
             writeInt(&buf, Int32(22))
+            FfiConverterSequenceString.write(panes, into: &buf)
+            
+        
+        case .stopReads:
+            writeInt(&buf, Int32(23))
+        
+        
+        case let .scroll(pane,lines,pageKeys):
+            writeInt(&buf, Int32(24))
             FfiConverterString.write(pane, into: &buf)
             FfiConverterInt64.write(lines, into: &buf)
             FfiConverterBool.write(pageKeys, into: &buf)
             
         
         case let .mouse(pane,action,button,column,row,modifiers):
-            writeInt(&buf, Int32(23))
+            writeInt(&buf, Int32(25))
             FfiConverterString.write(pane, into: &buf)
             FfiConverterTypeHerdrMouseAction.write(action, into: &buf)
             FfiConverterTypeHerdrMouseButton.write(button, into: &buf)
@@ -22929,7 +23095,11 @@ public enum SessionEventKind: Equatable, Hashable {
         /**
          * An earlier version stored two different keys for the host, and it
          * presents one of them (B725).
-         */conflicting: Bool
+         */conflicting: Bool, 
+        /**
+         * A new host this phone connected to before (B783): the card says
+         * so instead of "First connection".
+         */connectedBefore: Bool
     )
     /**
      * The connection had to use an older host-key algorithm (B564).
@@ -23052,7 +23222,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
         
         case 10: return .tmuxActionsDropped
         
-        case 11: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf), conflicting: try FfiConverterBool.read(from: &buf)
+        case 11: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf), conflicting: try FfiConverterBool.read(from: &buf), connectedBefore: try FfiConverterBool.read(from: &buf)
         )
         
         case 12: return .olderHostKeyAlgorithm(algorithm: try FfiConverterString.read(from: &buf)
@@ -23153,7 +23323,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             writeInt(&buf, Int32(10))
         
         
-        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm,conflicting):
+        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm,conflicting,connectedBefore):
             writeInt(&buf, Int32(11))
             FfiConverterUInt64.write(prompt, into: &buf)
             FfiConverterString.write(host, into: &buf)
@@ -23162,6 +23332,7 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             FfiConverterOptionString.write(previous, into: &buf)
             FfiConverterOptionString.write(olderAlgorithm, into: &buf)
             FfiConverterBool.write(conflicting, into: &buf)
+            FfiConverterBool.write(connectedBefore, into: &buf)
             
         
         case let .olderHostKeyAlgorithm(algorithm):
@@ -24886,6 +25057,11 @@ public enum SshKeysEvent: Equatable, Hashable {
     case confirmDelete(id: String
     )
     /**
+     * A key not on this device: Import Again… (B781).
+     */
+    case importAgain(id: String
+    )
+    /**
      * The delete alert's Cancel.
      */
     case cancelDelete
@@ -24936,12 +25112,15 @@ public struct FfiConverterTypeSshKeysEvent: FfiConverterRustBuffer {
         case 6: return .confirmDelete(id: try FfiConverterString.read(from: &buf)
         )
         
-        case 7: return .cancelDelete
-        
-        case 8: return .delete(id: try FfiConverterString.read(from: &buf)
+        case 7: return .importAgain(id: try FfiConverterString.read(from: &buf)
         )
         
-        case 9: return .dismissNotice
+        case 8: return .cancelDelete
+        
+        case 9: return .delete(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 10: return .dismissNotice
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -24980,17 +25159,22 @@ public struct FfiConverterTypeSshKeysEvent: FfiConverterRustBuffer {
             FfiConverterString.write(id, into: &buf)
             
         
-        case .cancelDelete:
+        case let .importAgain(id):
             writeInt(&buf, Int32(7))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .cancelDelete:
+            writeInt(&buf, Int32(8))
         
         
         case let .delete(id):
-            writeInt(&buf, Int32(8))
+            writeInt(&buf, Int32(9))
             FfiConverterString.write(id, into: &buf)
             
         
         case .dismissNotice:
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
         
         }
     }
@@ -25534,6 +25718,92 @@ public func FfiConverterTypeStoreRecovery_lift(_ buf: RustBuffer) throws -> Stor
 #endif
 public func FfiConverterTypeStoreRecovery_lower(_ value: StoreRecovery) -> RustBuffer {
     return FfiConverterTypeStoreRecovery.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What importing a key's private key again did (`ssh_keys::Refill`, B781).
+ */
+
+public enum StoreRefill: Equatable, Hashable {
+    
+    /**
+     * The record has the key again.
+     */
+    case refilled
+    /**
+     * Another key than the record's: nothing changed.
+     */
+    case differentKey
+    /**
+     * No such key, or a list that can't be trusted: nothing changed.
+     */
+    case unknown
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension StoreRefill: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStoreRefill: FfiConverterRustBuffer {
+    typealias SwiftType = StoreRefill
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StoreRefill {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .refilled
+        
+        case 2: return .differentKey
+        
+        case 3: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: StoreRefill, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .refilled:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .differentKey:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreRefill_lift(_ buf: RustBuffer) throws -> StoreRefill {
+    return try FfiConverterTypeStoreRefill.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoreRefill_lower(_ value: StoreRefill) -> RustBuffer {
+    return FfiConverterTypeStoreRefill.lower(value)
 }
 
 
@@ -27517,6 +27787,30 @@ fileprivate struct FfiConverterOptionTypeSshKeysNotice: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSshKeysNotice.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeStoreMissingItems: FfiConverterRustBuffer {
+    typealias SwiftType = StoreMissingItems?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStoreMissingItems.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStoreMissingItems.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -29837,6 +30131,19 @@ public func storeHoldRelease(preferences: PreferencesHost, mode: ReadinessMode, 
 })
 }
 /**
+ * Whether the keychain item `account` moves with a backup to a new phone
+ * (`known_hosts::moves_with_backups`, B783): the trusted host keys alone —
+ * public, the trust anchors a restored phone should keep. The platform
+ * gives those the class that moves; every other item stays on the device.
+ */
+public func storeItemMovesWithBackups(account: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_item_moves_with_backups(
+        FfiConverterString.lower(account),$0
+    )
+})
+}
+/**
  * Put right what each key 1.0.8 imported without its public half shows
  * (B726): its algorithm, size, public key and fingerprint, off its own
  * private key, read without asking (`secrets::learn_key_facts`), or the
@@ -29861,6 +30168,22 @@ public func storeMarkDefaultsReadable(host: PreferencesHost)  {try! rustCall() {
         FfiConverterTypePreferencesHost_lower(host),$0
     )
 }
+}
+/**
+ * [`StoreMissingItems`] now (`secrets::missing_items`), asked without
+ * reading an item — no prompt; one behind Face ID, or on a locked device,
+ * is there. `None` while either store's read can't be trusted. A phone
+ * restored from a backup has the records and none of their items, all of
+ * which are `ThisDeviceOnly`.
+ */
+public func storeMissingItems(connections: ConnectionStoreHandle, keys: KeyStoreHandle, keychain: KeychainHost) -> StoreMissingItems?  {
+    return try!  FfiConverterOptionTypeStoreMissingItems.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_missing_items(
+        FfiConverterTypeConnectionStoreHandle_lower(connections),
+        FfiConverterTypeKeyStoreHandle_lower(keys),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
+    )
+})
 }
 /**
  * A fresh keychain account for a connection's password or key:
@@ -30244,10 +30567,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_store_item_moves_with_backups() != 18266) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 5824) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable() != 15913) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_store_missing_items() != 3139) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_new_keychain_ref() != 12122) {
@@ -30829,6 +31158,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_load() != 60091) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_mark_connected() != 14551) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_names_using_key() != 36813) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -30866,6 +31198,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used() != 43528) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_keystorehandle_refill() != 60159) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_reload_if_needed() != 24787) {

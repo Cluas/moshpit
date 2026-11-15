@@ -14,9 +14,11 @@ config quiet=0.15
 settle
 recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n
 wait 30
-recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n
+recv %layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n
 wait 30
 recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n
+wait 30
+recv %layout-change @0 c71d,69x60,0,0,0 c71d,69x60,0,0,0 *\n
 wait 30
 recv %layout-change @0 c71d,499x62,0,0,0 c71d,499x62,0,0,0 *\n
 wait 30

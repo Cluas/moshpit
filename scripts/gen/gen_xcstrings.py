@@ -345,6 +345,28 @@ add("This key is protected by a passphrase. It's used once, to unlock the key he
     "この鍵はパスフレーズで保護されています。パスフレーズは読み込み時に一度だけ使い、以降の鍵は Android Keystore が保護します。")
 add("IMPORTED", "已导入", "インポート済み")
 add("No imported keys", "没有已导入的密钥", "インポートされたキーはありません")
+# Keys whose private half isn't on this device: a phone restored from a backup (B781)
+add("NOT ON THIS IPHONE",
+    "不在这台 iPhone 上",
+    "この iPhone にはありません")
+add("This key isn't on this iPhone",
+    "这台 iPhone 上没有这把密钥",
+    "このキーはこの iPhone にありません")
+add("Keys stay on the device they were imported on. Import it again or delete this entry.",
+    "密钥只留在导入它的那台设备上。可以重新导入，或删掉这条记录。",
+    "キーはインポートしたデバイスにだけ残ります。もう一度インポートするか、この項目を削除してください。")
+add("This key was made in another device's Secure Enclave and can't be moved. Delete it and make a new one.",
+    "这把密钥生成在另一台设备的安全芯片里，带不过来。删掉它，再新建一把。",
+    "このキーは別のデバイスの Secure Enclave で作られたため、移せません。削除して新しいキーを作ってください。")
+add("Import Again…",
+    "重新导入…",
+    "再インポート…")
+add("Import Again",
+    "重新导入",
+    "再インポート")
+add("That's a different key from the one this entry was made with. Import that key, or delete this entry.",
+    "这不是当初这条记录用的那把密钥。请导入那把，或者删掉这条记录。",
+    "この項目を作ったときのキーとは別のキーです。そのキーをインポートするか、この項目を削除してください。")
 # SSH Keys on the ui layer (R10): an empty group's button, a key's use, a copy's toast.
 add("No device key yet", "还没有设备密钥", "デバイスキーはまだありません")
 add("Generate key", "生成密钥", "キーを生成")
@@ -762,6 +784,11 @@ add("%@ asks a question before you can sign in. Open Moshpit to answer.",
 add("This server uses an older host-key algorithm (%@, SHA-1).",
     "这台服务器用的是较旧的主机密钥算法（%@，SHA-1）。",
     "このサーバーは古いホストキーのアルゴリズム（%@、SHA-1）を使っています。")
+# A new host this phone connected to before, its trusted key gone with a
+# restore or a re-sign (B783)
+add("You've connected to this server before, but its key isn't saved on this iPhone. Compare the fingerprint with the server before trusting it.",
+    "你以前连过这台服务器，但这台 iPhone 上没存它的密钥。信任之前，先和服务器上的指纹核对一下。",
+    "このサーバーには以前接続したことがありますが、この iPhone にはそのキーが保存されていません。信頼する前に、サーバー側のフィンガープリントと照らし合わせてください。")
 add("First connection to %@:%@. Verify this fingerprint matches the server before you trust it.",
     "第一次连接 %@:%@。先到服务器上核对指纹，确认一致再信任。",
     "%@:%@ への初回接続です。信頼する前に、このフィンガープリントがサーバーと一致することを確認してください。")

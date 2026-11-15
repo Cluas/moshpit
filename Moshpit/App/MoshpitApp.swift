@@ -47,7 +47,11 @@ struct MoshpitApp: App {
         HostCare.shared.hub = hub
         let sshKeys = AppStores.sshKeys()
         // A sign-in with a managed key is that key's last use (B601).
-        hub.signedIn = { [weak sshKeys] connection in sshKeys?.signedIn(with: connection) }
+        hub.signedIn = { [weak sshKeys, weak store] connection in
+            sshKeys?.signedIn(with: connection)
+            // B783: the connect a later trust card reads as "used before".
+            store?.signedIn(connection)
+        }
         // A key 1.0.8 imported without its public half shows what it is
         // once a sign-in has read it (B726): one behind Face ID can't be
         // read at launch.
@@ -185,6 +189,9 @@ struct MoshpitApp: App {
             KeychainReferences.settleReleasesOnce(connections: store, keys: sshKeys, keychain: keychain)
             await KeychainReferences.recoverOrphansOnce(connections: store, keys: sshKeys, keychain: keychain)
             KeychainReferences.learnKeyFactsOnce(keys: sshKeys, keychain: keychain)
+            await KeychainReferences.moveTrustedHostKeysOnce(keychain: keychain)
+            // B781: the keys a restore didn't bring, told again each return.
+            KeychainReferences.findMissing(connections: store, keys: sshKeys, keychain: keychain)
         }
     }
 

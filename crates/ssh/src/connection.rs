@@ -585,6 +585,7 @@ fn client_config(options: &ConnectOptions, older: bool) -> client::Config {
         keepalive_interval: options.keepalive.map(|k| k.interval),
         keepalive_max: options.keepalive.map_or(0, |k| k.max_unanswered),
         nodelay: true,
+        window_size: options.receive_window,
         ..Default::default()
     }
 }

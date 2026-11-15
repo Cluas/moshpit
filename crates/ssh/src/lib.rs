@@ -69,7 +69,7 @@ pub use host_key::{
 pub use questions::{SignInQuestion, SignInQuestions, reads_as_password};
 pub use russh::Sig;
 pub use sftp::{RemoteEntry, RemoteFile, Sftp};
-pub use target::{ConnectOptions, Keepalive, Socks5Proxy, Target};
+pub use target::{ConnectOptions, Keepalive, RECEIVE_WINDOW, Socks5Proxy, Target};
 /// How a caller gives up on an operation in flight ([`Sftp::cancelled_by`],
 /// [`Ssh::run_until`], [`Ssh::upload_to_uploads_directory_until`]).
 pub use tokio_util::sync::CancellationToken;

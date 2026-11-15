@@ -195,7 +195,14 @@ fn page(
         );
     }
     if let Some(action) = action {
-        body = body.child(view().mt(px(24.0)).child(action.size(Size::Lg)));
+        // As wide as the page's content at most, so a long label wraps
+        // instead of running off the screen (B749).
+        body = body.child(
+            view()
+                .mt(px(24.0))
+                .max_w(relative(1.0))
+                .child(action.size(Size::Lg)),
+        );
     }
     body
 }

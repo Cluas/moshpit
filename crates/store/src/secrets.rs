@@ -50,7 +50,7 @@ use std::sync::{Mutex, MutexGuard};
 use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
 
-use crate::connections::ConnectionStore;
+use crate::connections::{AuthMethod, ConnectionStore};
 use crate::host::{Defaults, KEYCHAIN_REF_PREFIX, Keychain, KeychainError, minted_this_launch};
 use crate::plist::{self, Plist};
 use crate::readiness::Readiness;
@@ -560,6 +560,57 @@ pub fn learn_key_facts(
     learned
 }
 
+/// What this device's keychain doesn't hold of what the saved records name
+/// (B781, B782). A phone restored from a backup — iCloud, a Finder backup,
+/// Quick Start — gets the connections and key records back (they are
+/// preferences) but none of their items: every one the app writes is
+/// `ThisDeviceOnly`, and a Secure Enclave key never leaves its chip. A
+/// re-sign that changes the keychain's access group looks the same.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MissingItems {
+    /// Saved connections whose own item — a password, a pasted key — isn't
+    /// here. One that signs in with a managed key is its key's (`keys`).
+    pub connections: Vec<Uuid>,
+    /// Key records whose private key (a Secure Enclave key's handle) isn't
+    /// here.
+    pub keys: Vec<Uuid>,
+}
+
+/// [`MissingItems`] now, asked of the keychain without reading an item
+/// ([`Keychain::exists`]: no prompt, and an item behind Face ID or on a
+/// locked device answers that it is there). `None` while either store's
+/// read can't be trusted (before the first unlock): nothing is judged
+/// missing then.
+pub fn missing_items(
+    connections: &ConnectionStore,
+    keys: &SshKeyStore,
+    keychain: &dyn Keychain,
+) -> Option<MissingItems> {
+    if !connections.is_authoritative() || !keys.is_authoritative() {
+        return None;
+    }
+    let gone = |account: Option<&str>| account.is_some_and(|a| !keychain.exists(a));
+    let managed: BTreeSet<Uuid> = keys.keys().iter().map(|k| k.id).collect();
+    Some(MissingItems {
+        connections: connections
+            .connections()
+            .iter()
+            .filter(|c| {
+                c.auth_method != AuthMethod::Key
+                    || !c.ssh_key_id.is_some_and(|id| managed.contains(&id))
+            })
+            .filter(|c| gone(c.keychain_ref.as_deref()))
+            .map(|c| c.id)
+            .collect(),
+        keys: keys
+            .keys()
+            .iter()
+            .filter(|k| gone(k.keychain_ref.as_deref()))
+            .map(|k| k.id)
+            .collect(),
+    })
+}
+
 /// The start of a fingerprint's hash, to tell two recovered keys apart in
 /// their names: `SHA256:` dropped, eight characters kept.
 pub fn short_fingerprint(fingerprint: &str) -> String {
@@ -638,6 +689,76 @@ mod tests {
 
     fn items(keychain: &MemoryKeychain) -> BTreeSet<String> {
         keychain.snapshot().into_keys().collect()
+    }
+
+    /// B781, B782: a phone restored from a backup has the records and none
+    /// of their items. What's missing is told without reading an item: a
+    /// connection's own password or pasted key, a managed key's private key
+    /// (its connections are the key's), a Secure Enclave key's handle; an
+    /// item that is there — behind Face ID or not — isn't. Before the
+    /// stores can be trusted nothing is judged.
+    #[test]
+    fn a_restored_phone_tells_which_items_stayed_behind() {
+        let mut s = stores();
+        let (laptop_item, nas_item, pi_item, kept_item, phone_item) =
+            (account(), account(), account(), account(), account());
+        let laptop = key("laptop", Some(&laptop_item));
+        let kept = key("kept", Some(&kept_item));
+        let mut phone = key("phone", Some(&phone_item));
+        phone.source = SshKeySource::SecureEnclave;
+        phone.algorithm = SshKeyAlgorithm::SeP256;
+        let no_item = key("token", None);
+        for k in [&laptop, &kept, &phone, &no_item] {
+            s.keys.add(k.clone());
+        }
+        let box_ = connection("box", Some(&laptop), None);
+        let desk = connection("desk", Some(&kept), None);
+        let mut nas = connection("nas", None, Some(&nas_item));
+        nas.auth_method = AuthMethod::Password;
+        let pi = connection("pi", None, Some(&pi_item));
+        let never_saved = connection("lab", None, None);
+        for c in [&box_, &desk, &nas, &pi, &never_saved] {
+            s.connections.add(c.clone());
+        }
+        // Restored: the records came back; of the items, only the ones
+        // this phone made since.
+        let keychain = MemoryKeychain::with([
+            (kept_item.clone(), b"kept".to_vec()),
+            (pi_item.clone(), b"pasted".to_vec()),
+        ]);
+        let restored_connections = ConnectionStore::new(s.defaults.clone(), Readiness::Always);
+        let restored_keys = SshKeyStore::new(s.defaults.clone(), Readiness::Always);
+        let missing = missing_items(&restored_connections, &restored_keys, &keychain).unwrap();
+        assert_eq!(
+            missing.connections,
+            [nas.id],
+            "box signs in with laptop, a key"
+        );
+        let mut keys = missing.keys.clone();
+        keys.sort_by_key(|id| id.to_string());
+        let mut expected = vec![laptop.id, phone.id];
+        expected.sort_by_key(|id| id.to_string());
+        assert_eq!(keys, expected);
+
+        // Nothing restored is missing on the phone that made it.
+        let home = MemoryKeychain::with(
+            [&laptop_item, &nas_item, &pi_item, &kept_item, &phone_item]
+                .map(|a| (a.clone(), b"x".to_vec())),
+        );
+        assert_eq!(
+            missing_items(&restored_connections, &restored_keys, &home),
+            Some(MissingItems::default())
+        );
+
+        // Before the first unlock the stores' read isn't trusted.
+        let sealed = Arc::new(MemoryDefaults::new());
+        sealed.set_protected_data_available(false);
+        let sealed_connections = ConnectionStore::new(sealed.clone(), Readiness::System);
+        let sealed_keys = SshKeyStore::new(sealed.clone(), Readiness::System);
+        assert_eq!(
+            missing_items(&sealed_connections, &sealed_keys, &keychain),
+            None
+        );
     }
 
     /// Adds a connection this build can't decode — a newer build's — to the

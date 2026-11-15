@@ -44,6 +44,10 @@ final class ConnectionStore {
         adopt()
     }
 
+    /// The Rust store under this one, for a call that reads more than one
+    /// store (``KeychainReferences/findMissing(connections:keys:keychain:)``).
+    var rustHandle: ConnectionStoreHandle? { (backing as? RustConnectionStore)?.handle }
+
     /// Take what the backing holds now, changing only what changed (a
     /// foreground's no-op reload must not redraw every view).
     private func adopt() {
@@ -128,6 +132,17 @@ final class ConnectionStore {
     /// here".
     var savedIds: Set<UUID>? { backing.savedIds }
 
+    /// `connection` signed in (B783): its `lastConnectedAt`, at most once a
+    /// day. No build wrote it before, and it is what tells a host connected
+    /// to before when a restore took its trusted key. Whether it was
+    /// written.
+    @discardableResult
+    func signedIn(_ connection: ServerConnection) -> Bool {
+        guard backing.markConnected(id: connection.id) else { return false }
+        adopt()
+        return true
+    }
+
     /// Every keychain ref a saved connection holds, carried ones included;
     /// nil when that can't be known, by ``savedIds``' rules. `excluding`
     /// leaves one connection out (the one being deleted).
@@ -169,6 +184,9 @@ protocol ConnectionStoreBacking: AnyObject {
     /// Of `keys`, removes the session-memory keys of connections no longer
     /// saved, when that can be told; the keys removed.
     func sweepSessionMemory(keys: [String]) -> [String]
+    /// Connection `id` signed in now: its last connect, at most once a day;
+    /// whether it was written (B783).
+    func markConnected(id: UUID) -> Bool
 }
 
 /// What a session remembers about a connection between attempts and app

@@ -32,6 +32,8 @@ pub struct AddKeyPageState {
     pub fingerprint: Option<String>,
     /// Why the key could not be made.
     pub error: Option<String>,
+    /// Import Again (B781): into a key's own record, which keeps its name.
+    pub again: bool,
 }
 
 /// What the host's private key editor holds, as far as the page may know
@@ -113,6 +115,7 @@ impl TryFrom<AddKeyPageState> for AddKey {
             working: s.working,
             fingerprint: s.fingerprint,
             error: s.error,
+            again: s.again,
         })
     }
 }

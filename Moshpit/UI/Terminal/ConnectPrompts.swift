@@ -145,6 +145,7 @@ struct HostKeyNSHPage: View {
         if let previous = prompt.previousFingerprint { fields["previous"] = previous }
         if let older = prompt.olderAlgorithm { fields["olderAlgorithm"] = older }
         if prompt.conflicting { fields["conflicting"] = true }
+        if prompt.connectedBefore { fields["connectedBefore"] = true }
         let data = (try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }

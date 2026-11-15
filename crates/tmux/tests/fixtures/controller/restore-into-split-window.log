@@ -73,7 +73,7 @@
 . view %6 reveal
 . note first-frame
 . pane %6 \x1b[1;1H
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > capture-pane -p -e -S -400 -E -1 -t %0
 > capture-pane -p -e -t %0
 > display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
@@ -98,7 +98,7 @@
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @1 @moshpit_size_owner
 > select-pane -Z -t %4
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > display-message -p -t %4 '#{mouse_any_flag} #{alternate_on}'
 > resize-pane -Z -t @1
 > set-option -w -t @1 @moshpit_zoomed "0 0 %6"
@@ -108,7 +108,7 @@
 > display-message -p -t %6 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @1 @moshpit_size_owner "0 0|iPhone|0"
 > resize-window -t @1 -x 80 -y 24
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-pane -Z -t @1
 > set-option -w -t @1 @moshpit_zoomed "0 0 %6"
 @11 wait 800

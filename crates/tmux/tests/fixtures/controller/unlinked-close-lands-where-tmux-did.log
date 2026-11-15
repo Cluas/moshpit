@@ -38,13 +38,13 @@
 > capture-pane -p -e -t %1
 > display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @1 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @1 -x 70 -y 35
 @16 recv %session-window-changed $0 @2\n%unlinked-window-close @1\n
 . close %1
 . view %2 veil
 . view %2 extend 2.000
-> display-message -p -t '@2' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@2' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > capture-pane -p -e -t %2
 > display-message -p -t %2 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 @17 settle

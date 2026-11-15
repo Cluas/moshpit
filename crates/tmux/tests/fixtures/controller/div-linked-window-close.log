@@ -37,7 +37,7 @@
 > capture-pane -p -e -t %1
 > display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @1 @moshpit_size_owner "moshpit-a|iPhone|0"
-> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
+> display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @1 -x 70 -y 35
 @16 dump
 = attached=1 ever=1 session=$0 window=@1 pane=%1 fwd=1 swiped=0

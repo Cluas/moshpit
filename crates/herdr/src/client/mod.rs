@@ -48,6 +48,7 @@
 mod attach;
 mod exec;
 mod push;
+mod reads;
 #[doc(hidden)]
 pub mod rig;
 #[doc(hidden)]
@@ -373,6 +374,9 @@ pub enum Event {
     /// Input for one pane ([`Action::DeliverInput`]) went out (true), or
     /// couldn't reach that pane in time (false).
     Delivered { request: RequestId, delivered: bool },
+    /// A pane's screen as text rows, for the overview's picture (B751):
+    /// never fed to the terminal.
+    PaneRead { pane: String, rows: Vec<String> },
 }
 
 /// The banner over the terminal (`herdrNotice`).
@@ -494,6 +498,11 @@ pub enum Action {
     ConfirmFocus {
         budget_ms: u64,
     },
+    /// The overview's pictures of `panes` the phone doesn't show (B751):
+    /// their screens, as text, each answered with [`Event::PaneRead`].
+    ReadPanes(Vec<String>),
+    /// The overview closed: nothing more is read.
+    StopReads,
     /// Bytes for one pane, wherever the frame channel is (a notification's
     /// reply): switch there first, then send.
     DeliverInput {
@@ -536,6 +545,11 @@ enum Purpose {
     Agents(u64),
     ServerStop,
     Daemon,
+    /// The overview's read of a pane's screen (B751).
+    PaneRead {
+        pane: String,
+        generation: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -723,6 +737,8 @@ pub struct Client {
     removals: BTreeSet<u64>,
     discoveries: BTreeMap<u64, task::Discovery>,
     agent_lists: BTreeSet<u64>,
+    /// The overview's reads of panes the phone doesn't show (B751).
+    reads: reads::Reads,
     restart: Option<task::Restart>,
     confirms: BTreeSet<u64>,
 
@@ -775,6 +791,7 @@ impl Client {
             removals: BTreeSet::new(),
             discoveries: BTreeMap::new(),
             agent_lists: BTreeSet::new(),
+            reads: reads::Reads::default(),
             restart: None,
             confirms: BTreeSet::new(),
             attach: attach::Attach::default(),
@@ -1082,6 +1099,9 @@ impl Client {
             Purpose::PaneRepos(request) => self.pane_repos_answered(request, result),
             Purpose::HomeScan(request) => self.home_scan_answered(request, result),
             Purpose::Agents(request) => self.agents_answered(request, result),
+            Purpose::PaneRead { pane, generation } => {
+                self.pane_read_answered(pane, generation, result)
+            }
             Purpose::ServerStop => self.server_stop_answered(),
             Purpose::Daemon => self.daemon_answered(),
         }
@@ -1883,6 +1903,8 @@ impl Client {
             }
             Action::DiscoverRepos => return Some(self.discover_repos()),
             Action::AgentNames => return Some(self.list_agents()),
+            Action::ReadPanes(panes) => self.read_panes(panes),
+            Action::StopReads => self.stop_reads(),
             Action::RestartServer => return self.restart_server(),
             Action::NoticeAction => return self.notice_action(),
             Action::ConfirmFocus { budget_ms } => return Some(self.confirm_focus(budget_ms)),

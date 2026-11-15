@@ -119,6 +119,11 @@ pub struct AddKey {
     /// Why the key could not be made, for the error card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Import Again (B781): a key whose private half isn't on this device
+    /// is imported into its own record, which keeps its name — no method to
+    /// pick, no name or comment to give.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub again: bool,
 }
 
 /// A message from the host.
@@ -209,7 +214,17 @@ pub fn AddKeyScreen(props: ScreenProps) -> impl IntoElement {
                 scrolled,
                 "add-key-list",
                 [
-                    method_section(state, tell.clone()),
+                    dynamic({
+                        let tell = tell.clone();
+                        move || {
+                            if read(state, |s| s.again).unwrap_or(false) {
+                                view().into_element()
+                            } else {
+                                method_section(state, tell.clone())
+                            }
+                        }
+                    })
+                    .into_element(),
                     dynamic({
                         let tell = tell.clone();
                         move || {
@@ -616,6 +631,16 @@ fn import_sections(state: State, tell: Tell) -> Vec<AnyElement> {
             tell.clone(),
         ));
     }
+    let key = view()
+        .w_full()
+        .gap(px(8.0))
+        .child(key)
+        .child(view().px(px(PADDING_X)).child(footer))
+        .into_element();
+    // Import Again keeps the record's name and comment (B781).
+    if read(state, |s| s.again).unwrap_or(false) {
+        return vec![key];
+    }
     vec![
         section()
             .header(t!("KEY DETAILS"))
@@ -644,12 +669,7 @@ fn import_sections(state: State, tell: Tell) -> Vec<AnyElement> {
                 Inset::Content,
             )
             .into_element(),
-        view()
-            .w_full()
-            .gap(px(8.0))
-            .child(key)
-            .child(view().px(px(PADDING_X)).child(footer))
-            .into_element(),
+        key,
     ]
 }
 
@@ -818,6 +838,7 @@ mod tests {
             working: false,
             fingerprint: None,
             error: None,
+            again: false,
         }
     }
 

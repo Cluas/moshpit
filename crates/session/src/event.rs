@@ -580,6 +580,10 @@ pub enum EventKind {
         /// An earlier build stored two different keys for the host, and it
         /// presents one of them (B725): the card asks in its own words.
         conflicting: bool,
+        /// A new host this phone connected to before (B783): its trusted
+        /// key isn't here any more (a restore, a re-sign); the card says so
+        /// instead of "First connection".
+        connected_before: bool,
     },
     /// The connection had to use an older host-key algorithm (`ssh-rsa`,
     /// SHA-1, B564): for the diagnostics. Every connect that did.
