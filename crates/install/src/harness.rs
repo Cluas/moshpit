@@ -305,6 +305,8 @@ fn masked_tokens(command: &str) -> String {
         ("/run/selftest-", 16),
         ("[ \"${a#*.}\" = '", 16),
         ("\" '", 16),
+        // The lock's own (B566).
+        ("t='", 16),
     ] {
         let mut at = 0;
         while let Some(found) = out[at..].find(from) {

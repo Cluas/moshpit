@@ -242,6 +242,58 @@ fn desktop() -> FakeClient {
     client(false, 41001, "$0", "alpha", "/dev/ttys009")
 }
 
+// MARK: - Killing the renderer's session (B583)
+
+/// mosh's renderer is mosh's own `exec tmux attach`: tmux detaches a
+/// client whose session is destroyed (`detach-on-destroy`), which ended the
+/// mosh session. It moves first — this client too — and the kill follows.
+/// The live proof is `live_group.rs`.
+#[test]
+fn killing_the_renderers_session_moves_the_renderer_first() {
+    let mut s = Sidecar::make(
+        &["$0 1 alpha", "$1 2 a|b", "$2 0 main"],
+        &[],
+        vec![desktop(), sidecar_client()],
+        None,
+    );
+    s.attach_renderer(renderer());
+    let from = s.rig.commands.len();
+    s.rig.with(|c, now| c.kill_session("$1", now));
+    let sent = s.rig.since(from).to_vec();
+    let at = |prefix: &str| sent.iter().position(|c| c == prefix);
+    let kill = at("kill-session -t $1").expect("the kill");
+    let renderer = at("switch-client -c /dev/ttys026 -t $0").expect("the renderer moves");
+    let own = at("switch-client -t $0").expect("this client moves");
+    assert!(renderer < kill && own < kill, "{sent:?}");
+    assert_eq!(
+        s.rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$0")
+    );
+}
+
+/// Another session's kill moves nobody.
+#[test]
+fn killing_another_session_leaves_the_renderer_alone() {
+    let mut s = Sidecar::make(
+        &["$0 1 alpha", "$1 2 a|b", "$2 0 main"],
+        &[],
+        vec![desktop(), sidecar_client()],
+        None,
+    );
+    s.attach_renderer(renderer());
+    let from = s.rig.commands.len();
+    s.rig.with(|c, now| c.kill_session("$2", now));
+    s.rig.settle();
+    assert!(
+        !s.rig
+            .since(from)
+            .iter()
+            .any(|c| c.starts_with("switch-client")),
+        "{:?}",
+        s.rig.since(from)
+    );
+}
+
 // MARK: - Session ids, not names
 
 #[test]
@@ -1005,7 +1057,12 @@ fn the_renderer_is_known_by_its_pid_whoever_else_attached() {
 /// is nobody, and the desktop is never touched.
 #[test]
 fn a_desktop_attaching_while_the_renderers_attach_fails_is_never_the_renderer() {
-    let mut s = Sidecar::make(&["$0 1 alpha", "$1 0 work"], &[], vec![work(true, 45613, "client-45613")], None);
+    let mut s = Sidecar::make(
+        &["$0 1 alpha", "$1 0 work"],
+        &[],
+        vec![work(true, 45613, "client-45613")],
+        None,
+    );
     // mosh-server's child, read over SSH: its attach is about to fail.
     s.rig.with(|c, now| c.expect_renderer_pid(51000, now));
     s.rig.settle();
@@ -1020,7 +1077,10 @@ fn a_desktop_attaching_while_the_renderers_attach_fails_is_never_the_renderer() 
         Sidecar::moves(&commands)
     );
     s.rig.with(|c, now| c.sync_mosh_window(70, 35, now));
-    assert!(!s.rig.has("resize-window"), "no window is the renderer's to size");
+    assert!(
+        !s.rig.has("resize-window"),
+        "no window is the renderer's to size"
+    );
 }
 
 #[test]
@@ -1077,8 +1137,16 @@ fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
     rig.respond(Box::new(move |command, at| {
         {
             let fake = state.borrow();
-            let one = if on(&fake, "$1") { SQUASHED_ONE } else { WIDE_ONE };
-            let two = if on(&fake, "$2") { SQUASHED_TWO } else { WIDE_TWO };
+            let one = if on(&fake, "$1") {
+                SQUASHED_ONE
+            } else {
+                WIDE_ONE
+            };
+            let two = if on(&fake, "$2") {
+                SQUASHED_TWO
+            } else {
+                WIDE_TWO
+            };
             if command.starts_with("list-windows -t '$2' -F '#{window_id} ") {
                 return ok([format!("@2 3 0 %3 {two}")]);
             }
@@ -1108,9 +1176,7 @@ fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
     }));
     // The renderer had squashed `$1` before the sidecar existed (B270).
     rig.with(|c, _| {
-        c.note_layouts_before_renderer(&format!(
-            "@1 3 0 %0 {WIDE_ONE}\n@2 3 0 %3 {WIDE_TWO}\n"
-        ))
+        c.note_layouts_before_renderer(&format!("@1 3 0 %0 {WIDE_ONE}\n@2 3 0 %3 {WIDE_TWO}\n"))
     });
     rig.attach();
     rig.settle();
@@ -1134,7 +1200,9 @@ fn a_session_switch_records_the_layouts_the_renderers_move_squashes() {
     s.switch_session("$2");
     let commands = s.rig.since(from).to_vec();
     let probe = |c: &String| c.starts_with("list-windows -t '$2' -F '#{window_id} ");
-    let probes: Vec<usize> = (0..commands.len()).filter(|&i| probe(&commands[i])).collect();
+    let probes: Vec<usize> = (0..commands.len())
+        .filter(|&i| probe(&commands[i]))
+        .collect();
     let moved = commands
         .iter()
         .position(|c| c.starts_with("switch-client -c /dev/ttys026 -t $2"))
@@ -1216,7 +1284,8 @@ fn the_renderer_lookup_right_behind_the_attachs_zoom_gets_its_own_reply() {
     let mut block = 500;
     while rig.answered < rig.commands.len() {
         let command = rig.commands[rig.answered].clone();
-        if !expected && (command.starts_with("if-shell ") || command.starts_with("resize-pane -Z")) {
+        if !expected && (command.starts_with("if-shell ") || command.starts_with("resize-pane -Z"))
+        {
             // The pid arrives while the zoom is on its way: its lookup goes
             // out right behind it.
             expected = true;
@@ -1225,7 +1294,9 @@ fn the_renderer_lookup_right_behind_the_attachs_zoom_gets_its_own_reply() {
         let lines = if command.starts_with("display-message -p -t '@0' '#{window_panes} ") {
             vec![format!("2 0 %0 {SPLIT}")]
         } else {
-            tmux(&command, rig.answered).map(|a| a.lines).unwrap_or_default()
+            tmux(&command, rig.answered)
+                .map(|a| a.lines)
+                .unwrap_or_default()
         };
         rig.answered += 1;
         block += 1;
@@ -1415,7 +1486,9 @@ fn a_sidecars_attach_sends_the_discovery_first() {
     assert!(rig.commands[0].starts_with("list-sessions -F '#{session_id} #{session_attached}"));
     assert!(rig.commands[1].starts_with("list-windows -a -F"));
     assert!(rig.commands[2].starts_with("list-panes -a -F '#{pane_id} "));
-    assert!(rig.commands[3..]
-        .iter()
-        .any(|c| c.contains(" owned=#{@moshpit_owned}")));
+    assert!(
+        rig.commands[3..]
+            .iter()
+            .any(|c| c.contains(" owned=#{@moshpit_owned}"))
+    );
 }

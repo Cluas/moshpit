@@ -36,7 +36,7 @@ const OUTPUT_PREFIX: &[u8] = b"%output ";
 
 /// Prefixes [`decode_line`] accepts after leading junk (a DCS prologue, a
 /// shell banner).
-const KEYWORDS: [&str; 12] = [
+const KEYWORDS: [&str; 13] = [
     "%begin",
     "%end",
     "%error",
@@ -49,6 +49,7 @@ const KEYWORDS: [&str; 12] = [
     "%client",
     "%exit",
     "%unlinked",
+    "%pane-mode-changed",
 ];
 
 /// Reported through [`Event::ProtocolError`] when a recognised `%foo` line
@@ -149,6 +150,9 @@ pub enum Event {
     Pause { pane_id: String },
     /// `%continue %pane`.
     Continue { pane_id: String },
+    /// `%pane-mode-changed %pane`: the pane entered or left a mode
+    /// (copy-mode, a view-mode); which one, `#{pane_in_mode}` says (B614).
+    PaneModeChanged { pane_id: String },
     /// `%client-detached [client]`: whatever followed the directive, or "".
     ClientDetached { payload: String },
     /// `%exit [reason]`: this control session ended.
@@ -374,6 +378,10 @@ impl ControlParser {
             emit_id(&line, id, emit, |pane_id| Event::Pause { pane_id });
         } else if let Some(id) = line.strip_prefix("%continue ") {
             emit_id(&line, id, emit, |pane_id| Event::Continue { pane_id });
+        } else if let Some(id) = line.strip_prefix("%pane-mode-changed ") {
+            emit_id(&line, id, emit, |pane_id| Event::PaneModeChanged {
+                pane_id,
+            });
         } else if line.starts_with("%client-detached") {
             let payload = line.strip_prefix("%client-detached ").unwrap_or("");
             emit(Event::ClientDetached {

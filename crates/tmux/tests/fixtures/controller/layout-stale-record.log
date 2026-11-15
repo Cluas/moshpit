@@ -28,15 +28,27 @@
 . view %0 cover?
 . view %0 veil
 . view %0 extend 2.000
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %0 \x1b[2;3H
 . pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[Hhistory 1\x0d\x0ahistory 2\x1b[0m\x1b[9999;1H\x0a\x0a
+. pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %1 \x1b[1;1H
 . pane %2 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[Hhistory 1\x0d\x0ahistory 2\x1b[0m\x1b[9999;1H\x0a\x0a
+. pane %2 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %2 \x1b[1;1H
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %0 reveal
 . note first-frame
 . pane %0 \x1b[2;3H
 > capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %1
+> capture-pane -p -e -t %1
+> display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %2
+> capture-pane -p -e -t %2
+> display-message -p -t %2 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
 > capture-pane -p -e -t %0

@@ -119,6 +119,29 @@ public struct AgentActivityAttributes: ActivityAttributes {
             self.companion = companion; self.companionStale = companionStale
         }
 
+        /// What the compact pill's trailing side says (B597): the headline's
+        /// state, which is the most urgent agent's. Anyone needing you wins:
+        /// an amber "!" for one, the waiting hand and their count for
+        /// several (never a bare number); else the headline working shows
+        /// its elapsed time, done a check, idle its dot.
+        public enum CompactSignal: Equatable {
+            case waiting(count: Int)
+            case working(since: Date)
+            case done
+            case quiet
+        }
+
+        public var compactSignal: CompactSignal? {
+            if attentionCount > 0 { return .waiting(count: attentionCount) }
+            guard let headline else { return nil }
+            switch headline.state {
+            case .attention: return .waiting(count: 1)
+            case .working: return .working(since: headline.startedAt)
+            case .done: return .done
+            case .idle: return .quiet
+            }
+        }
+
         /// The companion's still to show: the sleeping one once stale.
         public func companionStill(stale: Bool) -> String? {
             stale ? (companionStale ?? companion) : companion

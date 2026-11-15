@@ -368,6 +368,47 @@ fn every_list_is_in_id_order_and_every_pane_says_where_it_runs() {
     assert_eq!(control.active_pane.as_deref(), Some("%3"));
 }
 
+/// B621: a stamp the host left behind reads as the agents monitor reads
+/// it (`moshpit_agents::reclassify`). An agent back at its shell (it
+/// exited, or was interrupted, before its Stop hook ran) and an attention
+/// stamp that is only the agent's idle reminder ("waiting for your input")
+/// are done: Home's Needs You listed them, and its badge counted them, while
+/// the island and the notifications said done.
+#[test]
+fn a_stamp_whose_agent_is_gone_or_only_idle_is_done_on_home() {
+    let mut studio = saved(STUDIO, "studio");
+    let mut live = view(SessionState::Connected);
+    let mut tmux = tmux_view(tmux_tree());
+    // %2: stamped working, its foreground the shell again (the fixture's).
+    // %3: stamped attention while claude runs: still waiting.
+    // %4: stamped attention by the idle reminder.
+    tmux.snapshot.panes.insert("%4".into(), tmux::PaneInfo::placeholder("%4", "@2"));
+    tmux.agent_hooks.insert(
+        "%4".to_owned(),
+        moshpit_tmux::hooks::AgentHook {
+            state: Some("attention".into()),
+            agent: Some("claude".into()),
+            since: Some(900.0),
+            command: Some("claude".into()),
+            title: Some("Claude is waiting for your input".into()),
+        },
+    );
+    live.tmux_view = Some(tmux);
+    studio.session = Some(live);
+    let home = build(&[studio], &no_monitor);
+    let control = home.connections[0].control.as_ref().unwrap();
+    let state = |pane: &str| {
+        control
+            .hooks
+            .iter()
+            .find(|h| h.pane == pane)
+            .and_then(|h| h.state.clone())
+    };
+    assert_eq!(state("%2").as_deref(), Some("done"), "an agent back at its shell is done");
+    assert_eq!(state("%3").as_deref(), Some("attention"), "an agent asking is still waiting");
+    assert_eq!(state("%4").as_deref(), Some("done"), "an idle reminder is not a question");
+}
+
 /// Android sent herdr's stamps with no time; Swift took the monitor's.
 #[test]
 fn herdrs_stamps_have_the_monitors_time_and_its_panes_their_directory() {

@@ -45,8 +45,6 @@ struct ShellQuoteCallSiteTests {
         let probe = PathProbe.command(cwd: path, candidates: [
             TerminalPathScanner.Candidate(token: "out/a.png", offset: 0, length: 9, directoryOnly: false)])
         #expect(probe.contains("moshpit-probe \(quoted) "))
-        let plan = ExecUploadCommands.plan(home: path, filename: "IMG-1.jpg")
-        #expect(plan.begin.contains("'/srv/it'\\''\(mark); touch INJECTED; '\\''/.moshpit/uploads'"))
     }
 
     @Test("Through a real shell, file commands make the very names they were given, and nothing runs",
@@ -55,17 +53,16 @@ struct ShellQuoteCallSiteTests {
         let directory = try PosixShell.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let home = directory.appendingPathComponent(Self.hostile(mark)).path
-        let plan = ExecUploadCommands.plan(home: home, filename: "IMG-1.jpg")
-        let made = try #require(PosixShell.run("cd \(ExecUploadCommands.quote(directory.path)) && mkdir -p \(ExecUploadCommands.quote(home)) && \(plan.begin)"))
+        let made = try #require(PosixShell.run("cd \(Shell.quote(directory.path)) && mkdir -p \(Shell.quote(home))"))
         #expect(made.exitCode == 0, "\(made.text)")
-        #expect(FileManager.default.fileExists(atPath: home + "/.moshpit/uploads"))
+        #expect(FileManager.default.fileExists(atPath: home))
         let folder = home + "/\(Self.hostile(mark)) 2"
-        let mkdir = try #require(PosixShell.run("cd \(ExecUploadCommands.quote(directory.path)) && \(RemoteFileEdits.makeDirectory(folder))"))
+        let mkdir = try #require(PosixShell.run("cd \(Shell.quote(directory.path)) && \(RemoteFileEdits.makeDirectory(folder))"))
         #expect(mkdir.text.contains(RemoteFileEdits.okMarker))
         #expect(FileManager.default.fileExists(atPath: folder))
         let probe = PathProbe.command(cwd: home, candidates: [
             TerminalPathScanner.Candidate(token: "out/a.png", offset: 0, length: 9, directoryOnly: false)])
-        _ = try #require(PosixShell.run("cd \(ExecUploadCommands.quote(directory.path)) && \(probe)"))
+        _ = try #require(PosixShell.run("cd \(Shell.quote(directory.path)) && \(probe)"))
         #expect(!injected(in: directory))
     }
 

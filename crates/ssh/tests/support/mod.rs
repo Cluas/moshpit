@@ -166,6 +166,10 @@ pub struct Bench {
     /// A key is only the first factor, keyboard-interactive the second
     /// (`AuthenticationMethods publickey,keyboard-interactive`).
     pub key_then_keyboard_interactive: bool,
+    /// Session channels a connection may hold open at once, beyond which
+    /// opening one is refused (sshd's `MaxSessions`; `None`: no limit).
+    /// One closes when the client's CHANNEL_CLOSE arrives.
+    pub max_sessions: Option<usize>,
 }
 
 impl Default for Bench {
@@ -184,6 +188,7 @@ impl Default for Bench {
             rsa_signatures: None,
             keyboard_interactive: Vec::new(),
             key_then_keyboard_interactive: false,
+            max_sessions: None,
         }
     }
 }
@@ -199,6 +204,7 @@ struct Shared {
     sftp_noise: Vec<u8>,
     exec_noise: Vec<u8>,
     shell_commands: bool,
+    max_sessions: Option<usize>,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
 }
@@ -249,6 +255,7 @@ impl Host {
                 sftp_noise: bench.sftp_noise.clone(),
                 exec_noise: bench.exec_noise.clone(),
                 shell_commands: bench.shell_commands,
+                max_sessions: bench.max_sessions,
                 home: home.path().to_owned(),
                 seen: seen.clone(),
             }),
@@ -301,6 +308,7 @@ impl server::Server for Server {
             key_taken: false,
             sizes: HashMap::new(),
             env: HashMap::new(),
+            open_sessions: 0,
         }
     }
 }
@@ -318,6 +326,8 @@ struct Connection {
     kinds: HashMap<ChannelId, Kind>,
     sizes: HashMap<ChannelId, (u32, u32)>,
     env: HashMap<ChannelId, HashMap<String, String>>,
+    /// Session channels open now (against `max_sessions`).
+    open_sessions: usize,
     /// The keyboard-interactive answers of this sign-in so far.
     kbd_given: Vec<Vec<String>>,
     /// The key, the first factor, was taken.
@@ -473,11 +483,32 @@ impl server::Handler for Connection {
         reply: server::ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if self
+            .shared
+            .max_sessions
+            .is_some_and(|most| self.open_sessions >= most)
+        {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        self.open_sessions += 1;
         // Kept only until the channel turns out not to be SFTP's: russh
         // also queues every message for this handle, and a full queue
         // nobody reads stalls the whole server.
         self.channels.insert(channel.id(), channel);
         reply.accept().await;
+        Ok(())
+    }
+
+    async fn channel_close(
+        &mut self,
+        channel: ChannelId,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.open_sessions = self.open_sessions.saturating_sub(1);
+        self.channels.remove(&channel);
         Ok(())
     }
 

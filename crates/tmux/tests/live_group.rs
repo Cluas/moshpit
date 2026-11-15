@@ -456,3 +456,104 @@ fn a_session_killed_under_the_phone_leaves_it_on_another() {
     let names = server.tmux(&["ls", "-F", "#{session_name}"]);
     assert!(!names.contains("main"), "the old group went: {names}");
 }
+
+impl Server {
+    /// mosh's renderer: `exec tmux attach` under `sh -c`, as the mosh
+    /// server's program runs it (`attempt.rs`), on a pty. Its process ends
+    /// when tmux's client does — and with it the mosh session.
+    fn renderer(&self, target: &str) -> Child {
+        let attach = format!(
+            "exec tmux -L {} -f /dev/null attach -t '{target}'",
+            self.socket
+        );
+        let renderer = Command::new("python3")
+            .args(["-c", "import pty,sys; pty.spawn(sys.argv[1:])"])
+            .args(["/bin/sh", "-c", &attach])
+            .env("TERM", "xterm-256color")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the renderer starts");
+        assert!(
+            eventually(10, || self.renderer_pid().is_some()),
+            "the renderer attached"
+        );
+        renderer
+    }
+
+    /// The pid of tmux's one plain (not control-mode) client.
+    fn renderer_pid(&self) -> Option<i64> {
+        self.tmux(&["list-clients", "-F", "#{client_control_mode} #{client_pid}"])
+            .lines()
+            .find_map(|line| line.strip_prefix("0 ")?.parse().ok())
+    }
+
+    /// The mosh sidecar: a control client that renders nothing, following
+    /// the renderer by its pid.
+    fn sidecar(&self, target: &str, renderer_pid: i64) -> Phone {
+        let (child, stdin, rx) = self.client(target);
+        let mut sidecar = Phone {
+            controller: Controller::new(Config {
+                renders_output: false,
+                ..Config::default()
+            }),
+            child,
+            stdin,
+            rx,
+            start: Instant::now(),
+        };
+        let now = sidecar.now();
+        sidecar.controller.begin_control_mode(now);
+        sidecar.pump(500);
+        let now = sidecar.now();
+        sidecar.controller.expect_renderer_pid(renderer_pid, now);
+        let located = sidecar.pump_until(10, |c| {
+            c.snapshot().is_attached && c.snapshot().active_window_id.is_some()
+        });
+        assert!(located, "{:?}", sidecar.controller.snapshot());
+        sidecar.pump(500);
+        sidecar
+    }
+}
+
+/// B583: the mosh sidecar killing the renderer's session — the one on the
+/// phone's screen — had tmux detach the renderer (`detach-on-destroy`):
+/// its `exec tmux attach` ended, and with it the mosh session ("[exited]
+/// [mosh is exiting.]" on a real mosh-server). The sidecar's own client
+/// sat on it too.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn the_sidecar_killing_the_renderers_session_keeps_mosh_running() {
+    let server = Server::start("sidecarkill");
+    server.tmux(&["new-session", "-d", "-s", "dev", "-x", "80", "-y", "24"]);
+    let mut renderer = server.renderer("=main");
+    let pid = server.renderer_pid().unwrap();
+    let mut sidecar = server.sidecar("main", pid);
+    let main = server.tmux(&["display-message", "-p", "-t", "=main:", "#{session_id}"]);
+    let dev = server.tmux(&["display-message", "-p", "-t", "=dev:", "#{session_id}"]);
+    assert_eq!(
+        sidecar.controller.snapshot().active_session_id.as_deref(),
+        Some(main.as_str())
+    );
+    let now = sidecar.now();
+    sidecar.controller.kill_session(&main, now);
+    sidecar.pump(1500);
+    assert_eq!(renderer.try_wait().unwrap(), None, "the renderer ended");
+    assert_eq!(
+        sidecar.child.try_wait().unwrap(),
+        None,
+        "the sidecar's client exited"
+    );
+    let clients = server.clients();
+    assert!(
+        clients.lines().any(|line| line.ends_with(" dev")),
+        "clients: {clients}"
+    );
+    assert_eq!(
+        sidecar.controller.snapshot().active_session_id.as_deref(),
+        Some(dev.as_str())
+    );
+    let _ = renderer.kill();
+    let _ = renderer.wait();
+}

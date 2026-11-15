@@ -47,6 +47,12 @@ pub struct AgentPaneWhereValue {
     pub workspace: Option<String>,
     #[uniffi(default = None)]
     pub path: Option<String>,
+    /// The window's index and the pane's index in it: what tells two rows
+    /// apart that would read the same.
+    #[uniffi(default = None)]
+    pub window_index: Option<i64>,
+    #[uniffi(default = None)]
+    pub pane_index: Option<i64>,
 }
 
 impl From<AgentPaneWhereValue> for agents::PaneWhere {
@@ -57,7 +63,14 @@ impl From<AgentPaneWhereValue> for agents::PaneWhere {
             value.workspace.as_deref(),
             value.path.as_deref(),
         );
-        Self { command: value.command, session: value.session, window: value.window, name }
+        Self {
+            command: value.command,
+            session: value.session,
+            window: value.window,
+            name,
+            window_index: value.window_index,
+            pane_index: value.pane_index,
+        }
     }
 }
 

@@ -30,6 +30,9 @@ moshpit-pet = { path = "../pet" }
 # the tmux and herdr trees in them.
 moshpit-session = { path = "../session" }
 moshpit-tmux = { path = "../tmux" }
+# A stamp as the agents monitor reads it (reclassify), so Home and the
+# island agree (B621).
+moshpit-agents = { path = "../agents" }
 moshpit-herdr = { path = "../herdr" }
 # Names compare in one Unicode form (B332: "café" composed on the phone,
 # decomposed on an old Mac disk).

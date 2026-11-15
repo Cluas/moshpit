@@ -680,6 +680,9 @@ pub(crate) struct Actor {
     /// asked (B362).
     mosh_prefix: Vec<u8>,
     mosh_prefix_asked: bool,
+    /// mosh with tmux: the copy-mode of the pane on screen last told to the
+    /// mosh loop (B614); `None` for a loop told nothing yet.
+    mosh_copy_mode_sent: Option<bool>,
     /// The person's last herdr pane pick the server isn't seen on yet: a
     /// connection that died under it (a notification tapped after a long
     /// absence picks before the return finds the socket dead) would lose
@@ -779,6 +782,7 @@ impl Actor {
             held: Vec::new(),
             mosh_prefix: vec![0x02],
             mosh_prefix_asked: false,
+            mosh_copy_mode_sent: None,
             herdr_pick: None,
             tmux_pick: None,
             tmux_held: Vec::new(),
@@ -1865,6 +1869,29 @@ impl Actor {
         }
     }
 
+    /// mosh with tmux: the copy-mode tmux reports for the pane on screen,
+    /// to the mosh loop whenever it changes (B614). The loop's latch was
+    /// its only record: the person's own `q` went out as `qq`, a pane
+    /// switched to got a `q` first, a pane left in copy-mode never one.
+    fn forward_copy_mode(&mut self) {
+        let Some(Leg::Mosh { mosh, .. }) = &self.leg else {
+            return;
+        };
+        let in_mode = {
+            let view = self.view.lock().unwrap_or_else(|e| e.into_inner());
+            view.tmux_view.as_ref().map(|tmux| tmux.input.in_copy_mode)
+        };
+        let Some(in_mode) = in_mode else {
+            return;
+        };
+        if self.mosh_copy_mode_sent == Some(in_mode) {
+            return;
+        }
+        if mosh.commands.send(MoshCommand::CopyModeIs(in_mode)).is_ok() {
+            self.mosh_copy_mode_sent = Some(in_mode);
+        }
+    }
+
     /// The server's prefix, asked of the sidecar once (a server with
     /// another prefix enters copy-mode with its own).
     fn ask_mosh_prefix(&mut self) {
@@ -2122,6 +2149,9 @@ impl Actor {
                     return_path_reported: false,
                     reaped: false,
                 });
+                // A new loop knows nothing of a pane left in copy-mode.
+                self.mosh_copy_mode_sent = None;
+                self.forward_copy_mode();
                 self.publish_shell_pane();
                 match (multiplexer, control, herdr) {
                     (Multiplexer::Tmux, Some(ssh), _) => {
@@ -2525,6 +2555,7 @@ impl Actor {
                     view.tmux = Some(tmux.snapshot.clone());
                     view.tmux_view = Some(*tmux);
                 });
+                self.forward_copy_mode();
                 self.emit(EventKind::TreeChanged);
                 self.try_deliver();
                 if let Some(control) = self.control.as_mut() {
@@ -5563,6 +5594,75 @@ mod tests {
                 .any(|c| matches!(c, TmuxCommand::Action(TmuxAction::ScrollLines(_)))),
             "not the sidecar's"
         );
+    }
+
+    /// B614: mosh + tmux, the copy-mode tmux reports for the pane on screen
+    /// goes to the mosh loop each time it changes — its latch follows it.
+    #[tokio::test]
+    async fn tmuxs_copy_mode_under_mosh_goes_to_the_loop_when_it_changes() {
+        let (mut actor, _events) = live_actor(false);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        let (commands, mut sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (to_sidecar, _sidecar) = mpsc::unbounded_channel();
+        actor.control = Some(Control {
+            generation: actor.life.generation(),
+            epoch: 1,
+            ssh: None,
+            sidecar: Some(TmuxLeg::for_tests(to_sidecar)),
+            dialling: false,
+            failures: 0,
+            preferred: None,
+            handoff: Handoff::default(),
+            renderer_pid: None,
+            grid: (80, 24),
+            layouts_before_renderer: None,
+            ready: true,
+            checking: false,
+            holding: false,
+            held: Vec::new(),
+            hold: 0,
+            dropped: false,
+        });
+        let tree = |in_copy_mode: bool| {
+            TmuxNote::Tree(Box::new(TmuxView {
+                snapshot: Snapshot::default(),
+                notice: None,
+                refreshing: false,
+                size_follow: None,
+                agent_hooks: BTreeMap::new(),
+                agent_hooks_loaded: false,
+                input: moshpit_tmux::controller::InputFlags {
+                    in_copy_mode,
+                    ..Default::default()
+                },
+                no_session: false,
+            }))
+        };
+        let told = |sent: &mut mpsc::UnboundedReceiver<MoshCommand>| -> Vec<bool> {
+            std::iter::from_fn(|| sent.try_recv().ok())
+                .filter_map(|c| match c {
+                    MoshCommand::CopyModeIs(on) => Some(on),
+                    _ => None,
+                })
+                .collect()
+        };
+        actor.sidecar_note(1, tree(true));
+        assert_eq!(told(&mut sent), [true]);
+        actor.sidecar_note(1, tree(true));
+        assert_eq!(told(&mut sent), Vec::<bool>::new(), "only a change");
+        actor.sidecar_note(1, tree(false));
+        assert_eq!(told(&mut sent), [false]);
     }
 
     /// B524: a reply for a pane asked for in the background, on a live SSH

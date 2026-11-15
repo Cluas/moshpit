@@ -30,30 +30,6 @@ enum AgentSignal: Equatable, CaseIterable {
         }
     }
 
-    /// Vibe Island colours, so a dot means the same thing wherever it appears.
-    ///
-    /// Through `AgentPalette` — the shared, FIXED values — and pointedly not
-    /// `Ink.accent`: the accent follows the user's theme, and state colours
-    /// that move with taste stop being state colours. (Found as: working =
-    /// teal on the lock screen, indigo — or whatever the theme said — in-app.)
-    var color: Color {
-        switch self {
-        case .attention: return AgentPalette.attention
-        case .working:   return AgentPalette.working
-        case .done:      return AgentPalette.done
-        }
-    }
-
-    /// Sort weight — what needs a human comes first. Used to order the Agents
-    /// section, which exists to answer "who is waiting on me" at a glance.
-    var rank: Int {
-        switch self {
-        case .attention: return 0
-        case .working:   return 1
-        case .done:      return 2
-        }
-    }
-
     var label: String {
         switch self {
         case .attention: return String(localized: "needs you")

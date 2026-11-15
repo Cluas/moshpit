@@ -31,10 +31,14 @@
 . view %4 cover?
 . view %4 veil
 . view %4 extend 2.000
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %4 \x1b[1;1H
 . pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
 . view %5 cover?
 . view %5 veil
 . view %5 extend 2.000
+. pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %5 \x1b[1;1H
 . pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
 . view %4 reveal
 . note first-frame
@@ -42,12 +46,16 @@
 . pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
 . pane %5 \x1b[1;1H
 > capture-pane -p -e -S -400 -E -1 -t %4
+> capture-pane -p -e -t %4
+> display-message -p -t %4 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @4 @moshpit_size_owner
 > display-message -p -t '@5' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > resize-window -t @5 -x 80 -y 24
 > select-window -t @5
 > capture-pane -p -e -S -400 -E -1 -t %5
+> capture-pane -p -e -t %5
+> display-message -p -t %5 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > select-pane -Z -t %5
 > display-message -p -t '@5' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > display-message -p -t %5 '#{mouse_any_flag} #{alternate_on}'

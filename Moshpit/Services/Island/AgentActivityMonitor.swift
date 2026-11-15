@@ -224,11 +224,13 @@ final class AgentActivityMonitor {
         drive { $0.untrack(conn: connectionId.uuidString, keepWaitingCards: keepWaitingCards, now: now) }
     }
 
-    /// Cycle the Dynamic Island headline to the next agent.
+    /// Cycle the Dynamic Island headline to the next agent: the scripts'
+    /// `cycle` step (AgentsScriptTests). The island has no Switch any more.
     func cycleHeadline() {
         let now = self.now
         drive { $0.cycleHeadline(now: now) }
     }
+
 
     /// Every tracked pane's state-entry time for one connection, keyed by
     /// pane id.
@@ -394,7 +396,9 @@ final class AgentActivityMonitor {
                                    window: window.displayTitle(vocab),
                                    windowName: window.name,
                                    workspace: herdr ? session?.name : nil,
-                                   path: pane.path)
+                                   path: pane.path,
+                                   windowIndex: Int64(window.index),
+                                   paneIndex: Int64(pane.index))
     }
 
     static func content(_ state: AgentIslandValue) -> AgentActivityAttributes.ContentState {

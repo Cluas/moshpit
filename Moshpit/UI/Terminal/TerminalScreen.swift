@@ -1581,61 +1581,6 @@ struct TerminalScreen: View {
     }
 }
 
-// MARK: - tmux single-pane rendering
-
-/// Hosts a persistent pane terminal minted by the controller.
-/// The active pane grabs keyboard focus so the system keyboard (with our
-/// shortcut bar riding above it) is up as soon as the terminal is usable.
-/// The terminal sits inside a ``TerminalHostContainer`` so keyboard
-/// transitions can freeze its frame (see that type's doc — this is the
-/// keyboard/IME-switch garble fix), same as the single-pane path.
-struct PaneTerminalHost: UIViewRepresentable {
-    let surface: CoreTerminalView
-    /// The pane's coordinator — hooked to the container so the keyboard
-    /// frame-lock covers tmux panes too. nil-safe for previews/tests.
-    var coordinator: CoreTerminalHost.Coordinator?
-    var focusPolicy: TerminalFocusPolicy = .take
-    /// Hold this pane at the size it has — see
-    /// ``TerminalHostContainer/geometryHeld``.
-    var geometryHeld: Bool = false
-    /// Where the pane's own Paste and ⌘V go: the session's paste path, which
-    /// asks tmux to bracket (`paste-buffer -p`) from the pane's real mode.
-    /// Installed on the pane's coordinator (``CoreTerminalHost/Coordinator/onPaste``);
-    /// without it SwiftTerm brackets by the local flag, which a `-CC` attach
-    /// never sets — a multi-line paste ran line by line.
-    var onPaste: ((String) -> Void)?
-
-    func makeUIView(context: Context) -> TerminalHostContainer {
-        // The terminal's gestures came with it when the controller minted it,
-        // so they're already on by the time we host it here.
-        coordinator?.onPaste = onPaste
-        if focusPolicy == .take {
-            let terminal = surface.view
-            DispatchQueue.main.async { [weak terminal] in
-                _ = terminal?.becomeFirstResponder()
-            }
-        }
-        // A pane/window switch re-hosts a *persistent* terminal (its `.id` flips).
-        // No repaint is forced here: SwiftTerm repaints a view that comes back
-        // into a window, every row of one laid out at a new size, and the rows
-        // that changed while it was away (fork patches 26–27); the core's view
-        // draws what it holds when it reaches a window. Forcing it on top cost
-        // a second whole-screen draw on every switch.
-        let container = TerminalHostContainer()
-        container.host(surface)
-        coordinator?.hostContainer = container
-        container.geometryHeld = geometryHeld
-        return container
-    }
-
-    func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
-        guard let terminal = uiView.surface else { return }
-        if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
-        coordinator?.onPaste = onPaste
-        CoreTerminalHost.applyFocus(focusPolicy, to: terminal)
-    }
-}
-
 // MARK: - The roam banner's sparkline
 
 struct Sparkline: Shape {

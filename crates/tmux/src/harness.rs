@@ -315,6 +315,10 @@ pub fn write_event(out: &mut Vec<u8>, event: &Event) {
             kind(out, "continue");
             field(out, "pane", pane_id);
         }
+        Event::PaneModeChanged { pane_id } => {
+            kind(out, "pane-mode-changed");
+            field(out, "pane", pane_id);
+        }
         Event::ClientDetached { payload } => {
             kind(out, "client-detached");
             field(out, "payload", payload);

@@ -321,10 +321,6 @@ targets:
     platform: iOS
     sources:
       - path: Extensions/MoshpitIsland
-      # The one file shared by path: an App Intent belongs to the bundle that
-      # declares it, and the widget's Button needs the type while the app runs
-      # its perform() — see the comment in the file.
-      - path: Moshpit/App/AgentCycleIntent.swift
     dependencies:
       - package: MoshpitKit
     entitlements:

@@ -85,6 +85,9 @@ struct Inner {
     /// An upload already fell back to exec and worked there
     /// (`sftpKnownUnavailable`): this connection stops trying SFTP for it.
     pub(crate) sftp_unavailable: AtomicBool,
+    /// The host refused the `sftp` subsystem: it has none, and the
+    /// connection doesn't ask again (B612).
+    pub(crate) sftp_refused: AtomicBool,
     /// The SFTP session file previews read through, kept between reads.
     pub(crate) sftp: tokio::sync::Mutex<Option<Sftp>>,
 }
@@ -222,6 +225,7 @@ impl Ssh {
                 heard,
                 channel_timeout: options.channel_timeout,
                 sftp_unavailable: AtomicBool::new(false),
+                sftp_refused: AtomicBool::new(false),
                 sftp: tokio::sync::Mutex::new(None),
             }),
         })
@@ -367,7 +371,14 @@ impl Ssh {
 
     /// The SFTP session file previews and edits go through: opened on first
     /// use, kept between operations, reopened when its channel has died.
+    /// A host that refused the subsystem isn't asked again (B612): each ask
+    /// is a session channel, and the callers ask on every read.
     pub async fn sftp(&self) -> Result<Sftp, crate::error::SftpError> {
+        if self.inner.sftp_refused.load(Ordering::SeqCst) {
+            return Err(crate::error::SftpError::Unavailable(
+                "the host refused the sftp subsystem".to_owned(),
+            ));
+        }
         let mut slot = self.inner.sftp.lock().await;
         if let Some(sftp) = slot.as_ref()
             && sftp.is_alive()
@@ -501,6 +512,10 @@ impl Ssh {
 
     pub(crate) fn mark_sftp_unavailable(&self) {
         self.inner.sftp_unavailable.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn mark_sftp_refused(&self) {
+        self.inner.sftp_refused.store(true, Ordering::SeqCst);
     }
 
     pub(crate) async fn open_session(&self) -> Result<russh::Channel<client::Msg>, SshError> {

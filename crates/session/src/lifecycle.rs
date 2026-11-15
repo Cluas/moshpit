@@ -491,7 +491,7 @@ impl Lifecycle {
     /// was written into the dead socket and said sent. Any doubt reconnects;
     /// deliveries wait for the answer ([`Lifecycle::delivery_check_pending`]).
     pub fn check_for_delivery(&mut self, now: u64) {
-        if self.foreground || self.live() != Some(Transport::Ssh) || self.probe.is_some() {
+        if self.foreground || self.live() != Some(Transport::Ssh) || self.delivery_check_pending() {
             return;
         }
         if self
@@ -499,6 +499,17 @@ impl Lifecycle {
             .is_some_and(|at| now.saturating_sub(at) < ms(self.timing.inbound_proof))
         {
             return;
+        }
+        // A keepalive's or a path change's question already out — one from
+        // before the suspension answers nothing about the socket now (B394)
+        // — is replaced by the delivery's own, which deliveries wait for
+        // (B610). Skipped, the delivery went into a possibly dead socket and
+        // was said sent. A return's question, which holds input, stands.
+        if matches!(
+            self.probe,
+            Some((ProbePurpose::Keepalive | ProbePurpose::Path, _))
+        ) {
+            self.probe = None;
         }
         self.start_probe(ProbePurpose::Delivery, self.timing.foreground_probe_timeout);
     }
@@ -1191,6 +1202,34 @@ mod tests {
         assert!(actions.contains(&Action::State(SessionState::Ended(
             EndReason::MoshServerEnded
         ))));
+    }
+    /// B610: a keepalive's question still out when the app went to the
+    /// background answers nothing about the socket now (B394's rule): a
+    /// delivery in the background asks its own and waits for it. It was
+    /// skipped: the delivery went into a possibly dead socket and was said
+    /// sent, and the stale question then counted one of two.
+    #[test]
+    fn a_delivery_replaces_a_keepalive_question_from_before_the_background() {
+        let mut life = ssh_life();
+        let generation = live(&mut life, Transport::Ssh, T0);
+        run_to(&mut life, T0 + 12 * S);
+        assert!(matches!(life.probe, Some((ProbePurpose::Keepalive, 1))));
+        life.background(T0 + 13 * S);
+        let _ = drain(&mut life);
+        life.check_for_delivery(T0 + 60 * S);
+        assert!(life.delivery_check_pending(), "its own question");
+        let asked = drain(&mut life);
+        assert_eq!(
+            asked,
+            vec![Action::Probe {
+                generation,
+                probe: 2,
+                timeout: Duration::from_secs(4)
+            }]
+        );
+        // The old answer, late, is nobody's.
+        life.probe_answered(generation, 1, Probe::TimedOut, T0 + 61 * S);
+        assert!(life.delivery_check_pending(), "still the delivery's");
     }
 
     /// B524: a delivery asked for in the background asks a live SSH

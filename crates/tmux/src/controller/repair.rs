@@ -101,6 +101,22 @@ impl Controller {
                 alternate: state.alternate,
             },
         );
+        if !state.alternate {
+            // Fix (B585): the screen right behind the history above it. The
+            // frame used to go out once the dump's reply was in, a round
+            // trip later: a pane printing meanwhile scrolled lines off
+            // tmux's screen that were in neither capture — gone from the
+            // phone's history. tmux runs what a client sent together back
+            // to back; the replies keep this order, so the frame still
+            // lands on the dump, never under it.
+            self.resyncs_in_flight.insert(pane.to_owned());
+            self.arm(
+                Slot::ResyncTimeout(pane.to_owned()),
+                10_000,
+                Action::ResyncTimeout(pane.to_owned()),
+            );
+            self.send_resync_pair(pane, false);
+        }
     }
 
     pub(super) fn backfill_answered(
@@ -245,6 +261,11 @@ impl Controller {
             10_000,
             Action::ResyncTimeout(pane.to_owned()),
         );
+        self.send_resync_pair(pane, reveal);
+    }
+
+    /// The repaint's two commands: the screen, then the cursor.
+    fn send_resync_pair(&mut self, pane: &str, reveal: bool) {
         // Frame first, cursor second: %output between the two replies lands
         // on the fresh frame and is already in the cursor's answer.
         self.send_command(

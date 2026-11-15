@@ -6,6 +6,7 @@
 mod support;
 
 use moshpit_hostcare::{Note, Phase, Proof, RelayFailure};
+use moshpit_install::commands;
 use moshpit_install::installer::ComponentStatus;
 use moshpit_install::manifest::{Component, InstallComponent, InstallManifest};
 use moshpit_install::scripts;
@@ -1360,14 +1361,27 @@ fn every_manifest_write_is_read_again_under_the_lock() {
     rig.save(&[c.id]);
     rig.set_host(c.id, Host::hooked());
     rig.tend(&c);
-    let commands = &rig.host(c.id).commands;
-    let write = commands
+    let sent = &rig.host(c.id).commands;
+    let write = sent
         .iter()
         .position(|c| c.contains("p=\"$HOME/.moshpit/manifest.json\""))
         .expect("the manifest was written");
-    assert!(commands[write - 2].starts_with("d=\"$HOME/.moshpit/.lock\"; mkdir -p "));
-    assert!(commands[write - 1].starts_with("cat \"$HOME/.moshpit/manifest.json\""));
-    assert!(commands[write + 1].starts_with("d=\"$HOME/.moshpit/.lock\"; a=$(cat"));
+    // The lock and its release are the installer's own commands, under the
+    // one token the write was made with (B566's symlink lock): compared
+    // whole, so a change to the lock can't leave this test pinning an old
+    // shape.
+    let lock = &sent[write - 2];
+    let token = lock
+        .strip_prefix("t=")
+        .and_then(|rest| rest.split(';').next())
+        .map(|quoted| quoted.trim_matches('\''))
+        .expect("the lock names its token first");
+    assert_eq!(lock, &commands::lock(token));
+    assert_eq!(
+        sent[write - 1],
+        commands::read_file(InstallManifest::PATH)
+    );
+    assert_eq!(sent[write + 1], commands::unlock(token));
 }
 
 // MARK: - Nothing will push; a Remove remembered (B374)

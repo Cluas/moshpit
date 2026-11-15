@@ -918,12 +918,12 @@ fn commands_are_the_ones_the_app_sends() {
     // The manifest last: under the host's lock, read again, written, let go
     // (B373).
     assert_eq!(commands.len(), 12);
-    assert!(commands[8].starts_with("d=\"$HOME/.moshpit/.lock\"; mkdir -p "));
+    assert!(commands[8].starts_with("t='"));
+    assert!(commands[8].contains("d=\"$HOME/.moshpit/.lock\"; mkdir -p "));
     assert_eq!(commands[9], commands[1]);
     assert!(commands[10].contains("p=\"$HOME/.moshpit/manifest.json\""));
-    assert!(commands[11].starts_with("d=\"$HOME/.moshpit/.lock\"; a=$(cat "));
     // The same holder's token in both (B376).
-    let token =
-        &commands[8][commands[8].rfind("' > ").unwrap() - 16..commands[8].rfind("' > ").unwrap()];
+    let token = &commands[8][3..19];
+    assert_eq!(commands[8], commands::lock(token));
     assert_eq!(commands[11], commands::unlock(token));
 }

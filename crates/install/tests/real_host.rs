@@ -38,17 +38,39 @@ impl HostChannel for Shell {
             Some(bin) => format!("{}:{system}", bin.display()),
             None => system.to_owned(),
         };
-        let output = std::process::Command::new("sh")
-            .args(["-c", command])
-            .env_clear()
-            .env("HOME", &self.home)
-            .env("PATH", path)
-            .output();
-        std::future::ready(match output {
-            Ok(out) if out.status.success() => Ok(out.stdout),
-            Ok(out) => Err(ChannelError(
-                String::from_utf8_lossy(&out.stderr).into_owned(),
-            )),
+        // No pipes (B566's test, macOS only; the app's commands run over
+        // SSH, not here). On macOS a pipe is made close-on-exec only after
+        // it is made, so a child another thread starts in that moment
+        // inherits it, and this command isn't done until that child exits:
+        // with several writers at once, a waiter for the manifest lock held
+        // its holder's command open, the holder couldn't go on to let go,
+        // and the waiter gave up. So the output goes to files (opened
+        // close-on-exec at once, and an inherited one holds nobody), and
+        // `sh` is named by its path: a program looked up on a PATH the
+        // child is given is started by fork and exec, which reports a
+        // failed exec over a pipe of its own; posix_spawn needs none.
+        let scratch = |name: &str| {
+            std::env::temp_dir().join(format!("install-{name}-{}", moshpit_seal::random::hex(8)))
+        };
+        let (out_path, err_path) = (scratch("out"), scratch("err"));
+        let status = (|| {
+            std::process::Command::new("/bin/sh")
+                .args(["-c", command])
+                .env_clear()
+                .env("HOME", &self.home)
+                .env("PATH", path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::fs::File::create(&out_path)?)
+                .stderr(std::fs::File::create(&err_path)?)
+                .status()
+        })();
+        let stdout = std::fs::read(&out_path).unwrap_or_default();
+        let stderr = std::fs::read(&err_path).unwrap_or_default();
+        let _ = std::fs::remove_file(&out_path);
+        let _ = std::fs::remove_file(&err_path);
+        std::future::ready(match status {
+            Ok(status) if status.success() => Ok(stdout),
+            Ok(_) => Err(ChannelError(String::from_utf8_lossy(&stderr).into_owned())),
             Err(error) => Err(ChannelError(error.to_string())),
         })
     }
@@ -1128,6 +1150,32 @@ fn pairing_record(conn: &str) -> impl FnOnce(&mut moshpit_install::InstallManife
     }
 }
 
+/// The host's manifest lock, as a holder leaves it (B566): a symlink to
+/// `<unix time>.<token>`.
+fn hold(lock: &Path, stamp: &str) {
+    std::os::unix::fs::symlink(stamp, lock).unwrap();
+}
+
+/// What the lock names, if it is there.
+fn held(lock: &Path) -> Option<String> {
+    std::fs::read_link(lock)
+        .ok()
+        .map(|target| target.to_string_lossy().into_owned())
+}
+
+/// Whether the lock is there at all (a symlink to nothing reads as missing
+/// to `exists`).
+fn locked(lock: &Path) -> bool {
+    lock.symlink_metadata().is_ok()
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// B373: a manifest change is made under the host's lock, read afresh;
 /// the lock is gone afterwards.
 #[test]
@@ -1140,51 +1188,77 @@ fn a_manifest_change_takes_the_lock_and_lets_it_go() {
     let manifest = block_on(installer.inspect()).unwrap().manifest;
     assert!(manifest.pairing_entry(FIRST).is_some());
     assert!(manifest.pairing_entry(SECOND).is_some());
-    assert!(!home.0.join(".moshpit/.lock").exists(), "the lock was left");
+    assert!(!locked(&home.0.join(".moshpit/.lock")), "the lock was left");
 }
 
-/// A lock someone holds now: the change waits, then gives up and says why,
-/// touching nothing — the holder's lock included. A lock whose holder never
-/// came back (older than a minute) is broken.
+/// A lock someone holds now: the change waits about ten seconds (B566),
+/// then gives up and says why, touching nothing — the holder's lock
+/// included. A lock whose holder never came back (older than a minute) is
+/// broken.
 #[test]
 fn a_held_lock_is_waited_for_and_a_dead_one_broken() {
     let home = home();
     let shell = Shell::at(&home.0);
     let installer = HostInstaller::new(&shell);
+    std::fs::create_dir_all(home.0.join(".moshpit")).unwrap();
     let lock = home.0.join(".moshpit/.lock");
-    std::fs::create_dir_all(&lock).unwrap();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    std::fs::write(lock.join("at"), format!("{now}.1")).unwrap();
+    let stamp = format!("{}.1", unix_now());
+    hold(&lock, &stamp);
     let started = std::time::Instant::now();
     let error = block_on(installer.update_manifest(pairing_record(FIRST))).unwrap_err();
     assert!(error.0.contains("another Moshpit"), "{error:?}");
-    assert!(started.elapsed() >= std::time::Duration::from_secs(4));
+    assert!(started.elapsed() >= std::time::Duration::from_secs(8));
     assert!(
         !home.0.join(".moshpit/manifest.json").exists(),
         "written under another's lock"
     );
-    assert_eq!(
-        std::fs::read_to_string(lock.join("at")).unwrap(),
-        format!("{now}.1"),
-        "another's lock was let go"
-    );
+    assert_eq!(held(&lock), Some(stamp), "another's lock was let go");
 
-    std::fs::write(lock.join("at"), format!("{}.1", now - 120)).unwrap();
+    std::fs::remove_file(&lock).unwrap();
+    hold(&lock, &format!("{}.1", unix_now() - 120));
     block_on(installer.update_manifest(pairing_record(FIRST))).expect("a dead lock is broken");
-    assert!(!lock.exists());
+    assert!(!locked(&lock));
     let manifest = block_on(installer.inspect()).unwrap().manifest;
     assert!(manifest.pairing_entry(FIRST).is_some());
 }
 
-/// B448: the next holder of the lock takes it with `mkdir` and writes its
-/// `at` a moment later. A waiter that had waited four tries and read the
-/// lock in that moment, with no `at` yet, broke the fresh lock and took it
-/// too: two writers at once, and one's change was lost. Here the next
-/// holder's moment lasts a poll, at the waiter's fourth try: the waiter
-/// takes the lock only once it is let go.
+/// B566: an older Moshpit's lock, a directory with its stamp in `at`, is
+/// waited for and, once its holder is a minute gone, broken — and nothing
+/// is ever made inside it.
+#[test]
+fn an_older_moshpits_lock_is_waited_for_and_a_dead_one_broken() {
+    let home = home();
+    let shell = Shell::at(&home.0);
+    let installer = HostInstaller::new(&shell);
+    let lock = home.0.join(".moshpit/.lock");
+    std::fs::create_dir_all(&lock).unwrap();
+    std::fs::write(lock.join("at"), format!("{}.1", unix_now())).unwrap();
+    let error = block_on(installer.update_manifest(pairing_record(FIRST))).unwrap_err();
+    assert!(error.0.contains("another Moshpit"), "{error:?}");
+    let inside: Vec<_> = std::fs::read_dir(&lock)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(
+        inside,
+        vec![std::ffi::OsString::from("at")],
+        "made inside another's lock"
+    );
+
+    std::fs::write(lock.join("at"), format!("{}.1", unix_now() - 120)).unwrap();
+    block_on(installer.update_manifest(pairing_record(FIRST))).expect("a dead lock is broken");
+    assert!(!locked(&lock));
+    let manifest = block_on(installer.inspect()).unwrap().manifest;
+    assert!(manifest.pairing_entry(FIRST).is_some());
+}
+
+/// B448: an older Moshpit takes the lock with `mkdir` and writes its `at`
+/// a moment later. A waiter that read the lock in that moment, with no
+/// `at` yet, broke the fresh lock and took it too: two writers at once,
+/// and one's change was lost. Here that moment lasts more than a second:
+/// the waiter takes the lock only once it is let go. (This Moshpit's own
+/// lock has no such moment, B566.)
 #[test]
 fn a_lock_taken_a_moment_ago_is_not_broken_for_its_missing_at() {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1219,8 +1293,9 @@ fn a_lock_taken_a_moment_ago_is_not_broken_for_its_missing_at() {
     assert!(taken >= released, "the waiter broke a live lock {:?} before it was let go", released - taken);
 }
 
-/// B448: a lock left with no `at` for good — a holder gone between its
-/// `mkdir` and its `at` — is still broken, once four tries found it so.
+/// B448: an older Moshpit's lock left with no `at` for good — a holder
+/// gone between its `mkdir` and its `at` — is still broken, once it has
+/// been so for about four seconds.
 #[test]
 fn a_lock_left_with_no_at_is_broken_after_four_tries() {
     let home = home();
@@ -1229,7 +1304,7 @@ fn a_lock_left_with_no_at_is_broken_after_four_tries() {
     let started = std::time::Instant::now();
     block_on(Shell::at(&home.0).run(&moshpit_install::commands::lock("waiter0123456789"))).expect("broken and taken");
     assert!(started.elapsed() >= std::time::Duration::from_secs(3), "broken too soon");
-    assert!(std::fs::read_to_string(lock.join("at")).unwrap().ends_with(".waiter0123456789"));
+    assert!(held(&lock).unwrap().ends_with(".waiter0123456789"));
 }
 
 /// Two phones changing one host at once: both changes land.
@@ -1257,6 +1332,51 @@ fn two_changes_at_once_both_land() {
     for conn in [FIRST, SECOND, PROVED] {
         assert!(manifest.pairing_entry(conn).is_some(), "{conn} was lost");
     }
+}
+
+/// B566: many phones changing one host at once, round after round, all
+/// starting together: every change lands, and nobody gives up. The lock
+/// was taken in two steps (`mkdir`, then its stamp), so a waiter could
+/// find it with no stamp and break it — two waiters together, the second
+/// removing the first's fresh lock: two holders, a change lost (Linux).
+/// And waiters that polled once a second, all in step, gave up after six
+/// tries while the others took their turns (macOS). t3 saw them in 2 of 15
+/// runs of this suite with three writers; with eight, every round.
+#[test]
+fn many_changes_at_once_all_land() {
+    const WRITERS: usize = 8;
+    const ROUNDS: usize = 6;
+    let conn = |writer: usize, round: usize| format!("{writer:08}-0000-4000-8000-{round:012}");
+    let home = home();
+    for round in 0..ROUNDS {
+        let start = std::sync::Arc::new(std::sync::Barrier::new(WRITERS));
+        let threads: Vec<_> = (0..WRITERS)
+            .map(|writer| {
+                let home = home.0.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    let shell = Shell::at(&home);
+                    let conn = conn(writer, round);
+                    start.wait();
+                    block_on(HostInstaller::new(&shell).update_manifest(pairing_record(&conn)))
+                        .unwrap_or_else(|e| panic!("{conn}: {}", e.0));
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+    }
+    let shell = Shell::at(&home.0);
+    let manifest = block_on(HostInstaller::new(&shell).inspect())
+        .unwrap()
+        .manifest;
+    let lost: Vec<String> = (0..WRITERS)
+        .flat_map(|writer| (0..ROUNDS).map(move |round| conn(writer, round)))
+        .filter(|conn| manifest.pairing_entry(conn).is_none())
+        .collect();
+    assert!(lost.is_empty(), "lost: {lost:?}");
+    assert!(!locked(&home.0.join(".moshpit/.lock")), "the lock was left");
 }
 
 /// A host with Claude Code's hooks installed by the real installer, Codex's
@@ -1417,7 +1537,7 @@ fn the_manifest_lock_taken_twice_by_one_holder_is_taken_at_once() {
         block_on(shell.run(&moshpit_install::commands::lock("99887766aabbccdd"))).unwrap_err();
     assert!(error.0.contains("another Moshpit"), "{error:?}");
     block_on(shell.run(&moshpit_install::commands::unlock("00112233aabbccdd"))).unwrap();
-    assert!(!home.0.join(".moshpit/.lock").exists());
+    assert!(!locked(&home.0.join(".moshpit/.lock")));
 }
 
 /// B376: the hooks test sent again after its first run had fired and lost

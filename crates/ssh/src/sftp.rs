@@ -91,15 +91,21 @@ impl Sftp {
             .request_subsystem(true, "sftp")
             .await
             .map_err(SshError::Protocol)?;
+        // A channel the subsystem didn't start on is closed (B612): one
+        // only dropped stays open on the host, a session against its
+        // MaxSessions until the connection ends.
         loop {
             match channel.wait().await {
                 Some(ChannelMsg::Success) => break,
                 Some(ChannelMsg::Failure) => {
+                    let _ = channel.close().await;
+                    ssh.mark_sftp_refused();
                     return Err(SftpError::Unavailable(
                         "the host refused the sftp subsystem".to_owned(),
                     ));
                 }
                 Some(ChannelMsg::Close | ChannelMsg::Eof) | None => {
+                    let _ = channel.close().await;
                     return Err(SftpError::Unavailable(
                         "the channel closed before SFTP started".to_owned(),
                     ));

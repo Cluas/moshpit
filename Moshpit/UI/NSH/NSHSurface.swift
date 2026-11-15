@@ -48,7 +48,7 @@ final class NSHComponentContext: @unchecked Sendable {
 
 /// An NSH screen as a `UIView` (`ui/` in the Rust workspace, through the C ABI
 /// of `ui/include/moshpit_ui.h` in the app's one Rust library), modelled on
-/// spikes G1 and G5's host view (`spike/ios/Spike/SpikeAppView.swift`).
+/// spikes G1 and G5's host view.
 ///
 /// One surface runs one screen (``run(screen:params:)``) and has its own
 /// channel with it: ``post(_:)`` hands the screen the data it shows, in order;

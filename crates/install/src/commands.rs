@@ -294,32 +294,52 @@ pub const REMOVE_DIR_IF_EMPTY: &str = "rmdir \"$HOME/.moshpit\" 2>/dev/null; tru
 /// Take the host's manifest lock (B373) as `token`'s holder: two phones,
 /// or two screens of one, each read the manifest, changed their part and
 /// wrote all of it back, so the later write erased what the other had just
-/// recorded. The lock is a directory (`mkdir` is atomic everywhere); its
-/// holder leaves `<unix time>.<token>` in it. One older than 60 s, or still
-/// empty after a few tries, is a holder that never came back and is broken;
-/// after about five seconds of a live one, this gives up and says so.
+/// recorded.
 ///
-/// B376: a lock that already names `token` is this holder's — the same
-/// command sent again after a dropped connection, its first run having
-/// taken the lock. It used to wait those five seconds on itself and fail.
+/// B566: the lock is a symlink, `~/.moshpit/.lock -> <unix time>.<token>`,
+/// made with `ln -s`: taken and stamped in one atomic step. It was a
+/// directory (`mkdir`) with its stamp written into it after, so a waiter
+/// could find a lock with no stamp yet. B448 waited four tries before
+/// breaking one, but waiters polled in step, a second apart: two of them
+/// broke the same lock together, the second removing the first's fresh
+/// one, and two writers held it at once — one's change lost (Linux). And
+/// waiters gave up after six one-second tries while others took turns, so
+/// a third phone's change failed (macOS).
 ///
-/// B448: a holder writes its `at` just after its `mkdir`, so a waiter can
-/// find the lock with no `at` yet — and one that had waited four tries
-/// took that for a holder that never came back, broke the fresh lock, and
-/// took it too: two writers at once, one's change lost (the cloud CI's
-/// `two_changes_at_once_both_land`, three writers starting together). The
-/// time is now read before the `mkdir`, so nothing runs between it and
-/// writing `at`, and a lock is broken for an empty `at` only when four
-/// tries in a row, a second apart, found it empty.
+/// - Waiting is on a deadline, about ten seconds, polling every 50–200 ms
+///   (spread by the process id, so waiters don't move in step).
+/// - Only a lock whose stamp is older than 60 s is broken: a holder that
+///   never came back. It is renamed aside first and removed only if it is
+///   still the one read; a fresh one taken in that moment is put back.
+/// - A lock that already names `token` is this holder's (B376): the same
+///   command sent again after a dropped connection.
+/// - An older Moshpit's lock — a directory with its stamp in `at` — is
+///   waited for the same way, and broken when its stamp is older than 60 s
+///   or it has had none for about four seconds. No link is made while it
+///   is there (`ln -s` would make one inside it); one made as it appeared
+///   is read as not taken, and undone.
 pub fn lock(token: &str) -> String {
-    let t = quote(token);
     format!(
-        "d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; i=0; e=0; \
-         while s=$(date +%s); ! mkdir \"$d\" 2>/dev/null; do a=$(cat \"$d/at\" 2>/dev/null); [ \"${{a#*.}}\" = {t} ] && break; \
-         i=$((i+1)); [ $i -le 6 ] || {{ echo 'another Moshpit is changing this host right now: try again in a moment' >&2; exit 75; }}; \
-         a=${{a%%.*}}; \
-         case \"$a\" in ''|*[!0-9]*) e=$((e+1)); [ $e -lt 4 ] || rm -rf \"$d\" ;; *) e=0; [ $((s - a)) -le 60 ] || rm -rf \"$d\" ;; esac; \
-         [ -d \"$d\" ] && sleep 1; done; printf '%s.%s' \"$s\" {t} > \"$d/at\""
+        "t={}; d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; \
+         link_of() {{ readlink \"$1\" 2>/dev/null || ls -ld \"$1\" 2>/dev/null | sed -n 's/.* -> //p'; }}; \
+         end=$(($(date +%s) + 10)); e=; n=0; \
+         while :; do s=$(date +%s); \
+         if [ ! -d \"$d\" ] && ln -s \"$s.$t\" \"$d\" 2>/dev/null; then [ \"$(link_of \"$d\")\" = \"$s.$t\" ] && break; rm -f \"$d/$s.$t\"; fi; \
+         if [ -L \"$d\" ]; then a=$(link_of \"$d\"); elif [ -d \"$d\" ]; then a=$(cat \"$d/at\" 2>/dev/null); else a=; fi; \
+         [ \"${{a#*.}}\" = \"$t\" ] && break; b=; \
+         case \"$a\" in \
+         *.*) e=; x=${{a%%.*}}; case \"$x\" in ''|*[!0-9]*) b=1 ;; *) [ $((s - x)) -le 60 ] || b=1 ;; esac ;; \
+         '') if [ -L \"$d\" ] || [ -e \"$d\" ]; then [ -n \"$e\" ] || e=$s; [ $((s - e)) -lt 4 ] || b=1; fi ;; \
+         *) b=1 ;; esac; \
+         if [ -n \"$b\" ]; then g=\"$d.$$.$n\"; if mv \"$d\" \"$g\" 2>/dev/null; then \
+         if [ -L \"$g\" ]; then c=$(link_of \"$g\"); else c=$(cat \"$g/at\" 2>/dev/null); fi; \
+         if [ \"$c\" = \"$a\" ]; then rm -rf \"$g\"; elif [ -L \"$g\" ]; then ln -s \"$c\" \"$d\" 2>/dev/null; rm -f \"$g\"; \
+         else mv \"$g\" \"$d\" 2>/dev/null || rm -rf \"$g\"; fi; fi; fi; \
+         [ \"$s\" -lt \"$end\" ] || {{ echo 'another Moshpit is changing this host right now: try again in a moment' >&2; exit 75; }}; \
+         n=$((n + 1)); if [ -L \"$d\" ] || [ -e \"$d\" ]; then \
+         case $((($$ + n) % 4)) in 0) z=0.05 ;; 1) z=0.1 ;; 2) z=0.15 ;; *) z=0.2 ;; esac; \
+         sleep $z 2>/dev/null || sleep 1; fi; done",
+        quote(token)
     )
 }
 
@@ -327,7 +347,8 @@ pub fn lock(token: &str) -> String {
 /// broken as stale may be another's by now).
 pub fn unlock(token: &str) -> String {
     format!(
-        "d=\"$HOME/.moshpit/.lock\"; a=$(cat \"$d/at\" 2>/dev/null); [ \"${{a#*.}}\" = {} ] && rm -rf \"$d\"; true",
+        "d=\"$HOME/.moshpit/.lock\"; a=$(readlink \"$d\" 2>/dev/null || ls -ld \"$d\" 2>/dev/null | sed -n 's/.* -> //p'); \
+         [ \"${{a#*.}}\" = {} ] && rm -f \"$d\"; true",
         quote(token)
     )
 }

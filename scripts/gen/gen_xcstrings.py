@@ -1591,11 +1591,8 @@ def island(key, zh, ja):
     S[key] = (zh, ja)
 island("working", "工作中", "作業中")
 island("idle", "空闲", "アイドル")
-# AgentCycleIntent's title: the widget compiles the intent by path, and an
-# App Intent's title resolves from the bundle that declares it.
-island("Switch agent", "切换智能体", "エージェントを切り替え")
-# AgentState.label (MoshpitKit) is the other two; "Switch" cycles the pill.
-for k in ["needs you", "done", "Switch"]:
+# AgentState.label (MoshpitKit) is the other two.
+for k in ["needs you", "done"]:
     ISLAND[k] = S[k]
 ISLAND["Moshpit"] = SAME
 # Header summaries ("1 needs you · 2 working · 1 done") and widget copy.

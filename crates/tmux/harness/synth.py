@@ -268,7 +268,8 @@ SERVER = ["%sessions-changed", "%unlinked-window-add @3", "%unlinked-window-clos
           "%client-session-changed /dev/ttys1 $1 x", "%client-session-changed client-9 $2 a b",
           "%unlinked-window-add ", "%unlinked-window-renamed @3", "%session-renamed $1",
           "%client-session-changed /dev/ttys1 $1", "%client-session-changed  $1 x"]
-UNKNOWN = ["%pane-mode-changed %1", "%subscription-changed x $1 @1 1 %1 : v",
+# `%pane-mode-changed` is parsed since B614 (the mosh path's copy-mode).
+UNKNOWN = ["%subscription-changed x $1 @1 1 %1 : v",
            "%extended-output %0 0 : abc", "%paste-buffer-changed buffer0", "%message hi",
            "%config-error x"]
 

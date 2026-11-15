@@ -470,3 +470,54 @@ fn the_page_speaks_chinese_in_chinese() {
     );
     channel.close();
 }
+
+/// B650: a herdr workspace named after its folder, its tabs (herdr's
+/// default names, "1" and "2") working there. Each tab's title was the
+/// workspace's name again; it is the tab's own now.
+#[test]
+fn a_window_never_says_its_sessions_name_again() {
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    let herdr = Control {
+        mux: Mux::Herdr,
+        attached: true,
+        sessions: vec![SessionInfo {
+            id: "wV".into(),
+            name: "moshpit".into(),
+        }],
+        windows: vec![
+            window("wV:t3", "wV", 1, "1", 1),
+            window("wV:t5", "wV", 2, "2", 1),
+        ],
+        panes: vec![
+            pane("wV:p4", "wV:t3", 0, "claude", "/Users/dev/code/moshpit"),
+            pane("wV:p6", "wV:t5", 0, "zsh", "/Users/dev/code/moshpit"),
+        ],
+        active_session: Some("wV".into()),
+        active_window: Some("wV:t3".into()),
+        active_pane: Some("wV:p4".into()),
+        ..Control::default()
+    };
+    show(&mut app, &channel, host(Link::Live, Some(herdr)));
+    app.wait_for(&format!("id:home-window-{HOST}-wV:t5"))
+        .unwrap();
+    for text in ["Tab 1", "Tab 2"] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
+    }
+    let said = app
+        .screen()
+        .texts()
+        .iter()
+        .filter(|t| t.to_string() == "moshpit")
+        .count();
+    assert_eq!(
+        said,
+        1,
+        "the workspace's head alone: {:?}",
+        app.screen().texts()
+    );
+    channel.close();
+}

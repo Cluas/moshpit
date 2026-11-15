@@ -10,7 +10,7 @@
 
 ## 0. 结论和门（先读这个）
 
-**用 wezterm-term，作为我们自己的分叉放在 `vendor/wezterm`，包在 `crates/term`（`moshpit-term`）后面。** alacritty_terminal 退出 App 的构建，只留在比较工具 `spike/term-core` 里当对照。
+**用 wezterm-term，作为我们自己的分叉放在 `vendor/wezterm`，包在 `crates/term`（`moshpit-term`）后面。** alacritty_terminal 退出 App 的构建，只留在比较工具 `spike/term-core` 里当对照（工具后来删了，见第 3 节）。
 
 wezterm-term 原样有四个硬伤，分叉都修了（`docs/WEZTERM-PATCHES.md`，17 个补丁，W0–W17）：
 
@@ -91,7 +91,7 @@ wezterm-term 原样有四个硬伤，分叉都修了（`docs/WEZTERM-PATCHES.md`
 
 ## 3. 测了什么、怎么测
 
-工具都在仓库里：`spike/term-core/`（自己的工作区）。
+工具原来在仓库的 `spike/term-core/`（自己的工作区）。11-15 和其他 spike 一起删掉了（E6）：要看或者重跑，回到删掉它的那个提交的上一个提交，`git log --diff-filter=D -1 -- spike/term-core` 能找到它。
 
 - **任务**：tmux `-CC` 的 9 段录制（按 pane 解出 `%output` 和 `%extended-output`，按录制的读取和布局变化喂），herdr 的录制帧，mosh 切 pane 的真实抓包（每段后面有 tmux 自己 `capture-pane` 的真值），合成负载（`seq` 20 万行、密集颜色、中日韩加 emoji、Claude Code 的行内重画和全屏两种画法）。
 - **真值**：mosh 的四段 tmux 真值；`tmux_oracle.py` 把同样的字节放进私有 tmux 3.6a（`-L t1-oracle`），记下屏幕、历史、光标。这 8 个 pane 的真值存成了 `crates/term/tests/fixtures/tmux-oracle`，是 `crates/term` 的回归测试。

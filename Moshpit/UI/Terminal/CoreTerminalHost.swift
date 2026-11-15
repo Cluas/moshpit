@@ -435,6 +435,17 @@ struct CoreTerminalHost: UIViewRepresentable {
         /// decides wheel-vs-copy-mode — so the decision is fresh for this burst.
         var onScrollBegin: (() -> Void)?
 
+        /// Whether the terminal's own answers (a query's reply, a focus
+        /// report) go out on the input path. Off while it shows herdr's
+        /// frames: herdr emulates that pane and answers its program's
+        /// queries itself, and a reply of ours reached the program as
+        /// typing (B575).
+        var answersQueries = true {
+            didSet { if answersQueries { droppedReply = false } }
+        }
+        /// A dropped reply was logged (once per spell of dropping).
+        private var droppedReply = false
+
         /// One text row in points — the unit that turns finger travel into rows.
         var cellHeight: CGFloat {
             let height = withSurface { $0.cellSize.height } ?? 0
@@ -530,19 +541,8 @@ struct CoreTerminalHost: UIViewRepresentable {
             MainActor.assumeIsolated { surface.feed(mark: mark) }
         }
 
-        /// Lifts the pane-switch veil once every byte fed so far is on
-        /// screen: with the frame that has them (a reveal right after a feed
-        /// would lift the veil over a repaint the core has not parsed yet).
-        func revealWhenShown() {
-            feed(mark: TerminalMark(code: TerminalMark.Code.revealWhenShown, arg: 0))
-        }
-
         /// A mark is due: the coordinator's own, or its owner's.
         fileprivate func reached(_ mark: TerminalMark) {
-            if mark.code == TerminalMark.Code.revealWhenShown {
-                reveal()
-                return
-            }
             onMark?(mark)
         }
 
@@ -820,8 +820,8 @@ struct CoreTerminalHost: UIViewRepresentable {
         // MARK: Keyboard-transition frame lock
 
         /// The container whose layout we may freeze. Set by whichever host
-        /// embeds the terminal (`CoreTerminalHost.makeUIView` /
-        /// `PaneTerminalHost.makeUIView`). Assigning it also wires
+        /// embeds the terminal (`CoreTerminalHost.makeUIView`, the NSH
+        /// stage's slot). Assigning it also wires
         /// ``onGridReport``.
         weak var hostContainer: TerminalHostContainer? {
             didSet {
@@ -1453,6 +1453,21 @@ extension CoreTerminalHost.Coordinator: CoreTerminalViewDelegate {
 
     func surface(_ surface: CoreTerminalView, typed data: Data) {
         sendTyped(ArraySlice([UInt8](data)))
+    }
+
+    func surface(_ surface: CoreTerminalView, reply data: Data) {
+        guard answersQueries else {
+            // Not this terminal's program to answer (B575): herdr's frames
+            // are paintings of a pane herdr emulates and answers for; a
+            // reply into its input reached the program as typing
+            // (`]4;191;rgb:d7d7/ffff/5f5f` in Claude Code's input box).
+            if !droppedReply {
+                droppedReply = true
+                Log.ui.notice("core term: a reply dropped (\(data.count, privacy: .public) bytes): this terminal paints frames, it answers no queries")
+            }
+            return
+        }
+        sendInput(ArraySlice([UInt8](data)))
     }
 
     func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int) {

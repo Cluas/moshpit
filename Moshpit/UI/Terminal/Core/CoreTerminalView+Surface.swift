@@ -88,7 +88,7 @@ extension CoreTerminalView {
     func sendReply(_ data: Data) {
         sendingReply = true
         defer { sendingReply = false }
-        surfaceDelegate?.surface(self, send: data)
+        surfaceDelegate?.surface(self, reply: data)
     }
 
     // MARK: The program's mouse and paste

@@ -393,7 +393,6 @@
   "%@ %@ %@? Everything in it dies.": "%1$@ %2$@ %3$@？裡面的一切都會終止。",
   "Pane": "窗格",
   "New Pane": "新增窗格",
-  "Switch agent": "切換智能體",
   "pane %lld": "窗格 %lld",
   "None": "不使用",
   "Single shell, no session persistence": "只有一個 shell，中斷就沒了",

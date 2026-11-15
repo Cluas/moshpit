@@ -26,10 +26,14 @@
 . view %0 veil
 . view %0 extend 2.000
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %0 \x1b[2;3H
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %0 reveal
 . note first-frame
 . pane %0 \x1b[2;3H
 > capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
 > capture-pane -p -e -t %0

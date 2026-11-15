@@ -160,6 +160,10 @@ pub struct PaneWhere {
     /// Where it is as Home names it (its workspace, a window someone named,
     /// its folder; `moshpit_ui`'s `pane_place`): none when nothing does.
     pub name: Option<String>,
+    /// Its window's index and its own index in the window: what tells two
+    /// rows apart that would read the same.
+    pub window_index: Option<i64>,
+    pub pane_index: Option<i64>,
 }
 
 /// One pane of a hook poll.
@@ -706,6 +710,8 @@ impl Monitor {
         for hook in hooks {
             let Some(mapped) = AgentState::from_hook(hook.state.as_deref()) else { continue };
             let new_state = reclassify(mapped, hook.title.as_deref(), hook.command.as_deref());
+            // What the title says, its markup off (B595).
+            let title = hook.title.as_deref().map(plain_detail).filter(|t| !t.is_empty());
             if hook.agent.as_deref() == Some(SELF_TEST_AGENT) {
                 continue;
             }
@@ -764,7 +770,7 @@ impl Monitor {
                             && hook.since.is_some_and(|stamped| stamped > p.since));
                     p.command = command.clone();
                     p.place = hook.place.clone();
-                    p.detail = hook.title.clone();
+                    p.detail = title.clone();
                     p.state = new_state;
                     if state_changed {
                         p.since = since;
@@ -782,7 +788,7 @@ impl Monitor {
                         Pane {
                             command: command.clone(),
                             place: hook.place.clone(),
-                            detail: hook.title.clone(),
+                            detail: title.clone(),
                             state: new_state,
                             since,
                             last_output: now,
@@ -818,7 +824,7 @@ impl Monitor {
                 // or the pane was on screen, and every finish counts here.
                 self.effects.push(Effect::Finished { conn: key.0.clone(), pane: key.1.clone() });
                 let duration = previous_since.map_or(0.0, |previous| since - previous);
-                let detail = if self.settings.show_detail { hook.title.clone() } else { None };
+                let detail = if self.settings.show_detail { title.clone() } else { None };
                 self.post_done(&key, &command, detail, duration, since, now);
             }
         }
@@ -1263,6 +1269,7 @@ impl Monitor {
                 started_at: p.since,
             })
             .collect();
+        let agents = tell_apart(agents, &visible);
         let headline_id = if agents.is_empty() {
             None
         } else {
@@ -1362,6 +1369,127 @@ pub fn names_only_the_agent(detail: &str, command: &str) -> bool {
     let agent = squeeze(display_command(command));
     !agent.is_empty()
         && [agent.clone(), format!("{agent}code"), format!("{agent}cli")].contains(&detail)
+}
+
+/// A hook's title as words to show (the island, the lock screen, the
+/// cards): the XML-like wrappers an agent's message can come in
+/// (`<agent-message from="…">…</agent-message>`, also with backslashes,
+/// `<\agent-message …>`, `<\/agent-message>`) taken off with their
+/// attributes, nested ones too; runs of whitespace fold to one space. A
+/// `<` that opens no tag stays ("a < b", "x<5"), and so does a lone
+/// `<Name>` with nothing to wrap ("Vec<String>"): a tag goes when it has
+/// attributes, a hyphen or colon in its name, or its pair.
+pub fn plain_detail(text: &str) -> String {
+    struct Tag {
+        start: usize,
+        end: usize,
+        name: String,
+        closing: bool,
+        marked: bool,
+    }
+    let bytes = text.as_bytes();
+    let mut tags: Vec<Tag> = Vec::new();
+    let mut at = 0;
+    while let Some(offset) = text[at..].find('<') {
+        let start = at + offset;
+        let mut i = start + 1;
+        // `<\name`, `<\/name`, `</name`.
+        if bytes.get(i) == Some(&b'\\') {
+            i += 1;
+        }
+        let closing = bytes.get(i) == Some(&b'/');
+        if closing {
+            i += 1;
+        }
+        let name_start = i;
+        if !bytes.get(i).is_some_and(u8::is_ascii_alphabetic) {
+            at = start + 1;
+            continue;
+        }
+        while bytes
+            .get(i)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':' | b'.'))
+        {
+            i += 1;
+        }
+        let name = text[name_start..i].to_owned();
+        // Its attributes run to the next `>`, with no `<` before it.
+        let Some(close) = text[i..].find('>') else {
+            at = start + 1;
+            continue;
+        };
+        let inside = &text[i..i + close];
+        if inside.contains('<') || (!inside.is_empty() && !inside.starts_with(char::is_whitespace) && inside != "/") {
+            at = start + 1;
+            continue;
+        }
+        let attributes = !inside.trim().trim_end_matches('/').trim().is_empty();
+        let end = i + close + 1;
+        tags.push(Tag {
+            start,
+            end,
+            marked: attributes || name.contains(['-', ':']),
+            name,
+            closing,
+        });
+        at = end;
+    }
+    // A tag with its pair goes too.
+    for a in 0..tags.len() {
+        if tags[a].marked {
+            continue;
+        }
+        let paired = tags.iter().enumerate().any(|(b, other)| {
+            b != a && other.name == tags[a].name && other.closing != tags[a].closing
+        });
+        if paired {
+            tags[a].marked = true;
+        }
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut from = 0;
+    for tag in tags.iter().filter(|t| t.marked) {
+        out.push_str(&text[from..tag.start]);
+        out.push(' ');
+        from = tag.end;
+    }
+    out.push_str(&text[from..]);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Rows that would read the same ("claude · x · mac" twice: two panes in
+/// one workspace) get what tells them apart (B596): the window's index
+/// when their windows differ, else the pane's ("x · mac · 2").
+fn tell_apart(mut agents: Vec<Agent>, panes: &[(&Key, &Pane)]) -> Vec<Agent> {
+    let index = |id: &str| panes.iter().find(|(key, _)| format!("{}:{}", key.0, key.1) == id).map(|(_, p)| &p.place);
+    let reads = |a: &Agent| (a.command.clone(), a.place.clone());
+    let mut groups: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+    for (i, agent) in agents.iter().enumerate() {
+        groups.entry(reads(agent)).or_default().push(i);
+    }
+    for rows in groups.values().filter(|rows| rows.len() > 1) {
+        let places: Vec<Option<&PaneWhere>> = rows.iter().map(|i| index(&agents[*i].id)).collect();
+        let windows: BTreeSet<Option<i64>> = places.iter().map(|p| p.and_then(|p| p.window_index)).collect();
+        let by_window = windows.len() == rows.len() && !windows.contains(&None);
+        for (i, place) in rows.iter().zip(places) {
+            let pane = &agents[*i].pane_id;
+            let fallback = || pane.trim_start_matches(|c: char| !c.is_ascii_digit()).to_owned();
+            let mark = match place {
+                Some(p) if by_window => p.window_index.map(|w| w.to_string()),
+                Some(p) => match (windows.len() == 1, p.window_index, p.pane_index) {
+                    (true, _, Some(n)) => Some(n.to_string()),
+                    (false, Some(w), Some(n)) => Some(format!("{w}.{n}")),
+                    _ => None,
+                },
+                None => None,
+            }
+            .unwrap_or_else(fallback);
+            if !mark.is_empty() {
+                agents[*i].place = format!("{} · {mark}", agents[*i].place);
+            }
+        }
+    }
+    agents
 }
 
 pub fn display_command(command: &str) -> &str {

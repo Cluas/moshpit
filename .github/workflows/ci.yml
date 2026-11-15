@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # rust-toolchain.toml pins the toolchain; this installs it (with
       # rustfmt and clippy) before anything asks for it.
@@ -36,7 +36,7 @@ jobs:
           rustc --version
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -48,7 +48,8 @@ jobs:
             cargo-${{ runner.os }}-
 
       # The workspace's crates that only build for Android or iOS (the
-      # spikes' NSH sides) compile to their platform-free parts here.
+      # Android app's Rust half, the UI's iOS host) compile to their
+      # platform-free parts here.
       # The workspace's own crates: not `--all`, which takes in the vendored
       # wezterm (a path dependency, upstream's formatting) too. Reported, not
       # yet enforced: the tree isn't formatted throughout; one `cargo fmt`
@@ -77,16 +78,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -100,7 +101,7 @@ jobs:
       # Gradle on PATH (android/ci.sh fetches the same version where there
       # is none) and its caches.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.11.1"
 
@@ -121,7 +122,7 @@ jobs:
         run: android/ci.sh
 
       - name: Keep the bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: moshpit-android-release
           path: |
@@ -143,7 +144,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The app DEPLOYS to iOS 18 but must COMPILE against the iOS 26 SDK:
       # voice input references the SpeechAnalyzer/SpeechTranscriber family
@@ -209,7 +210,7 @@ jobs:
       # it) for the simulator into target/: kept between runs, keyed on what
       # decides it.
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -228,7 +229,7 @@ jobs:
       # the cache. The key uses the committed Package.resolved (WhisperKit by
       # version) so it only busts when a dependency actually changes.
       - name: Cache SwiftPM packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.SPM_CACHE_DIR }}
           key: spm-${{ runner.os }}-${{ hashFiles('Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}

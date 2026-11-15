@@ -15,10 +15,9 @@ enum Shell {
     /// in `\` never closed fish's quote and the next word ran on, and `\\`
     /// came out as `\`. Outside quotes `\\` is one backslash in all five.
     ///
-    /// The app's one shell quoter. `HostCommands.quote`,
-    /// `ExecUploadCommands.quote`, `ActiveSession.shellQuote` and the image
-    /// paths pasted at a prompt are all this function; none of them may grow
-    /// its own escaping again. (A name in a tmux control-mode line is not a
+    /// The app's one shell quoter. `HostCommands.quote` and the image paths
+    /// pasted at a prompt are this function; nothing may grow its own
+    /// escaping again. (A name in a tmux control-mode line is not a
     /// shell word: the core quotes those, crates/tmux `name_argument`.)
     ///
     /// By Unicode scalar, never by `Character`. The six copies this replaced
@@ -53,23 +52,4 @@ enum Shell {
         return String(quoted)
     }
 
-    /// `script`, a POSIX sh script, as a command line any login shell runs as
-    /// that script: `sh -c <script quoted>` (B138).
-    ///
-    /// sshd runs an exec request as `<login shell> -c <command>`, and the
-    /// app's commands are sh. fish (3.7.1, 4.6.0) refuses `$?` and `$$`
-    /// outright — "$? is not the exit status. In fish, please use $status."
-    /// — and has no `while … do … done`: every herdr command (its exit-status
-    /// trailer) and the install preflight (`${SHELL:-…}`) failed before
-    /// anything ran, a path-probe value ending in `\` left fish's quote open,
-    /// and zsh failed the cleanup loops whose globs matched nothing (its
-    /// NOMATCH). Handed one quoted word, the login shell
-    /// passes it to sh whole; every exec request the app sends goes so, and the
-    /// lines the app types into a terminal use the same where they loop.
-    /// moshpit-ssh's `shell::portable` is the Rust side; its
-    /// `harness/shells.py` runs every line the app builds through sh, dash,
-    /// bash, zsh and fish 3 and 4.
-    static func portable(_ script: String) -> String {
-        "sh -c " + quote(script)
-    }
 }

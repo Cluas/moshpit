@@ -373,56 +373,14 @@ extension SSHService {
     static let shared = SSHService(keychain: KeychainService())
 }
 
-// MARK: - Exec-channel upload commands
+// MARK: - Exec-channel uploads
 
-/// The command lines for the no-SFTP upload fallback. Pure builders, unit
-/// tested — a quoting bug here writes bytes to the wrong path on someone
-/// else's server, so every path goes through one shell-quoter and the tests
-/// pin the exact strings.
-///
-/// Strict POSIX sh: the exec channel runs a non-login shell on whatever
-/// /bin/sh the host has (see HostCapabilities' PATH notes), and `base64 -d`
-/// vs `-D` differs across ages of BSD — the finish line tries both orders.
+/// The no-SFTP upload fallback's chunking (``BorrowedHost``): raw bytes per
+/// exec round trip. 48KB of payload is 64KB of base64, comfortably inside
+/// every sshd/shell argument limit encountered in the wild, while keeping a
+/// 2MB image to ~45 round trips. The commands themselves are the core's.
 enum ExecUploadCommands {
-    /// Raw bytes per exec round trip. 48KB of payload is 64KB of base64 —
-    /// comfortably inside every sshd/shell argument limit encountered in
-    /// the wild, while keeping a 2MB image to ~45 round trips.
     static let chunkBytes = 48 * 1024
-
-    static let successMarker = "MOSHPIT_UPLOAD_OK"
-
-    struct Plan {
-        let begin: String
-        let append: (String) -> String
-        let finish: String
-        let finalPath: String
-    }
-
-    static func plan(home: String, filename: String) -> Plan {
-        let dirParent = home + "/.moshpit"
-        let dir = dirParent + "/uploads"
-        let finalPath = dir + "/" + filename
-        let tempPath = finalPath + ".b64part"
-        let qDirParent = quote(dirParent), qDir = quote(dir)
-        let qFinal = quote(finalPath), qTemp = quote(tempPath)
-        return Plan(
-            begin: "mkdir -p \(qDir) && chmod 700 \(qDirParent) \(qDir) && rm -f \(qTemp)",
-            // The base64 alphabet (A–Za–z0–9+/=) is inert inside single
-            // quotes — no escaping needed for the payload itself.
-            append: { chunk in "printf %s '\(chunk)' >> \(qTemp)" },
-            finish: "{ base64 -d < \(qTemp) > \(qFinal) 2>/dev/null"
-                + " || base64 -D < \(qTemp) > \(qFinal); }"
-                + " && chmod 600 \(qFinal) && rm -f \(qTemp) && echo \(successMarker)",
-            finalPath: finalPath)
-    }
-
-    /// POSIX single-quoting: close, escaped quote, reopen. The only
-    /// character that needs anything is the quote itself. The app's one
-    /// quoter, ``Shell/quote(_:)``: file names in a host's listing are the
-    /// host's to choose.
-    static func quote(_ path: String) -> String {
-        Shell.quote(path)
-    }
 }
 
 // MARK: - The Rust core's sign-in (W14a)

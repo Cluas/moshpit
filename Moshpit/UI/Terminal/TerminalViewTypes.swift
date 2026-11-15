@@ -67,9 +67,6 @@ struct TerminalMark: Equatable, Sendable {
         /// many bytes of the input written into the channel the server has
         /// echoed.
         static let echoAck: UInt32 = 9
-        /// The coordinator's own reveal (``CoreTerminalHost/Coordinator/
-        /// revealWhenShown()``): never a session's code, never forwarded.
-        static let revealWhenShown: UInt32 = 0x4000_0001
     }
 }
 
@@ -85,6 +82,10 @@ protocol CoreTerminalViewDelegate: AnyObject {
     /// commit), apart from what the terminal sends of its own (B570: the
     /// bar's sticky Ctrl takes typing only).
     func surface(_ surface: CoreTerminalView, typed data: Data)
+    /// What the terminal answers of its own: a query's reply (cursor
+    /// position, a colour), a focus report. Apart from typing, so a view
+    /// whose program the terminal does not emulate can drop them (B575).
+    func surface(_ surface: CoreTerminalView, reply data: Data)
     /// The grid changed (not reported for the grid the surface was born at).
     func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int)
     func surface(_ surface: CoreTerminalView, titleChanged title: String)
@@ -136,6 +137,7 @@ protocol CoreTerminalViewDelegate: AnyObject {
 /// cares about.
 extension CoreTerminalViewDelegate {
     func surface(_ surface: CoreTerminalView, typed data: Data) { self.surface(surface, send: data) }
+    func surface(_ surface: CoreTerminalView, reply data: Data) { self.surface(surface, send: data) }
     func surfaceGroundChanged(_ surface: CoreTerminalView) {}
     func surface(_ surface: CoreTerminalView, sizeChanged cols: Int, rows: Int) {}
     func surface(_ surface: CoreTerminalView, titleChanged title: String) {}

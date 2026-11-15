@@ -29,10 +29,6 @@ struct MultiplexerVocabulary: Equatable {
     let windowLower: String
     let windowPluralLower: String
 
-    /// Keys the sheet footers print, as `["⌃", "b s"]` style pairs.
-    let sessionKeys: [String]
-    let windowKeys: [String]
-    let paneKeys: [String]
     /// What the pane sheet's `+` does, spelled in this multiplexer's keys.
     let splitHint: String
     /// The verb for destroying one of these. tmux kills; herdr closes
@@ -55,10 +51,6 @@ struct MultiplexerVocabulary: Equatable {
         sessionPluralLower: String(localized: "sessions"),
         windowLower: String(localized: "window"),
         windowPluralLower: String(localized: "windows"),
-        sessionKeys: ["⌃", "b s"],
-        windowKeys: ["⌃", "1-9"],
-        // tmux: display-panes.
-        paneKeys: ["⌃", "b q"],
         splitHint: String(localized: "＋ splits a new pane"),
         killVerb: String(localized: "Kill"),
         sessionIcon: "square.stack.3d.up",
@@ -73,13 +65,6 @@ struct MultiplexerVocabulary: Equatable {
         sessionPluralLower: String(localized: "workspaces"),
         windowLower: String(localized: "tab"),
         windowPluralLower: String(localized: "tabs"),
-        // herdr: workspace navigation.
-        sessionKeys: ["⌃", "b w"],
-        // herdr steps through tabs rather than jumping by number.
-        windowKeys: ["⌃", "b n/p"],
-        // herdr has no "show me the panes" key; the useful one is the split.
-        // NOT `b q`, which detaches.
-        paneKeys: ["⌃", "b v"],
         splitHint: String(localized: "＋ splits a new pane"),
         killVerb: String(localized: "Close"),
         // A workspace is a board of work, not a stack of terminals; a tab is

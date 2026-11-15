@@ -340,7 +340,7 @@ fn tmux_control(tmux: &TmuxView, since: &BTreeMap<String, f64>) -> Control {
             .into_iter()
             .map(|(pane, hook)| Hook {
                 pane: pane.clone(),
-                state: hook.state.clone(),
+                state: hook.state.as_deref().map(|raw| shown_state(raw, hook)),
                 agent: hook.agent.clone(),
                 since: hook.since.or_else(|| since.get(pane).copied()),
             })
@@ -421,6 +421,27 @@ fn herdr_control(herdr: &HerdrView, since: &BTreeMap<String, f64>, locale: &str)
             })
             .collect(),
     }
+}
+
+/// A tmux pane's stamp as the agents monitor reads it
+/// (`moshpit_agents::reclassify`): an agent whose pane is back at its shell
+/// (it exited, or was interrupted, before its Stop hook ran) and an
+/// attention stamp that is only its idle reminder ("waiting for your
+/// input") are done. Home's Needs You and its badge said "waiting" for them
+/// while the island and the notifications said done (B621). A state the
+/// monitor doesn't know stays as stamped.
+fn shown_state(raw: &str, hook: &moshpit_tmux::hooks::AgentHook) -> String {
+    use moshpit_agents::{AgentState, reclassify};
+    let Some(stamped) = AgentState::from_hook(Some(raw)) else {
+        return raw.to_owned();
+    };
+    match reclassify(stamped, hook.title.as_deref(), hook.command.as_deref()) {
+        AgentState::Working => "working",
+        AgentState::Attention => "attention",
+        AgentState::Done => "done",
+        AgentState::Idle => "idle",
+    }
+    .to_owned()
 }
 
 #[cfg(test)]

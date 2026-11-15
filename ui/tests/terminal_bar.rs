@@ -330,3 +330,48 @@ fn the_terminal_pages_ground_follows_the_grids() {
         "the page takes a chrome with its ground"
     );
 }
+
+/// B650, the owner's herdr: the workspace is named after its folder and
+/// its tab ("1", herdr's default) works there. The bar said `moshpit ›
+/// moshpit › claude`; it says the tab by its number, its symbol before it.
+#[test]
+fn the_session_is_never_named_twice() {
+    let (mut app, channel, _) =
+        start_observing(Screen::Terminal, Params::default(), "terminal-screen");
+    let heard = hear(&channel);
+    let mut herdr = chrome();
+    herdr["mux"] = json!("herdr");
+    herdr["crumbs"]["sessionIcon"] = json!("rectangle.grid.2x2");
+    herdr["crumbs"]["windowIcon"] = json!("square.on.square");
+    herdr["crumbs"]["tree"] = json!({
+        "mux": "herdr", "attached": true,
+        "sessions": [{"id": "wV", "name": "moshpit"}],
+        "windows": [{"id": "wV:t3", "session": "wV", "index": 1, "name": "1", "paneCount": 1}],
+        "panes": [{"id": "wV:p4", "window": "wV:t3", "index": 0, "command": "claude",
+                   "path": "/Users/dev/code/moshpit"}],
+        "hooks": [{"pane": "wV:p4", "state": "working", "agent": "claude"}],
+        "activeSession": "wV", "activeWindow": "wV:t3", "activePane": "wV:p4"
+    });
+    post(&mut app.0, &channel, &herdr.to_string());
+    app.0.wait_for("id:terminal-crumb-window-number").unwrap();
+    // The breadcrumb is laid out twice (a measuring copy, then the one
+    // shown): the workspace's name once in each.
+    let said = |text: &str| {
+        app.0
+            .screen()
+            .texts()
+            .iter()
+            .filter(|t| t.to_string() == text)
+            .count()
+    };
+    assert_eq!(said("moshpit"), 2, "{:?}", app.0.screen().texts());
+    assert!(said("1") >= 1, "{:?}", app.0.screen().texts());
+    // Still the windows' segment: screen readers hear the tab, a tap opens
+    // what the window segment opens.
+    app.0.press("label:Tab 1").unwrap();
+    assert_eq!(
+        next_intent(&heard),
+        json!({"ev": "crumb", "crumb": "window"})
+    );
+    channel.close();
+}

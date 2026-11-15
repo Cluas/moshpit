@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The same pick as CI's: the newest Xcode 27, a simulator to build for.
       - name: Select Xcode
@@ -65,7 +65,7 @@ jobs:
           rustup target add aarch64-apple-ios-sim
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry/index
@@ -80,7 +80,7 @@ jobs:
         run: xcodegen generate
 
       - name: Cache SwiftPM packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.SPM_CACHE_DIR }}
           key: spm-${{ runner.os }}-${{ hashFiles('Moshpit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -125,7 +125,7 @@ jobs:
 
       - name: Keep the shots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shots-${{ github.run_number }}
           path: shots

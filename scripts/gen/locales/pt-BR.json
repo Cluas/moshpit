@@ -393,7 +393,6 @@
   "%@ %@ %@? Everything in it dies.": "%1$@ %2$@ %3$@? Tudo dentro será encerrado.",
   "Pane": "Painel",
   "New Pane": "Novo painel",
-  "Switch agent": "Trocar de agente",
   "pane %lld": "painel %lld",
   "None": "Nenhum",
   "Single shell, no session persistence": "Um único shell, sem persistência de sessão",

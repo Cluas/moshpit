@@ -9321,16 +9321,28 @@ public struct AgentPaneWhereValue: Equatable, Hashable {
     public var windowName: String?
     public var workspace: String?
     public var path: String?
+    /**
+     * The window's index and the pane's index in it: what tells two rows
+     * apart that would read the same.
+     */
+    public var windowIndex: Int64?
+    public var paneIndex: Int64?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(command: String, session: String?, window: String?, windowName: String? = nil, workspace: String? = nil, path: String? = nil) {
+    public init(command: String, session: String?, window: String?, windowName: String? = nil, workspace: String? = nil, path: String? = nil, 
+        /**
+         * The window's index and the pane's index in it: what tells two rows
+         * apart that would read the same.
+         */windowIndex: Int64? = nil, paneIndex: Int64? = nil) {
         self.command = command
         self.session = session
         self.window = window
         self.windowName = windowName
         self.workspace = workspace
         self.path = path
+        self.windowIndex = windowIndex
+        self.paneIndex = paneIndex
     }
 
     
@@ -9354,7 +9366,9 @@ public struct FfiConverterTypeAgentPaneWhereValue: FfiConverterRustBuffer {
                 window: FfiConverterOptionString.read(from: &buf), 
                 windowName: FfiConverterOptionString.read(from: &buf), 
                 workspace: FfiConverterOptionString.read(from: &buf), 
-                path: FfiConverterOptionString.read(from: &buf)
+                path: FfiConverterOptionString.read(from: &buf), 
+                windowIndex: FfiConverterOptionInt64.read(from: &buf), 
+                paneIndex: FfiConverterOptionInt64.read(from: &buf)
         )
     }
 
@@ -9365,6 +9379,8 @@ public struct FfiConverterTypeAgentPaneWhereValue: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.windowName, into: &buf)
         FfiConverterOptionString.write(value.workspace, into: &buf)
         FfiConverterOptionString.write(value.path, into: &buf)
+        FfiConverterOptionInt64.write(value.windowIndex, into: &buf)
+        FfiConverterOptionInt64.write(value.paneIndex, into: &buf)
     }
 }
 
@@ -10945,6 +10961,87 @@ public func FfiConverterTypeHomeConnection_lift(_ buf: RustBuffer) throws -> Hom
 #endif
 public func FfiConverterTypeHomeConnection_lower(_ value: HomeConnection) -> RustBuffer {
     return FfiConverterTypeHomeConnection.lower(value)
+}
+
+
+/**
+ * A host's tools as the capability probe found them
+ * (`moshpit_install::HostCapabilities`), as Swift's `HostCapabilities`
+ * holds them: the package manager by its raw id (`aptGet`, `brew`, …).
+ */
+public struct HostCapabilitiesValue: Equatable, Hashable {
+    public var hasTmux: Bool
+    public var hasMoshServer: Bool
+    /**
+     * `uname -s`; empty when unknown.
+     */
+    public var os: String
+    public var packageManager: String?
+    public var hasHerdr: Bool
+    public var hasPython3: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(hasTmux: Bool, hasMoshServer: Bool, 
+        /**
+         * `uname -s`; empty when unknown.
+         */os: String, packageManager: String?, hasHerdr: Bool, hasPython3: Bool) {
+        self.hasTmux = hasTmux
+        self.hasMoshServer = hasMoshServer
+        self.os = os
+        self.packageManager = packageManager
+        self.hasHerdr = hasHerdr
+        self.hasPython3 = hasPython3
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HostCapabilitiesValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHostCapabilitiesValue: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HostCapabilitiesValue {
+        return
+            try HostCapabilitiesValue(
+                hasTmux: FfiConverterBool.read(from: &buf), 
+                hasMoshServer: FfiConverterBool.read(from: &buf), 
+                os: FfiConverterString.read(from: &buf), 
+                packageManager: FfiConverterOptionString.read(from: &buf), 
+                hasHerdr: FfiConverterBool.read(from: &buf), 
+                hasPython3: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HostCapabilitiesValue, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.hasTmux, into: &buf)
+        FfiConverterBool.write(value.hasMoshServer, into: &buf)
+        FfiConverterString.write(value.os, into: &buf)
+        FfiConverterOptionString.write(value.packageManager, into: &buf)
+        FfiConverterBool.write(value.hasHerdr, into: &buf)
+        FfiConverterBool.write(value.hasPython3, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostCapabilitiesValue_lift(_ buf: RustBuffer) throws -> HostCapabilitiesValue {
+    return try FfiConverterTypeHostCapabilitiesValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHostCapabilitiesValue_lower(_ value: HostCapabilitiesValue) -> RustBuffer {
+    return FfiConverterTypeHostCapabilitiesValue.lower(value)
 }
 
 
@@ -23160,6 +23257,37 @@ public func herdrStampInterval(pushActive: Bool) -> Double  {
 })
 }
 /**
+ * What the probe's output says the host has.
+ */
+public func hostCapabilitiesParse(output: String) -> HostCapabilitiesValue  {
+    return try!  FfiConverterTypeHostCapabilitiesValue_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_host_capabilities_parse(
+        FfiConverterString.lower(output),$0
+    )
+})
+}
+/**
+ * The capability probe a connection runs on its host: the core's, so the
+ * app's re-check (Install Assist) asks exactly what a connect asks.
+ */
+public func hostCapabilitiesProbeCommand() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_host_capabilities_probe_command($0
+    )
+})
+}
+/**
+ * The directories the probe and the core's commands add to a host's
+ * `PATH` (Homebrew's, `/usr/local`, `$HOME/.local/bin`): an exec channel's
+ * login-less shell often has none of them.
+ */
+public func hostExtraPathDirs() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_host_extra_path_dirs($0
+    )
+})
+}
+/**
  * The one command that says what a host can do (`preflight`), for a
  * probe of the side channel.
  */
@@ -23757,6 +23885,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval() != 24183) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_host_capabilities_parse() != 1462) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_host_capabilities_probe_command() != 41586) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_host_extra_path_dirs() != 26411) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_host_preflight_command() != 8564) {

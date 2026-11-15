@@ -924,6 +924,9 @@ struct RustSessionTests {
         driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "w1:p1", stream: 0, active: true)]))
         driver.handle(.firstFrame(attach: 1))
         #expect(!session.awaitingFirstFrame)
+        // Paintings of a pane herdr emulates: the terminal answers no query
+        // into it (B575).
+        #expect(!session.coordinator.answersQueries)
         herdr.selectPane("w1:p2")
         herdr.newPane()
         #expect(fake.herdrIntents.map(\.1) == [.selectPane(id: "w1:p2"), .newPane])
@@ -962,6 +965,7 @@ struct RustSessionTests {
         driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "shell", stream: 0, active: true)]))
         driver.handle(.treeChanged)
         #expect(sidecar.snapshot.activePaneId == "%3")
+        #expect(session.coordinator.answersQueries, "a shell's program is answered (B575)")
         #expect(session.moshControl === sidecar, "a shell pane under mosh keeps the sidecar")
         sidecar.selectSession("$0")
         #expect(fake.intents.map(\.1) == [.selectSession(id: "$0")])

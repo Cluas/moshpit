@@ -334,3 +334,31 @@ fn version_named_windows_say_their_folder_and_sessions_are_tapped() {
     assert!(!app.screen().shows("Tap to switch"));
     channel.close();
 }
+
+/// B650: beside a herdr workspace named after its folder, its active tab
+/// (herdr's default name "1", working there) is "Tab 1", not the
+/// workspace's name again.
+#[test]
+fn a_sessions_window_never_says_its_name_again() {
+    let (mut app, channel) = open(Params::default());
+    show(
+        &mut app,
+        &channel,
+        &json!({
+            "op": "picker", "kind": "sessions", "mux": "herdr", "active": "wV",
+            "rows": [
+                {"id": "wV", "name": "moshpit", "windows": 3, "window": "1:1",
+                 "command": "claude", "path": "/Users/dev/code/moshpit", "agent": "claude"},
+                {"id": "wW", "name": "site"}
+            ]
+        }),
+    );
+    app.wait_for("id:mux-picker-row-wW").unwrap();
+    assert!(
+        app.screen().shows("3 tabs · Tab 1"),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(!app.screen().shows("3 tabs · 1: moshpit"));
+    channel.close();
+}

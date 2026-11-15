@@ -66,11 +66,6 @@ enum NSHScreen: String, CaseIterable, Sendable {
 
     /// The name the Rust side runs it by (`Screen::named`).
     var name: String { rawValue }
-
-    /// Whether the NSH page shows: whenever this build can host NSH screens.
-    /// No switch any more (F0); the SwiftUI page it replaced still stands
-    /// in when the screen fails to run, until batches D1–D8.
-    var isOn: Bool { NSHSurface.available }
 }
 
 /// What every screen is told before it runs: the language the app shows and

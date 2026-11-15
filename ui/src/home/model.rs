@@ -1036,6 +1036,21 @@ pub fn is_unnamed_window(name: &str, command: &str) -> bool {
         .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// Whether two names say the same thing (B650): case and the spaces at
+/// their ends aside.
+pub fn same_name(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+/// A window's project beside its session's name (B650): none when it only
+/// says the session's name again (a herdr workspace named after its
+/// folder, its tab working there; a tmux session named after its repo).
+/// The session says it already; the caller names the window itself then:
+/// its number (with the window's word or icon).
+pub fn beside_session(project: Option<String>, session: &str) -> Option<String> {
+    project.filter(|p| !same_name(p, session))
+}
+
 /// The project a directory names: its last folder (`~/src/api` → `api`);
 /// none for the root, a home directory or nothing.
 pub fn folder_name(path: &str) -> Option<String> {

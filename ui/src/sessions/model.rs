@@ -9,8 +9,8 @@ use nsh_core::prelude::*;
 use crate::home::{
     TreeState,
     model::{
-        AgentState, Connection, Control, Mux, display_command, is_unnamed_window, pane_icon,
-        pane_title, split_display_name, window_title,
+        AgentState, Connection, Control, Mux, beside_session, display_command, is_unnamed_window,
+        pane_icon, pane_title, split_display_name, window_title,
     },
 };
 
@@ -230,19 +230,32 @@ pub fn groups(control: &Control, disclosure: &Disclosure, words: &Words) -> Vec<
 }
 
 /// A window's title: the name a person gave it, else what its pane is
-/// about (§6.1), else the multiplexer's word and its index.
+/// about (§6.1), else the multiplexer's word and its index. Never its
+/// session's name again (B650): under a herdr workspace named after its
+/// folder every tab said it (a pane's title is its workspace there), so a
+/// window that would is called by its word and index ("Tab 1").
 fn window_name(control: &Control, window: &str, words: &Words) -> String {
     let Some(info) = control.windows.iter().find(|w| w.id == window) else {
         return String::new();
     };
+    let session = control
+        .sessions
+        .iter()
+        .find(|s| s.id == info.session)
+        .map_or("", |s| s.name.as_str());
     let pane = control.window_pane(window);
     let command = pane.map_or("", |p| p.command.as_str());
-    if !is_unnamed_window(&info.name, command) {
-        return info.name.trim().to_owned();
-    }
-    match pane {
-        Some(pane) => pane_title(control, pane, &words.agent).title,
+    let named = if !is_unnamed_window(&info.name, command) {
+        Some(info.name.trim().to_owned())
+    } else {
+        pane.map(|pane| pane_title(control, pane, &words.agent).title)
+    };
+    match named {
+        // No name of its own at all: the multiplexer's way ("Window 2").
         None => window_title(info, &words.window),
+        // Its name, unless the session said it already: then its number.
+        Some(named) => beside_session(Some(named), session)
+            .unwrap_or_else(|| format!("{} {}", words.window, info.index)),
     }
 }
 

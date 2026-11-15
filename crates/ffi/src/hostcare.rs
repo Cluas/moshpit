@@ -484,6 +484,58 @@ fn manager(raw: Option<String>) -> Option<PackageManager> {
     raw.and_then(|r| serde_json::from_value(serde_json::Value::String(r)).ok())
 }
 
+/// A host's tools as the capability probe found them
+/// (`moshpit_install::HostCapabilities`), as Swift's `HostCapabilities`
+/// holds them: the package manager by its raw id (`aptGet`, `brew`, …).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct HostCapabilitiesValue {
+    pub has_tmux: bool,
+    pub has_mosh_server: bool,
+    /// `uname -s`; empty when unknown.
+    pub os: String,
+    pub package_manager: Option<String>,
+    pub has_herdr: bool,
+    pub has_python3: bool,
+}
+
+impl From<HostCapabilities> for HostCapabilitiesValue {
+    fn from(caps: HostCapabilities) -> Self {
+        let package_manager = caps
+            .package_manager
+            .and_then(|m| serde_json::to_value(m).ok())
+            .and_then(|v| v.as_str().map(str::to_owned));
+        HostCapabilitiesValue {
+            has_tmux: caps.has_tmux,
+            has_mosh_server: caps.has_mosh_server,
+            os: caps.os,
+            package_manager,
+            has_herdr: caps.has_herdr,
+            has_python3: caps.has_python3,
+        }
+    }
+}
+
+/// The capability probe a connection runs on its host: the core's, so the
+/// app's re-check (Install Assist) asks exactly what a connect asks.
+#[uniffi::export]
+pub fn host_capabilities_probe_command() -> String {
+    moshpit_install::capabilities::probe_command()
+}
+
+/// The directories the probe and the core's commands add to a host's
+/// `PATH` (Homebrew's, `/usr/local`, `$HOME/.local/bin`): an exec channel's
+/// login-less shell often has none of them.
+#[uniffi::export]
+pub fn host_extra_path_dirs() -> String {
+    moshpit_install::capabilities::EXTRA_PATH_DIRS.to_owned()
+}
+
+/// What the probe's output says the host has.
+#[uniffi::export]
+pub fn host_capabilities_parse(output: String) -> HostCapabilitiesValue {
+    HostCapabilities::parse(&output).into()
+}
+
 /// What Install Assist offers for a notice's `packages` on a connection
 /// whose multiplexer is tmux (`tmux`) or not.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -701,6 +753,28 @@ fn demo_manifest(scenario: &str, relay: String) -> Option<moshpit_install::Insta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_capability_probe_is_the_cores_and_its_answer_keeps_swifts_raw_ids() {
+        assert_eq!(host_capabilities_probe_command(), moshpit_install::capabilities::probe_command());
+        let found = host_capabilities_parse(
+            "/usr/bin/tmux\n/opt/homebrew/bin/mosh-server\n::Darwin::/opt/homebrew/bin/brew\n".into(),
+        );
+        assert_eq!(
+            found,
+            HostCapabilitiesValue {
+                has_tmux: true,
+                has_mosh_server: true,
+                os: "Darwin".into(),
+                package_manager: Some("brew".into()),
+                has_herdr: false,
+                has_python3: false,
+            }
+        );
+        let apt = host_capabilities_parse("::Linux::/usr/bin/apt-get\n".into());
+        assert_eq!(apt.package_manager.as_deref(), Some("aptGet"));
+        assert_eq!(host_capabilities_parse("::Linux::\n".into()).package_manager, None);
+    }
     use std::collections::HashSet;
     use std::sync::Mutex;
 

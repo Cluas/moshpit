@@ -50,7 +50,8 @@ enum PosixShell {
         return quoted ? nil : String(value)
     }
 
-    /// The script of `sh -c <one word>` — what ``Shell/portable(_:)`` sends —
+    /// The script of `sh -c <one word>` — what the core's `shell::portable`
+    /// sends —
     /// as a POSIX shell hands it to sh; nil for anything else.
     static func shPayload(_ line: String) -> String? {
         guard line.hasPrefix("sh -c ") else { return nil }

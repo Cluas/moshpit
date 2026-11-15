@@ -521,6 +521,9 @@ final class RustSessionDriver: RustSessionListener {
         let feeder = RustPaneFeeder(stream: stream, coordinator: session.coordinator)
         feeder.onMark = { [weak self] mark in self?.shellMark(mark) }
         session.coordinator.onMark = { [weak self] mark in self?.shellViewMark(mark) }
+        // A shell's program (herdr's own client over mosh too) asks this
+        // terminal, and is answered.
+        session.coordinator.answersQueries = true
         shell = feeder
         if expectsMoshHerdr {
             // mosh paints herdr's own screen here: swipes and taps are
@@ -547,6 +550,9 @@ final class RustSessionDriver: RustSessionListener {
         guard shell?.stream != stream else { return }
         shell?.detach()
         let coordinator = session.coordinator
+        // herdr's frames are paintings of a pane herdr emulates and answers
+        // for: nothing here answers a query (B575).
+        coordinator.answersQueries = false
         let feeder = RustPaneFeeder(stream: stream, coordinator: coordinator)
         // What reaches the terminal from it in its first two seconds (B445:
         // a blank herdr terminal is bytes that never came, or bytes drawn

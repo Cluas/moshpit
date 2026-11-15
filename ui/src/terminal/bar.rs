@@ -533,11 +533,39 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
         names.session.clone(),
         session_content.into_element(),
     );
-    let window = button(
-        Crumb::Window,
-        names.project.clone(),
-        segment_text(names.project.clone(), "foreground").into_element(),
-    );
+    // A window told by its number (its name would say the session's again,
+    // B650, or it has none): the window's symbol before it, the
+    // multiplexer's word for screen readers ("Tab 1").
+    let window = if names.project_numbered {
+        let word = super::picker::Vocab::of(match plan.tree.as_ref().map(|t| t.mux) {
+            Some(crate::home::model::Mux::Herdr) => super::model::Mux::Herdr,
+            _ => super::model::Mux::Tmux,
+        })
+        .window;
+        button(
+            Crumb::Window,
+            format!("{word} {}", names.project),
+            view()
+                .flex_row()
+                .items_center()
+                .gap(px(4.0))
+                .min_w(px(0.0))
+                .test_id("terminal-crumb-window-number")
+                .child(
+                    icon(icon_name(&plan.window_icon))
+                        .size(IconSize::Sm)
+                        .tone(Tone::Muted),
+                )
+                .child(segment_text(names.project.clone(), "foreground"))
+                .into_element(),
+        )
+    } else {
+        button(
+            Crumb::Window,
+            names.project.clone(),
+            segment_text(names.project.clone(), "foreground").into_element(),
+        )
+    };
     // As wide as its segments, or as the capsule's room when they need
     // more: then they shrink (the measuring copy, unbounded, never does).
     let mut row = view()

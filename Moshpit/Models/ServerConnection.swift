@@ -74,15 +74,6 @@ enum Multiplexer: String, Codable, CaseIterable, Sendable {
         case .herdr: return "sparkles"
         }
     }
-
-    /// Binary probed on PATH and used to boot the session. `nil` for `.none`.
-    var binaryName: String? {
-        switch self {
-        case .none:  return nil
-        case .tmux:  return "tmux"
-        case .herdr: return "herdr"
-        }
-    }
 }
 
 struct ServerConnection: Identifiable, Codable, Equatable {
@@ -199,18 +190,6 @@ struct ServerConnection: Identifiable, Codable, Equatable {
             // Keep the legacy flag consistent with the new one so an older
             // build reading the same store makes the same decision.
             useTmux = newValue == .tmux
-        }
-    }
-
-    /// Custom binary path for the SELECTED multiplexer, or nil to use PATH.
-    /// A non-nil path means the user vouches for the binary, which skips the
-    /// capability probe's degrade check (the probe walks PATH, not custom
-    /// locations).
-    var multiplexerPath: String? {
-        switch multiplexer {
-        case .none:  return nil
-        case .tmux:  return tmuxPath
-        case .herdr: return herdrPath
         }
     }
 

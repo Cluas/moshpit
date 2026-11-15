@@ -11,7 +11,6 @@ struct HerdrVersionReportTests {
     @Test("An older client is a skew the restart can't fix")
     func olderClient() {
         let report = HerdrVersionReport(client: "0.8.0", server: "0.9.5")
-        #expect(report.mismatched)
         #expect(report.clientIsOlder)
         #expect(report.notice.contains("0.8.0") && report.notice.contains("0.9.5"))
     }
@@ -19,14 +18,12 @@ struct HerdrVersionReportTests {
     @Test("The same version both ends is no skew")
     func matched() {
         let report = HerdrVersionReport(client: "0.9.5", server: "0.9.5")
-        #expect(!report.mismatched)
         #expect(!report.clientIsOlder)
     }
 
     @Test("The server being the older side is a skew the restart fixes")
     func olderServer() {
         let report = HerdrVersionReport(client: "0.9.5", server: "0.8.0")
-        #expect(report.mismatched)
         #expect(!report.clientIsOlder)
     }
 

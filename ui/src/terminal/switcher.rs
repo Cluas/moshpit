@@ -218,8 +218,18 @@ pub(crate) fn stop(tree: &Control, window: &WindowInfo, pane: &PaneInfo, words: 
         Mux::Tmux => &words.window,
         Mux::Herdr => &words.tab,
     };
-    let place = super::model::project_name(&window.name, &pane.command, pane.path.as_deref())
-        .unwrap_or_else(|| format!("{word} {}", window.index));
+    // Never the session's name again (B650): every tab of a herdr
+    // workspace named after its folder would say it.
+    let session = tree
+        .sessions
+        .iter()
+        .find(|s| s.id == window.session)
+        .map_or("", |s| s.name.as_str());
+    let place = crate::home::model::beside_session(
+        super::model::project_name(&window.name, &pane.command, pane.path.as_deref()),
+        session,
+    )
+    .unwrap_or_else(|| format!("{word} {}", window.index));
     let title = pane_title(tree, pane, &words.agent);
     let name = title
         .agent
@@ -944,6 +954,21 @@ mod tests {
             state_line(&order.stops[2], 0.0, &english()),
             None,
             "no agent: no state"
+        );
+    }
+
+    #[test]
+    fn a_stop_never_says_the_sessions_name_again() {
+        // B650: a session named after the folder its windows work in.
+        let mut tree = work("%5");
+        tree.sessions[0].name = "Web".into();
+        let order = Order::of(&tree, &english());
+        let places: Vec<&str> = order.stops.iter().map(|s| s.place.as_str()).collect();
+        assert_eq!(
+            places,
+            [
+                "api", "trainer", "trainer", "trainer", "Window 3", "Window 3", "docs"
+            ]
         );
     }
 

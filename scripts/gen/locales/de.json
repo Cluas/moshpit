@@ -393,7 +393,6 @@
   "%@ %@ %@? Everything in it dies.": "%2$@ %3$@ %1$@? Alles darin wird beendet.",
   "Pane": "Panel",
   "New Pane": "Neues Panel",
-  "Switch agent": "Agent wechseln",
   "pane %lld": "Panel %lld",
   "None": "Keiner",
   "Single shell, no session persistence": "Eine Shell, Sitzung bleibt nicht erhalten",

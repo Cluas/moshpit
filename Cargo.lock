@@ -2326,6 +2326,7 @@ name = "moshpit-app"
 version = "0.1.0"
 dependencies = [
  "log",
+ "moshpit-agents",
  "moshpit-herdr",
  "moshpit-install",
  "moshpit-pet",
@@ -2464,35 +2465,6 @@ dependencies = [
  "moshpit-stream",
  "moshpit-term",
  "moshpit-tmux",
- "tokio",
-]
-
-[[package]]
-name = "moshpit-spike-android"
-version = "0.1.0"
-dependencies = [
- "moshpit-stream",
- "nsh-core",
- "nsh-platform-android",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "moshpit-spike-ios"
-version = "0.1.0"
-dependencies = [
- "libc",
- "log",
- "moshpit-stream",
- "moshpit-term",
- "nsh-base",
- "nsh-core",
- "nsh-platform-ios",
- "objc2",
- "objc2-core-foundation",
- "objc2-ui-kit",
- "serde_json",
  "tokio",
 ]
 

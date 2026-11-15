@@ -469,22 +469,62 @@ fn pause_resumes_with_the_real_verb_and_continue_repaints() {
     assert!(rig.count("capture-pane -p -e -t %0") > before);
 }
 
-// MARK: - backfill
+// MARK: - pane modes (B614)
 
+/// `%pane-mode-changed`: the controller asks which mode, and the pane's
+/// input flags say it — the mosh path's copy-mode latch follows them.
 #[test]
-fn the_dump_goes_out_before_the_attach_repaint() {
+fn a_pane_mode_change_is_asked_and_kept() {
     let mut rig = attached();
     one_window(&mut rig, false, false);
-    assert!(rig.has("capture-pane -p -e -S -400 -E -1 -t %0"));
-    assert!(
-        !rig.has("capture-pane -p -e -t %0"),
-        "the repaint waits for the dump"
-    );
-    assert!(!rig.has("display-message -p -t %0 '#{alternate_on}"));
     rig.settle();
-    let dump = rig.index_of("capture-pane -p -e -S").unwrap();
-    let frame = rig.index_of("capture-pane -p -e -t %0").unwrap();
-    assert!(dump < frame);
+    assert!(!rig.controller.active_input_flags().in_copy_mode);
+    let mode = std::rc::Rc::new(std::cell::Cell::new("1 0"));
+    let answer = mode.clone();
+    rig.respond(Box::new(move |command, _| {
+        if command == "display-message -p -t %0 '#{pane_in_mode} #{alternate_on}'" {
+            return ok([answer.get()]);
+        }
+        ok(["0 0"])
+    }));
+    rig.push("%pane-mode-changed %0\n");
+    assert!(rig.has("display-message -p -t %0 '#{pane_in_mode} #{alternate_on}'"));
+    rig.settle();
+    assert!(rig.controller.active_input_flags().in_copy_mode);
+    mode.set("0 0");
+    rig.push("%pane-mode-changed %0\n");
+    rig.settle();
+    assert!(!rig.controller.active_input_flags().in_copy_mode);
+}
+
+/// Discovery's `#{pane_in_mode}` counts too: a pane left in copy-mode.
+#[test]
+fn a_pane_found_in_copy_mode_says_so() {
+    let mut rig = attached();
+    one_window(&mut rig, false, true);
+    assert!(rig.controller.active_input_flags().in_copy_mode);
+}
+
+// MARK: - backfill
+
+/// The dump, then the screen right behind it — sent together, before the
+/// dump's reply (B585: a round trip between the two lost what scrolled off
+/// tmux's screen meanwhile). The replies keep that order.
+#[test]
+fn the_screen_goes_out_right_behind_the_dump() {
+    let mut rig = attached();
+    one_window(&mut rig, false, false);
+    let dump = rig
+        .index_of("capture-pane -p -e -S -400 -E -1 -t %0")
+        .expect("the dump");
+    let frame = rig
+        .index_of("capture-pane -p -e -t %0")
+        .expect("the screen");
+    let cursor = rig
+        .index_of("display-message -p -t %0 '#{cursor_x} #{cursor_y}")
+        .expect("the cursor");
+    assert_eq!((frame, cursor), (dump + 1, dump + 2), "{:?}", rig.commands);
+    assert!(!rig.has("display-message -p -t %0 '#{alternate_on}"));
 }
 
 #[test]
@@ -729,7 +769,7 @@ fn a_name_reaches_tmux_exactly_as_typed() {
     for want in [
         r###"rename-window -t @1 -- "##{session_name} \$HOME \~ \"q\" \\b""###,
         r###"rename-session -t $1 -- "-x""###,
-        r###"new-session -d -P -F '#{session_id}' -s "a##b""###,
+        r###"new-session -d -P -F '#{session_id} #{session_name}' -s "a##b""###,
         r###"new-window -P -F '#{window_id}' -n "##(touch INJECTED)""###,
     ] {
         assert!(sent.iter().any(|c| c == want), "{want}\n{sent:?}");

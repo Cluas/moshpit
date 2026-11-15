@@ -190,6 +190,32 @@ impl Tmux {
                 ..Answer::default()
             });
         }
+        if command.starts_with("new-session -d -P -F ") {
+            // A session of its own (B584), named as given or by its number.
+            let id = format!("${}", 5 + self.next);
+            self.next += 1;
+            let name = flag("-s")
+                .map(|n| n.trim_matches('"').to_owned())
+                .unwrap_or_else(|| id.trim_start_matches('$').to_owned());
+            self.sessions.push(Session {
+                id: id.clone(),
+                name: name.clone(),
+                current: "@9".into(),
+                desktops: 0,
+                group_of: None,
+                destroy_unattached: false,
+            });
+            let line = if command.contains("#{session_name}") {
+                format!("{id} {name}")
+            } else {
+                id
+            };
+            return Some(Answer {
+                lines: vec![line],
+                after: "%sessions-changed\n".into(),
+                ..Answer::default()
+            });
+        }
         if command == "display-message -p 'self=#{client_name}'" {
             return ok([format!("self=/dev/{phone}")]);
         }
@@ -905,5 +931,31 @@ fn a_session_picked_while_the_attach_asks_stays_picked() {
     assert_eq!(
         rig.controller.snapshot().active_session_id.as_deref(),
         Some("$1")
+    );
+}
+
+/// B584: a session made on the phone is landed on as soon as tmux gives its
+/// id — before any listing has its name — and its group was named `s~mp-…`
+/// (the name of a session not known yet), in the desktop's `tmux ls` too.
+#[test]
+fn a_session_made_on_the_phone_names_its_group_after_it() {
+    let tmux = Tmux::new();
+    let mut rig = phone(&tmux, "ttys003", "iPhone", None);
+    rig.with(|c, now| c.new_session(Some("work"), now));
+    rig.settle();
+    let model = tmux.borrow();
+    let on = group_of(&model, "ttys003");
+    assert!(on.name.starts_with("work~mp-iPhone-"), "on {}", on.name);
+    drop(model);
+    rig.with(|c, now| c.new_session(None, now));
+    rig.settle();
+    let model = tmux.borrow();
+    let on = group_of(&model, "ttys003");
+    let made = model.session(on.group_of.as_deref().unwrap()).unwrap();
+    assert!(
+        on.name.starts_with(&format!("{}~mp-iPhone-", made.name)),
+        "on {} of {}",
+        on.name,
+        made.name
     );
 }

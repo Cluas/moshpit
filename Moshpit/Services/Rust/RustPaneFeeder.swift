@@ -4,8 +4,8 @@ import MoshpitFFI
 import QuartzCore
 
 /// One pane's byte channel from the Rust core into the app's terminal
-/// coordinator (crates/stream; the G1/G5 spike's glue, PaneTerminal.swift,
-/// moved onto ``CoreTerminalHost/Coordinator``).
+/// coordinator (crates/stream; spike G1/G5's glue, moved onto
+/// ``CoreTerminalHost/Coordinator``).
 ///
 /// The core pushes the host's bytes into the channel as it reads them; the
 /// channel calls the waker at most once until the queue is drained, on a

@@ -236,6 +236,37 @@ struct CoreTerminalViewTests {
         #expect(CoreTerminalView.markedX(at: 10, width: 400, in: 320) == 0, "never past the left edge")
     }
 
+    /// B575: herdr's frames are paintings of a pane herdr emulates and
+    /// answers for. A query among them (OSC 4's palette question) got this
+    /// terminal's answer into herdr's input, which reached the program as
+    /// typing: `]4;191;rgb:d7d7/ffff/5f5f` in Claude Code's input box. A
+    /// terminal that answers no queries drops its replies and its focus
+    /// reports; typing still goes.
+    @Test func aTerminalThatPaintsFramesAnswersNoQueries() {
+        let (view, _) = makeView()
+        let window = inWindow(view)
+        defer { window.isHidden = true }
+        let coordinator = CoreTerminalHost.Coordinator()
+        coordinator.attach(view)
+        var sent = Data()
+        coordinator.onInput = { sent.append($0) }
+        coordinator.answersQueries = false
+        view.push(Data("\u{1b}]4;191;?\u{1b}\\\u{1b}[6n\u{1b}[?1004h".utf8))
+        #expect(view.settle { $0.termModes.focus_reports })
+        _ = view.becomeFirstResponder()
+        _ = view.resignFirstResponder()
+        #expect(view.settle(timeout: 0.3) { _ in !sent.isEmpty } == false, "answered: \(String(decoding: sent, as: UTF8.self))")
+        view.insertText("a")
+        #expect(sent == Data("a".utf8), "typing still goes")
+        // Answering again: the palette's colour 191, the cursor.
+        sent = Data()
+        coordinator.answersQueries = true
+        view.push(Data("\u{1b}]4;191;?\u{1b}\\\u{1b}[6n".utf8))
+        #expect(view.settle { _ in String(decoding: sent, as: UTF8.self).contains("R") })
+        let answer = String(decoding: sent, as: UTF8.self)
+        #expect(answer.contains("]4;191;rgb:d7d7/ffff/5f5f"), "\(answer)")
+    }
+
     @Test func japaneseKanaCommitsWhole() {
         let (view, sink) = makeView()
         let window = inWindow(view)

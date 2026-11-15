@@ -393,7 +393,6 @@
   "%@ %@ %@? Everything in it dies.": "%3$@ %2$@ %1$@? 안에 있는 것이 모두 종료됩니다.",
   "Pane": "패널",
   "New Pane": "새 패널",
-  "Switch agent": "에이전트 전환",
   "pane %lld": "패널 %lld",
   "None": "없음",
   "Single shell, no session persistence": "셸 하나만, 세션은 유지되지 않음",

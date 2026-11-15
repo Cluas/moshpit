@@ -236,10 +236,30 @@ pub fn window_title(
     agent: Option<&str>,
     vocab: &Vocab,
 ) -> String {
+    numbered(
+        index,
+        window_called(index, name, command, path, agent),
+        vocab,
+    )
+}
+
+/// What Home calls a window (the name after a row's number), if anything
+/// says more than its number.
+fn window_called(
+    index: u32,
+    name: &str,
+    command: &str,
+    path: Option<&str>,
+    agent: Option<&str>,
+) -> Option<String> {
     let name = if name == index.to_string() { "" } else { name };
-    let called = super::model::project_name(name, command, path)
+    super::model::project_name(name, command, path)
         .or_else(|| agent.filter(|a| !a.is_empty()).map(str::to_owned))
-        .or_else(|| (!command.is_empty()).then(|| display_command(command)));
+        .or_else(|| (!command.is_empty()).then(|| display_command(command)))
+}
+
+/// "2: trainer", or "Tab 2" with nothing to call it.
+fn numbered(index: u32, called: Option<String>, vocab: &Vocab) -> String {
     match called {
         Some(called) => format!("{index}: {called}"),
         None => format!("{} {index}", vocab.window),
@@ -279,12 +299,18 @@ fn active_window_title(row: &Row, window: &str, vocab: &Vocab) -> String {
     else {
         return window.to_owned();
     };
-    window_title(
+    // Beside the session's own row, never its name again (B650): "3 tabs ·
+    // Tab 1", not "3 tabs · 1: moshpit" under "moshpit".
+    let called = window_called(
         index,
         name,
         &row.command,
         row.path.as_deref(),
         row.agent.as_deref(),
+    );
+    numbered(
+        index,
+        crate::home::model::beside_session(called, &row.name),
         vocab,
     )
 }

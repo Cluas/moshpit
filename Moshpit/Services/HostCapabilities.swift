@@ -41,98 +41,30 @@ struct HostCapabilities: Codable, Equatable, Sendable {
         hasTmux: true, hasMoshServer: true, os: "", packageManager: nil, hasHerdr: true,
         hasPython3: true)
 
-    /// Whether the host can run the multiplexer this connection picked.
-    /// `.none` needs nothing, so it is always satisfied.
-    func has(_ multiplexer: Multiplexer) -> Bool {
-        switch multiplexer {
-        case .none:  return true
-        case .tmux:  return hasTmux
-        case .herdr: return hasHerdr
-        }
-    }
+    /// The directories added to a host's `PATH` for the probe and the
+    /// core's commands (`moshpit_install::capabilities::EXTRA_PATH_DIRS`): a
+    /// non-login exec shell sources no profile, so Homebrew's, `/usr/local`'s
+    /// and `$HOME/.local/bin` (herdr's installer) would look missing.
+    static let extraPathDirs = hostExtraPathDirs()
 
-    /// Extra PATH entries to check alongside whatever the SSH channel already
-    /// inherited. `ssh host command` typically execs a NON-login,
-    /// non-interactive shell — it does not source `.zprofile`/`.bash_profile`,
-    /// so PATH additions those files make (most commonly Homebrew's `brew
-    /// shellenv`, at `/opt/homebrew` on Apple Silicon or `/usr/local` on Intel
-    /// Mac and many Linux self-installs) are invisible here even though the
-    /// SAME binary works fine from an interactive login shell. Without this,
-    /// a real tmux install can probe as "missing" and silently degrade a
-    /// session to plain SSH for no reason the user can see.
-    /// The core's mosh bootstrap searches the same dirs (crates/mosh's
-    /// `bootstrap::EXTRA_PATH_DIRS`): its `mosh-server new` runs over
-    /// the same non-interactive exec channel, so it must search the same dirs
-    /// the probe did — otherwise a host can pass the probe and still fail the
-    /// launch with "command not found" (seen live on a macOS/Homebrew host).
-    /// `$HOME/.local/bin` is here for herdr specifically: its official
-    /// installer (`curl -fsSL https://herdr.dev/install.sh | sh`) drops the
-    /// binary there and, by design, does NOT touch any shell rc file — it only
-    /// prints a "not in your PATH" warning. Without this entry the very
-    /// install command Install Assist hands the user produces a herdr that
-    /// still probes as missing. `$HOME` expands remotely: the dirs are
-    /// interpolated inside a double-quoted `PATH="$PATH:…"` assignment.
-    static let extraPathDirs =
-        "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin"
+    /// The probe a connection runs on its host, the core's
+    /// (`moshpit_install::capabilities::probe_command`): Install Assist's
+    /// re-check asks exactly what a connect asks.
+    static let probeCommand = hostCapabilitiesProbeCommand()
 
-    /// The single shell command whose stdout ``parse(_:)`` consumes. Kept here
-    /// (not inlined in the hub) so the unit test exercises the exact string the
-    /// app runs.
-    ///
-    /// `command -v` prints a path per found name and exits non-zero if any are
-    /// missing — harmless, we only read stdout. The trailing marker line is
-    /// unambiguous (`::os::pkgPath`) so parsing never confuses it with a tool
-    /// path. `2>/dev/null` keeps a noisy shell from polluting the marker.
-    static let probeCommand =
-        "PATH=\"$PATH:\(extraPathDirs)\" command -v tmux mosh-server herdr python3; " +
-        "echo \"::$(uname -s)::$(PATH=\"$PATH:\(extraPathDirs)\" command -v apt-get dnf yum pacman apk brew 2>/dev/null | head -1)\""
-
-    /// Parse the probe stdout. Lines before the `::os::pkg` marker are the
-    /// resolved paths of whatever `command -v tmux mosh-server` found; a line
-    /// ending in `/tmux` (or just `tmux`) means tmux is on PATH, same for
-    /// `mosh-server`. The marker line carries `uname -s` and the package
-    /// manager's path.
+    /// What the probe's output says the host has, read by the core
+    /// (`HostCapabilities::parse`).
     static func parse(_ output: String) -> HostCapabilities {
-        var hasTmux = false
-        var hasMoshServer = false
-        var hasHerdr = false
-        var hasPython3 = false
-        var os = ""
-        var packageManager: PackageManager?
-
-        for rawLine in output.split(whereSeparator: \.isNewline) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("::") {
-                // Marker: "::<uname>::<pkgPath>"
-                let fields = line.split(separator: ":", omittingEmptySubsequences: false)
-                // ["", "", "<uname>", "", "<pkgPath>"] — `::` yields two empty
-                // leading fields; the body fields land at index 2 and 4.
-                if fields.count > 2 {
-                    os = String(fields[2]).trimmingCharacters(in: .whitespaces)
-                }
-                if fields.count > 4 {
-                    let pkgPath = String(fields[4]).trimmingCharacters(in: .whitespaces)
-                    packageManager = PackageManager(binaryPath: pkgPath)
-                }
-                continue
-            }
-            // A resolved tool path (or a bare name from a shell builtin form).
-            let name = line.split(separator: "/").last.map(String.init) ?? line
-            if name == "tmux" { hasTmux = true }
-            if name == "mosh-server" { hasMoshServer = true }
-            if name == "herdr" { hasHerdr = true }
-            if name == "python3" { hasPython3 = true }
-        }
-
+        let found = hostCapabilitiesParse(output: output)
         return HostCapabilities(
-            hasTmux: hasTmux, hasMoshServer: hasMoshServer,
-            os: os, packageManager: packageManager, hasHerdr: hasHerdr,
-            hasPython3: hasPython3)
+            hasTmux: found.hasTmux, hasMoshServer: found.hasMoshServer, os: found.os,
+            packageManager: found.packageManager.flatMap(PackageManager.init(rawValue:)),
+            hasHerdr: found.hasHerdr, hasPython3: found.hasPython3)
     }
 }
 
-/// The remote host's package manager, used to synthesize the right install
-/// command in the Install Assist sheet.
+/// The remote host's package manager, by the raw id the core's Install
+/// Assist plan takes (`installAssistPlan(packageManager:)`).
 enum PackageManager: String, Codable, Equatable, Sendable, CaseIterable {
     case aptGet     // Debian / Ubuntu
     case dnf        // Fedora / RHEL 8+
@@ -141,59 +73,6 @@ enum PackageManager: String, Codable, Equatable, Sendable, CaseIterable {
     case apk        // Alpine
     case brew       // macOS / Homebrew
 
-    /// Match the last path component of a `command -v` hit (e.g.
-    /// `/usr/bin/apt-get`) to a case. Unknown → nil.
-    init?(binaryPath: String) {
-        let name = binaryPath.split(separator: "/").last.map(String.init) ?? binaryPath
-        switch name {
-        case "apt-get": self = .aptGet
-        case "dnf": self = .dnf
-        case "yum": self = .yum
-        case "pacman": self = .pacman
-        case "apk": self = .apk
-        case "brew": self = .brew
-        default: return nil
-        }
-    }
-
-    /// Install command for the given package names, e.g.
-    /// `sudo apt-get install -y tmux mosh`. brew runs unprivileged.
-    func installCommand(for packages: [String]) -> String {
-        let pkgs = packages.joined(separator: " ")
-        switch self {
-        case .aptGet: return "sudo apt-get install -y \(pkgs)"
-        case .dnf:    return "sudo dnf install -y \(pkgs)"
-        case .yum:    return "sudo yum install -y \(pkgs)"
-        case .pacman: return "sudo pacman -S --noconfirm \(pkgs)"
-        case .apk:    return "sudo apk add \(pkgs)"
-        case .brew:   return "brew install \(pkgs)"
-        }
-    }
-}
-
-extension Multiplexer {
-    /// The install command Install Assist offers for this multiplexer, given
-    /// the host's detected package manager. `nil` when there is nothing
-    /// useful to hand the user.
-    func installCommand(using manager: PackageManager?) -> String? {
-        switch self {
-        case .none:
-            return nil
-        case .tmux:
-            // Install mosh alongside: a host missing tmux is usually missing
-            // mosh too, and one command beats two round trips.
-            return manager?.installCommand(for: ["tmux", "mosh"])
-        case .herdr:
-            // herdr is in NO distro repository — only Homebrew and its own
-            // installer script. Routing it through `PackageManager` would
-            // synthesize `sudo apt-get install -y herdr`, which fails with
-            // "unable to locate package" and reads as our bug. The installer
-            // script needs no package manager at all, so unlike tmux there is
-            // always something to offer.
-            if manager == .brew { return "brew install herdr" }
-            return "curl -fsSL https://herdr.dev/install.sh | sh"
-        }
-    }
 }
 
 /// Process-wide cache of probed capabilities, keyed by `connection.id`.

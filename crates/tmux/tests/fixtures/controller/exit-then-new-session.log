@@ -23,10 +23,14 @@
 . view %0 veil
 . view %0 extend 2.000
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %0 \x1b[2;3H
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %0 reveal
 . note first-frame
 . pane %0 \x1b[2;3H
 > capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
 > capture-pane -p -e -t %0
@@ -83,6 +87,8 @@
 . view %3 veil
 . view %3 extend 2.000
 . pane %3 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %3 \x1b[1;1H
+. pane %3 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %3 reveal
 . pane %3 \x1b[1;1H
 > set-option -s @moshpit_cc 'moshpit-a'
@@ -91,6 +97,8 @@
 > set-option -t '=again~mp-iPhone-7-1hc:' @moshpit_group_of '$7'
 > display-message -p -t '@3' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > capture-pane -p -e -S -400 -E -1 -t %3
+> capture-pane -p -e -t %3
+> display-message -p -t %3 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > set-option -w -t @3 @moshpit_size_owner "client-9|iPhone|0"
 > display-message -p -t '@3' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > resize-window -t @3 -x 70 -y 35

@@ -41,18 +41,32 @@
 . view %4 extend 2.000
 . view %4 extend 2.000
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %0 \x1b[1;1H
 . pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %1 \x1b[1;1H
 . pane %2 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %2 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %2 \x1b[1;1H
 . pane %3 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %3 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %3 \x1b[1;1H
 . pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
 . view %4 cover?
 . view %4 veil
 . view %4 extend 2.000
+. pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %4 \x1b[1;1H
 . pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
+. pane %5 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %5 \x1b[1;1H
 . pane %6 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[3J\x1b[H0 0\x1b[0m\x1b[9999;1H\x0a
 . view %6 cover?
 . view %6 veil
 . view %6 extend 2.000
+. pane %6 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
+. pane %6 \x1b[1;1H
 . pane %4 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
 . pane %4 \x1b[1;1H
 . pane %6 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H0 0\x1b[0m
@@ -61,12 +75,26 @@
 . pane %6 \x1b[1;1H
 > display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %1
+> capture-pane -p -e -t %1
+> display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %2
+> capture-pane -p -e -t %2
+> display-message -p -t %2 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %3
+> capture-pane -p -e -t %3
+> display-message -p -t %3 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %4
+> capture-pane -p -e -t %4
+> display-message -p -t %4 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %5
+> capture-pane -p -e -t %5
+> display-message -p -t %5 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > capture-pane -p -e -S -400 -E -1 -t %6
+> capture-pane -p -e -t %6
+> display-message -p -t %6 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @1 @moshpit_size_owner
 > select-pane -Z -t %4

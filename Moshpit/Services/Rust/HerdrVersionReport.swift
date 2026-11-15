@@ -8,8 +8,6 @@ struct HerdrVersionReport: Equatable {
     var client: String
     var server: String
 
-    var mismatched: Bool { Self.compare(client, server) != .orderedSame }
-
     /// Restarting the server with the client would DOWNGRADE it.
     var clientIsOlder: Bool { Self.compare(client, server) == .orderedAscending }
 
@@ -34,15 +32,5 @@ struct HerdrVersionReport: Equatable {
             if l != r { return l < r ? .orderedAscending : .orderedDescending }
         }
         return .orderedSame
-    }
-
-    /// Whether a refusal's own words say the `herdr` our commands run is the
-    /// older side ("client protocol 19 is older than server protocol 22").
-    /// Its remedy is the opposite of the newer-client case — restarting the
-    /// server with this client would downgrade it and exit every pane — so
-    /// no surface may offer the restart for it (crates/herdr's
-    /// `snapshot::client_is_older`).
-    static func clientIsOlder(_ message: String) -> Bool {
-        message.contains("older than server")
     }
 }

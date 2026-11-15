@@ -1162,6 +1162,17 @@ mod tests {
     }
 
     #[test]
+    fn a_card_never_says_the_sessions_name_again() {
+        // B650: the session is named after the folder trainer's panes work
+        // in; the overview's bar says it, the card says the window.
+        let mut tree = work("%1");
+        tree.sessions[0].name = "Trainer".into();
+        let overview = Overview::of(&tree, &english());
+        let places: Vec<&str> = overview.cards.iter().map(|c| c.place.as_str()).collect();
+        assert_eq!(places, ["api", "Window 2", "web", "docs", "logs"]);
+    }
+
+    #[test]
     fn past_four_panes_a_card_shows_three_and_more_until_opened() {
         assert_eq!(shown(1, false), (1, 0));
         assert_eq!(shown(4, false), (4, 0));

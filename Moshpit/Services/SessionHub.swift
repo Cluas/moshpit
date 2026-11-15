@@ -557,19 +557,6 @@ final class SessionHub {
             rust?.scroll(lines: lines)
         }
 
-        /// Single-quote a value that will be spliced into a command typed
-        /// into the remote LOGIN SHELL (as opposed to tmux's own control
-        /// channel — crates/tmux `name_argument` quotes those, a separate
-        /// context). Used for tmux SESSION NAMES, which can originate from
-        /// the remote server or another client (created, renamed) and are
-        /// not otherwise validated here — a name containing a `'` would
-        /// otherwise close the surrounding quote early and let the rest of
-        /// the string execute as arbitrary shell commands. The app's one
-        /// quoter, ``Shell/quote(_:)``.
-        nonisolated static func shellQuote(_ value: String) -> String {
-            Shell.quote(value)
-        }
-
         /// Runs the session on the Rust core (``startOnRustCore``),
         /// which dials, signs in and redials on its own.
         /// - Parameter automatic: true when nobody asked for this — the transport

@@ -1,7 +1,6 @@
 import WidgetKit
 import SwiftUI
 import ActivityKit
-import AppIntents
 import MoshpitKit
 
 #if MOSHPIT_TESTS
@@ -64,13 +63,17 @@ private let green = AgentPalette.doneAdaptive
 /// - **center**: nothing (it repeated the state);
 /// - **bottom**, inset from the curved corners: what it's asking or doing
 ///   (amber when it asks), then up to two other agents, one line each
-///   (dot · name · place … time or state), then Switch (a 44 pt target) with
-///   "+N more" on the same line when there are more.
+///   (dot · name · place … time or state), each a link to its own pane,
+///   then "+N more" as plain words when there are more. The whole island
+///   opens the headline's pane. (Canary 141: the Switch button that cycled
+///   the headline read as nothing and did nothing visible; it's gone.)
 ///
-/// The compact pill: the companion (or the mark) leading; trailing, the
-/// one thing that matters most (the count waiting on you, the timer, the
-/// count working, a check). Minimal: the companion, else the count waiting,
-/// else the mark.
+/// The compact pill (B597): the companion (or the mark) leading; trailing,
+/// the headline's state — anyone needing you first, an amber "!" for one,
+/// the waiting hand and their count for several, never a bare number;
+/// else working its elapsed time, done a check, idle its dot
+/// (``AgentActivityAttributes.ContentState.compactSignal``). Minimal: the
+/// companion, else the count waiting, else the mark.
 struct MoshpitIslandLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentActivityAttributes.self) { context in
@@ -125,20 +128,14 @@ struct MoshpitIslandLiveActivity: Widget {
                                 .lineLimit(1)
                         }
                         OtherAgentRows(state: context.state)
+                        let more = context.state.agents.count - 1 - OtherAgentRows.shown
+                        if more > 0 {
+                            Text(AppLanguage.string("+\(more) more"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.primary.opacity(0.45))
+                        }
                         if context.isStale {
                             StaleHint()
-                        }
-                        if context.state.agents.count > 1 {
-                            HStack {
-                                SwitchAgentButton()
-                                Spacer(minLength: 8)
-                                let more = context.state.agents.count - 1 - OtherAgentRows.shown
-                                if more > 0 {
-                                    Text(AppLanguage.string("+\(more) more"))
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(Color.primary.opacity(0.45))
-                                }
-                            }
                         }
                     }
                     // Clear of the island's curved bottom corners.
@@ -375,28 +372,6 @@ private struct AgentRow: View {
 
 /// Preset quick-reply templates offered under Allow/Deny — one tap sends the
 /// text + Enter to the agent's pane (see AgentAction.reply).
-/// Cycle which agent the Dynamic Island pill shows (when several are active).
-/// Its capsule is drawn small; its target is 44 pt tall.
-private struct SwitchAgentButton: View {
-    var body: some View {
-        Button(intent: AgentCycleIntent()) {
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(AppLanguage.string("Switch"))
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(Color.primary.opacity(0.8))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.22), lineWidth: 1))
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Shared bits
 
 /// The companion's still where there is one (a ``PixelSprite``: the pet in
@@ -476,48 +451,40 @@ private struct CompactTrailing: View {
     let state: AgentActivityAttributes.ContentState
 
     var body: some View {
-        if state.attentionCount > 0 {
-            // Needs-you owns the pill: a single "!" for one, the count for several.
-            Group {
-                if state.attentionCount == 1 {
-                    Image(systemName: "exclamationmark").font(.system(size: 13, weight: .heavy))
-                } else {
-                    Text("\(state.attentionCount)")
-                        .font(.system(size: 13, weight: .bold))
-                        .monospacedDigit()
-                }
+        switch state.compactSignal {
+        case .waiting(let count) where count > 1:
+            // Several waiting: the waiting hand and their count.
+            HStack(spacing: 2) {
+                Image(systemName: "hand.raised.fill").font(.system(size: 11, weight: .bold))
+                Text("\(count)").font(.system(size: 13, weight: .bold)).monospacedDigit()
             }
             .foregroundStyle(amber)
-        } else if let headline = state.headline, headline.state == .working,
-                  state.workingCount == 1 {
-            // A LIVE ticking timer — the pill actually shows something happening
-            // (the old 4-char command prefix told you nothing you didn't know).
-            Text(headline.startedAt, style: .timer)
+        case .waiting:
+            Image(systemName: "exclamationmark")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(amber)
+        case .working(let since):
+            Text(since, style: .timer)
                 .font(.system(size: 12, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(teal)
                 .frame(maxWidth: 48)
                 .multilineTextAlignment(.trailing)
-        } else if state.workingCount > 1 {
-            Text("\(state.workingCount)")
-                .font(.system(size: 13, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(Color.primary)
-        } else if let headline = state.headline, headline.state == .done {
+        case .done:
             Image(systemName: "checkmark")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(stateColor(.done))
-        } else if let headline = state.headline {
-            // Nothing pressing: the state's dot (a clipped "clau" said
-            // nothing the leading companion doesn't).
-            StateDot(state: headline.state)
+        case .quiet:
+            StateDot(state: .idle)
+        case nil:
+            EmptyView()
         }
     }
 }
 
 /// The non-headline agents in the expanded island, one tidy line each:
-/// dot · name · where it is (as Home says it) … the timer or the state. At
-/// most ``shown``; the Switch row counts the rest.
+/// dot · name · where it is (as Home says it) … the timer or the state, each
+/// a link to its own pane. At most ``shown``; "+N more" counts the rest.
 private struct OtherAgentRows: View {
     let state: AgentActivityAttributes.ContentState
     static let shown = 2
@@ -526,6 +493,9 @@ private struct OtherAgentRows: View {
         let headlineId = state.headline?.id
         let others = state.agents.filter { $0.id != headlineId }
         ForEach(others.prefix(Self.shown)) { agent in
+            Link(destination: URL(string: AgentDeepLink.string(connectionId: agent.connectionId,
+                                                                paneId: agent.paneId))
+                 ?? URL(string: "moshpit://")!) {
             HStack(spacing: 6) {
                 StateDot(state: agent.state)
                 Text(agent.name)
@@ -552,6 +522,8 @@ private struct OtherAgentRows: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(stateColor(agent.state))
                 }
+            }
+            .contentShape(Rectangle())
             }
         }
     }

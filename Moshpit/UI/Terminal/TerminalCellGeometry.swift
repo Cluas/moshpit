@@ -34,12 +34,4 @@ enum TerminalCellGeometry {
         return CGSize(width: ceil(width * scale) / scale,
                       height: ceil(height * scale) / scale)
     }
-
-    /// Clamped viewport-point → cell. Pure, for testing.
-    static func cell(at point: CGPoint, cell: CGSize, cols: Int, rows: Int) -> (col: Int, row: Int) {
-        guard cell.width > 0, cell.height > 0 else { return (0, 0) }
-        let col = min(max(0, Int((point.x / cell.width).rounded(.down))), max(0, cols - 1))
-        let row = min(max(0, Int((point.y / cell.height).rounded(.down))), max(0, rows - 1))
-        return (col, row)
-    }
 }

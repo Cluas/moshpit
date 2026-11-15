@@ -281,6 +281,20 @@ fn notification_stream() {
 }
 
 /// %pause and %continue route to onPause / onContinue
+/// B614: `%pane-mode-changed` is an event now — it passed silently as an
+/// unknown directive, and the mosh path guessed the copy-mode instead.
+#[test]
+fn pane_mode_changed() {
+    let mut rec = Recorder::booted();
+    rec.feed(b"%pane-mode-changed %7\n");
+    assert_eq!(
+        rec.events,
+        [Event::PaneModeChanged {
+            pane_id: "%7".into()
+        }]
+    );
+}
+
 #[test]
 fn pause_continue() {
     let mut rec = Recorder::booted();

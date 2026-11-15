@@ -24,7 +24,7 @@ use crate::format::{command_string_literal, is_valid_id, words};
 use crate::hooks::{AGENT_HOOK_FORMAT, parse_agent_hooks};
 
 use super::timers::{Action, Slot};
-use super::{Controller, Notification, Reply, ViewAction};
+use super::{Controller, Notification, Reply, ScreenState, ViewAction};
 
 /// Where a scroll tick over the active pane goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +71,10 @@ pub struct InputFlags {
     /// either renderer, so a scroll is dropped rather than guessed (the
     /// attach's first repaint brings the flags).
     pub holds_ticks: bool,
+    /// tmux has the pane in a mode — copy-mode, a view-mode — as discovery
+    /// and every `%pane-mode-changed` since said (B614: the mosh path's
+    /// copy-mode latch follows it; unknown: no).
+    pub in_copy_mode: bool,
 }
 
 /// What tmux said about one pane's program.
@@ -340,6 +344,10 @@ impl Controller {
             alt_screen,
             scrolls_itself: wants_mouse && (alt_screen || claude),
             holds_ticks: !alt_screen && claude && known.is_none(),
+            in_copy_mode: self
+                .pane_screen_state
+                .get(pane)
+                .is_some_and(|s| s.copy_mode),
         }
     }
 
@@ -595,6 +603,38 @@ impl Controller {
             );
         }
         self.finish_input();
+    }
+
+    /// `%pane-mode-changed`: which mode, asked (B614). The mosh path keeps
+    /// a latch of the copy-mode its scrolls enter; this is the truth it
+    /// follows — a `q` the person typed, a switch to another pane.
+    pub(super) fn pane_mode_changed(&mut self, pane: &str) {
+        self.send_command(
+            format!("display-message -p -t {pane} '#{{pane_in_mode}} #{{alternate_on}}'"),
+            Reply::PaneMode {
+                pane: pane.to_owned(),
+            },
+        );
+    }
+
+    pub(super) fn pane_mode_answered(&mut self, pane: &str, response: &CommandResponse) {
+        if response.is_error {
+            return;
+        }
+        let Some(line) = response.lines.first() else {
+            return;
+        };
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 2 {
+            return;
+        }
+        self.pane_screen_state.insert(
+            pane.to_owned(),
+            ScreenState {
+                copy_mode: fields[0] == "1",
+                alternate: fields[1] == "1",
+            },
+        );
     }
 
     pub(super) fn stale_copy_mode_answered(&mut self, pane: &str, response: &CommandResponse) {

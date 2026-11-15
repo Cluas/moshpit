@@ -29,6 +29,7 @@ enum Edge {
     ActivePaneChanged(String, String),
     Pause(String),
     Continue(String),
+    PaneModeChanged(String),
     ClientDetached(String),
     Exit(Option<String>),
     CommandResponse {
@@ -74,6 +75,7 @@ impl From<Event> for Edge {
             }
             Event::Pause { pane_id } => Edge::Pause(pane_id),
             Event::Continue { pane_id } => Edge::Continue(pane_id),
+            Event::PaneModeChanged { pane_id } => Edge::PaneModeChanged(pane_id),
             Event::ClientDetached { payload } => Edge::ClientDetached(payload),
             Event::Exit { reason } => Edge::Exit(reason),
             Event::CommandResponse(response) => Edge::CommandResponse {

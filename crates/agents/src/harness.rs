@@ -94,6 +94,8 @@ pub fn run(script: &Script, dir: &std::path::Path, language: Language) -> Vec<St
             session: Some(SESSION.into()),
             window: Some(WINDOW.into()),
             name: None,
+            window_index: None,
+            pane_index: None,
         },
         None => PaneWhere::default(),
     };

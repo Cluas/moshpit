@@ -1,8 +1,8 @@
 //! The NSH view as a `UIView` for the Swift host, behind a C ABI
 //! (`include/moshpit_ui.h`, part of the app's `MoshpitFFI` module): create a
 //! surface, register the host's native components, run a screen, post to
-//! it and hear it, destroy it. Ported from spikes G1 and G5
-//! (`crates/spike-ios/src/app.rs`), which modelled it on Foyer's: it wraps
+//! it and hear it, destroy it. Ported from spikes G1 and G5, which
+//! modelled it on Foyer's: it wraps
 //! `nsh_platform_ios::AppView`, because NSH's own embedding ABI
 //! (`NativeShell`) only runs JS bundles.
 //!

@@ -44,13 +44,6 @@ enum BracketedPaste {
         return Data(kept)
     }
 
-    /// ``body(_:)`` as text, for a path that hands the text on for someone
-    /// else to bracket (tmux's `paste-buffer -p`). Taking ASCII out of UTF-8
-    /// leaves valid UTF-8, so nothing else about the text changes.
-    static func sanitized(_ text: String) -> String {
-        String(decoding: body(text), as: UTF8.self)
-    }
-
     /// `text` as one complete bracketed paste.
     static func wrapped(_ text: String) -> Data {
         start + body(text) + end

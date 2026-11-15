@@ -23,10 +23,14 @@
 . view %0 veil
 . view %0 extend 2.000
 . pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %0 \x1b[2;3H
+. pane %0 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . view %0 reveal
 . note first-frame
 . pane %0 \x1b[2;3H
 > capture-pane -p -e -S -400 -E -1 -t %0
+> capture-pane -p -e -t %0
+> display-message -p -t %0 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > list-clients -F '#{client_name}'
 > show-options -wqv -t @0 @moshpit_size_owner
 > capture-pane -p -e -t %0
@@ -53,6 +57,8 @@
 > resize-window -t @1 -x 70 -y 35
 > select-window -t @1
 > capture-pane -p -e -S -400 -E -1 -t %1
+> capture-pane -p -e -t %1
+> display-message -p -t %1 '#{cursor_x} #{cursor_y} #{mouse_any_flag} #{alternate_on}'
 > select-pane -Z -t %1
 > display-message -p -t '@1' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'
 > display-message -p -t %1 '#{mouse_any_flag} #{alternate_on}'
@@ -61,6 +67,8 @@
 . view %1 cover?
 . view %1 veil
 . view %1 extend 2.000
+. pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
+. pane %1 \x1b[1;1H
 . pane %1 \x1b[0m\x1b[H\x1b[K\x1b[2;1H\x1b[J\x1b[H$ ls\x0d\x0aREADY\x1b[0m
 . pane %1 \x1b[1;1H
 > list-windows -t '$1' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout}'

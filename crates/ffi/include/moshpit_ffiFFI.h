@@ -2327,6 +2327,23 @@ RustBuffer uniffi_moshpit_ffi_fn_func_theme_editor_message(RustBuffer theme, int
 double uniffi_moshpit_ffi_fn_func_herdr_stamp_interval(int8_t push_active, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PARSE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PARSE
+RustBuffer uniffi_moshpit_ffi_fn_func_host_capabilities_parse(RustBuffer output, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PROBE_COMMAND
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PROBE_COMMAND
+RustBuffer uniffi_moshpit_ffi_fn_func_host_capabilities_probe_command(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_EXTRA_PATH_DIRS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_EXTRA_PATH_DIRS
+RustBuffer uniffi_moshpit_ffi_fn_func_host_extra_path_dirs(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_PREFLIGHT_COMMAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_PREFLIGHT_COMMAND
 RustBuffer uniffi_moshpit_ffi_fn_func_host_preflight_command(RustCallStatus *_Nonnull out_status
@@ -3037,6 +3054,24 @@ uint16_t uniffi_moshpit_ffi_checksum_func_theme_editor_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 uint16_t uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PARSE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PARSE
+uint16_t uniffi_moshpit_ffi_checksum_func_host_capabilities_parse(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PROBE_COMMAND
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PROBE_COMMAND
+uint16_t uniffi_moshpit_ffi_checksum_func_host_capabilities_probe_command(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_EXTRA_PATH_DIRS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_EXTRA_PATH_DIRS
+uint16_t uniffi_moshpit_ffi_checksum_func_host_extra_path_dirs(void
     
 );
 #endif

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use moshpit_term::{Options, ScrollOnClear, Terminal};
 use moshpit_tmux::controller::Config;
-use moshpit_tmux::rig::{Rig, Seen, ok};
+use moshpit_tmux::rig::{Rig, Seen, block, ok};
 
 const COLS: i64 = 80;
 const ROWS: i64 = 24;
@@ -150,4 +150,80 @@ fn a_dump_retried_onto_a_painted_screen_leaves_tmuxs_history() {
     let term = terminal(&rig);
     assert_eq!(local_history(&term), history());
     assert_eq!(local_screen(&term), screen_rows());
+}
+
+/// tmux as a pane printing `L1`, `L2`, … : `printed` lines so far, the
+/// screen holding the last `ROWS - 1` above an empty cursor row.
+fn printing_pane_answer(command: &str, printed: i64) -> Vec<String> {
+    let first_on_screen = printed - (ROWS - 2);
+    if command.starts_with("capture-pane -p -e -S") {
+        return (1..first_on_screen).map(|n| format!("L{n}")).collect();
+    }
+    if command.starts_with("capture-pane") {
+        let mut rows: Vec<String> = (first_on_screen..=printed)
+            .map(|n| format!("L{n}"))
+            .collect();
+        rows.push(String::new());
+        return rows;
+    }
+    if command.starts_with("display-message -p -t %0 '#{cursor_x} #{cursor_y}") {
+        return vec![format!("0 {} 0 0", ROWS - 1)];
+    }
+    vec!["0 0".to_owned()]
+}
+
+/// The `L<n>` rows of the terminal, history then screen.
+fn printed_rows(term: &Terminal) -> Vec<i64> {
+    let history = term.history_len() as i32;
+    (-history..ROWS as i32)
+        .filter_map(|line| term.row_text(line).0.strip_prefix('L')?.parse().ok())
+        .collect()
+}
+
+/// B585: the attach's history dump and its screen frame were two captures a
+/// round trip apart — the frame went out only once the dump's reply was in.
+/// A pane printing in between scrolled lines off tmux's screen that were in
+/// neither: gone from the phone's history (the output itself pushed blank
+/// rows there instead). tmux runs the commands a client sent together back
+/// to back; here, what the pane prints lands right after the batch the dump
+/// went out in.
+#[test]
+fn a_pane_printing_through_the_attach_loses_no_line() {
+    let mut rig = Rig::new(Config::default());
+    rig.with(|c, _| c.set_initial_client_size(COLS, ROWS));
+    rig.attach();
+    rig.push(&format!(
+        "%begin 1 1 1\n$0 1 main\n%end 1 1 1\n%begin 2 2 1\n$0 @0 0 {COLS}x{ROWS},0,0,0 1 1 main\n%end 2 2 1\n%begin 3 3 1\n%0 @0 0 {COLS} {ROWS} 1 0 0 bash\n%end 3 3 1\n\n"
+    ));
+    rig.answered = rig.answered.max(3);
+    rig.with(|c, now| c.view_grid("%0", COLS, ROWS, now));
+    let mut printed = 150;
+    let mut batch_end: Option<usize> = None;
+    let mut block_number = 500;
+    for _ in 0..400 {
+        if batch_end.is_some_and(|end| rig.answered >= end) && printed == 150 {
+            // The pane prints three lines once that batch has run.
+            rig.push("%output %0 L151\\015\\012L152\\015\\012L153\\015\\012\n");
+            printed = 153;
+        }
+        let Some(command) = rig.commands.get(rig.answered).cloned() else {
+            break;
+        };
+        rig.answered += 1;
+        if batch_end.is_none() && command.starts_with("capture-pane -p -e -S") {
+            batch_end = Some(rig.commands.len());
+        }
+        block_number += 1;
+        let lines = printing_pane_answer(&command, printed);
+        rig.push(&block(block_number, &lines, false));
+    }
+    assert_eq!(printed, 153, "the dump went out: {:?}", rig.commands);
+    rig.respond(Box::new(|command, _| {
+        ok(printing_pane_answer(command, 153))
+    }));
+    rig.wait_settled(3000, 100);
+    let term = terminal(&rig);
+    let rows = printed_rows(&term);
+    let missing: Vec<i64> = (1..=153).filter(|n| !rows.contains(n)).collect();
+    assert_eq!(rows, (1..=153).collect::<Vec<i64>>(), "missing {missing:?}");
 }

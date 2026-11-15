@@ -94,19 +94,6 @@ struct HostCapabilitiesTests {
         #expect(caps.packageManager == nil)
     }
 
-    // MARK: - Install command synthesis
-
-    @Test("Install commands include sudo (except brew) and both packages")
-    func installCommands() {
-        let pkgs = ["tmux", "mosh"]
-        #expect(PackageManager.aptGet.installCommand(for: pkgs) == "sudo apt-get install -y tmux mosh")
-        #expect(PackageManager.dnf.installCommand(for: pkgs) == "sudo dnf install -y tmux mosh")
-        #expect(PackageManager.yum.installCommand(for: pkgs) == "sudo yum install -y tmux mosh")
-        #expect(PackageManager.pacman.installCommand(for: pkgs) == "sudo pacman -S --noconfirm tmux mosh")
-        #expect(PackageManager.apk.installCommand(for: pkgs) == "sudo apk add tmux mosh")
-        #expect(PackageManager.brew.installCommand(for: pkgs) == "brew install tmux mosh")
-    }
-
     // MARK: - Tolerance
 
     @Test("Noisy / empty output never crashes and degrades to all-missing")
@@ -161,17 +148,6 @@ struct HostCapabilitiesTests {
         #expect(HostCapabilities.extraPathDirs.contains("$HOME/.local/bin"))
     }
 
-    @Test("has(_:) maps each multiplexer to its own probe result")
-    func hasMultiplexer() {
-        let herdrOnly = HostCapabilities(
-            hasTmux: false, hasMoshServer: false, os: "Linux",
-            packageManager: .aptGet, hasHerdr: true)
-        #expect(herdrOnly.has(.herdr))
-        #expect(!herdrOnly.has(.tmux))
-        // Nothing to install → never degraded.
-        #expect(herdrOnly.has(.none))
-    }
-
     // MARK: - Cached-probe decoding
 
     @Test("Capabilities round-trip through the cache encoding")
@@ -182,29 +158,5 @@ struct HostCapabilitiesTests {
         let back = try JSONDecoder().decode(
             HostCapabilities.self, from: JSONEncoder().encode(caps))
         #expect(back == caps)
-    }
-
-    // MARK: - Multiplexer install commands
-
-    @Test("herdr never routes through a distro package manager")
-    func herdrInstallCommand() {
-        // No distro ships herdr — `apt-get install herdr` would just fail.
-        #expect(Multiplexer.herdr.installCommand(using: .aptGet)
-                == "curl -fsSL https://herdr.dev/install.sh | sh")
-        #expect(Multiplexer.herdr.installCommand(using: .pacman)
-                == "curl -fsSL https://herdr.dev/install.sh | sh")
-        // The installer needs no package manager, so there's always an offer.
-        #expect(Multiplexer.herdr.installCommand(using: nil)
-                == "curl -fsSL https://herdr.dev/install.sh | sh")
-        // Homebrew does have a formula.
-        #expect(Multiplexer.herdr.installCommand(using: .brew) == "brew install herdr")
-    }
-
-    @Test("tmux installs mosh alongside it; none offers nothing")
-    func tmuxInstallCommand() {
-        #expect(Multiplexer.tmux.installCommand(using: .aptGet)
-                == "sudo apt-get install -y tmux mosh")
-        #expect(Multiplexer.tmux.installCommand(using: nil) == nil)
-        #expect(Multiplexer.none.installCommand(using: .brew) == nil)
     }
 }

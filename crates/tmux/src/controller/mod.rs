@@ -381,6 +381,9 @@ enum Reply {
     NewWindowId,
     NewSessionId {
         name_given: bool,
+        /// The name typed, trimmed (empty: none), should tmux's line
+        /// lack its own.
+        name: String,
     },
     SurfaceError {
         verb: &'static str,
@@ -456,6 +459,10 @@ enum Reply {
         request: u64,
     },
     StaleCopyMode {
+        pane: String,
+    },
+    /// `#{pane_in_mode} #{alternate_on}` after a `%pane-mode-changed`.
+    PaneMode {
         pane: String,
     },
     PanePath {
@@ -1108,6 +1115,11 @@ impl Controller {
                     self.resync_pane(&pane_id, true);
                 }
             }
+            Event::PaneModeChanged { pane_id } => {
+                if is_valid_id(&pane_id) {
+                    self.pane_mode_changed(&pane_id);
+                }
+            }
             Event::ClientDetached { payload } => self.client_detached(&payload),
             Event::Exit { .. } => {
                 self.snap().is_attached = false;
@@ -1311,7 +1323,9 @@ impl Controller {
                     self.pending_window_focus = Some(id.to_owned());
                 }
             }
-            Reply::NewSessionId { name_given } => self.new_session_answered(name_given, response),
+            Reply::NewSessionId { name_given, name } => {
+                self.new_session_answered(name_given, &name, response)
+            }
             Reply::SurfaceError { verb } => {
                 if response.is_error {
                     let detail = response.lines.first().cloned().unwrap_or_default();
@@ -1375,6 +1389,7 @@ impl Controller {
             Reply::MouseFlags { pane } => self.mouse_flags_answered(&pane, response),
             Reply::PrefixKey { request } => self.prefix_key_answered(request, response),
             Reply::StaleCopyMode { pane } => self.stale_copy_mode_answered(&pane, response),
+            Reply::PaneMode { pane } => self.pane_mode_answered(&pane, response),
             Reply::PanePath { request } => self.pane_path_answered(request, response),
             Reply::AgentHooks => self.agent_hooks_answered(response),
         }
@@ -2632,10 +2647,14 @@ impl Controller {
         } else {
             format!(" -s {}", name_argument(trimmed))
         };
+        // Its name with its id (B584): the group the landing makes is
+        // named after it, before any listing has it — tmux's own name for
+        // one not named, or for a name it changed.
         self.send_command(
-            format!("new-session -d -P -F '#{{session_id}}'{name_part}"),
+            format!("new-session -d -P -F '#{{session_id}} #{{session_name}}'{name_part}"),
             Reply::NewSessionId {
                 name_given: !trimmed.is_empty(),
+                name: trimmed.to_owned(),
             },
         );
         self.send_command(
@@ -2647,7 +2666,7 @@ impl Controller {
         self.finish_input();
     }
 
-    fn new_session_answered(&mut self, name_given: bool, response: &CommandResponse) {
+    fn new_session_answered(&mut self, name_given: bool, name: &str, response: &CommandResponse) {
         if response.is_error {
             let message = response
                 .lines
@@ -2657,15 +2676,26 @@ impl Controller {
             self.flash_notice(message);
             return;
         }
-        let Some(id) = response
-            .lines
-            .first()
-            .map(|line| trim_whitespaces(line).to_owned())
-        else {
+        let Some(line) = response.lines.first().map(|line| trim_whitespaces(line)) else {
             return;
         };
+        let (id, listed) = line.split_once(' ').unwrap_or((line, ""));
+        let id = id.to_owned();
         if !is_valid_id(&id) {
             return;
+        }
+        // Fix (B584): known by name before the listing comes back, so the
+        // landing's group is named after it, not `s~mp-…`.
+        let name = if listed.is_empty() { name } else { listed };
+        if !name.is_empty() && !self.snapshot.sessions.contains_key(&id) {
+            self.snap().sessions.insert(
+                id.clone(),
+                SessionInfo {
+                    id: id.clone(),
+                    name: name.to_owned(),
+                    is_attached: false,
+                },
+            );
         }
         if !self.config.renders_output && name_given {
             self.sidecar.owned_session_ids.insert(id.clone());
@@ -2719,17 +2749,34 @@ impl Controller {
         // (`detach-on-destroy`, on by default): killing the session on
         // screen ended control mode. The phone moves first, to the session
         // it falls back to (into a group of it), and the kill follows.
-        if self.config.renders_output
-            && self.snapshot.active_session_id.as_deref() == Some(session_id)
-            && let Some(next) = self
-                .snapshot
-                .sessions
-                .keys()
-                .filter(|id| id.as_str() != session_id)
-                .min_by(|a, b| id_cmp(a, b))
-                .cloned()
-        {
-            self.select_session_now(&next);
+        let on_it = self.snapshot.active_session_id.as_deref() == Some(session_id);
+        let renderer_on_it = self.sidecar.renderer_session_id.as_deref() == Some(session_id);
+        let next = self
+            .snapshot
+            .sessions
+            .keys()
+            .filter(|id| id.as_str() != session_id)
+            .min_by(|a, b| id_cmp(a, b))
+            .cloned();
+        if let Some(next) = next {
+            if self.config.renders_output {
+                if on_it {
+                    self.select_session_now(&next);
+                }
+            } else if on_it || renderer_on_it {
+                // Fix (B583): the mosh sidecar's renderer is mosh's own
+                // `exec tmux attach`; detached, it ended the mosh session.
+                // It moves first, by the name it is known by — the kill
+                // goes out right behind, so no listing is waited on — and
+                // this client with it.
+                if renderer_on_it && let Some(renderer) = self.sidecar.renderer_client.clone() {
+                    self.send(format!("switch-client -c {} -t {next}", renderer.name));
+                    // Nothing to hand back on a session about to go.
+                    self.sidecar.renderer_session_id = Some(next.clone());
+                }
+                self.send(format!("switch-client -t {next}"));
+                self.select_session_now(&next);
+            }
         }
         self.send_surfacing_errors(format!("kill-session -t {session_id}"), "kill session");
         if let Some(id) = group.and_then(|group| group.id) {

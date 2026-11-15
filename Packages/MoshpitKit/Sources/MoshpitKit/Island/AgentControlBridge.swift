@@ -2,11 +2,11 @@ import Foundation
 
 /// Vibe Island — the process-wide hop from a lock-screen surface into the app.
 ///
-/// What is left here is navigation and status: open a pane, cycle which agent the
-/// island shows, notice a self-test push, drain the share queue. Every process
-/// links MoshpitKit, so the bridge exists in the widget and the extensions too;
-/// there the closures are nil. `AgentCycleIntent` (Moshpit/App/) is what the
-/// widget's Button attaches to, and the app is where its `perform()` runs.
+/// What is left here is navigation and status: open a pane, notice a self-test
+/// push, drain the share queue. Every process links MoshpitKit, so the bridge
+/// exists in the widget and the extensions too; there the closures are nil.
+/// (The island's Switch, which cycled its headline, is gone: each row in the
+/// expanded island opens its own pane.)
 ///
 /// What used to be here was the CONTROL surface — `AgentAction`,
 /// `AgentApprovalIntent`, and a `handler` that turned a lock-screen Allow or Deny
@@ -25,9 +25,6 @@ public final class AgentControlBridge {
     /// terminal screen (mirrors the Live Activity's deep link).
     public var opener: ((_ connectionId: UUID, _ paneId: String) -> Void)?
 
-    /// Set by the app at launch. Cycles which agent the Live Activity shows as
-    /// the headline (Dynamic Island), so multiple concurrent agents are all
-    /// reachable from the island. nil inside the widget process.
     /// Answers "is this exact pane on screen right now?" — set by the app so
     /// foreground notification presentation can skip the banner + sound when
     /// the user is already looking at the prompt.
@@ -35,7 +32,6 @@ public final class AgentControlBridge {
     /// The pane on screen: its connection, and its pane — nil for a session
     /// with no multiplexer, whose one pane is every pane.
     public var visiblePane: (() -> (UUID, String?)?)?
-    public var cycler: (() -> Void)?
 
     /// Set by the app at launch. Called when a pairing self-test push arrives,
     /// with the nonce it carried.
@@ -63,7 +59,4 @@ public final class AgentControlBridge {
         opener(connectionId, paneId)
     }
 
-    public func cycleHeadline() {
-        cycler?()
-    }
 }

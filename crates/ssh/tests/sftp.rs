@@ -475,6 +475,27 @@ async fn the_uploads_directory_is_made_private() {
     assert_eq!(std::fs::read(&path).unwrap(), b"short");
     assert!(host.seen().commands.is_empty(), "no exec on an SFTP host");
 }
+/// B612: on a host without the SFTP subsystem, each refused SFTP start
+/// gives its session channel back, and the connection stops asking. Each
+/// left one open: sshd's MaxSessions (10) ran out after a handful of
+/// previews, and then every channel was refused, the exec fallbacks and
+/// the keepalive's own command too, which read as a dead link.
+#[tokio::test]
+async fn a_refused_sftp_gives_its_channel_back() {
+    let host = Host::start(Bench {
+        sftp: false,
+        shell_commands: true,
+        max_sessions: Some(1),
+        ..Default::default()
+    })
+    .await;
+    let ssh = connect(&host).await;
+    for _ in 0..4 {
+        assert!(matches!(ssh.sftp().await, Err(SftpError::Unavailable(_))));
+    }
+    let out = ssh.run("true").await.expect("a channel is still free");
+    assert!(out.closed, "{out:?}");
+}
 
 /// A host without the SFTP subsystem still takes uploads, over exec
 /// channels and the app's exact commands, and the connection stops trying

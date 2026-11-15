@@ -978,8 +978,8 @@ final class TerminalNSHStage {
         Log.ui.notice("terminal stage: \(host.key, privacy: .public) took the keyboard from the terminal it replaced: \(took, privacy: .public)")
     }
 
-    /// `PaneTerminalHost.updateUIView`'s focus rules: take it (now, and
-    /// back if something stole it), leave it, or give it up.
+    /// The slot's focus rules: take it (now, and back if something stole
+    /// it), leave it, or give it up.
     private func applyFocus() {
         guard let hosted, hosted.owns else { return }
         let terminal = hosted.terminal

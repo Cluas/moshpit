@@ -149,8 +149,12 @@ pub struct Switcher {
 pub struct Names {
     pub session: String,
     /// The window's own name when someone gave it one, else the folder
-    /// the pane works in, else the window's number.
+    /// the pane works in, else the window's number; its number too when
+    /// either would say the session's name again (B650).
     pub project: String,
+    /// The project is the window's number: the bar shows the window's
+    /// symbol before it, and says the multiplexer's word ("Tab 1").
+    pub project_numbered: bool,
     /// The agent the pane runs, else its program (no pane crumb without an
     /// active pane).
     pub pane: Option<String>,
@@ -167,17 +171,18 @@ impl Crumbs {
         let mut names = Names {
             session: self.session.clone(),
             project: self.window.clone(),
+            project_numbered: false,
             pane: self.pane.clone(),
             pane_label: self.pane_label.clone().or_else(|| self.pane.clone()),
         };
         let Some(tree) = &self.tree else {
             return names;
         };
-        if let Some(session) = tree
+        let session = tree
             .active_session
             .as_deref()
-            .and_then(|id| tree.sessions.iter().find(|s| s.id == id))
-        {
+            .and_then(|id| tree.sessions.iter().find(|s| s.id == id));
+        if let Some(session) = session {
             names.session = tree.session_display_name(session);
         }
         let Some(pane) = tree
@@ -188,8 +193,17 @@ impl Crumbs {
             return names;
         };
         if let Some(window) = tree.windows.iter().find(|w| w.id == pane.window) {
-            names.project = project_name(&window.name, &pane.command, pane.path.as_deref())
-                .unwrap_or_else(|| window.index.to_string());
+            let project = project_name(&window.name, &pane.command, pane.path.as_deref());
+            // Never the session's name twice: `moshpit › moshpit › claude`
+            // for a herdr workspace named after its folder (B650).
+            let session = session.map_or("", |s| s.name.as_str());
+            match crate::home::model::beside_session(project, session) {
+                Some(project) => names.project = project,
+                None => {
+                    names.project = window.index.to_string();
+                    names.project_numbered = true;
+                }
+            }
         }
         let title = pane_title(tree, pane, agent);
         let who = title
@@ -650,9 +664,73 @@ mod tests {
         assert_eq!(crumbs(Some(bare)).names("agent").project, "3");
         // No tree: the host's strings, as before.
         let plain = crumbs(None).names("agent");
+        assert!(!plain.project_numbered);
         assert_eq!(
             (plain.session.as_str(), plain.project.as_str()),
             ("0", "1:2.1.322")
+        );
+    }
+
+    #[test]
+    fn the_session_is_never_named_twice() {
+        // B650, the owner's herdr: the workspace is named after its folder,
+        // its tab ("1", herdr's default) works there.
+        let herdr = tree(
+            r#"{"mux":"herdr","attached":true,"sessions":[{"id":"wV","name":"moshpit"}],
+                "windows":[{"id":"wV:t3","session":"wV","index":1,"name":"1","paneCount":1}],
+                "panes":[{"id":"wV:p4","window":"wV:t3","index":0,"command":"claude",
+                          "path":"/Users/dev/code/moshpit"}],
+                "hooks":[{"pane":"wV:p4","state":"working","agent":"claude"}],
+                "activeSession":"wV","activeWindow":"wV:t3","activePane":"wV:p4"}"#,
+        );
+        let names = crumbs(Some(herdr)).names("agent");
+        assert_eq!(
+            (
+                names.session.as_str(),
+                names.project.as_str(),
+                names.pane.as_deref()
+            ),
+            ("moshpit", "1", Some("claude")),
+            "not moshpit › moshpit › claude"
+        );
+        assert!(
+            names.project_numbered,
+            "the bar puts the tab's symbol by it"
+        );
+        // A tmux session named after its repo, the window tmux named after
+        // its program, the pane working in the repo; case aside.
+        let tmux = tree(
+            r#"{"mux":"tmux","attached":true,"sessions":[{"id":"$2","name":"Moshpit "}],
+                "windows":[{"id":"@4","session":"$2","index":3,"name":"2.1.322","paneCount":1}],
+                "panes":[{"id":"%9","window":"@4","index":0,"command":"2.1.322",
+                          "path":"/home/dev/code/moshpit"}],
+                "activeSession":"$2","activeWindow":"@4","activePane":"%9"}"#,
+        );
+        let names = crumbs(Some(tmux)).names("agent");
+        assert_eq!(
+            (names.project.as_str(), names.project_numbered),
+            ("3", true)
+        );
+        // A window someone named after the session: its number too.
+        let named = tree(
+            r#"{"mux":"tmux","attached":true,"sessions":[{"id":"$0","name":"api"}],
+                "windows":[{"id":"@1","session":"$0","index":1,"name":"api","paneCount":1}],
+                "panes":[{"id":"%1","window":"@1","index":0,"command":"zsh","path":"/srv/web"}],
+                "activeSession":"$0","activeWindow":"@1","activePane":"%1"}"#,
+        );
+        assert_eq!(crumbs(Some(named)).names("agent").project, "1");
+        // They differ: today's names.
+        let differ = tree(
+            r#"{"mux":"herdr","attached":true,"sessions":[{"id":"wV","name":"moshpit"}],
+                "windows":[{"id":"wV:t3","session":"wV","index":1,"name":"1","paneCount":1}],
+                "panes":[{"id":"wV:p4","window":"wV:t3","index":0,"command":"claude",
+                          "path":"/Users/dev/code/moshpit-site"}],
+                "activeSession":"wV","activeWindow":"wV:t3","activePane":"wV:p4"}"#,
+        );
+        let names = crumbs(Some(differ)).names("agent");
+        assert_eq!(
+            (names.project.as_str(), names.project_numbered),
+            ("moshpit-site", false)
         );
     }
 

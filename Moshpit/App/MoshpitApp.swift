@@ -106,9 +106,6 @@ struct MoshpitApp: App {
         AgentControlBridge.shared.opener = { connectionId, paneId in
             router.request(connectionId: connectionId, paneId: paneId)
         }
-        AgentControlBridge.shared.cycler = { [weak monitor] in
-            monitor?.cycleHeadline()
-        }
         AgentControlBridge.shared.drainShareQueue = { [weak hub] in
             guard let hub else { return }
             await ShareQueueDrainer.drain(hub: hub)

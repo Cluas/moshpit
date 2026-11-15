@@ -72,6 +72,35 @@ struct AgentActivityMonitorTests {
                 "the widget shows %2 and opened \(widget.headlineDeepLink ?? "-")")
     }
 
+    /// B597: the compact pill's trailing "2" (two agents working) meant
+    /// nothing to the owner. It says the headline's state now: needs you
+    /// first — one "!", several the waiting hand and a count, never a bare
+    /// number — else working its time, done a check, idle its dot.
+    @Test("the compact pill says the headline's state")
+    func compactSaysTheHeadlinesState() {
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let agent = { (pane: String, state: AgentActivityAttributes.AgentState) in
+            AgentActivityAttributes.Agent(id: "C:\(pane)", connectionId: "C", paneId: pane,
+                                          command: "claude", location: "mac", state: state,
+                                          startedAt: at)
+        }
+        typealias State = AgentActivityAttributes.ContentState
+        let two = State(agents: [agent("%1", .working), agent("%2", .working)],
+                        workingCount: 2, attentionCount: 0)
+        #expect(two.compactSignal == .working(since: at), "two working: the headline's time, not a 2")
+        let done = State(agents: [agent("%1", .done), agent("%2", .working)],
+                         workingCount: 1, attentionCount: 0, headlineId: "C:%1")
+        #expect(done.compactSignal == .done)
+        let one = State(agents: [agent("%1", .attention), agent("%2", .working)],
+                        workingCount: 1, attentionCount: 1)
+        #expect(one.compactSignal == .waiting(count: 1))
+        let several = State(agents: [agent("%1", .attention), agent("%2", .attention)],
+                            workingCount: 0, attentionCount: 2)
+        #expect(several.compactSignal == .waiting(count: 2))
+        #expect(State(agents: [agent("%1", .idle)], workingCount: 0, attentionCount: 0).compactSignal == .quiet)
+        #expect(State(agents: [], workingCount: 0, attentionCount: 0).compactSignal == nil)
+    }
+
     @Test("the announced record is read and written where earlier builds kept it")
     func announcedRecordKeepsItsKey() {
         #expect(AgentActivityMonitor.announcedKey == "island.announcedEpisodes")

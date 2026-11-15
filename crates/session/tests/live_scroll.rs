@@ -412,3 +412,71 @@ async fn mosh_tmux_a_mouse_app_gets_its_wheel_not_copy_mode() {
     );
     let _ = bench.sessions.disconnect(id).await;
 }
+
+/// B614, mosh + tmux: after a scroll's copy-mode, the person's own `q`
+/// leaves it — and nothing more reaches the shell. The mosh loop's latch
+/// put its own `q` in front: `qq`, the second one typed into the shell (a
+/// `qecho …` here; Claude's prompt or a vim macro in life). Then a scroll
+/// in one window and a switch to another: the first line typed there runs
+/// as typed (it got a `q` in front), and the first window is still in
+/// copy-mode, as tmux keeps it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, tmux and mosh-server"]
+async fn mosh_tmux_the_persons_own_q_leaves_copy_mode_and_nothing_more() {
+    let sshd = Sshd::start().await;
+    let tmux = Tmux::named("w15b-qq");
+    tmux.new_session("qq");
+    tmux.run(&["send-keys", "-t", "qq", "seq 1 300", "Enter"]);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let mut bench = Bench::with(sshd.addr(), moshpit_session::Timing::default());
+    let (id, term, _reaper) = mosh_tmux(&mut bench, sshd.port, &tmux).await;
+    let pane = tmux.run(&["display-message", "-p", "-t", "qq", "#{pane_id}"]);
+    let in_mode = |tmux: &Tmux, pane: &str| {
+        tmux.run(&["display-message", "-p", "-t", pane, "#{pane_in_mode}"])
+    };
+
+    bench.sessions.tmux(id, TmuxAction::ScrollBegan).unwrap();
+    settle(&mut bench, 600).await;
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(5)).unwrap();
+    settle(&mut bench, 1500).await;
+    assert_eq!(in_mode(&tmux, &pane), "1", "in copy-mode");
+    term.write(b"q");
+    settle(&mut bench, 1000).await;
+    assert_eq!(in_mode(&tmux, &pane), "0", "the q left copy-mode");
+    term.write(b"echo r$((40+2))\r");
+    settle(&mut bench, 1500).await;
+    let captured = tmux.run(&["capture-pane", "-p", "-t", &pane]);
+    assert!(
+        captured.contains("r42") && !captured.contains("qecho"),
+        "the line ran as typed: {captured}"
+    );
+
+    // A scroll in this window, then another window.
+    tmux.run(&["new-window", "-d", "-t", "qq"]);
+    settle(&mut bench, 1500).await;
+    bench.sessions.tmux(id, TmuxAction::ScrollBegan).unwrap();
+    settle(&mut bench, 600).await;
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(5)).unwrap();
+    settle(&mut bench, 1500).await;
+    assert_eq!(in_mode(&tmux, &pane), "1", "in copy-mode again");
+    let other = tmux.run(&["display-message", "-p", "-t", "qq:1", "#{window_id}"]);
+    let other_pane = tmux.run(&["display-message", "-p", "-t", "qq:1", "#{pane_id}"]);
+    bench
+        .sessions
+        .tmux(id, TmuxAction::SelectWindow(other.clone()))
+        .unwrap();
+    settle(&mut bench, 2000).await;
+    term.write(b"echo s$((40+3))\r");
+    settle(&mut bench, 1500).await;
+    let there = tmux.run(&["capture-pane", "-p", "-t", &other_pane]);
+    assert!(
+        there.contains("s43") && !there.contains("qecho"),
+        "the line ran as typed in the other window: {there}"
+    );
+    assert_eq!(
+        in_mode(&tmux, &pane),
+        "1",
+        "the first window keeps its copy-mode"
+    );
+    let _ = bench.sessions.disconnect(id).await;
+}

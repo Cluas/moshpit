@@ -122,6 +122,9 @@ pub enum MoshCommand {
     /// of the copy-mode a scroll may have left the client in first (`q`, on
     /// the same lane), so the report reaches the program, not copy-mode.
     Mouse(Vec<u8>),
+    /// mosh with tmux: whether tmux has the pane on screen in copy-mode, as
+    /// the sidecar read it (B614). The copy-mode latch follows it.
+    CopyModeIs(bool),
     /// Answer once mosh-server has acknowledged every user state queued so
     /// far (it acknowledges a state once it has written its keystrokes into
     /// the terminal): a keystroke sent before is in the tty. Answered at
@@ -136,18 +139,32 @@ pub enum MoshCommand {
 /// through the history on a fling).
 pub const PAGE_EVERY_MS: u64 = 180;
 
-/// Whether a scroll put tmux's client (the one mosh renders) in copy-mode,
-/// and when it last paged (B362).
+/// How long the latch, moved ahead of tmux by our own keys, disbelieves a
+/// report that says otherwise: what tmux said before our keys reached it
+/// (they go over mosh, its reports over the sidecar's SSH).
+pub const COPY_MODE_SETTLE_MS: u64 = 1000;
+
+/// Whether tmux's client (the one mosh renders) is in copy-mode, and when a
+/// scroll last paged (B362). A latch our scrolls and keys move at once,
+/// kept to tmux's own `#{pane_in_mode}` of the pane on screen (B614: as a
+/// latch alone it put a `q` in front of the person's own `q` — the second
+/// one landed in the shell, Claude, vim — and in front of the first key in
+/// another pane, and never learned of a pane left in copy-mode).
 #[derive(Debug, Default)]
 pub(crate) struct CopyMode {
     on: bool,
     last_page_at: Option<u64>,
+    /// When our own keys last moved `on`, until tmux agrees.
+    moved_at: Option<u64>,
+    /// What tmux last said.
+    reported: Option<bool>,
 }
 
 impl CopyMode {
     /// The keys for one scroll step, or nothing (a step down while not in
     /// copy-mode, or too soon after the last page).
     pub(crate) fn page(&mut self, lines: i64, prefix: &[u8], now: u64) -> Option<Vec<u8>> {
+        self.settle(now);
         if lines == 0
             || self
                 .last_page_at
@@ -160,9 +177,9 @@ impl CopyMode {
             if !self.on {
                 keys.extend_from_slice(prefix);
                 keys.push(b'[');
+                self.moved(true, now);
             }
             keys.extend_from_slice(b"\x1b[5~");
-            self.on = true;
             keys
         } else if self.on {
             b"\x1b[6~".to_vec()
@@ -173,10 +190,57 @@ impl CopyMode {
         Some(keys)
     }
 
-    /// Keystrokes after a scroll: `q` leaves copy-mode first, once.
-    pub(crate) fn leave(&mut self, keys: &mut Vec<u8>) {
-        if std::mem::take(&mut self.on) {
+    /// Keystrokes while in copy-mode: `q` leaves it first, once. The
+    /// person's own `q` — or Esc — is that `q` (B614: it used to go out
+    /// as `qq`, or `q` then an Esc the shell read as Meta).
+    pub(crate) fn leave(&mut self, keys: &mut Vec<u8>, now: u64) {
+        self.settle(now);
+        if !self.on {
+            return;
+        }
+        self.moved(false, now);
+        if keys.as_slice() == b"q" || keys.as_slice() == b"\x1b" {
+            *keys = b"q".to_vec();
+        } else {
             keys.insert(0, b'q');
+        }
+    }
+
+    /// tmux's word on the pane on screen (`#{pane_in_mode}`, read by the
+    /// sidecar on every `%pane-mode-changed` and pane switch). Taken at
+    /// once, unless our own keys moved the latch the other way within
+    /// [`COPY_MODE_SETTLE_MS`]: then it is kept for when that has passed.
+    pub(crate) fn observe(&mut self, in_mode: bool, now: u64) {
+        self.reported = Some(in_mode);
+        if in_mode == self.on {
+            self.moved_at = None;
+            return;
+        }
+        if self
+            .moved_at
+            .is_some_and(|at| now.saturating_sub(at) < COPY_MODE_SETTLE_MS)
+        {
+            return;
+        }
+        self.on = in_mode;
+        self.moved_at = None;
+    }
+
+    fn moved(&mut self, on: bool, now: u64) {
+        self.on = on;
+        self.moved_at = Some(now);
+    }
+
+    /// Once our own move has had its time, tmux's last word stands.
+    fn settle(&mut self, now: u64) {
+        if self
+            .moved_at
+            .is_some_and(|at| now.saturating_sub(at) >= COPY_MODE_SETTLE_MS)
+        {
+            self.moved_at = None;
+            if let Some(reported) = self.reported {
+                self.on = reported;
+            }
         }
     }
 }
@@ -294,12 +358,36 @@ async fn recv_on(flow: &Option<Box<dyn UdpFlow>>, buf: &mut [u8]) -> io::Result<
     }
 }
 
-/// An error a UDP socket reports for an ICMP message about an earlier
-/// datagram (the server's port closed for a moment, a router's complaint):
-/// not this flow's death.
+/// An error that is not this flow's death (B613): an ICMP message about an
+/// earlier datagram (the server's port closed for a moment, a router's
+/// complaint: host or network unreachable), a full interface queue
+/// (`ENOBUFS`, a paste's burst), an interrupted or would-block call. The
+/// socket stays and mosh's retransmission carries the state; dropping it
+/// left the client deaf for a second, the burst's acks unread, and a big
+/// paste failed at the same point every time until its keystrokes aged
+/// out. Only a socket that can't send at all (its address gone, the
+/// interface down) takes a fresh flow.
 fn is_transient(error: &io::Error) -> bool {
-    is_refusal(error) || error.kind() == io::ErrorKind::Interrupted
+    is_refusal(error)
+        || matches!(
+            error.kind(),
+            io::ErrorKind::Interrupted
+                | io::ErrorKind::WouldBlock
+                | io::ErrorKind::HostUnreachable
+                | io::ErrorKind::NetworkUnreachable
+        )
+        || error
+            .raw_os_error()
+            .is_some_and(|code| Some(code) == ENOBUFS)
 }
+
+/// `ENOBUFS`: the output queue is full. std names no kind for it.
+#[cfg(target_vendor = "apple")]
+const ENOBUFS: Option<i32> = Some(55);
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const ENOBUFS: Option<i32> = Some(105);
+#[cfg(not(any(target_vendor = "apple", target_os = "linux", target_os = "android")))]
+const ENOBUFS: Option<i32> = None;
 
 /// The server's port refused an earlier datagram (ICMP port unreachable:
 /// nothing listens there; `ConnectionReset` where the system words it so).
@@ -492,7 +580,7 @@ async fn run(
                 MoshCommand::Keys { mut bytes, end } => {
                     // Out of the copy-mode a scroll put tmux's client in,
                     // on the same lane, so the keys reach the shell (B362).
-                    copy.leave(&mut bytes);
+                    copy.leave(&mut bytes, now);
                     match transport.send(&bytes, now) {
                         Some(num) => echo.sent(num, end),
                         // Nothing queued, nothing to echo.
@@ -508,10 +596,11 @@ async fn run(
                 MoshCommand::Mouse(mut bytes) => {
                     // Neither the view's bytes.
                     if !bytes.is_empty() {
-                        copy.leave(&mut bytes);
+                        copy.leave(&mut bytes, now);
                         let _ = transport.send(&bytes, now);
                     }
                 }
+                MoshCommand::CopyModeIs(in_mode) => copy.observe(in_mode, now),
                 MoshCommand::Resize { cols, rows } => {
                     transport.resize(i32::from(cols), i32::from(rows), now)
                 }
@@ -638,6 +727,8 @@ pub mod fake {
         latest: Option<u64>,
         opened: u64,
         sent_up: u64,
+        /// Every `n`-th send fails with this error, nothing sent (B613).
+        fail_sends: Option<(u64, Arc<dyn Fn() -> io::Error + Send + Sync>)>,
     }
 
     /// What a flow's receive gets.
@@ -686,6 +777,13 @@ pub mod fake {
         /// client sends is refused.
         pub fn refuse(&self, refuse: bool) {
             self.state.lock().unwrap().refuse = refuse;
+        }
+
+        /// Every `every`-th datagram the client sends fails with
+        /// `error()` instead (a full interface queue, a router's
+        /// complaint); `None` stops it.
+        pub fn fail_sends(&self, fail: Option<(u64, Arc<dyn Fn() -> io::Error + Send + Sync>)>) {
+            self.state.lock().unwrap().fail_sends = fail;
         }
 
         /// Flows opened so far.
@@ -739,6 +837,11 @@ pub mod fake {
                 let deliver = {
                     let mut state = self.state.lock().unwrap();
                     state.sent_up += 1;
+                    if let Some((every, error)) = &state.fail_sends
+                        && state.sent_up.is_multiple_of(*every)
+                    {
+                        return Err(error());
+                    }
                     if state.refuse {
                         if let Some(own) = state.flows.get(&self.id) {
                             let _ = own.send(Down::Refused);
@@ -1014,6 +1117,50 @@ mod tests {
                 String::from_utf8_lossy(text),
                 String::from_utf8_lossy(&seen)
             );
+        }
+    }
+
+    /// B613: a send the system refuses for a moment — a full interface
+    /// queue (`ENOBUFS`, a paste's burst), a router's host or network
+    /// unreachable — keeps the flow; mosh's retransmission carries what it
+    /// lost, and every key arrives, in order. It took the socket down and a
+    /// fresh one a second later: deaf meanwhile, and a big paste failed at
+    /// the same point each time.
+    #[tokio::test(start_paused = true)]
+    async fn a_send_the_system_refuses_for_a_moment_keeps_the_flow() {
+        #[cfg(target_vendor = "apple")]
+        const NO_BUFFERS: i32 = 55;
+        #[cfg(not(target_vendor = "apple"))]
+        const NO_BUFFERS: i32 = 105;
+        let errors: [Arc<dyn Fn() -> io::Error + Send + Sync>; 3] = [
+            Arc::new(|| io::Error::from_raw_os_error(NO_BUFFERS)),
+            Arc::new(|| io::ErrorKind::HostUnreachable.into()),
+            Arc::new(|| io::ErrorKind::NetworkUnreachable.into()),
+        ];
+        for error in errors {
+            let (net, end) = fake::network();
+            let mut bench = start(net);
+            tokio::spawn(EchoServer::new(end).serve());
+            bench.until(|n| *n == MoshNote::FirstContact).await;
+            bench.net.fail_sends(Some((2, error)));
+            let line: Vec<u8> = (0..6000).map(|i| b'a' + (i % 26) as u8).collect();
+            let mut end = 0;
+            for chunk in line.chunks(500) {
+                end += chunk.len() as u64;
+                bench
+                    .mosh
+                    .commands
+                    .send(MoshCommand::Keys {
+                        bytes: chunk.to_vec(),
+                        end,
+                    })
+                    .unwrap();
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            let seen = bench.read_until(&line).await;
+            assert!(seen.windows(line.len()).any(|w| w == line.as_slice()));
+            assert!(bench.net.sent_up() >= 2, "a send failed along the way");
+            assert_eq!(bench.net.opened(), 1, "the flow stayed");
         }
     }
 
@@ -1372,10 +1519,10 @@ mod tests {
         );
         assert_eq!(copy.page(-3, &prefix, 400), Some(b"\x1b[6~".to_vec()));
         let mut keys = b"ls".to_vec();
-        copy.leave(&mut keys);
+        copy.leave(&mut keys, 450);
         assert_eq!(keys, b"qls", "the next keys leave copy-mode first");
         let mut keys = b"ls".to_vec();
-        copy.leave(&mut keys);
+        copy.leave(&mut keys, 460);
         assert_eq!(keys, b"ls", "once");
         assert_eq!(
             copy.page(-3, &prefix, 1000),
@@ -1387,6 +1534,92 @@ mod tests {
             Some(b"\x01[\x1b[5~".to_vec()),
             "in again, with the server's own prefix"
         );
+    }
+
+    /// B614: the person's own `q` (or Esc) leaves copy-mode alone — it went
+    /// out as `qq`, the second one into the shell, Claude, vim.
+    #[test]
+    fn the_persons_own_q_or_esc_is_the_way_out() {
+        for typed in [&b"q"[..], b"\x1b"] {
+            let mut copy = CopyMode::default();
+            copy.page(3, &[0x02], 0);
+            let mut keys = typed.to_vec();
+            copy.leave(&mut keys, 50);
+            assert_eq!(keys, b"q", "{typed:?}");
+            let mut keys = b"ls".to_vec();
+            copy.leave(&mut keys, 60);
+            assert_eq!(keys, b"ls", "out already");
+        }
+    }
+
+    /// B614: tmux's word on the pane on screen moves the latch — a pane
+    /// switched to that isn't in copy-mode, or one left in it (a redial).
+    #[test]
+    fn tmuxs_word_moves_the_latch() {
+        let mut copy = CopyMode::default();
+        copy.page(3, &[0x02], 0);
+        copy.observe(true, 100);
+        // Another pane on screen, not in copy-mode.
+        copy.observe(false, 300);
+        let mut keys = b"ls".to_vec();
+        copy.leave(&mut keys, 400);
+        assert_eq!(keys, b"ls", "no q into the other pane");
+        // A fresh loop over a pane left in copy-mode.
+        let mut copy = CopyMode::default();
+        copy.observe(true, 0);
+        let mut keys = b"ls".to_vec();
+        copy.leave(&mut keys, 10);
+        assert_eq!(keys, b"qls", "out of it first");
+    }
+
+    /// B614: a report from before our own keys reached tmux (they go over
+    /// mosh, the report over SSH) waits until it has had its second: the
+    /// latch stays where our keys put it, then tmux's last word stands.
+    #[test]
+    fn a_report_from_before_our_keys_waits_its_turn() {
+        let mut copy = CopyMode::default();
+        copy.page(3, &[0x02], 0);
+        copy.observe(false, 100);
+        let mut keys = b"ls".to_vec();
+        copy.leave(&mut keys, 200);
+        assert_eq!(keys, b"qls", "still in, by our own keys");
+        let mut copy = CopyMode::default();
+        copy.page(3, &[0x02], 0);
+        copy.observe(false, 100);
+        let mut keys = b"ls".to_vec();
+        copy.leave(&mut keys, 1500);
+        assert_eq!(keys, b"ls", "tmux never went in: its word stands");
+    }
+
+    /// B614: the bench — a scroll, then the person's own `q`: one `q` on
+    /// the wire, and the keys after it go to the shell bare.
+    #[tokio::test(start_paused = true)]
+    async fn the_persons_own_q_after_a_scroll_goes_out_once() {
+        let (net, end) = fake::network();
+        let mut bench = start(net);
+        tokio::spawn(EchoServer::new(end).serve());
+        bench.until(|n| *n == MoshNote::FirstContact).await;
+        let commands = &bench.mosh.commands;
+        commands
+            .send(MoshCommand::CopyScroll {
+                lines: 3,
+                prefix: vec![0x02],
+            })
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        commands
+            .send(MoshCommand::Keys {
+                bytes: b"q".to_vec(),
+                end: 1,
+            })
+            .unwrap();
+        commands
+            .send(MoshCommand::Keys {
+                bytes: b"ls".to_vec(),
+                end: 3,
+            })
+            .unwrap();
+        assert_eq!(bench.read_until(b"ls").await, b"\x02[\x1b[5~qls");
     }
 
     /// The scroll's keys go out on the session's own lane, and what is

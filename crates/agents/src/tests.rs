@@ -94,7 +94,7 @@ fn hook(pane: &str, state: &str, since: f64) -> Hook {
         since: Some(since),
         command: Some("claude".into()),
         title: Some("Bash: npm test".into()),
-        place: PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None },
+        place: PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None, window_index: None, pane_index: None },
     }
 }
 
@@ -421,6 +421,73 @@ fn a_second_question_inside_one_poll_is_announced_too() {
     assert_eq!(run(&mut bench, 40.0, 120.0), 0);
 }
 
+// MARK: - What the island says (device feedback, Canary 141)
+
+/// B595: a hook title in an agent's message wrapper showed raw on the
+/// island, the lock screen and the cards
+/// (`<agent-message from="…40"> 收到，不用 Chro…`). The wrapper and its
+/// attributes come off; a `<` that opens no tag stays.
+#[test]
+fn a_title_s_markup_comes_off_and_a_plain_less_than_stays() {
+    for (raw, shown) in [
+        (r#"<agent-message from="team-lead-40"> 收到，不用 Chrome </agent-message>"#, "收到，不用 Chrome"),
+        (r#"<\agent-message from="x">done<\/agent-message>"#, "done"),
+        ("<outer-tag a=\"1\"><inner-tag>Bash: npm test</inner-tag></outer-tag>", "Bash: npm test"),
+        ("<b>bold</b> move", "bold move"),
+        ("if a < b && c > d", "if a < b && c > d"),
+        ("x<5 and 3>y", "x<5 and 3>y"),
+        ("Edit: fn f() -> Vec<String>", "Edit: fn f() -> Vec<String>"),
+        ("Bash: npm test", "Bash: npm test"),
+        ("<agent-message from=\"x\">", ""),
+    ] {
+        assert_eq!(plain_detail(raw), shown, "{raw}");
+    }
+    // Through the machine: the island and the card say the words.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let mut asked = hook("%1", "attention", T0);
+    asked.title = Some(r#"<agent-message from="lead-40">Run the tests?</agent-message>"#.into());
+    bench.monitor.hooks(CONN, vec![asked], T0 + 1.0, TMUX);
+    let effects = bench.monitor.take_effects();
+    let Some(Effect::Island(state)) = effects.iter().rev().find(|e| matches!(e, Effect::Island(_))) else {
+        panic!("no island: {effects:?}")
+    };
+    assert_eq!(state.agents[0].detail.as_deref(), Some("Run the tests?"));
+    bench.monitor.sweep(None, T0 + 32.0);
+    let card = posts(&bench.monitor.take_effects())[0].clone();
+    assert!(card.text.body.starts_with("Run the tests?"), "{card:?}");
+}
+
+/// B596: two Claude panes in one workspace on one host read the same on
+/// the island ("claude x · mac" twice). Rows that would read the same get
+/// the pane's index (the window's when their windows differ).
+#[test]
+fn rows_that_would_read_the_same_are_told_apart() {
+    let island = |hooks: Vec<Hook>| {
+        let mut bench = Bench::new(Settings::default(), &[]);
+        bench.monitor.hooks(CONN, hooks, T0 + 1.0, TMUX);
+        let effects = bench.monitor.take_effects();
+        let Some(Effect::Island(state)) = effects.into_iter().rev().find(|e| matches!(e, Effect::Island(_))) else {
+            panic!("no island")
+        };
+        let mut places: Vec<String> = state.agents.iter().map(|a| a.place.clone()).collect();
+        places.sort();
+        places
+    };
+    let at = |pane: &str, window: i64, index: i64| {
+        let mut h = hook(pane, "working", T0);
+        h.place.name = Some("x".into());
+        h.place.window_index = Some(window);
+        h.place.pane_index = Some(index);
+        h
+    };
+    assert_eq!(island(vec![at("%1", 1, 1), at("%2", 1, 2)]), ["x · devbox · 1", "x · devbox · 2"]);
+    assert_eq!(island(vec![at("%1", 1, 0), at("%2", 3, 0)]), ["x · devbox · 1", "x · devbox · 3"]);
+    // One alone, or another agent: as it was.
+    let mut codex = at("%2", 1, 2);
+    codex.agent = Some("codex".into());
+    assert_eq!(island(vec![at("%1", 1, 1), codex]), ["x · devbox", "x · devbox"]);
+}
+
 // MARK: - A long finish rings once
 
 #[test]
@@ -609,7 +676,7 @@ fn a_prompt_on_screen_when_its_grace_ends_rings_nothing() {
 #[test]
 fn agent_output_earns_a_row_after_the_promotion_delay_and_goes_done_when_quiet() {
     let mut bench = Bench::quiet();
-    let at = |cmd: &str| PaneWhere { command: cmd.into(), session: Some("work".into()), window: None, name: None };
+    let at = |cmd: &str| PaneWhere { command: cmd.into(), session: Some("work".into()), window: None, name: None, window_index: None, pane_index: None };
     bench.monitor.output(CONN, "%2", at("cargo"), T0);
     assert!(bench.monitor.state_since_by_pane(CONN).is_empty(), "a build is not an agent");
     bench.monitor.output(CONN, "%1", at("claude"), T0);
@@ -630,7 +697,7 @@ fn agent_output_earns_a_row_after_the_promotion_delay_and_goes_done_when_quiet()
 #[test]
 fn a_bell_is_attention_at_once_through_the_grace() {
     let mut bench = Bench::new(Settings::default(), &[]);
-    let at = PaneWhere { command: "zsh".into(), session: None, window: None, name: None };
+    let at = PaneWhere { command: "zsh".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
     bench.monitor.bell(CONN, "%3", at, T0);
     bench.monitor.sweep(None, T0 + 31.0);
     let effects = bench.monitor.take_effects();
@@ -684,7 +751,7 @@ fn graces_due_at_one_sweep_announce_in_the_order_they_ran_out() {
 fn a_card_for_a_pane_no_poll_named_says_where_from_the_tree() {
     let mut bench = Bench::quiet();
     bench.monitor.set_settings(Settings::default());
-    let place = |command: &str| PaneWhere { command: command.into(), session: Some("work".into()), window: Some("1: api".into()), name: None };
+    let place = |command: &str| PaneWhere { command: command.into(), session: Some("work".into()), window: Some("1: api".into()), name: None, window_index: None, pane_index: None };
     bench.monitor.tree(CONN, [("%2".to_owned(), place("codex"))].into_iter().collect());
     assert!(bench.pushed("%1", T0 as i64 + 31, T0 + 31.0));
     assert!(!bench.pushed("%2", T0 as i64 + 35, T0 + 35.0));
@@ -700,7 +767,7 @@ fn unstamped(pane: &str) -> Hook {
     Hook {
         pane: pane.into(),
         command: Some("zsh".into()),
-        place: PaneWhere { command: "zsh".into(), session: Some("work".into()), window: Some("1: api".into()), name: None },
+        place: PaneWhere { command: "zsh".into(), session: Some("work".into()), window: Some("1: api".into()), name: None, window_index: None, pane_index: None },
         ..Hook::default()
     }
 }
@@ -709,7 +776,7 @@ fn tree_of(panes: &[&str]) -> BTreeMap<String, PaneWhere> {
     panes
         .iter()
         .map(|pane| {
-            let place = PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None };
+            let place = PaneWhere { command: "claude".into(), session: Some("work".into()), window: Some("1: api".into()), name: None, window_index: None, pane_index: None };
             ((*pane).to_owned(), place)
         })
         .collect()
