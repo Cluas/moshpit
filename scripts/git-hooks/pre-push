@@ -21,8 +21,9 @@ remote="${1:-origin}"
 url="${2:-}"
 # The public repository's gate: a push anywhere else (a fork, an archived
 # remote) isn't this gate's to judge.
-case "$url" in
-    *github.com[:/]Cluas/moshpit | *github.com[:/]Cluas/moshpit.git | *github.com[:/]Cluas/moshpit/) ;;
+# GitHub's owner names ignore case, so the match does too.
+case "$(printf '%s' "$url" | tr '[:upper:]' '[:lower:]')" in
+    *github.com[:/]cluas/moshpit | *github.com[:/]cluas/moshpit.git | *github.com[:/]cluas/moshpit/) ;;
     *) exit 0 ;;
 esac
 zero=0000000000000000000000000000000000000000

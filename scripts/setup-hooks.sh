@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Installs this repository's pre-push gate (scripts/git-hooks/pre-push) for
-# every worktree of the checkout: a launcher in the shared hooks folder runs
-# the gate of the worktree being pushed from, and refuses the push when
-# that worktree has none (a branch from before the gate existed: rebase it
-# onto main first). Run once per clone:
+# every worktree of the checkout: a launcher in the shared hooks folder.
+# A push to the public repository runs the gate of the worktree being
+# pushed from, and is refused when that worktree has none (a branch from
+# before the gate existed: rebase it onto main first). A push to any other
+# remote passes untouched. Run once per clone:
 #
 #   scripts/setup-hooks.sh
 #
@@ -22,10 +23,17 @@ if [ -e "$hooks/pre-push" ] && ! grep -q 'scripts/git-hooks/pre-push' "$hooks/pr
 fi
 cat > "$hooks/pre-push" <<'EOF'
 #!/bin/sh
-# Installed by scripts/setup-hooks.sh: the pushing worktree's own gate.
+# Installed by scripts/setup-hooks.sh. Only a push to the public repository
+# (github.com/Cluas/moshpit, in any case) is gated, by the pushing
+# worktree's own gate; a push anywhere else passes untouched.
+url=$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')
+case "$url" in
+    *github.com[:/]cluas/moshpit | *github.com[:/]cluas/moshpit.git | *github.com[:/]cluas/moshpit/) ;;
+    *) exit 0 ;;
+esac
 gate="$(git rev-parse --show-toplevel)/scripts/git-hooks/pre-push"
 if [ ! -x "$gate" ]; then
-    echo "pre-push: $gate isn't in this worktree; rebase it onto main, then push" >&2
+    echo "pre-push: $gate isn't in this worktree; start from public main (or rebase onto it), then push" >&2
     exit 1
 fi
 exec "$gate" "$@"
