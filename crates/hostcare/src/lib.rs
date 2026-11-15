@@ -365,7 +365,17 @@ impl HostCare {
 
     /// The settings care reads, as they are now.
     pub fn set_settings(&mut self, settings: Settings, clock: Clock) {
-        self.input(clock, |m| m.with(|s| s.settings = settings));
+        self.input(clock, |m| {
+            m.with(|s| {
+                // The notifications switch turned (B700): every host is
+                // walked again at its next tend, its pairing rewritten to
+                // say so.
+                if s.settings.notifications != settings.notifications {
+                    s.care.tended.clear();
+                }
+                s.settings = settings;
+            })
+        });
     }
 
     /// The saved connections: `listed` the ones the store decoded, `all`
@@ -412,9 +422,10 @@ impl HostCare {
     /// this app run (`tend`).
     pub fn tend(&mut self, conn: Conn, clock: Clock) {
         self.input(clock, |m| {
+            // Both switches off, a pass still runs: it only mutes a pairing
+            // this phone has there (B700), whose host went on pushing.
             let go = m.with(|s| {
                 !s.config.autocare_off
-                    && (s.settings.notifications || s.settings.live_activity)
                     && !s.care.tended.contains(&conn.id)
                     && !s.care.in_flight.contains_key(&conn.id)
                     && s.is_kept(conn.id)

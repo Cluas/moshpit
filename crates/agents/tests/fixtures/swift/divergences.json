@@ -4119,7 +4119,7 @@
  {
   "script": "random-41-235",
   "id": "B593-second-question",
-  "why": "B593: a question dated later than the one waiting on the same pane is a new question (answered and asked again between two polls): its own episode, grace and announcement. The Swift monitor kept the first one's date, so the second went unannounced. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished.",
+  "why": "B593: a question dated later than the one waiting on the same pane is a new question (answered and asked again between two polls): its own episode, grace and announcement. The Swift monitor kept the first one's date, so the second went unannounced. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished. Also A finish is timed from its turn's earliest start, the waits included (B666); Swift timed it from the last episode alone.",
   "rust": [
    "auth",
    "widget [%1:attention:claude:devbox · work · 1: api:-:2] w=0 a=1 h=%1",
@@ -4140,7 +4140,7 @@
    "island [%1:attention:claude:devbox · work · 1: api:Edit: src/main.rs:1111] w=0 a=1 h=%1",
    "widget [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1786] w=0 a=1 h=%1",
    "island [%1:attention:claude:devbox · work · 1: api:Bash: npm test:1786] w=0 a=1 h=%1",
-   "post moshpit.done.C.%1 %1 | ✓ claude finished · 3 min | Claude is waiting for your input — devbox · work | sound=true | active",
+   "post moshpit.done.C.%1 %1 | ✓ claude finished · 31 min | Claude is waiting for your input — devbox · work | sound=true | active",
    "widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=0 a=0 h=%1",
    "island [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=0 a=0 h=%1",
    "widget [%2:working:codex:devbox · work · 1: api:Claude is waiting for your input:1990;%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:1986.5] w=1 a=0 h=%2",
@@ -5125,7 +5125,7 @@
  {
   "script": "random-41-25",
   "id": "B594-widget-headline",
-  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also The widget is written when what it shows changes, and an island with a live row sent again each minute (B701): Swift wrote an unchanged widget again each minute a stamped poll came, and sent the island again only then. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished.",
+  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also The widget is written when what it shows changes, and an island with a live row sent again each minute (B701): Swift wrote an unchanged widget again each minute a stamped poll came, and sent the island again only then. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished. Also A finish is timed from its turn's earliest start, the waits included (B666); Swift timed it from the last episode alone.",
   "rust": [
    "auth",
    "widget [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:3.5] w=1 a=0 h=%1",
@@ -5140,7 +5140,7 @@
    "widget [%1:working:claude:devbox · work · 1: api:Bash: npm test:24] w=1 a=0 h=%1",
    "widget [%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:24] w=1 a=0 h=%1",
    "island [%1:working:claude:devbox · work · 1: api:Claude is waiting for your input:24] w=1 a=0 h=%1",
-   "post moshpit.done.C.%1 %1 | ✓ claude finished · 15 min | Claude is waiting for your input — devbox · work | sound=true | active",
+   "post moshpit.done.C.%1 %1 | ✓ claude finished · 18 min | Claude is waiting for your input — devbox · work | sound=true | active",
    "widget [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:924.5] w=0 a=0 h=%1",
    "island [%1:done:claude:devbox · work · 1: api:Claude is waiting for your input:924.5] w=0 a=0 h=%1",
    "end-island",
@@ -5750,7 +5750,7 @@
  {
   "script": "random-41-134",
   "id": "B594-widget-headline",
-  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished.",
+  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished. Also A finish is timed from its turn's earliest start, the waits included (B666); Swift timed it from the last episode alone.",
   "rust": [
    "auth",
    "widget [] w=0 a=0 h=-",
@@ -5771,7 +5771,7 @@
    "withdraw moshpit.attention.C",
    "widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:3912.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:3717] w=1 a=1 h=%2",
    "island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:3912.5;%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:3717] w=1 a=1 h=%1",
-   "post moshpit.done.C.%1 %1 | ✓ claude finished | Edit: src/main.rs — devbox · work | sound=false | passive",
+   "post moshpit.done.C.%1 %1 | ✓ claude finished · 13 min | Edit: src/main.rs — devbox · work | sound=true | active",
    "widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:3912.5;%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:3717] w=0 a=1 h=%2",
    "island [%2:attention:codex:devbox · work · 1: api:Bash: npm test:3912.5] w=0 a=1 h=%2",
    "widget [%2:attention:codex:devbox · work · 1: api:Bash: npm test:3912.5;%1:working:claude:devbox · work · 1: api:Bash: npm test:3730] w=1 a=1 h=%2",
@@ -5915,7 +5915,7 @@
  {
   "script": "random-41-167",
   "id": "B594-widget-headline",
-  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also The widget is written when what it shows changes, and an island with a live row sent again each minute (B701): Swift wrote an unchanged widget again each minute a stamped poll came, and sent the island again only then. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished.",
+  "why": "The widget's headline is its first row, the most urgent agent, which it draws and opens (B594); Swift's named the island's headline, which a cycle moves, and wrote the widget again on every cycle. Also The widget is written when what it shows changes, and an island with a live row sent again each minute (B701): Swift wrote an unchanged widget again each minute a stamped poll came, and sent the island again only then. Also A finished agent's row leaves the island 25 s after its finish, at once when its pane is on screen (B707); Swift kept a stamped pane's done on the island for as long as its stamp was polled, so the island never ended while any agent had finished. Also A finish is timed from its turn's earliest start, the waits included (B666); Swift timed it from the last episode alone.",
   "rust": [
    "auth",
    "widget [] w=0 a=0 h=-",
@@ -5932,7 +5932,7 @@
    "withdraw moshpit.attention.C",
    "widget [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:1317.5] w=1 a=0 h=%1",
    "island [%1:working:claude:devbox · work · 1: api:Edit: src/main.rs:1317.5] w=1 a=0 h=%1",
-   "post moshpit.done.C.%1 %1 | ✓ claude finished | Edit: src/main.rs — devbox · work | sound=false | passive",
+   "post moshpit.done.C.%1 %1 | ✓ claude finished · 11 min | Edit: src/main.rs — devbox · work | sound=true | active",
    "widget [%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:1317.5] w=0 a=0 h=%1",
    "end-island",
    "widget [%2:done:codex:devbox · work · 1: api:Claude is waiting for your input:1322.5;%1:done:claude:devbox · work · 1: api:Edit: src/main.rs:1317.5] w=0 a=0 h=%2",

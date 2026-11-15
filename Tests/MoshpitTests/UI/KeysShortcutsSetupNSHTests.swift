@@ -273,6 +273,33 @@ struct KeysShortcutsSetupNSHTests {
         #expect(KeyPickerModel.pick(["ev": "select", "id": UUID().uuidString], among: [ok], selected: nil) == nil)
     }
 
+    /// B780: a key whose private key, once read, turned out a kind the app
+    /// can't sign in with (a brainpool key 1.0.8 took and labelled
+    /// ECDSA-sk) carries that kind on its record: the picker shows it
+    /// refused and won't pick it, and SSH Keys says so on its row with the
+    /// family as its badge — though its record has no public key line to
+    /// tell from.
+    @Test("a key read as a kind the app can't sign with is refused by the picker and says so in SSH Keys")
+    func refusedAfterRead() {
+        let ok = Self.key("laptop")
+        var router = Self.key("router", algorithm: .ecdsa, publicKey: "")
+        router.fingerprint = ""
+        router.refused = "ECDSA brainpoolP256r1"
+        let message = KeyPickerModel.message(KeyPickerSnapshot(keys: [ok, router], selected: nil))
+        let keys = message["keys"] as? [[String: Any]]
+        #expect(keys?[1]["refused"] as? String == "ECDSA brainpoolP256r1")
+        #expect(KeyPickerModel.pick(["ev": "select", "id": router.id.uuidString], among: [ok, router],
+                                    selected: nil) == nil)
+        let row = SSHKeysModel.key(router, users: [], now: Date())
+        #expect(row.refused == "ECDSA brainpoolP256r1")
+        #expect(row.badge == "ECDSA")
+        #expect(!row.hasPublicKey && row.fingerprint.isEmpty)
+        var dsa = Self.key("old nas", algorithm: .ed25519, publicKey: "")
+        dsa.refused = "DSA"
+        #expect(SSHKeysModel.key(dsa, users: [], now: Date()).badge == "DSA", "not 1.0.8's ED25519 guess")
+        #expect(SSHKeysModel.key(ok, users: [], now: Date()).refused == nil)
+    }
+
     // MARK: Shortcuts
 
     @Test("the Shortcuts state is a message the Rust screen takes; AVAILABLE has every shortcut off the bar")

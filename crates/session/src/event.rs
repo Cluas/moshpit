@@ -549,6 +549,12 @@ pub enum EventKind {
     PaneBell {
         pane: String,
     },
+    /// A never-shown pane's visible screen, for the overview's picture
+    /// (B751): text rows, never the pane's bytes.
+    PaneSnapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
     AgentHooksUpdated,
     /// A tmux attach hasn't confirmed within [`crate::Timing::attach_stall`]
     /// after its boot line (a wedged tmux, a host that went to sleep). The

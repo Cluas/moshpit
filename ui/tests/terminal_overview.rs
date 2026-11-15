@@ -736,3 +736,40 @@ fn the_overview_and_every_view_around_it_have_a_size() {
     assert!(checked > 10, "the overview's views: {checked}");
     channel.close();
 }
+
+#[test]
+fn a_panes_snapshot_replaces_the_fragments_its_terminal_had() {
+    // A pane never shown has only what tmux sent since the attach in its
+    // terminal (a spinner's line); its snapshot, when the core sends one,
+    // is its whole screen and takes the card (B751). The core sends none
+    // for a pane whose live screen came.
+    let (mut app, channel, heard, _) = open_screen("tmux", "%2");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "overview", "open": true}).to_string(),
+    );
+    next_of(&heard, "pictures");
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "pictures", "panes": {"%5": ["", "", "⠋ building"]}}).to_string(),
+    );
+    app.0.wait_for("id:overview-picture-%5").unwrap();
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "pictures", "panes": {"%5": ["dev@web:~/src/web$ npm run dev", "ready in 412 ms", "⠋ building"]}})
+            .to_string(),
+    );
+    app.0.run_for(Duration::from_millis(200)).unwrap();
+    assert!(
+        app.0
+            .screen()
+            .texts()
+            .contains(&"dev@web:~/src/web$ npm run dev\nready in 412 ms\n⠋ building"),
+        "{:?}",
+        app.0.screen().texts()
+    );
+    channel.close();
+}

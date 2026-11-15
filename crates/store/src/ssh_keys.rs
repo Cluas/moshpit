@@ -133,6 +133,11 @@ pub struct SshKeyRecord {
     pub require_biometry: bool,
     pub created_at: Date,
     pub last_used_at: Option<Date>,
+    /// The kind of key it is when no connect path signs in with it
+    /// (`"ECDSA brainpoolP256r1"`, `"DSA"`), read off its private key
+    /// (B780): one 1.0.8 imported without its public half, of a kind 1.0.9
+    /// can't sign with. `None`: it signs in, or it hasn't been read.
+    pub refused: Option<String>,
 }
 
 impl SshKeyRecord {
@@ -159,6 +164,7 @@ impl SshKeyRecord {
             require_biometry: true,
             created_at,
             last_used_at: None,
+            refused: None,
         }
     }
 
@@ -207,8 +213,11 @@ impl SshKeyRecord {
     /// record with no public key — one 1.0.8 imported pasted without its
     /// public half, labelled by a guess at the PEM's first line — whose
     /// private key is a keychain item the app can read.
+    /// One read already found it a kind no connect path signs with (B780)
+    /// has nothing more to learn.
     pub fn lacks_facts(&self) -> bool {
         self.public_key.is_empty()
+            && self.refused.is_none()
             && self.keychain_ref.is_some()
             && matches!(
                 self.source,
@@ -254,6 +263,9 @@ impl SshKeyRecord {
         if let Some(used) = self.last_used_at {
             fields.insert("lastUsedAt", date(used));
         }
+        if let Some(kind) = &self.refused {
+            fields.insert("refused", string(kind));
+        }
         Value::Object(fields)
     }
 
@@ -275,6 +287,10 @@ impl SshKeyRecord {
         let require_biometry: bool = required(fields, "requireBiometry")?;
         let created_at: Date = required(fields, "createdAt")?;
         let last_used_at: Option<Date> = optional(fields, "lastUsedAt")?;
+        let refused = fields
+            .get("refused")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         // Unreadable here means unreadable everywhere: carried, not guessed.
         let older_builds_name = required::<String>(fields, "algorithm").and_then(|raw| {
             SshKeyAlgorithm::from_raw(&raw).ok_or_else(|| format!("no SSHKeyAlgorithm {raw:?}"))
@@ -312,6 +328,7 @@ impl SshKeyRecord {
             require_biometry,
             created_at,
             last_used_at,
+            refused,
         })
     }
 }
@@ -516,6 +533,24 @@ impl SshKeyStore {
         key.bits = facts.bits;
         key.public_key = facts.public_key.clone();
         key.fingerprint = facts.fingerprint.clone();
+        self.persist();
+        self.is_authoritative
+    }
+
+    /// Key `id` is a kind no connect path signs in with (`kind`, read off
+    /// its private key, B780), for a record that
+    /// [lacks its facts](SshKeyRecord::lacks_facts): kept, so the key list
+    /// and the picker say so before a sign-in fails. Whether it was
+    /// written.
+    pub fn mark_refused(&mut self, id: Uuid, kind: &str) -> bool {
+        self.reload_if_needed();
+        let Some(key) = self.keys.iter_mut().find(|k| k.id == id) else {
+            return false;
+        };
+        if !key.lacks_facts() || kind.is_empty() {
+            return false;
+        }
+        key.refused = Some(kind.to_owned());
         self.persist();
         self.is_authoritative
     }

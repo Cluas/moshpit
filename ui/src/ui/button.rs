@@ -269,9 +269,16 @@ impl IntoElement for Button {
         if let Some(name) = symbol {
             content = content.child(icon(name).size(size.icon()).tone(ink));
         }
+        // A bar's words are the bar's: they stop growing at extra extra
+        // large, on one line, as UIKit's bar items do (B748); a page's
+        // follow the user's size.
+        let words = if variant.in_bar() {
+            crate::nav_bar::bar_text(label.clone()).flex_shrink(1.0)
+        } else {
+            size.text().apply(text(label.clone()))
+        };
         content = content.child(
-            size.text()
-                .apply(text(label.clone()))
+            words
                 .font_weight(variant.weight())
                 .text_color(move || token(ink.token())),
         );

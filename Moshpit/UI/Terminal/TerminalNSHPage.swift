@@ -31,6 +31,9 @@ struct TerminalNSHPage<Anchors: View>: View {
     let dictation: VoiceDictationController?
     let attachment: ImageAttachmentController?
     let preview: RemotePreviewModel?
+    /// What asks tmux for the screens of panes never shown (B751): the
+    /// session's tmux control, SSH's or mosh's.
+    var snapshots: RustTmuxController? = nil
     /// What the slot shows, and how the keyboard and a sheet's hold treat it.
     let target: TerminalNSHStage.Target?
     let focus: TerminalFocusPolicy
@@ -73,6 +76,7 @@ struct TerminalNSHPage<Anchors: View>: View {
         .onChange(of: dictation.map(ObjectIdentifier.init)) { model.watch(dictation: dictation) }
         .onChange(of: attachment.map(ObjectIdentifier.init)) { model.watch(attachment: attachment) }
         .onChange(of: preview.map(ObjectIdentifier.init)) { model.watch(preview: preview) }
+        .onChange(of: snapshots.map(ObjectIdentifier.init)) { model.watch(snapshots: snapshots) }
         // A protocol switch's swap is at once (`chrome.still`): the two
         // change in one value, so the swap reads the switch it belongs to.
         .onChange(of: StageShown(target: target, instant: chrome.still)) { _, new in
@@ -103,6 +107,7 @@ struct TerminalNSHPage<Anchors: View>: View {
         model.watch(dictation: dictation)
         model.watch(attachment: attachment)
         model.watch(preview: preview)
+        model.watch(snapshots: snapshots)
     }
 }
 
@@ -322,6 +327,21 @@ final class TerminalNSHModel {
         show("preview", panel)
     }
 
+    /// The session's tmux control, for the overview's snapshots of panes
+    /// never shown (B751): each one, while the overview is open, posted as
+    /// that pane's picture.
+    @ObservationIgnored private weak var snapshots: RustTmuxController?
+
+    func watch(snapshots control: RustTmuxController?) {
+        guard control !== snapshots else { return }
+        snapshots?.onPaneSnapshot = nil
+        snapshots = control
+        control?.onPaneSnapshot = { [weak self] pane, rows in
+            guard let self, self.overviewOpen else { return }
+            _ = self.post(["op": "pictures", "panes": [pane: rows]])
+        }
+    }
+
     /// The overview's long-press menus while it is up, for the panes of the
     /// tree the switcher has: Open, New Pane, Rename window…, Kill pane…
     /// (herdr: tab, Close). A pick goes back to the page, which asks before
@@ -396,6 +416,8 @@ final class TerminalNSHModel {
             overviewOpen = message["open"] as? Bool ?? false
             armOverviewMenus()
             stage.overview(open: overviewOpen)
+            // Closed: nothing more asked, nothing waited for (B751).
+            if !overviewOpen { snapshots?.stopSnapshots() }
             return TerminalNSHIntent(message)
         case "overview-anchor":
             // Where a pane's cell is: the terminal shrinks into the shown
@@ -412,6 +434,10 @@ final class TerminalNSHModel {
             guard let panes = message["panes"] as? [String] else { return nil }
             let pictures = stage.pictures(of: panes, current: message["current"] as? String)
             _ = post(["op": "pictures", "panes": pictures])
+            // And the screens of those never shown, once (B751): the core
+            // asks only for panes whose terminal never got its screen, and
+            // drops an answer once that pane's live screen has come.
+            snapshots?.snapshotPanes(panes)
             return nil
         case "swipe-hint":
             // Shown once on this device; the terminal leans toward the pane

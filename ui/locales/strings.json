@@ -2965,7 +2965,7 @@
     "Add Key": "Ajouter une clé",
     "Add Shortcut": "Ajouter un raccourci",
     "Add a machine you can reach over SSH. Agents running there show up here.": "Ajoutez une machine accessible en SSH. Les agents qui y tournent s’afficheront ici.",
-    "Add connection": "Ajouter une connexion",
+    "Add connection": "Nouvelle connexion",
     "Add theme": "Ajouter un thème",
     "Adds a mic key to the shortcut bar": "Ajoute une touche micro à la barre de raccourcis",
     "Agent": "Agent",

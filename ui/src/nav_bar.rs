@@ -33,6 +33,8 @@
 //! (iOS 18.2). The chevron and a trailing button's symbol are SF Symbols,
 //! drawn by the host's native component `moshpit/symbol`.
 
+use std::rc::Rc;
+
 use nsh_core::{
     PropertyValue, StyleKey, StyleValue,
     platform::{Idiom, Os},
@@ -307,7 +309,7 @@ pub fn fixed(title: String) -> Box<dyn Fn() -> String> {
 }
 
 /// A text of the bar: its size follows [`text_size`].
-fn bar_text(content: impl IntoReactive<SharedString>) -> Text {
+pub(crate) fn bar_text(content: impl IntoReactive<SharedString>) -> Text {
     text(content)
         .text_size(move || px(text_size()))
         .line_height(face::line_height())
@@ -344,6 +346,13 @@ fn nav_bar_with(bar: NavBar, back: bool) -> impl IntoElement {
         scrolled,
     } = bar;
     let glass = glass();
+    let title: Rc<dyn Fn() -> String> = Rc::from(title);
+    // The bar's width and its sides', as laid out: the title is centered
+    // between the wider of the sides and the other edge's mirror of it
+    // (B748).
+    let bar_w = signal(0.0_f32);
+    let leading_w = signal(0.0_f32);
+    let trailing_w = signal(0.0_f32);
     let leading = match leading {
         Some(button) => view()
             .h_full()
@@ -352,9 +361,14 @@ fn nav_bar_with(bar: NavBar, back: bool) -> impl IntoElement {
             .pl(px(edge_inset(&button.content, glass)))
             .child(bar_button(button, glass))
             .into_element(),
-        None if back => back_button(back_title, on_back, glass),
+        None if back => back_button(back_title, on_back, glass, bar_w, title.clone()),
         None => view().into_element(),
     };
+    let leading = view()
+        .h_full()
+        .flex_shrink_0()
+        .on_layout(move |b: &Bounds<Points>| leading_w.set(b.size.width.0))
+        .child(leading);
     let trailing_inset = trailing
         .last()
         .map_or(0.0, |button| edge_inset(&button.content, glass));
@@ -364,34 +378,60 @@ fn nav_bar_with(bar: NavBar, back: bool) -> impl IntoElement {
         .items_center()
         .gap_2()
         .pr(px(trailing_inset))
+        .on_layout(move |b: &Bounds<Points>| trailing_w.set(b.size.width.0))
         .children(
             trailing
                 .into_iter()
                 .map(move |button| bar_button(button, glass)),
         );
+    // UIKit's: centered on the bar while it fits between the wider side
+    // and that side's mirror; else centered between the sides as they are;
+    // cut at its tail only when even that is too little.
+    let insets = {
+        let title = title.clone();
+        computed(move || {
+            let (lead, trail) = (leading_w.get(), trailing_w.get());
+            let side = lead.max(trail) + TITLE_GAP;
+            let words = bar_width(&title(), FontWeight::SEMIBOLD);
+            if words <= bar_w.get() - 2.0 * side + 0.5 {
+                (side, side)
+            } else {
+                (lead + TITLE_GAP, trail + TITLE_GAP)
+            }
+        })
+    };
     let row = view()
         .relative()
         .h(px(metrics.height))
         .flex_row()
         .items_center()
+        .on_layout(move |b: &Bounds<Points>| bar_w.set(b.size.width.0))
         .child(leading)
         .child(view().flex_1())
         .child(trailing)
-        // The title, centered on the bar whatever the buttons' widths, on
-        // the baseline it has at Large.
+        // The title, centered on the bar, on the baseline it has at Large,
+        // in what the wider side leaves it on both: cut at its tail when
+        // even that is too little, never under a button (B748).
         .child(
             view()
                 .absolute()
-                .inset_0()
+                .top(px(0.0))
+                .bottom(px(0.0))
+                .left(move || px(insets.get().0))
+                .right(move || px(insets.get().1))
                 .items_center()
                 .pt(move || px(placement(metrics).anchored_top))
                 .pointer_events(PointerEvents::None)
                 .child(
-                    bar_text(title)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(move || token("foreground"))
-                        .role(AccessibilityRole::Header)
-                        .test_id("nav-bar-title"),
+                    bar_text({
+                        let title = title.clone();
+                        move || SharedString::from(title())
+                    })
+                    .max_w(relative(1.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(move || token("foreground"))
+                    .role(AccessibilityRole::Header)
+                    .test_id("nav-bar-title"),
                 ),
         );
     let behind = edge_look(
@@ -561,34 +601,127 @@ fn busy_text(
         .into_element()
 }
 
+/// The room between the title and the wider of the bar's sides.
+const TITLE_GAP: f32 = 8.0;
+
+/// Between the back button's chevron and its words (R2's medium button).
+const BACK_GAP: f32 = 8.0;
+
+/// What the back button says (B748), as UIKit's: the page under it while
+/// that fits beside the centered title, else "Back", else nothing but the
+/// chevron (its name still the page under it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackLabel {
+    Full,
+    Back,
+    Chevron,
+}
+
+/// The longest label whose button fits in `room` (the bar's half less
+/// the title's and a gap), its chrome (padding, chevron, the inset before
+/// it) `chrome` wide: the full title `full` wide, else "Back" `back` wide,
+/// else the chevron. Before the bar is laid out (no chrome to weigh): the
+/// full title, as it was.
+fn back_label(room: f32, chrome: Option<f32>, full: f32, back: f32) -> BackLabel {
+    let Some(chrome) = chrome else {
+        return BackLabel::Full;
+    };
+    if chrome + full <= room + 0.5 {
+        BackLabel::Full
+    } else if chrome + back <= room + 0.5 {
+        BackLabel::Back
+    } else {
+        BackLabel::Chevron
+    }
+}
+
+/// The width `words` take on one line in the bar's text at `weight`.
+fn bar_width(words: &str, weight: FontWeight) -> f32 {
+    measure_text(&format!("{} {}px system-ui", weight.0, text_size()), words).0
+}
+
 /// The back button (§4.18): on glass the chevron alone in a glass circle
 /// (an icon button); below iOS 26 the chevron and the previous page's
-/// title in the accent (a bar text button), the chevron where UIKit's sits.
-fn back_button(title: String, on_back: Box<dyn Fn()>, glass: bool) -> AnyElement {
+/// title in the accent (a bar text button), the chevron where UIKit's
+/// sits, the title giving way to "Back" and then to the chevron alone
+/// where the bar's centered title leaves it too little room (B748).
+fn back_button(
+    title: String,
+    on_back: Box<dyn Fn()>,
+    glass: bool,
+    bar_w: Signal<f32>,
+    page_title: Rc<dyn Fn() -> String>,
+) -> AnyElement {
     let on_back: std::rc::Rc<dyn Fn()> = std::rc::Rc::from(on_back);
     let place = view().h_full().flex_row().items_center();
+    let named = if title.is_empty() {
+        t!("Back")
+    } else {
+        title.clone()
+    };
     if glass {
-        let label = if title.is_empty() { t!("Back") } else { title };
         return place
             .pl(px(margin()))
             .child(
-                icon_button("chevron.backward", label)
+                icon_button("chevron.backward", named)
                     .variant(IconVariant::Bar)
                     .on_press(move || on_back())
                     .test_id("nav-bar-back"),
             )
             .into_element();
     }
-    place
-        .pl(px((margin() - BACK_INSET - TEXT_PAD).max(0.0)))
-        .child(
-            button(title)
-                .variant(Variant::Bar)
-                .icon("chevron.backward")
-                .on_press(move || on_back())
-                .test_id("nav-bar-back"),
-        )
-        .into_element()
+    let inset = (margin() - BACK_INSET - TEXT_PAD).max(0.0);
+    // What the button takes besides its words: the inset before it, its
+    // padding, the chevron at the user's size and the gap after it (R2's
+    // bar button at its medium size). Worked out, not read off a layout,
+    // so a label never decides from the frame of the one before it.
+    let chrome = move || inset + 2.0 * TEXT_PAD + IconSize::Md.points_now() + BACK_GAP;
+    let label = {
+        let full = title.clone();
+        computed(move || {
+            let words = bar_width(&page_title(), FontWeight::SEMIBOLD);
+            let room = bar_w.get() / 2.0 - words / 2.0 - TITLE_GAP;
+            back_label(
+                room,
+                (bar_w.get() > 0.0).then(chrome),
+                bar_width(&full, FontWeight::NORMAL),
+                bar_width(&t!("Back"), FontWeight::NORMAL),
+            )
+        })
+    };
+    dynamic(move || {
+        let label = label.get();
+        let (title, named, on_back) = (title.clone(), named.clone(), on_back.clone());
+        untracked(move || {
+            let words = match label {
+                BackLabel::Full => title,
+                BackLabel::Back => t!("Back"),
+                BackLabel::Chevron => String::new(),
+            };
+            let place = view().h_full().flex_row().items_center();
+            if words.is_empty() {
+                return place
+                    .pl(px(inset))
+                    .child(
+                        icon_button("chevron.backward", named)
+                            .variant(IconVariant::Bar)
+                            .on_press(move || on_back())
+                            .test_id("nav-bar-back"),
+                    )
+                    .into_element();
+            }
+            place
+                .pl(px(inset))
+                .child(
+                    button(words)
+                        .variant(Variant::Bar)
+                        .icon("chevron.backward")
+                        .on_press(move || on_back())
+                        .test_id("nav-bar-back"),
+                )
+                .into_element()
+        })
+    })
 }
 
 /// A text button of the bar, for a bar drawn elsewhere (Settings' large
@@ -754,5 +887,22 @@ fn bar_button(button_: BarButton, glass: bool) -> AnyElement {
             .on_press(move || on_press())
             .test_id(test_id)
             .into_element(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// UIKit's order: the page under it while it fits beside the centered
+    /// title, then "Back", then the chevron; before the first layout, the
+    /// page under it.
+    #[test]
+    fn the_back_title_gives_way_in_uikits_order() {
+        assert_eq!(back_label(100.0, None, 500.0, 40.0), BackLabel::Full);
+        assert_eq!(back_label(100.0, Some(40.0), 60.0, 40.0), BackLabel::Full);
+        assert_eq!(back_label(100.0, Some(40.0), 61.0, 40.0), BackLabel::Back);
+        assert_eq!(back_label(70.0, Some(40.0), 61.0, 40.0), BackLabel::Chevron);
+        assert_eq!(back_label(-10.0, Some(40.0), 1.0, 1.0), BackLabel::Chevron);
     }
 }

@@ -248,6 +248,9 @@ impl Runner {
                             let id = self.script_request(request);
                             format!("note pong {id} {alive}")
                         }
+                        Notification::PaneSnapshot { pane, rows } => {
+                            format!("note snapshot {pane} {}", rows.len())
+                        }
                     };
                     self.items.push(line);
                 }

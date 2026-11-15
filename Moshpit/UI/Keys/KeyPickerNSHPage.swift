@@ -69,7 +69,8 @@ struct KeyPickerSnapshot: Equatable {
 /// again starts from it (``NSHPage``'s third rule), and the message that
 /// carries it (`{"op": "keys", …}`, `ui/src/key_picker.rs`'s `Message`):
 /// each key's name and badge, and the key type the app can't sign in with
-/// when it is that key's (``StoredKey/refusedType(ofPublicKeyLine:)``).
+/// when it is that key's (``SSHKeyRecord/refusedType``: what its private
+/// key said once read, B780, else its public key line).
 @MainActor
 final class KeyPickerModel {
     private(set) var snapshot: KeyPickerSnapshot?
@@ -104,7 +105,7 @@ final class KeyPickerModel {
             "op": "keys",
             "keys": snapshot.keys.map { key -> [String: Any] in
                 var entry: [String: Any] = ["id": key.id.uuidString, "name": key.name, "badge": key.badgeText]
-                if let refused = StoredKey.refusedType(ofPublicKeyLine: key.publicKey) { entry["refused"] = refused }
+                if let refused = key.refusedType { entry["refused"] = refused }
                 return entry
             },
             "selected": snapshot.selected.map { $0.uuidString as Any } ?? NSNull(),
@@ -133,7 +134,7 @@ final class KeyPickerModel {
         guard let id = (message["id"] as? String).flatMap(UUID.init(uuidString:)),
               let key = keys.first(where: { $0.id == id })
         else { return nil }
-        let refused = StoredKey.refusedType(ofPublicKeyLine: key.publicKey) != nil
+        let refused = key.refusedType != nil
         guard !refused || key.id == selected else { return nil }
         return .key(id)
     }

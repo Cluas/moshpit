@@ -1,0 +1,6 @@
+09:41:02 POST /webhooks/stripe 200 41ms
+09:41:03 retry evt_1Q2 attempt=2 wait=1.6s
+09:41:05 POST /webhooks/stripe 200 38ms
+09:41:05 retry evt_1Q7 attempt=1 wait=0.8s
+09:41:06 POST /webhooks/stripe 200 44ms
+09:41:08 delivered evt_1Q2 after 2 tries

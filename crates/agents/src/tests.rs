@@ -814,6 +814,55 @@ fn a_long_finish_the_push_already_rang_is_a_silent_card_here() {
     assert_eq!(done.text.title, "✓ claude finished · 10 min");
 }
 
+/// B666: a finish was timed from the turn's last episode alone. A
+/// twenty-minute task that asked one question at minute nineteen read
+/// "1 min" and rang nothing. It is timed from the first `working` after
+/// the pane was last idle or done, the waits included; the next turn
+/// from its own start.
+#[test]
+fn a_finish_is_timed_from_the_turn_s_first_working_its_questions_included() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let mut effects = Vec::new();
+    let mut t = 1.0;
+    while t < 1200.0 {
+        let (state, since) = match t {
+            t if t < 1140.0 => ("working", 0.0),
+            t if t < 1150.0 => ("attention", 1140.0),
+            _ => ("working", 1150.0),
+        };
+        effects.extend(bench.poll("%1", state, T0 + since, T0 + t));
+        t += 2.0;
+    }
+    effects.extend(bench.poll("%1", "done", T0 + 1200.0, T0 + 1201.0));
+    let done = posts(&effects).into_iter().find(|c| c.id.starts_with(DONE_CARD)).cloned().expect("a finish card");
+    assert_eq!(done.text.title, "✓ claude finished · 20 min");
+    assert!(done.text.sound, "a twenty-minute task rings");
+    // A turn the phone first saw as a bell's "needs you", whose stamp then
+    // dates it earlier: timed from the stamp's start, the earliest known.
+    let mut bench2 = Bench::new(Settings::default(), &[]);
+    let aider = PaneWhere { command: "claude".into(), session: None, window: None, name: None, window_index: None, pane_index: None };
+    bench2.monitor.bell(CONN, "%1", aider, T0 + 300.0);
+    let mut t = 301.0;
+    while t < 320.0 {
+        bench2.poll("%1", "working", T0, T0 + t);
+        t += 2.0;
+    }
+    let effects = bench2.poll("%1", "done", T0 + 320.0, T0 + 321.0);
+    let done2 = posts(&effects).into_iter().find(|c| c.id.starts_with(DONE_CARD)).cloned().expect("a finish card");
+    assert_eq!(done2.text.title, "✓ claude finished · 5 min", "from the stamp's start, not the bell's");
+    // The next turn: a minute of its own.
+    let mut effects = Vec::new();
+    let mut t = 1301.0;
+    while t < 1360.0 {
+        effects.extend(bench.poll("%1", "working", T0 + 1300.0, T0 + t));
+        t += 2.0;
+    }
+    effects.extend(bench.poll("%1", "done", T0 + 1360.0, T0 + 1361.0));
+    let done = posts(&effects).into_iter().find(|c| c.id.starts_with(DONE_CARD)).cloned().expect("a finish card");
+    assert_eq!(done.text.title, "✓ claude finished · 1 min");
+    assert!(!done.text.sound);
+}
+
 /// The companion pet counts every finished turn: one `Finished` per turn,
 /// for its connection and pane, with the cards off too (`post_done` stops
 /// early then), none while it works, and none for the same done again.

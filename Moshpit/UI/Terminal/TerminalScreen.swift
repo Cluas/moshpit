@@ -1639,6 +1639,7 @@ extension TerminalScreen {
             dictation: dictation,
             attachment: imageAttachment,
             preview: active?.remotePreview,
+            snapshots: active?.tmuxControl,
             target: nshTarget,
             focus: focusPolicy,
             geometryHeld: geometryHold,

@@ -1,0 +1,12 @@
+> the loss spikes at step 2k, fix the warmup
+
+● The warmup ends at step 2,000 while the batch is still growing.
+  I'll stretch it to 4,000 and decay with a cosine.
+
+● Update(schedule.py)
+  ⎿  Updated 2 additions and 1 removal
+
+● Bash(python train.py --steps 6000 --log-every 500)
+  ⎿  step 500   loss 3.912
+     step 1000  loss 3.104
+     step 1500  loss 2.788

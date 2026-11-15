@@ -286,11 +286,16 @@ final class SSHKeysModel {
         case .hardware: .hardware
         case .generated, .imported: record.algorithm == .rsa4096 && stale ? .gray : .imported
         }
+        // A key the app can't sign in with (B780) says what kind it is; its
+        // badge is the family it is, not the guess 1.0.8 saved ("ED25519"
+        // for a DSA key).
+        let refused = record.refusedType
+        let badge = refused.map { kind in kind.split(separator: " ").first.map(String.init) ?? kind }
         return SshKeyRow(
-            id: record.id.uuidString, name: record.name, badge: record.badgeText, avatar: avatar,
+            id: record.id.uuidString, name: record.name, badge: badge ?? record.badgeText, avatar: avatar,
             stale: stale, fingerprint: record.fingerprint, hosts: users,
             unusedSince: stale ? record.lastUsedAt?.formatted(.dateTime.month(.abbreviated).year()) : nil,
-            hasPublicKey: !record.publicKey.isEmpty)
+            hasPublicKey: !record.publicKey.isEmpty, refused: refused)
     }
 
     /// The accessibility identifier of key `id`'s row on both pages.

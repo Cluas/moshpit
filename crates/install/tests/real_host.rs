@@ -349,6 +349,43 @@ fn a_phone_with_two_connections_here_is_pushed_on_the_one_it_used_last() {
     assert_eq!(push(), [FIRST]);
 }
 
+/// B700: the phone's notifications off, the app writes `NOTIFY=off` into
+/// its conf and the sender sends that phone nothing — not on its other
+/// pairing here either, which would have taken the push instead. A push
+/// test still goes: the person asked for it.
+#[test]
+fn a_muted_phone_is_sent_nothing_but_its_push_test() {
+    let home = home();
+    let (shell, capture) = paired_host(&home.0, &[pairing(FIRST, PHONE), pairing(PROVED, PHONE)]);
+    let push_d = home.0.join(".moshpit/push.d");
+    let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for entry in std::fs::read_dir(&push_d).unwrap() {
+        let conf = entry.unwrap().path();
+        let text = std::fs::read_to_string(&conf).unwrap();
+        if text.contains(&format!("CONN={PROVED}")) {
+            // The one the phone used last, muted.
+            std::fs::write(&conf, format!("{text}NOTIFY=off\n")).unwrap();
+        } else {
+            std::fs::File::options().write(true).open(&conf).unwrap().set_modified(earlier).unwrap();
+        }
+    }
+    let status = std::process::Command::new("sh")
+        .arg(home.0.join(".moshpit/moshpit-push.sh"))
+        .args(["attention", "claude", "waiting"])
+        .stdin(std::process::Stdio::null())
+        .env_clear()
+        .env("HOME", &home.0)
+        .env("PATH", format!("{}:/usr/bin:/bin", home.0.join("bin").display()))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(requested(&capture), Vec::<String>::new());
+    let said = block_on(HostInstaller::new(&shell).self_test_push("selftest-ab12", PROVED))
+        .expect("the test runs");
+    assert_eq!(said, "");
+    assert_eq!(requested(&capture), [PROVED]);
+}
+
 /// A test for a connection the host holds no pairing for says so at once,
 /// instead of leaving the phone to wait out its timeout for a push that was
 /// never sent.
@@ -821,6 +858,59 @@ fn the_stamp_script_hands_off_to_a_sender_it_cannot_exec() {
         Some("attention claude\n"),
         "the question's push"
     );
+}
+
+/// B666: the pushed finish was timed from the turn's last episode alone: a
+/// twenty-minute task that asked one question at minute nineteen read
+/// "1 min" and rang nothing. The pane keeps its turn's start
+/// (`@moshpit_turn`), set by the first `working` after it was idle or done
+/// and kept through its questions; the finish is timed from it.
+#[test]
+fn the_pushed_finish_is_timed_from_the_turns_start() {
+    let home = home();
+    let Some(tmux) = Tmux::start(&home.0) else {
+        return;
+    };
+    let _ = stamp_host(&home.0, &tmux);
+    let sender = home.0.join(".moshpit/moshpit-push.sh");
+    let pushed = home.0.join("pushed");
+    std::fs::write(&sender, format!("#!/bin/sh\necho \"$1 $4\" >> '{}'\n", pushed.display())).unwrap();
+    let pane = tmux.pane();
+    let turn = || tmux.run(&["display-message", "-p", "-t", &pane, "#{@moshpit_turn}"]).trim().to_owned();
+    // The finish push's duration, once it has gone out (it is detached).
+    let finish = || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            let text = std::fs::read_to_string(&pushed).unwrap_or_default();
+            if let Some(line) = text.lines().find(|line| line.starts_with("done ")) {
+                return line["done ".len()..].trim().parse::<i64>().expect(line);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        panic!("no finish push")
+    };
+
+    stamp(&home.0, &tmux, &pane, "working", "0");
+    let began = turn();
+    assert!(began.parse::<i64>().is_ok(), "{began:?}");
+    // Twenty minutes ago, as the turn would have begun.
+    let twenty_ago = (began.parse::<i64>().unwrap() - 1200).to_string();
+    tmux.run(&["set", "-p", "-t", &pane, "@moshpit_turn", &twenty_ago]);
+    // A question and its answer keep the turn.
+    stamp(&home.0, &tmux, &pane, "attention", "0");
+    stamp(&home.0, &tmux, &pane, "working", "0");
+    assert_eq!(turn(), twenty_ago);
+    stamp(&home.0, &tmux, &pane, "done", "0");
+    let duration = finish();
+    assert!((1200..1260).contains(&duration), "{duration}");
+
+    // The next turn starts its own.
+    let _ = std::fs::remove_file(&pushed);
+    stamp(&home.0, &tmux, &pane, "working", "0");
+    assert_ne!(turn(), twenty_ago);
+    stamp(&home.0, &tmux, &pane, "done", "0");
+    let duration = finish();
+    assert!(duration < 60, "{duration}");
 }
 
 /// Runs the installed stamp script as an agent's hook would, with `env`.

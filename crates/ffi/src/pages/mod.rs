@@ -771,6 +771,7 @@ mod tests {
             hosts: vec!["nas".into()],
             unused_since: Some("Mar 2026".into()),
             has_public_key: true,
+            refused: None,
         }
     }
 

@@ -1,0 +1,4 @@
+• Bumped the Node image to 22 in ci/Dockerfile and the workflow matrix.
+• Ran the build: 3m12s, cache hit on the dependency layer.
+
+✔ Done. 2 files changed, +4 -4.

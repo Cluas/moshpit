@@ -728,6 +728,9 @@ pub struct KeyRecord {
     pub last_used_at: Option<f64>,
     /// `SE · P256`, `RSA-2048`, `ED25519`… (read only).
     pub badge_text: String,
+    /// The kind of key it is when no connect path signs in with it
+    /// (`"ECDSA brainpoolP256r1"`), read off its private key (B780).
+    pub refused: Option<String>,
 }
 
 fn key_algorithm(a: ssh_keys::SshKeyAlgorithm) -> KeyAlgorithm {
@@ -762,6 +765,7 @@ impl From<&SshKeyRecord> for KeyRecord {
             created_at: k.created_at.since_reference(),
             last_used_at: k.last_used_at.map(Date::since_reference),
             badge_text: k.badge_text(),
+            refused: k.refused.clone(),
         }
     }
 }
@@ -793,6 +797,7 @@ impl TryFrom<KeyRecord> for SshKeyRecord {
         record.keychain_ref = k.keychain_ref;
         record.require_biometry = k.require_biometry;
         record.last_used_at = k.last_used_at.map(Date);
+        record.refused = k.refused;
         Ok(record)
     }
 }
@@ -851,17 +856,22 @@ impl KeyStoreHandle {
 
     /// Key `id`'s facts, read off `private_key` — its keychain item, as
     /// the first sign-in with it read it (B726): for a record 1.0.8 saved
-    /// without them (`SshKeyStore::learn_facts`). Whether they were
-    /// written; false when the record has them, or the text reads as no
-    /// private key.
+    /// without them (`SshKeyStore::learn_facts`); for a key of a kind no
+    /// connect path signs with, that kind (`SshKeyStore::mark_refused`,
+    /// B780). Whether either was written; false when the record has them,
+    /// or the text reads as no private key.
     pub fn learn_facts(&self, id: String, private_key: String) -> Result<bool, StoreError> {
         let id = uuid(&id)?;
         let mut keys = lock(&self.0);
         if !keys.keys().iter().any(|k| k.id == id && k.lacks_facts()) {
             return Ok(false);
         }
-        Ok(describe_private_key(private_key.as_bytes())
-            .is_some_and(|facts| keys.learn_facts(id, &facts)))
+        Ok(match describe_private_key(private_key.as_bytes()) {
+            Some(facts) => keys.learn_facts(id, &facts),
+            // A kind no connect path signs with (B780).
+            None => refused_kind(private_key.as_bytes())
+                .is_some_and(|kind| keys.mark_refused(id, &kind)),
+        })
     }
 
     pub fn reload_if_needed(&self) {
@@ -999,7 +1009,8 @@ pub fn store_recover_orphaned_keys(
 
 /// Put right what each key 1.0.8 imported without its public half shows
 /// (B726): its algorithm, size, public key and fingerprint, off its own
-/// private key, read without asking (`secrets::learn_key_facts`). One
+/// private key, read without asking (`secrets::learn_key_facts`), or the
+/// kind it is when 1.0.9 can't sign with it (B780). One
 /// behind Face ID waits for its first sign-in
 /// ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
 /// runs it once a launch, beside the orphan recovery.
@@ -1009,10 +1020,15 @@ pub fn store_learn_key_facts(
     keychain: Arc<dyn KeychainHost>,
 ) -> Vec<KeyRecord> {
     let mut keys = lock(&keys.0);
-    secrets::learn_key_facts(&mut keys, &HostKeychain(keychain), &describe_private_key)
-        .iter()
-        .map(Into::into)
-        .collect()
+    secrets::learn_key_facts(
+        &mut keys,
+        &HostKeychain(keychain),
+        &describe_private_key,
+        &refused_kind,
+    )
+    .iter()
+    .map(Into::into)
+    .collect()
 }
 
 /// What a stored secret is, if it is an unencrypted private key of a kind
@@ -1030,6 +1046,12 @@ fn describe_private_key(secret: &[u8]) -> Option<secrets::KeyFacts> {
         public_key: key.info.public_key,
         fingerprint: key.info.fingerprint,
     })
+}
+
+/// The kind of key a stored secret is when it is one no connect path signs
+/// in with (`moshpit_ssh::keyfile::refused_kind`, B780).
+fn refused_kind(secret: &[u8]) -> Option<String> {
+    moshpit_ssh::keyfile::refused_kind(std::str::from_utf8(secret).ok()?)
 }
 
 /// The modulus size of the `ssh-rsa` key on an `authorized_keys` line.
@@ -2445,5 +2467,109 @@ mod tests {
 
         assert!(store_learn_key_facts(reread.clone(), keychain.clone()).is_empty());
         assert_eq!(*lock(&vault.silent_reads), 7, "nothing left to read");
+    }
+
+    /// B780: a key 1.0.8 took (it kept any PEM saying PRIVATE KEY) of a kind
+    /// 1.0.9 can't sign with — a brainpool SEC1 key it labelled ECDSA-sk, a
+    /// DSA key it labelled ED25519 — says so once it has been read, so SSH
+    /// Keys and the picker show why before a sign-in fails: read without
+    /// asking at launch, or at its first sign-in behind Face ID. It keeps
+    /// everything else, is never read again, and still deletes.
+    #[test]
+    fn a_key_1_0_9_cant_sign_with_says_what_kind_it_is() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let vault = Arc::new(FaceIdVault::default());
+        let keychain: Arc<dyn KeychainHost> = vault.clone();
+        let connections = ConnectionStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let pasted = [
+            (
+                "router",
+                include_str!("../../ssh/tests/fixtures/keys/matrix/openssl-brainpool256-sec1"),
+                "ECDSA-sk",
+                false,
+                "ECDSA brainpoolP256r1",
+            ),
+            (
+                "old nas",
+                include_str!("../../ssh/tests/fixtures/keys/matrix/openssl-dsa-traditional"),
+                "ED25519",
+                true,
+                "DSA",
+            ),
+        ];
+        let mut stored = Vec::new();
+        for (n, (name, pem, label, face_id, _)) in pasted.iter().enumerate() {
+            let account = format!("moshpit.secret.0f0e0d0c-0000-4000-8000-00000000030{n}");
+            keychain
+                .save(account.clone(), pem.trim().as_bytes().to_vec(), *face_id)
+                .unwrap();
+            stored.push(format!(
+                r#"{{"id":"6A1F0B2C-0000-4000-8000-00000000030{n}","name":"{name}","algorithm":"{label}","comment":"","fingerprint":"","publicKey":"","source":"imported","boundHosts":[],"keychainRef":"{account}","requireBiometry":{face_id},"createdAt":784000000.5}}"#
+            ));
+        }
+        host.set(
+            SshKeyStore::STORAGE_KEY.into(),
+            Some(to_value(&Plist::Data(
+                format!("[{}]", stored.join(",")).into_bytes(),
+            ))),
+        );
+        let keys = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let named = |keys: &KeyStoreHandle, name: &str| {
+            keys.keys().into_iter().find(|k| k.name == name).unwrap()
+        };
+
+        let learned = store_learn_key_facts(keys.clone(), keychain.clone());
+        assert_eq!(
+            learned.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(),
+            ["router"],
+            "the one read without asking"
+        );
+        assert_eq!(
+            named(&keys, "router").refused.as_deref(),
+            Some("ECDSA brainpoolP256r1")
+        );
+        assert_eq!(
+            named(&keys, "old nas").refused,
+            None,
+            "behind Face ID: not read yet"
+        );
+        // Its first sign-in reads it.
+        let id = named(&keys, "old nas").id;
+        assert!(
+            keys.learn_facts(id.clone(), pasted[1].1.trim().into())
+                .unwrap()
+        );
+        assert!(
+            !keys.learn_facts(id, pasted[1].1.trim().into()).unwrap(),
+            "once"
+        );
+
+        let reread = KeyStoreHandle::new(host.clone(), ReadinessMode::Always);
+        for (name, _, _, face_id, kind) in pasted {
+            for k in [named(&keys, name), named(&reread, name)] {
+                assert_eq!(k.refused.as_deref(), Some(kind), "{name}");
+                assert!(
+                    k.public_key.is_empty() && k.fingerprint.is_empty(),
+                    "{name}"
+                );
+                assert_eq!(k.name, name);
+                assert_eq!(k.require_biometry, face_id, "{name}");
+            }
+        }
+        let reads = *lock(&vault.silent_reads);
+        assert!(store_learn_key_facts(reread.clone(), keychain.clone()).is_empty());
+        assert_eq!(*lock(&vault.silent_reads), reads, "never read again");
+
+        let router = named(&reread, "router");
+        assert_eq!(
+            reread
+                .delete_key(router.id, connections.clone(), keychain.clone())
+                .unwrap(),
+            StoreKeyDeletion::Deleted
+        );
+        assert!(
+            !keychain.exists(router.keychain_ref.unwrap()),
+            "its item went too"
+        );
     }
 }

@@ -1,0 +1,7 @@
+> plan the bucket move to the new region
+
+● Reading the state first: 14 resources, 2 of them buckets.
+
+● Bash(terraform plan -out move.plan)
+  ⎿  Refreshing state... [id=artifacts]
+     Plan: 2 to add, 0 to change, 2 to destroy.

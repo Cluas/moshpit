@@ -88,6 +88,17 @@ final class HostCare {
         Self.tell(core, saved: connectionStore)
     }
 
+    /// The notifications switch turned (B700): each host the phone is on
+    /// now is walked again, its pairing rewritten to say whether to push
+    /// (the sender there reads it). The others hear at their next session.
+    func notificationsChanged() {
+        syncSettings()
+        guard let hub else { return }
+        for session in hub.sessions.values where session.viewModel.connState == .live {
+            core.tend(connection: Self.conn(session.connection))
+        }
+    }
+
     /// Tell `core` which connections `store` holds: the ones it decoded,
     /// and every one it holds (nil while that can't be told).
     static func tell(_ core: HostCareCore, saved store: ConnectionStore?) {

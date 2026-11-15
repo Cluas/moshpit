@@ -93,6 +93,9 @@ pub(super) mod oid {
     pub const SECP384R1: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x22];
     pub const SECP521R1: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x23];
     pub const SECP256K1: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x0A];
+    pub const BRAINPOOL_P256R1: &[u8] = &[0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x07];
+    pub const BRAINPOOL_P384R1: &[u8] = &[0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0B];
+    pub const BRAINPOOL_P512R1: &[u8] = &[0x2B, 0x24, 0x03, 0x03, 0x02, 0x08, 0x01, 0x01, 0x0D];
     pub const PBES2: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x05, 0x0D];
     pub const PBKDF2: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x05, 0x0C];
     pub const AES128_CBC: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x02];
@@ -116,6 +119,19 @@ pub(super) mod oid {
             "PBES1".to_owned()
         } else {
             dotted(oid)
+        }
+    }
+
+    /// What to call a named curve no connect path signs with (B780): its
+    /// name for the ones a key file is likely to hold, the dotted OID
+    /// otherwise.
+    pub fn curve_name(oid: &[u8]) -> String {
+        match oid {
+            SECP256K1 => "secp256k1".to_owned(),
+            BRAINPOOL_P256R1 => "brainpoolP256r1".to_owned(),
+            BRAINPOOL_P384R1 => "brainpoolP384r1".to_owned(),
+            BRAINPOOL_P512R1 => "brainpoolP512r1".to_owned(),
+            other => dotted(other),
         }
     }
 

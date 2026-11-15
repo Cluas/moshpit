@@ -161,7 +161,8 @@ extension KeyRecord {
             comment: k.comment, fingerprint: k.fingerprint, publicKey: k.publicKey, source: KeySource(k.source),
             boundHosts: k.boundHosts, keychainRef: k.keychainRef, requireBiometry: k.requireBiometry,
             createdAt: k.createdAt.timeIntervalSinceReferenceDate,
-            lastUsedAt: k.lastUsedAt?.timeIntervalSinceReferenceDate, badgeText: k.badgeText)
+            lastUsedAt: k.lastUsedAt?.timeIntervalSinceReferenceDate, badgeText: k.badgeText,
+            refused: k.refused)
     }
 }
 
@@ -173,7 +174,7 @@ extension SSHKeyRecord {
             comment: r.comment, fingerprint: r.fingerprint, publicKey: r.publicKey,
             source: SSHKeySource(r.source), boundHosts: r.boundHosts, keychainRef: r.keychainRef,
             requireBiometry: r.requireBiometry, createdAt: Date(timeIntervalSinceReferenceDate: r.createdAt),
-            lastUsedAt: r.lastUsedAt.map(Date.init(timeIntervalSinceReferenceDate:)))
+            lastUsedAt: r.lastUsedAt.map(Date.init(timeIntervalSinceReferenceDate:)), refused: r.refused)
     }
 }
 

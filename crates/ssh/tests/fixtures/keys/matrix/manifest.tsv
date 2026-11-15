@@ -119,7 +119,7 @@ openssl-rsa2048-3primes-pkcs8	-	error Unsupported multi-prime RSA
 openssl-secp256k1-sec1	-	error Unsupported ECDSA secp256k1
 openssl-secp256k1-pkcs8	-	error Unsupported ECDSA secp256k1
 openssl-secp256k1-sec1-explicit	-	error Unsupported ECDSA (custom curve)
-openssl-brainpool256-sec1	-	error Unsupported ECDSA 1.3.36.3.3.2.8.1.1.7
+openssl-brainpool256-sec1	-	error Unsupported ECDSA brainpoolP256r1
 openssl-ed448-pkcs8	-	error Unsupported Ed448
 openssl-x25519-pkcs8	-	error Unsupported 1.3.101.110
 openssl-dsa-pkcs8	-	error Unsupported DSA

@@ -1,0 +1,11 @@
+> run the eval on the held-out set
+
+✦ I'll run the evaluation on the 12k held-out examples.
+
+  Shell python eval.py --split heldout --batch 64
+
+ Allow execution of: 'python eval.py'?
+
+ ● 1. Yes, allow once
+   2. Yes, allow always
+   3. No, suggest changes (esc)

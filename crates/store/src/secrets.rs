@@ -502,7 +502,9 @@ pub fn recover_orphans(
 /// record that [lacks its facts](SshKeyRecord::lacks_facts) has its private
 /// key read without asking ([`Keychain::load_silently`]) and, if `describe`
 /// reads it as a private key, those facts kept
-/// ([`SshKeyStore::learn_facts`]). One behind Face ID is left for its first
+/// ([`SshKeyStore::learn_facts`]); one of a kind no connect path signs
+/// with (`refused`), that kind ([`SshKeyStore::mark_refused`], B780). One
+/// behind Face ID is left for its first
 /// sign-in, which reads it anyway; one that reads as nothing is left as it
 /// is. Returns the records changed. A record with its facts is never read,
 /// so a later launch reads nothing for one this put right. The app runs it
@@ -511,6 +513,7 @@ pub fn learn_key_facts(
     keys: &mut SshKeyStore,
     keychain: &dyn Keychain,
     describe: &dyn Fn(&[u8]) -> Option<KeyFacts>,
+    refused: &dyn Fn(&[u8]) -> Option<String>,
 ) -> Vec<SshKeyRecord> {
     keys.reload_if_needed();
     let lacking: Vec<(Uuid, String)> = keys
@@ -530,13 +533,21 @@ pub fn learn_key_facts(
                 continue;
             }
         };
-        let Some(facts) = describe(&secret) else {
-            log::info!("key facts: a key's item doesn't read as a private key; left as it is");
-            continue;
+        let written = match describe(&secret) {
+            Some(facts) => keys.learn_facts(id, &facts),
+            // A kind no connect path signs with (B780): kept, so the key
+            // list and the picker say so.
+            None => match refused(&secret) {
+                Some(kind) => keys.mark_refused(id, &kind),
+                None => {
+                    log::info!(
+                        "key facts: a key's item doesn't read as a private key; left as it is"
+                    );
+                    continue;
+                }
+            },
         };
-        if keys.learn_facts(id, &facts)
-            && let Some(record) = keys.keys().iter().find(|k| k.id == id)
-        {
+        if written && let Some(record) = keys.keys().iter().find(|k| k.id == id) {
             learned.push(record.clone());
         }
     }

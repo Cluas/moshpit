@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 1
+# moshpit-scripts: 3
 # moshpit-stamp.sh — what a coding agent's lifecycle hook calls.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-stamp.sh. Each agent's config
@@ -158,6 +158,18 @@ if [ "$PREV_ST" != "$ST" ]; then
 else
   case "$PREV_SINCE" in *[!0-9]*|"") put since "$NOW" ;; esac
 fi
+# The turn (B666): from the first `working` after the pane was last idle or
+# done, to its `done`, the questions on the way included. The finish was timed
+# from the last episode alone: a twenty-minute task that asked one question at
+# minute nineteen read "1 min" on the phone and rang nothing.
+case "$ST" in
+  working|attention)
+    case "$PREV_ST" in
+      working|attention) case "$(get turn)" in *[!0-9]*|"") put turn "$NOW" ;; esac ;;
+      *) put turn "$NOW" ;;
+    esac
+    ;;
+esac
 # The episode id the grace fork below must match: the standing since.
 EPISODE=$NOW
 if [ "$PREV_ST" = "$ST" ]; then
@@ -202,9 +214,13 @@ case "$ST" in
     if [ -f "$HOME/.moshpit/moshpit-push.sh" ]; then
       DUR=0
       if [ "$PREV_ST" = "working" ] || [ "$PREV_ST" = "attention" ]; then
-        case "$PREV_SINCE" in
+        # From the turn's start; a pane stamped before turns were kept, from
+        # its last episode, as before.
+        BEGAN=$(get turn)
+        case "$BEGAN" in *[!0-9]*|"") BEGAN=$PREV_SINCE ;; esac
+        case "$BEGAN" in
           *[!0-9]*|"") ;;
-          *) [ "$NOW" -ge "$PREV_SINCE" ] && DUR=$((NOW - PREV_SINCE)) ;;
+          *) [ "$NOW" -ge "$BEGAN" ] && DUR=$((NOW - BEGAN)) ;;
         esac
       fi
       ( sh "$HOME/.moshpit/moshpit-push.sh" done "$AG" "$TITLE" "$DUR" >/dev/null 2>&1 & )

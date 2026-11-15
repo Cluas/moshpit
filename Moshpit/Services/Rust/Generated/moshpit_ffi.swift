@@ -4805,9 +4805,10 @@ public protocol KeyStoreHandleProtocol: AnyObject, Sendable {
     /**
      * Key `id`'s facts, read off `private_key` — its keychain item, as
      * the first sign-in with it read it (B726): for a record 1.0.8 saved
-     * without them (`SshKeyStore::learn_facts`). Whether they were
-     * written; false when the record has them, or the text reads as no
-     * private key.
+     * without them (`SshKeyStore::learn_facts`); for a key of a kind no
+     * connect path signs with, that kind (`SshKeyStore::mark_refused`,
+     * B780). Whether either was written; false when the record has them,
+     * or the text reads as no private key.
      */
     func learnFacts(id: String, privateKey: String) throws  -> Bool
     
@@ -4961,9 +4962,10 @@ open func keys() -> [KeyRecord]  {
     /**
      * Key `id`'s facts, read off `private_key` — its keychain item, as
      * the first sign-in with it read it (B726): for a record 1.0.8 saved
-     * without them (`SshKeyStore::learn_facts`). Whether they were
-     * written; false when the record has them, or the text reads as no
-     * private key.
+     * without them (`SshKeyStore::learn_facts`); for a key of a kind no
+     * connect path signs with, that kind (`SshKeyStore::mark_refused`,
+     * B780). Whether either was written; false when the record has them,
+     * or the text reads as no private key.
      */
 open func learnFacts(id: String, privateKey: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
@@ -11903,13 +11905,22 @@ public struct KeyRecord: Equatable, Hashable {
      * `SE · P256`, `RSA-2048`, `ED25519`… (read only).
      */
     public var badgeText: String
+    /**
+     * The kind of key it is when no connect path signs in with it
+     * (`"ECDSA brainpoolP256r1"`), read off its private key (B780).
+     */
+    public var refused: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(id: String, name: String, algorithm: KeyAlgorithm, bits: Int64?, comment: String, fingerprint: String, publicKey: String, source: KeySource, boundHosts: [String], keychainRef: String?, requireBiometry: Bool, createdAt: Double, lastUsedAt: Double?, 
         /**
          * `SE · P256`, `RSA-2048`, `ED25519`… (read only).
-         */badgeText: String) {
+         */badgeText: String, 
+        /**
+         * The kind of key it is when no connect path signs in with it
+         * (`"ECDSA brainpoolP256r1"`), read off its private key (B780).
+         */refused: String?) {
         self.id = id
         self.name = name
         self.algorithm = algorithm
@@ -11924,6 +11935,7 @@ public struct KeyRecord: Equatable, Hashable {
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
         self.badgeText = badgeText
+        self.refused = refused
     }
 
     
@@ -11955,7 +11967,8 @@ public struct FfiConverterTypeKeyRecord: FfiConverterRustBuffer {
                 requireBiometry: FfiConverterBool.read(from: &buf), 
                 createdAt: FfiConverterDouble.read(from: &buf), 
                 lastUsedAt: FfiConverterOptionDouble.read(from: &buf), 
-                badgeText: FfiConverterString.read(from: &buf)
+                badgeText: FfiConverterString.read(from: &buf), 
+                refused: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -11974,6 +11987,7 @@ public struct FfiConverterTypeKeyRecord: FfiConverterRustBuffer {
         FfiConverterDouble.write(value.createdAt, into: &buf)
         FfiConverterOptionDouble.write(value.lastUsedAt, into: &buf)
         FfiConverterString.write(value.badgeText, into: &buf)
+        FfiConverterOptionString.write(value.refused, into: &buf)
     }
 }
 
@@ -14512,6 +14526,10 @@ public struct SshKeyRow: Equatable, Hashable {
      * Whether it has a public key to copy or share.
      */
     public var hasPublicKey: Bool
+    /**
+     * The kind of key it is when the app can't sign in with it (B780).
+     */
+    public var refused: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14533,7 +14551,10 @@ public struct SshKeyRow: Equatable, Hashable {
          */unusedSince: String?, 
         /**
          * Whether it has a public key to copy or share.
-         */hasPublicKey: Bool) {
+         */hasPublicKey: Bool, 
+        /**
+         * The kind of key it is when the app can't sign in with it (B780).
+         */refused: String?) {
         self.id = id
         self.name = name
         self.badge = badge
@@ -14543,6 +14564,7 @@ public struct SshKeyRow: Equatable, Hashable {
         self.hosts = hosts
         self.unusedSince = unusedSince
         self.hasPublicKey = hasPublicKey
+        self.refused = refused
     }
 
     
@@ -14569,7 +14591,8 @@ public struct FfiConverterTypeSshKeyRow: FfiConverterRustBuffer {
                 fingerprint: FfiConverterString.read(from: &buf), 
                 hosts: FfiConverterSequenceString.read(from: &buf), 
                 unusedSince: FfiConverterOptionString.read(from: &buf), 
-                hasPublicKey: FfiConverterBool.read(from: &buf)
+                hasPublicKey: FfiConverterBool.read(from: &buf), 
+                refused: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -14583,6 +14606,7 @@ public struct FfiConverterTypeSshKeyRow: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.hosts, into: &buf)
         FfiConverterOptionString.write(value.unusedSince, into: &buf)
         FfiConverterBool.write(value.hasPublicKey, into: &buf)
+        FfiConverterOptionString.write(value.refused, into: &buf)
     }
 }
 
@@ -22885,6 +22909,12 @@ public enum SessionEventKind: Equatable, Hashable {
     )
     case paneBell(pane: String
     )
+    /**
+     * A never-shown pane's visible screen, for the overview's picture
+     * (B751).
+     */
+    case paneSnapshot(pane: String, rows: [String]
+    )
     case agentHooksUpdated
     case attachStalled
     case tmuxActionsDropped
@@ -23013,55 +23043,58 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
         case 6: return .paneBell(pane: try FfiConverterString.read(from: &buf)
         )
         
-        case 7: return .agentHooksUpdated
-        
-        case 8: return .attachStalled
-        
-        case 9: return .tmuxActionsDropped
-        
-        case 10: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf), conflicting: try FfiConverterBool.read(from: &buf)
+        case 7: return .paneSnapshot(pane: try FfiConverterString.read(from: &buf), rows: try FfiConverterSequenceString.read(from: &buf)
         )
         
-        case 11: return .olderHostKeyAlgorithm(algorithm: try FfiConverterString.read(from: &buf)
+        case 8: return .agentHooksUpdated
+        
+        case 9: return .attachStalled
+        
+        case 10: return .tmuxActionsDropped
+        
+        case 11: return .hostKeyPrompt(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), fingerprint: try FfiConverterString.read(from: &buf), previous: try FfiConverterOptionString.read(from: &buf), olderAlgorithm: try FfiConverterOptionString.read(from: &buf), conflicting: try FfiConverterBool.read(from: &buf)
         )
         
-        case 12: return .hostKeyPromptWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
+        case 12: return .olderHostKeyAlgorithm(algorithm: try FfiConverterString.read(from: &buf)
         )
         
-        case 13: return .signInQuestion(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf), instructions: try FfiConverterString.read(from: &buf), text: try FfiConverterString.read(from: &buf), echo: try FfiConverterBool.read(from: &buf)
+        case 13: return .hostKeyPromptWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 14: return .signInQuestionWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
+        case 14: return .signInQuestion(prompt: try FfiConverterUInt64.read(from: &buf), host: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf), instructions: try FfiConverterString.read(from: &buf), text: try FfiConverterString.read(from: &buf), echo: try FfiConverterBool.read(from: &buf)
         )
         
-        case 15: return .degraded(degrade: try FfiConverterTypeDegradeValue.read(from: &buf)
+        case 15: return .signInQuestionWithdrawn(prompt: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 16: return .returnPathDead
-        
-        case 17: return .returnPathAlive
-        
-        case 18: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
+        case 16: return .degraded(degrade: try FfiConverterTypeDegradeValue.read(from: &buf)
         )
         
-        case 19: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
+        case 17: return .returnPathDead
+        
+        case 18: return .returnPathAlive
+        
+        case 19: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
         )
         
-        case 20: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
+        case 20: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
         )
         
-        case 21: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
+        case 21: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
         )
         
-        case 22: return .closed
-        
-        case 23: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
+        case 22: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
         )
         
-        case 24: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        case 23: return .closed
+        
+        case 24: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 25: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
+        case 25: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        )
+        
+        case 26: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -23102,20 +23135,26 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             FfiConverterString.write(pane, into: &buf)
             
         
-        case .agentHooksUpdated:
+        case let .paneSnapshot(pane,rows):
             writeInt(&buf, Int32(7))
+            FfiConverterString.write(pane, into: &buf)
+            FfiConverterSequenceString.write(rows, into: &buf)
+            
         
-        
-        case .attachStalled:
+        case .agentHooksUpdated:
             writeInt(&buf, Int32(8))
         
         
-        case .tmuxActionsDropped:
+        case .attachStalled:
             writeInt(&buf, Int32(9))
         
         
-        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm,conflicting):
+        case .tmuxActionsDropped:
             writeInt(&buf, Int32(10))
+        
+        
+        case let .hostKeyPrompt(prompt,host,port,fingerprint,previous,olderAlgorithm,conflicting):
+            writeInt(&buf, Int32(11))
             FfiConverterUInt64.write(prompt, into: &buf)
             FfiConverterString.write(host, into: &buf)
             FfiConverterUInt16.write(port, into: &buf)
@@ -23126,17 +23165,17 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case let .olderHostKeyAlgorithm(algorithm):
-            writeInt(&buf, Int32(11))
+            writeInt(&buf, Int32(12))
             FfiConverterString.write(algorithm, into: &buf)
             
         
         case let .hostKeyPromptWithdrawn(prompt):
-            writeInt(&buf, Int32(12))
+            writeInt(&buf, Int32(13))
             FfiConverterUInt64.write(prompt, into: &buf)
             
         
         case let .signInQuestion(prompt,host,name,instructions,text,echo):
-            writeInt(&buf, Int32(13))
+            writeInt(&buf, Int32(14))
             FfiConverterUInt64.write(prompt, into: &buf)
             FfiConverterString.write(host, into: &buf)
             FfiConverterString.write(name, into: &buf)
@@ -23146,31 +23185,31 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case let .signInQuestionWithdrawn(prompt):
-            writeInt(&buf, Int32(14))
+            writeInt(&buf, Int32(15))
             FfiConverterUInt64.write(prompt, into: &buf)
             
         
         case let .degraded(degrade):
-            writeInt(&buf, Int32(15))
+            writeInt(&buf, Int32(16))
             FfiConverterTypeDegradeValue.write(degrade, into: &buf)
             
         
         case .returnPathDead:
-            writeInt(&buf, Int32(16))
-        
-        
-        case .returnPathAlive:
             writeInt(&buf, Int32(17))
         
         
-        case let .moshMetrics(srttMs,roaming):
+        case .returnPathAlive:
             writeInt(&buf, Int32(18))
+        
+        
+        case let .moshMetrics(srttMs,roaming):
+            writeInt(&buf, Int32(19))
             FfiConverterDouble.write(srttMs, into: &buf)
             FfiConverterBool.write(roaming, into: &buf)
             
         
         case let .moshDiagnostics(datagramsReceived,parseFailures,gapEvents,appliedHostNum,packetsSent,lastUserNum,serverAckedUserNum,channelState,inputHeld):
-            writeInt(&buf, Int32(19))
+            writeInt(&buf, Int32(20))
             FfiConverterUInt64.write(datagramsReceived, into: &buf)
             FfiConverterUInt64.write(parseFailures, into: &buf)
             FfiConverterUInt64.write(gapEvents, into: &buf)
@@ -23183,14 +23222,14 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case let .inputDiscarded(stream,bytes,why):
-            writeInt(&buf, Int32(20))
+            writeInt(&buf, Int32(21))
             FfiConverterUInt64.write(stream, into: &buf)
             FfiConverterUInt64.write(bytes, into: &buf)
             FfiConverterTypeDiscardedValue.write(why, into: &buf)
             
         
         case let .resumeChecked(awayMs,waitedMs,outcome,throughTmux,held):
-            writeInt(&buf, Int32(21))
+            writeInt(&buf, Int32(22))
             FfiConverterUInt64.write(awayMs, into: &buf)
             FfiConverterUInt64.write(waitedMs, into: &buf)
             FfiConverterTypeResumeOutcomeValue.write(outcome, into: &buf)
@@ -23199,22 +23238,22 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case .closed:
-            writeInt(&buf, Int32(22))
+            writeInt(&buf, Int32(23))
         
         
         case let .flushed(token):
-            writeInt(&buf, Int32(23))
+            writeInt(&buf, Int32(24))
             FfiConverterUInt64.write(token, into: &buf)
             
         
         case let .herdrAnswer(token,answer):
-            writeInt(&buf, Int32(24))
+            writeInt(&buf, Int32(25))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterTypeHerdrAnswerValue.write(answer, into: &buf)
             
         
         case let .delivered(token,delivered):
-            writeInt(&buf, Int32(25))
+            writeInt(&buf, Int32(26))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterBool.write(delivered, into: &buf)
             
@@ -26158,6 +26197,15 @@ public enum TmuxIntent: Equatable, Hashable {
     )
     case scrollBegan
     case pollAgentHooks
+    /**
+     * The overview's pictures of panes never shown (B751).
+     */
+    case snapshotPanes(panes: [String]
+    )
+    /**
+     * The overview closed.
+     */
+    case stopSnapshots
     case deferResize(pane: String, cols: UInt16, rows: UInt16
     )
     /**
@@ -26257,10 +26305,15 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
         
         case 25: return .pollAgentHooks
         
-        case 26: return .deferResize(pane: try FfiConverterString.read(from: &buf), cols: try FfiConverterUInt16.read(from: &buf), rows: try FfiConverterUInt16.read(from: &buf)
+        case 26: return .snapshotPanes(panes: try FfiConverterSequenceString.read(from: &buf)
         )
         
-        case 27: return .aimWheel(col: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf)
+        case 27: return .stopSnapshots
+        
+        case 28: return .deferResize(pane: try FfiConverterString.read(from: &buf), cols: try FfiConverterUInt16.read(from: &buf), rows: try FfiConverterUInt16.read(from: &buf)
+        )
+        
+        case 29: return .aimWheel(col: try FfiConverterInt64.read(from: &buf), row: try FfiConverterInt64.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -26395,15 +26448,24 @@ public struct FfiConverterTypeTmuxIntent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(25))
         
         
-        case let .deferResize(pane,cols,rows):
+        case let .snapshotPanes(panes):
             writeInt(&buf, Int32(26))
+            FfiConverterSequenceString.write(panes, into: &buf)
+            
+        
+        case .stopSnapshots:
+            writeInt(&buf, Int32(27))
+        
+        
+        case let .deferResize(pane,cols,rows):
+            writeInt(&buf, Int32(28))
             FfiConverterString.write(pane, into: &buf)
             FfiConverterUInt16.write(cols, into: &buf)
             FfiConverterUInt16.write(rows, into: &buf)
             
         
         case let .aimWheel(col,row):
-            writeInt(&buf, Int32(27))
+            writeInt(&buf, Int32(29))
             FfiConverterInt64.write(col, into: &buf)
             FfiConverterInt64.write(row, into: &buf)
             
@@ -29777,7 +29839,8 @@ public func storeHoldRelease(preferences: PreferencesHost, mode: ReadinessMode, 
 /**
  * Put right what each key 1.0.8 imported without its public half shows
  * (B726): its algorithm, size, public key and fingerprint, off its own
- * private key, read without asking (`secrets::learn_key_facts`). One
+ * private key, read without asking (`secrets::learn_key_facts`), or the
+ * kind it is when 1.0.9 can't sign with it (B780). One
  * behind Face ID waits for its first sign-in
  * ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
  * runs it once a launch, beside the orphan recovery.
@@ -30181,7 +30244,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 16082) {
+    if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 5824) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable() != 15913) {
@@ -30799,7 +30862,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_keys() != 34608) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_keystorehandle_learn_facts() != 56051) {
+    if (uniffi_moshpit_ffi_checksum_method_keystorehandle_learn_facts() != 42490) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_keystorehandle_mark_used() != 43528) {

@@ -65,34 +65,9 @@ install_kit() {
 log() { echo "▶ $*" >&2; }
 fail() { echo "✘ $*" >&2; exit 1; }
 
-# The agents' states, stamped as the host's hooks stamp them
-# (scripts/host/moshpit-stamp.sh: the pane's @moshpit_state, _agent, _since,
-# _title): two waiting on the person, four at work, two done. Every agent
-# pane's foreground is its agent's name (stage/hold.sh), never a shell, so
-# the app takes the stamps as they are (crates/agents' reclassify); the
-# done claude's pane is back at its shell, as a finished one is. Dated from
-# now: `restamp` dates them again, so a timer a shot shows an hour into the
-# run still reads minutes (the capture restamps while it shoots).
-stamp_all() {
-    local now
-    now=$(date +%s)
-    stamp() {  # <tmux> <pane> <state> <agent> <since> [title]
-        "$1" set -p -t "$2" @moshpit_state "$3"
-        "$1" set -p -t "$2" @moshpit_agent "$4"
-        "$1" set -p -t "$2" @moshpit_since "$5"
-        [ -z "${6:-}" ] || "$1" set -p -t "$2" @moshpit_title "$6"
-    }
-    stamp t_dev work:claude attention claude $((now - 95)) \
-        "Claude needs your permission to use Edit"
-    stamp t_dev work:build working codex $((now - 380)) "Running the test suite"
-    stamp t_dev work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
-    stamp t_dev work:shell done claude $((now - 1500))
-    stamp t_gpu train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
-    stamp t_gpu train:eval attention gemini $((now - 40)) \
-        "Allow execution of: 'python eval.py'?"
-    stamp t_build ci:deploy working claude $((now - 200)) "Planning the bucket move"
-    stamp t_build ci:codex done codex $((now - 900))
-}
+# The staged sessions and the agents' stamps (stage/layout.sh): shared with
+# stage-vm-host.sh.
+. "$root/scripts/shots/stage/layout.sh"
 
 if [ "$cmd" = restamp ]; then
     stamp_all
@@ -146,7 +121,21 @@ StrictModes no
 PidFile $work/sshd.pid
 Subsystem sftp /usr/libexec/sftp-server
 AllowUsers $user
+MaxStartups 100:30:200
+LogLevel VERBOSE
 EOF
+# No throttling of a source that misbehaves: every connection the app
+# makes comes from loopback (or the VM), and OpenSSH 9.8+ penalises a
+# source for each connection dropped before it signs in (an app killed
+# between shots, a probe), until it stops answering it at all (dry run 6:
+# "stopped answering during the SSH handshake", worse with every locale).
+cp "$work/sshd_config" "$work/sshd_config.try"
+echo "PerSourcePenalties no" >> "$work/sshd_config.try"
+if sudo /usr/sbin/sshd -t -f "$work/sshd_config.try" 2>/dev/null; then
+    mv "$work/sshd_config.try" "$work/sshd_config"
+else
+    rm -f "$work/sshd_config.try"
+fi
 sudo /usr/sbin/sshd -f "$work/sshd_config" -E "$work/sshd.log"
 for name in "$host" gpu-01.example.com build.example.com; do
     grep -q " $name\$" /etc/hosts || echo "127.0.0.1 $name" | sudo tee -a /etc/hosts >/dev/null
@@ -160,11 +149,12 @@ ssh_in || { cat "$work/sshd.log" >&2; fail "sshd never answered as $host"; }
 fingerprint="$(ssh-keygen -l -E sha256 -f "$work/host_ed25519.pub" | awk '{print $2}')"
 log "host key $fingerprint"
 
-tmux_bin="$(command -v tmux)" || fail "no tmux (brew install tmux)"
+# The binary itself (`tmux` is a function here).
+tmux_bin="$(type -P tmux)" || fail "no tmux (brew install tmux)"
 wrap() {  # <wrapper> <socket>
     cat > "$kit/$1" <<EOF
 #!/bin/sh
-exec "$tmux_bin" -L $2 "\$@"
+exec "$tmux_bin" -f /dev/null -L $2 "\$@"
 EOF
     chmod +x "$kit/$1"
 }
@@ -209,89 +199,9 @@ if [ "$stage" != "$built" ]; then
 fi
 
 # The small panes' text (the big ones replay a turn: stage/*-session.sh).
-text="$kit/text"
-mkdir -p "$text"
-cat > "$text/review-claude.txt" <<'TEXT'
-> add tests for backoff.js: the cap, the jitter, the retry count
-
-● I'll cover the cap, the jitter bounds and the retry count.
-
-● Write(test/backoff.test.js)
-  ⎿  58 lines
-
-● Bash(npx vitest run test/backoff.test.js)
-  ⎿  ✓ caps the wait at 30s
-     ✓ keeps jitter inside ±20%
-     ✓ gives up after the last try
-
-● Now the queue: a dropped event should be retried once more…
-TEXT
-cat > "$text/review-vitest.txt" <<'TEXT'
- DEV  v2.1.4 /srv/payments-api
-
- ✓ test/backoff.test.js (12 tests) 96ms
- ✓ src/retry.test.js (9 tests) 412ms
- ✓ src/webhook.test.js (14 tests) 806ms
-
- Test Files  3 passed (3)
-      Tests  35 passed (35)
-
- PASS  Waiting for file changes...
-TEXT
-cat > "$text/review-tail.txt" <<'TEXT'
-09:41:02 POST /webhooks/stripe 200 41ms
-09:41:03 retry evt_1Q2 attempt=2 wait=1.6s
-09:41:05 POST /webhooks/stripe 200 38ms
-09:41:05 retry evt_1Q7 attempt=1 wait=0.8s
-09:41:06 POST /webhooks/stripe 200 44ms
-09:41:08 delivered evt_1Q2 after 2 tries
-TEXT
-cat > "$text/train-claude.txt" <<'TEXT'
-> the loss spikes at step 2k, fix the warmup
-
-● The warmup ends at step 2,000 while the batch is still growing.
-  I'll stretch it to 4,000 and decay with a cosine.
-
-● Update(schedule.py)
-  ⎿  Updated 2 additions and 1 removal
-
-● Bash(python train.py --steps 6000 --log-every 500)
-  ⎿  step 500   loss 3.912
-     step 1000  loss 3.104
-     step 1500  loss 2.788
-TEXT
-cat > "$text/train-gemini.txt" <<'TEXT'
-> run the eval on the held-out set
-
-✦ I'll run the evaluation on the 12k held-out examples.
-
-  Shell python eval.py --split heldout --batch 64
-
- Allow execution of: 'python eval.py'?
-
- ● 1. Yes, allow once
-   2. Yes, allow always
-   3. No, suggest changes (esc)
-TEXT
-cat > "$text/ci-claude.txt" <<'TEXT'
-> plan the bucket move to the new region
-
-● Reading the state first: 14 resources, 2 of them buckets.
-
-● Bash(terraform plan -out move.plan)
-  ⎿  Refreshing state... [id=artifacts]
-     Plan: 2 to add, 0 to change, 2 to destroy.
-TEXT
-cat > "$text/shell.txt" <<'TEXT'
-➜  infra git:(main) terraform fmt -check
-➜  infra git:(main)
-TEXT
-cat > "$text/ci-codex.txt" <<'TEXT'
-• Bumped the Node image to 22 in ci/Dockerfile and the workflow matrix.
-• Ran the build: 3m12s, cache hit on the dependency layer.
-
-✔ Done. 2 files changed, +4 -4.
-TEXT
+# The small panes' text (the big ones replay a turn: stage/*-session.sh).
+mkdir -p "$kit/text"
+cp "$root"/scripts/shots/stage/text/*.txt "$kit/text/"
 # The pane scripts beside the texts, where the session's user reads them.
 mkdir -p "$kit/scripts"
 cp "$root"/scripts/shots/stage/{hold,claude-session,build-session}.sh "$kit/scripts/"
@@ -300,33 +210,7 @@ text="$box/text"
 scripts="$box/scripts"
 hold="$scripts/hold.sh"
 
-# devbox: the payments work. Its claude asks to edit; codex runs the
-# tests; a window split three ways (claude writing tests, vitest watching,
-# the server's log); a shell where an earlier claude finished.
-tmux kill-server 2>/dev/null || true
-tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
-    "exec sh $scripts/claude-session.sh"
-tmux new-window -t work -n build -c "$stage/payments-api" "exec sh $scripts/build-session.sh"
-tmux new-window -t work -n review -c "$stage/payments-api" "exec sh $hold claude $text/review-claude.txt"
-tmux split-window -h -l 45% -t work:review -c "$stage/payments-api" "exec sh $hold vitest $text/review-vitest.txt"
-tmux split-window -v -t work:review.1 -c "$stage/payments-api" "exec sh $hold tail $text/review-tail.txt"
-tmux select-pane -t work:review.0
-tmux new-window -t work -n shell -c "$stage/infra" "exec sh $hold zsh $text/shell.txt"
-tmux select-window -t work:claude
-
-# gpu-01: a training run (claude at work) and an eval waiting on gemini's
-# question.
-gpu kill-server 2>/dev/null || true
-gpu new-session -d -s train -x 120 -y 40 -c "$stage/trainer" -n claude "exec sh $hold claude $text/train-claude.txt"
-gpu new-window -t train -n eval -c "$stage/trainer" "exec sh $hold gemini $text/train-gemini.txt"
-gpu select-window -t train:claude
-
-# build-box: an infra plan (claude at work) and a CI bump codex finished.
-build kill-server 2>/dev/null || true
-build new-session -d -s ci -x 120 -y 40 -c "$stage/infra" -n deploy "exec sh $hold claude $text/ci-claude.txt"
-build new-window -t ci -n codex -c "$stage/dashboard" "exec sh $hold codex $text/ci-codex.txt"
-build select-window -t ci:deploy
-
+stage_layout
 stamp_all
 tmux list-panes -a -F 'devbox #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 gpu list-panes -a -F 'gpu-01 #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2

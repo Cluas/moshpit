@@ -252,17 +252,47 @@ pub fn large_bar(
             let inline_in = bind(&offset, motion.inline_in());
             let inline_rise = bind(&offset, motion.inline_rise());
             let edge = bind(&offset, motion.edge());
+            // The inline title keeps clear of the wider of the row's sides,
+            // as the pushed pages' bar's does (B748).
+            let leading_w = signal(0.0_f32);
+            let trailing_w = signal(0.0_f32);
+            let words = {
+                let title = title.clone();
+                move || {
+                    measure_text(
+                        &format!(
+                            "{} {}px system-ui",
+                            FontWeight::SEMIBOLD.0,
+                            nav_bar::text_size()
+                        ),
+                        &title,
+                    )
+                    .0
+                }
+            };
+            let bar_w = signal(0.0_f32);
+            let insets = computed(move || {
+                let (lead, trail) = (leading_w.get(), trailing_w.get());
+                let side = lead.max(trail) + 8.0;
+                if words() <= bar_w.get() - 2.0 * side + 0.5 {
+                    (side, side)
+                } else {
+                    (lead + 8.0, trail + 8.0)
+                }
+            });
             let inline_row = view()
                 .relative()
                 .h(px(metrics.height))
                 .flex_row()
                 .items_center()
+                .on_layout(move |r: &Bounds<Points>| bar_w.set(r.size.width.0))
                 .children(leading.map(|b| {
                     view()
                         .h_full()
                         .flex_row()
                         .items_center()
                         .pl(px(inset))
+                        .on_layout(move |r: &Bounds<Points>| leading_w.set(r.size.width.0))
                         .child(b())
                 }))
                 .child(view().flex_1())
@@ -273,12 +303,16 @@ pub fn large_bar(
                         .items_center()
                         .gap_2()
                         .pr(px(inset))
+                        .on_layout(move |r: &Bounds<Points>| trailing_w.set(r.size.width.0))
                         .children(trailing.into_iter().map(|b| b())),
                 )
                 .child(
                     view()
                         .absolute()
-                        .inset_0()
+                        .top(px(0.0))
+                        .bottom(px(0.0))
+                        .left(move || px(insets.get().0))
+                        .right(move || px(insets.get().1))
                         .items_center()
                         .pt(move || {
                             px(

@@ -85,10 +85,9 @@ impl Curve {
                 oid::PRIME256V1 => Ok(Curve::P256),
                 oid::SECP384R1 => Ok(Curve::P384),
                 oid::SECP521R1 => Ok(Curve::P521),
-                oid::SECP256K1 => Err(ImportError::Unsupported("ECDSA secp256k1".to_owned())),
                 other => Err(ImportError::Unsupported(format!(
                     "ECDSA {}",
-                    oid::dotted(other)
+                    oid::curve_name(other)
                 ))),
             },
             Some(0x30) => {

@@ -731,15 +731,34 @@ fn notifications_off_tends_scripts_but_pairs_nothing() {
     assert!(rig.store.read().is_empty());
 }
 
+/// With both switches off, care installs, refreshes and asks nothing: on
+/// a host this phone has no pairing on it only reads (B700: to find one to
+/// mute).
 #[test]
-fn with_notifications_and_the_island_off_care_does_nothing() {
+fn with_notifications_and_the_island_off_care_writes_and_asks_nothing() {
     let mut rig = Rig::new().with_token();
-    let c = hooked(&mut rig, "kept");
+    let c = conn("bare");
+    rig.save(&[c.id]);
+    rig.set_host(c.id, Host::healthy());
+    switch(&mut rig, false, false);
+    rig.tend(&c);
+    assert!(
+        rig.host(c.id).commands.iter().all(|command| !command.contains("base64 -d >")),
+        "{:?}",
+        rig.host(c.id).commands
+    );
+    assert!(rig.machine.consent().is_none(), "asked");
+    assert!(rig.mints.is_empty());
+    assert!(rig.host(c.id).pairing_conf(c.id).is_none());
+}
+
+/// The switches as the app sets them.
+fn switch(rig: &mut Rig, notifications: bool, live_activity: bool) {
     rig.act(|m, k| {
         m.set_settings(
             Settings {
-                notifications: false,
-                live_activity: false,
+                notifications,
+                live_activity,
                 relay_url: RELAY.into(),
                 declined: vec![],
                 unpaired: vec![],
@@ -747,8 +766,36 @@ fn with_notifications_and_the_island_off_care_does_nothing() {
             k,
         )
     });
+}
+
+/// B700: with notifications off the host's sender went on pushing, and the
+/// phone's notification service cannot drop a push it was sent. The
+/// switch turned, each host is walked again at its next session, and the
+/// pairing this phone has there says so (`NOTIFY=off`, the sender sends
+/// nothing on it); back on, it is as it was. With the island off too.
+#[test]
+fn notifications_off_mutes_this_phones_pairing_and_on_unmutes_it() {
+    let mut rig = Rig::new().with_token();
+    let c = hooked(&mut rig, "kept");
     rig.tend(&c);
-    assert!(rig.host(c.id).commands.is_empty());
+    let phone = rig.pairing(c.id).unwrap();
+    assert_eq!(rig.host(c.id).pairing_conf(c.id), Some(&moshpit_install::push_conf(&phone)));
+    switch(&mut rig, false, true);
+    rig.tend(&c);
+    assert_eq!(
+        rig.host(c.id).pairing_conf(c.id),
+        Some(&moshpit_install::push_conf_as(&phone, true))
+    );
+    switch(&mut rig, true, true);
+    rig.tend(&c);
+    assert_eq!(rig.host(c.id).pairing_conf(c.id), Some(&moshpit_install::push_conf(&phone)));
+    switch(&mut rig, false, false);
+    rig.tend(&c);
+    assert_eq!(
+        rig.host(c.id).pairing_conf(c.id),
+        Some(&moshpit_install::push_conf_as(&phone, true))
+    );
+    assert_eq!(rig.mints, [c.id.to_string()], "paired once");
 }
 
 #[test]

@@ -53,19 +53,26 @@ public struct AgentWidgetState: Codable, Equatable {
 /// app (writer) and the MoshpitIsland extension (reader). On the simulator the
 /// suite works without provisioning; on device the App Group capability must be
 /// enabled for both the app and the extension.
+///
+/// The snapshot is a file in the App Group's folder kept out of backups
+/// (B785, ``DeviceLocalFiles``): it was a key in the suite, which rides a
+/// backup, and a phone restored from one showed the old phone's agents. The
+/// key an earlier build wrote is never read, and goes at the first write.
 public enum AgentWidgetStore {
     public static let appGroup = "group.com.cluas.moshpit"
     private static let key = "moshpit.widget.agentState"
+    private static let filename = "agent-widget-state.json"
 
-    private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
+    private static var file: URL? { DeviceLocalFiles.url(filename, appGroup: appGroup) }
 
     public static func write(_ state: AgentWidgetState) {
-        guard let defaults, let data = try? JSONEncoder().encode(state) else { return }
-        defaults.set(data, forKey: key)
+        guard let file, let data = try? JSONEncoder().encode(state) else { return }
+        try? data.write(to: file, options: .atomic)
+        UserDefaults(suiteName: appGroup)?.removeObject(forKey: key)
     }
 
     public static func read() -> AgentWidgetState {
-        guard let defaults, let data = defaults.data(forKey: key),
+        guard let file, let data = try? Data(contentsOf: file),
               let state = try? JSONDecoder().decode(AgentWidgetState.self, from: data)
         else { return .empty }
         return state

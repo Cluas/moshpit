@@ -1,0 +1,13 @@
+> add tests for backoff.js: the cap, the jitter, the retry count
+
+● I'll cover the cap, the jitter bounds and the retry count.
+
+● Write(test/backoff.test.js)
+  ⎿  58 lines
+
+● Bash(npx vitest run test/backoff.test.js)
+  ⎿  ✓ caps the wait at 30s
+     ✓ keeps jitter inside ±20%
+     ✓ gives up after the last try
+
+● Now the queue: a dropped event should be retried once more…

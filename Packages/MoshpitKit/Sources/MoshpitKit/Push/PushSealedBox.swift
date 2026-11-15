@@ -103,8 +103,44 @@ public enum PushSealedBox {
             return status
         }
         guard String(data: plaintext, encoding: .utf8) == nil else { return nil }
-        let repaired = Data(String(decoding: plaintext, as: UTF8.self).utf8)
-        return try? JSONDecoder().decode(Status.self, from: repaired)
+        return try? JSONDecoder().decode(Status.self, from: repaired(plaintext))
+    }
+
+    /// `bytes` as UTF-8 (B635): a character a cut left short just before a
+    /// string's closing quote — the end of a title `cut` ended mid-character
+    /// — is dropped; any other byte that isn't UTF-8 reads as U+FFFD.
+    static func repaired(_ bytes: Data) -> Data {
+        let bytes = [UInt8](bytes)
+        var out: [UInt8] = []
+        out.reserveCapacity(bytes.count)
+        var i = 0
+        while i < bytes.count {
+            let lead = bytes[i]
+            let wanted: Int
+            switch lead {
+            case 0x00...0x7F: wanted = 1
+            case 0xC2...0xDF: wanted = 2
+            case 0xE0...0xEF: wanted = 3
+            case 0xF0...0xF4: wanted = 4
+            default: wanted = 0
+            }
+            var have = wanted == 0 ? 0 : 1
+            while have < wanted, i + have < bytes.count, bytes[i + have] & 0xC0 == 0x80 { have += 1 }
+            if wanted > 0, have == wanted,
+               String(decoding: bytes[i..<i + have], as: UTF8.self).unicodeScalars.allSatisfy({ $0 != "\u{FFFD}" }) {
+                out.append(contentsOf: bytes[i..<i + have])
+                i += have
+                continue
+            }
+            let length = max(have, 1)
+            let cutShort = wanted > 1 && have < wanted
+            let atStringEnd = i + length < bytes.count && bytes[i + length] == UInt8(ascii: "\"")
+            if !(cutShort && atStringEnd) {
+                out.append(contentsOf: [0xEF, 0xBF, 0xBD])
+            }
+            i += length
+        }
+        return Data(out)
     }
 
     public static func openRaw(_ envelope: Envelope, secretHex: String) throws -> Data {

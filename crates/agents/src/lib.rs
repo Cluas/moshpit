@@ -312,6 +312,10 @@ struct Pane {
     /// is the hook's, and a stamp that follows within it continues the
     /// episode.
     hold: f64,
+    /// When its turn began (B666): the first `working` after it was last
+    /// idle or done. A finish is timed from here, the questions on the way
+    /// included; none while no turn runs.
+    turn_since: Option<f64>,
 }
 
 /// The machine.
@@ -721,6 +725,7 @@ impl Monitor {
                     last_hook_state: None,
                     // No stamp yet: read only once one makes it the hook's.
                     hold: 0.0,
+                    turn_since: None,
                 },
             );
         } else {
@@ -764,6 +769,7 @@ impl Monitor {
             last_hook_seen: f64::NEG_INFINITY,
             last_hook_state: None,
             hold: 0.0,
+            turn_since: None,
         });
         if !is_shell(&command) {
             p.command = command;
@@ -868,6 +874,17 @@ impl Monitor {
                 .panes
                 .get(&key)
                 .map(|p| (p.since, p.last_hook_state, p.last_hook_seen, p.hold));
+            // The turn this stamp is part of (B666): a finish was timed from
+            // the last episode alone, so a twenty-minute task that asked one
+            // question at minute nineteen read "1 min" and rang nothing.
+            let in_turn = |state: AgentState| matches!(state, AgentState::Working | AgentState::Attention);
+            let turn_began = self
+                .panes
+                .get(&key)
+                .and_then(|p| in_turn(p.state).then(|| p.turn_since.unwrap_or(p.since)));
+            // The earliest start known: a stamp can date the turn before
+            // what the phone saw of it (a bell's "needs you" first).
+            let turn_since = in_turn(new_state).then(|| turn_began.map_or(since, |began| began.min(since)));
             match self.panes.get_mut(&key) {
                 Some(p) => {
                     // Taking a pane over is a new episode when the stamp
@@ -894,6 +911,7 @@ impl Monitor {
                     p.last_hook_state = Some(mapped);
                     p.last_output = now;
                     p.hold = hold;
+                    p.turn_since = turn_since;
                 }
                 None => {
                     self.panes.insert(
@@ -911,6 +929,7 @@ impl Monitor {
                             last_hook_seen: now,
                             last_hook_state: Some(mapped),
                             hold,
+                            turn_since,
                         },
                     );
                 }
@@ -936,7 +955,7 @@ impl Monitor {
                 // Before the card: `post_done` stops early when cards are off
                 // or the pane was on screen, and every finish counts here.
                 self.effects.push(Effect::Finished { conn: key.0.clone(), pane: key.1.clone() });
-                let duration = previous_since.map_or(0.0, |previous| since - previous);
+                let duration = turn_began.or(previous_since).map_or(0.0, |began| since - began);
                 let detail = if self.settings.show_detail { title.clone() } else { None };
                 self.post_done(&key, &command, detail, duration, since, now);
             }

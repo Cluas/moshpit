@@ -38,6 +38,6 @@ pub use capabilities::{HostCapabilities, Multiplexer, PackageManager};
 pub use facts::{AgentFacts, HostFacts};
 pub use hooks::HookAgent;
 pub use installer::{
-    HostChannel, HostInstaller, InstallReport, InstallState, StepFailure, push_conf,
+    HostChannel, HostInstaller, InstallReport, InstallState, StepFailure, push_conf, push_conf_as,
 };
 pub use manifest::{InstallComponent, InstallManifest};

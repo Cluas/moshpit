@@ -132,6 +132,11 @@ pub enum TmuxAction {
     ScrollBegan,
     /// Read the agents' hook stamps now (the Live Activity's sweep).
     PollAgentHooks,
+    /// The overview's pictures of panes never shown (B751): their visible
+    /// screens, answered as [`TmuxNote::Snapshot`], never fed to a pane.
+    SnapshotPanes(Vec<String>),
+    /// The overview closed: what is asked or on its way is dropped.
+    StopSnapshots,
     /// A pane's view is about to resize and holds it (its container keeps
     /// the old grid) until the repaint that answers it. The controller
     /// resizes the client and releases the hold with an
@@ -346,6 +351,11 @@ pub(crate) enum TmuxNote {
     Activity(String),
     Bell(String),
     HooksUpdated,
+    /// A never-shown pane's visible screen, for the overview (B751).
+    Snapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
     AttachStalled,
     /// The control channel is dead, or its shell went away: a drop (the
     /// sessions the person works in live on the server).
@@ -825,6 +835,9 @@ impl Task {
                     }
                     Notification::PaneActivity { pane } => (self.notes)(TmuxNote::Activity(pane)),
                     Notification::PaneBell { pane } => (self.notes)(TmuxNote::Bell(pane)),
+                    Notification::PaneSnapshot { pane, rows } => {
+                        (self.notes)(TmuxNote::Snapshot { pane, rows })
+                    }
                     Notification::AgentHooksUpdated => {
                         tree = true;
                         (self.notes)(TmuxNote::HooksUpdated);
@@ -1024,6 +1037,8 @@ impl Task {
                 TmuxAction::InputModeChanged { pane } => c.view_input_mode_changed(&pane, now),
                 TmuxAction::ScrollBegan => c.scroll_began(now),
                 TmuxAction::PollAgentHooks => c.poll_agent_hooks(now),
+                TmuxAction::SnapshotPanes(panes) => c.snapshot_panes(&panes, now),
+                TmuxAction::StopSnapshots => c.stop_snapshots(now),
                 TmuxAction::DeferResize { pane, cols, rows } => {
                     let held =
                         c.view_should_defer_resize(&pane, i64::from(cols), i64::from(rows), now);

@@ -2794,6 +2794,7 @@ impl Actor {
             }
             TmuxNote::Activity(pane) => self.emit(EventKind::PaneActivity { pane }),
             TmuxNote::Bell(pane) => self.emit(EventKind::PaneBell { pane }),
+            TmuxNote::Snapshot { pane, rows } => self.emit(EventKind::PaneSnapshot { pane, rows }),
             TmuxNote::HooksUpdated => self.emit(EventKind::AgentHooksUpdated),
             TmuxNote::AttachStalled => {
                 self.update(|view| view.attach_stalled = true);
@@ -3414,6 +3415,7 @@ impl Actor {
             TmuxNote::FirstFrame => self.first_frame(),
             TmuxNote::Activity(pane) => self.emit(EventKind::PaneActivity { pane }),
             TmuxNote::Bell(pane) => self.emit(EventKind::PaneBell { pane }),
+            TmuxNote::Snapshot { pane, rows } => self.emit(EventKind::PaneSnapshot { pane, rows }),
             TmuxNote::HooksUpdated => self.emit(EventKind::AgentHooksUpdated),
             TmuxNote::AttachStalled => {
                 self.update(|view| view.attach_stalled = true);
@@ -4643,6 +4645,8 @@ fn is_momentary(action: &TmuxAction) -> bool {
             | TmuxAction::DeferResize { .. }
             | TmuxAction::PollAgentHooks
             | TmuxAction::Relist
+            | TmuxAction::SnapshotPanes(_)
+            | TmuxAction::StopSnapshots
     )
 }
 

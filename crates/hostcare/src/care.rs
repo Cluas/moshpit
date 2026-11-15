@@ -15,7 +15,7 @@ use std::collections::HashSet;
 
 use moshpit_install::installer::{
     self, ChannelError, ComponentStatus, HostInstaller, InstallState, installed_hook_agents,
-    pairing_needs_rewrite_as,
+    pairing_needs_rewrite_muted,
 };
 use moshpit_install::{HookAgent, InstallComponent};
 use moshpit_seal::Uuid;
@@ -169,6 +169,12 @@ async fn tend(ctx: &Ctx, conn: &Conn, installer: &HostInstaller<'_, Link>) -> Re
         log::info!(target: "moshpit::care", "autocare: {} is being deleted or no longer saved \u{2014} nothing done", conn.label);
         return Ok(());
     }
+    // Both switches off: nothing is installed, refreshed or asked; only a
+    // pairing this phone has here is muted (B700).
+    if ctx.with(|s| !s.settings.notifications && !s.settings.live_activity) {
+        ctx.with(|s| s.care.tended.insert(conn.id));
+        return ensure_pairing(ctx, conn, installer, state).await;
+    }
     let agents = ctx.with(|s| {
         s.care.tended.insert(conn.id);
         let agents = installed_hook_agents(&state.manifest);
@@ -213,7 +219,12 @@ async fn ensure_pairing(
     installer: &HostInstaller<'_, Link>,
     state: InstallState,
 ) -> Result<(), Stop> {
-    if !ctx.with(|s| s.settings.notifications) {
+    // Notifications off (B700): the host's sender went on pushing, and the
+    // phone's notification service cannot drop what it is sent. A pairing
+    // this phone has here is rewritten to say so (`NOTIFY=off`), and the
+    // sender sends nothing for it; none is made while they are off.
+    let muted = !ctx.with(|s| s.settings.notifications);
+    if muted && state.manifest.pairings_of(&conn.id.to_string()).is_empty() {
         return Ok(());
     }
     // B371: an Unpair in Host Setup stands until the person pairs again;
@@ -230,7 +241,8 @@ async fn ensure_pairing(
     } else {
         state
     };
-    let result = ensure_pairing_now(ctx, conn, installer, current).await;
+    let installer = HostInstaller::new(installer.channel).muted(muted);
+    let result = ensure_pairing_now(ctx, conn, &installer, current).await;
     drop(ticket);
     result
 }
@@ -286,7 +298,7 @@ async fn ensure_pairing_now(
         // The host's copy must match ours byte for byte.
         let mut state = state;
         let install = ctx.with(|s| s.push.install_id.clone());
-        if pairing_needs_rewrite_as(&state.manifest, &ready, install.as_deref()) {
+        if pairing_needs_rewrite_muted(&state.manifest, &ready, install.as_deref(), installer.muted) {
             log::info!(target: "moshpit::care", "autocare: rewriting pairing on {}", conn.label);
             let report = installer
                 .install_pairing_as(&ready, install.as_deref(), &state, ctx.now().date)
@@ -298,7 +310,11 @@ async fn ensure_pairing_now(
         }
         return forget_left_behind(ctx, conn, installer, &state).await;
     }
-    // Never paired from this device: mint, register, install.
+    // Never paired from this device: mint, register, install — not while
+    // notifications are off.
+    if installer.muted {
+        return Ok(());
+    }
     log::info!(target: "moshpit::care", "autocare: pairing {}", conn.label);
     let pairing = push::pair(ctx, conn.id, &conn.label, &relay).await?;
     if !may_act(ctx, conn.id) {

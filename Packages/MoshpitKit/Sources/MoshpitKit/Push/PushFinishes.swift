@@ -29,12 +29,11 @@ public enum PushFinishes {
 
     private static let filename = "rung-finishes.json"
 
-    /// The file the app and the notification service extension share; nil
-    /// with no App Group container (an unsigned build).
+    /// The file the app and the notification service extension share, in
+    /// the App Group's folder kept out of backups (B785, ``DeviceLocalFiles``);
+    /// nil with no App Group container (an unsigned build).
     public static var appGroupFile: PushFinishesFile? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup)
-            .map { PushFinishesFile(url: $0.appendingPathComponent(filename)) }
+        DeviceLocalFiles.url(filename).map(PushFinishesFile.init(url:))
     }
 
     /// ``PushFinishesFile/noteRing(conn:pane:endedAt:now:)`` on the shared file.

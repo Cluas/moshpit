@@ -300,6 +300,8 @@ final class RustSessionDriver: RustSessionListener {
             tmux?.onPaneActivity?(pane)
         case .paneBell(let pane):
             tmux?.onPaneBell?(pane)
+        case .paneSnapshot(let pane, let rows):
+            tmux?.onPaneSnapshot?(pane, rows)
         case .agentHooksUpdated:
             mirrorTree()
             tmux?.onAgentHooksUpdated?()

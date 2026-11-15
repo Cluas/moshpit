@@ -308,6 +308,17 @@ fn push_conf_is_exactly_the_seven_lines_the_sender_parses() {
     assert!(installer::push_conf(&bare).ends_with("SEND_IAT=0\n"));
 }
 
+/// B700: the phone's notifications off, its conf says so in a last line
+/// the sender reads; on, it is byte for byte what it always was, so no
+/// host is rewritten for the switch it never turned.
+#[test]
+fn a_muted_pairing_says_so_in_a_last_line_and_an_unmuted_one_is_as_before() {
+    let on = installer::push_conf_as(&pairing(), false);
+    assert_eq!(on, installer::push_conf(&pairing()));
+    assert!(!on.contains("NOTIFY"));
+    assert_eq!(installer::push_conf_as(&pairing(), true), format!("{on}NOTIFY=off\n"));
+}
+
 /// `PushPairingTests.noShellPathRemains`.
 #[test]
 fn nothing_here_can_put_a_secret_into_a_shell_command() {

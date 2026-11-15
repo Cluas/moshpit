@@ -9,7 +9,7 @@ use moshpit_install::installer::{
     ComponentStatus, HookProof, HostInstaller, InstallReport, InstallState, StepFailure,
     make_nonce, pairing_needs_rewrite_as,
 };
-use moshpit_install::{HookAgent, HostFacts, InstallComponent, InstallManifest, push_conf, scripts};
+use moshpit_install::{HookAgent, HostFacts, InstallComponent, InstallManifest, push_conf, push_conf_as, scripts};
 use moshpit_seal::{Date, PushPairing, Uuid};
 
 use crate::care::Stop;
@@ -267,10 +267,15 @@ impl Shared {
             .filter(|p| !p.send_token.is_empty());
         match ready {
             // Current also while the legacy conf this phone wrote still
-            // holds it: care moves it over on its next pass (B443).
+            // holds it: care moves it over on its next pass (B443). Muted
+            // or not (B700): both are this phone's, and care keeps the
+            // switch's state.
             Some(phone)
-                if state.manifest.get(&component).and_then(|c| c.digest.as_deref())
-                    == Some(scripts::content_digest(&push_conf(&phone)).as_str()) =>
+                if state.manifest.get(&component).and_then(|c| c.digest.as_deref()).is_some_and(|got| {
+                    [false, true]
+                        .into_iter()
+                        .any(|muted| got == scripts::content_digest(&push_conf_as(&phone, muted)))
+                }) =>
             {
                 ComponentStatus::Current
             }

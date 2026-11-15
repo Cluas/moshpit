@@ -136,6 +136,33 @@ sizes_wrong=0
 
 # ── The shots (ShotsUITest) ─────────────────────────────────────────────
 
+# B754: the app's main thread, sampled while the test can't get through to
+# it. A waiting test logs a line every second or so, so a log silent for
+# 30 s (a wait for idle that doesn't end, a UI query that hangs) or a UI
+# query that timed out takes a 10 s sample of the app (a simulator app is a
+# macOS process here) into <out>/samples/; twelve at most, one per 30 s.
+sample_stalls() {  # <test log> <dir>
+    local log="$1" dir="$2" last="" since taken=0 now line pid
+    since=$(date +%s)
+    mkdir -p "$dir"
+    while sleep 5; do
+        [ -f "$log" ] || continue
+        line="$(tail -n 1 "$log")"
+        now=$(date +%s)
+        if [ "$line" != "$last" ]; then
+            last="$line"
+            grep -q 'Timed out while evaluating UI query' <<<"$line" || { since=$now; continue; }
+        fi
+        [ $((now - since)) -ge 30 ] || grep -q 'Timed out while evaluating UI query' <<<"$line" || continue
+        [ "$taken" -lt 12 ] || continue
+        pid="$(pgrep -f 'Moshpit.app/Moshpit' | head -1)"
+        [ -n "$pid" ] || continue
+        sample "$pid" 10 -file "$dir/sample-$(date +%H%M%S)-$pid.txt" >/dev/null 2>&1 || true
+        taken=$((taken + 1))
+        since=$(date +%s)
+    done
+}
+
 # SHOTS_XCTESTRUN: the .xctestrun of the workflow's build-for-testing. The
 # test waits on each page's id, keeps the screen as an attachment named
 # shot~<locale>~<shot>, and the attachments come out of the result bundle
@@ -151,6 +178,8 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
     # dated from now again every 45 s while the test shoots.
     ( while sleep 45; do "$root/scripts/shots/stage-host.sh" restamp "$work/host" 2>/dev/null; done ) &
     restamper=$!
+    sample_stalls "$out/shots-ui-$device.log" "$out/samples" &
+    sampler=$!
     env TEST_RUNNER_SHOTS_LOCALES="${specs# }" TEST_RUNNER_SHOTS_ARGS_JSON="$args_json" \
         TEST_RUNNER_SHOTS_QUIET_JSON="$quiet_json" \
         TEST_RUNNER_SHOTS_HOME_FIXTURE="$home_fixture" \
@@ -161,7 +190,7 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
         xcodebuild test-without-building -xctestrun "$SHOTS_XCTESTRUN" -destination "id=$udid" \
         -only-testing:MoshpitUITests/ShotsUITest -resultBundlePath "$result" \
         > "$out/shots-ui-$device.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device.log" >&2
-    kill "$restamper" 2>/dev/null || true
+    kill "$restamper" "$sampler" 2>/dev/null || true
     exported="$work/attachments-$device"
     xcrun xcresulttool export attachments --path "$result" --output-path "$exported" >/dev/null 2>&1 || true
     python3 -I - "$exported" "$out" "$px" <<'PY' || sizes_wrong=1
@@ -201,9 +230,10 @@ PY
 fi
 
 # What the app said, for a shot that came out wrong.
-xcrun simctl spawn "$udid" log show --last 15m --style compact \
+xcrun simctl spawn "$udid" log show --last 90m --style compact \
     --predicate 'subsystem BEGINSWITH "com.cluas.moshpit"' > "$out/app-$device.log" 2>/dev/null || true
-cp "$work/host/sshd.log" "$out/sshd-$device.log" 2>/dev/null || true
+# sshd (run by root) wrote its log as root.
+sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
 
 # ── The store images ───────────────────────────────────────────────────
 

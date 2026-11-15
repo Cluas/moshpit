@@ -124,6 +124,7 @@ fn key_row(record: &SshKeyRecord, users: Vec<String>) -> Key {
         hosts: users,
         unused_since: None,
         has_public_key: !record.public_key.is_empty(),
+        refused: record.refused.clone(),
     }
 }
 

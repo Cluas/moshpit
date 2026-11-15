@@ -44,12 +44,12 @@ impl Status {
     /// Alpine) every title of more than 40 Chinese characters split one,
     /// and the push read as one no key opened.
     pub fn from_json(plaintext: &[u8]) -> Option<Self> {
-        json::decode(plaintext)
-            .ok()
-            .or_else(|| match String::from_utf8_lossy(plaintext) {
-                std::borrow::Cow::Owned(text) => json::decode(text.as_bytes()).ok(),
-                std::borrow::Cow::Borrowed(_) => None,
-            })
+        json::decode(plaintext).ok().or_else(|| {
+            std::str::from_utf8(plaintext)
+                .is_err()
+                .then(|| json::decode(repaired(plaintext).as_bytes()).ok())
+                .flatten()
+        })
     }
 
     /// Compact JSON as `JSONEncoder` writes it, keys in code point order
@@ -59,9 +59,84 @@ impl Status {
     }
 }
 
+/// `bytes` as text (B635): a sequence a cut left short just before a
+/// string's closing quote — the end of a title `cut` ended mid-character —
+/// is dropped; any other byte that isn't UTF-8 reads as U+FFFD.
+fn repaired(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    let mut rest = bytes;
+    loop {
+        match std::str::from_utf8(rest) {
+            Ok(valid) => {
+                text.push_str(valid);
+                return text;
+            }
+            Err(error) => {
+                let (valid, after) = rest.split_at(error.valid_up_to());
+                text.push_str(std::str::from_utf8(valid).unwrap_or_default());
+                let bad = error.error_len().unwrap_or(after.len());
+                let at_a_string_end = after.get(bad) == Some(&b'"');
+                if !(at_a_string_end && cut_short(&after[..bad])) {
+                    text.push('\u{FFFD}');
+                }
+                rest = &after[bad..];
+            }
+        }
+    }
+}
+
+/// Whether `sequence` is the start of a character with bytes missing: a
+/// lead byte and fewer continuation bytes than it calls for.
+fn cut_short(sequence: &[u8]) -> bool {
+    let wanted = match sequence.first() {
+        Some(0xC2..=0xDF) => 2,
+        Some(0xE0..=0xEF) => 3,
+        Some(0xF0..=0xF4) => 4,
+        _ => return false,
+    };
+    sequence.len() < wanted && sequence[1..].iter().all(|byte| byte & 0xC0 == 0x80)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn titled(title: &[u8]) -> Vec<u8> {
+        let mut plaintext = br#"{"conn":"3F2504E0-4F89-11D3-9A0C-0305E82C3301","host":"m1-pro","pane":"%3","state":"done","ts":1755900000,"title":"Bash: "#.to_vec();
+        plaintext.extend_from_slice(title);
+        plaintext.extend_from_slice(br#""}"#);
+        plaintext
+    }
+
+    /// B635: a character a cut left short at the very end of the title is
+    /// dropped — `cut -c` without `iconv` — not shown as a trailing "\u{FFFD}".
+    #[test]
+    fn a_character_cut_short_at_the_end_of_a_title_is_dropped() {
+        for cut in [
+            &"构建".as_bytes()[..4],
+            &"构建".as_bytes()[..5],
+            &"é".as_bytes()[..1],
+        ] {
+            let status = Status::from_json(&titled(cut)).unwrap();
+            let title = status.title.unwrap();
+            assert!(!title.contains('\u{FFFD}'), "{title:?}");
+            assert!(title == "Bash: 构" || title == "Bash: ", "{title:?}");
+        }
+    }
+
+    /// B635: any other byte that isn't UTF-8 reads as U+FFFD, the status
+    /// still read.
+    #[test]
+    fn other_bytes_that_arent_utf8_read_as_the_replacement_character() {
+        for (bytes, shown) in [
+            (b"a\xFFb".as_slice(), "Bash: a\u{FFFD}b"),
+            (b"\xE6\x9E ok".as_slice(), "Bash: \u{FFFD} ok"),
+            (b"\x80".as_slice(), "Bash: \u{FFFD}"),
+        ] {
+            let status = Status::from_json(&titled(bytes)).unwrap();
+            assert_eq!(status.title.as_deref(), Some(shown), "{bytes:?}");
+        }
+    }
 
     fn decode(text: &str) -> Option<Status> {
         Status::from_json(text.as_bytes())

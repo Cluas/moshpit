@@ -69,6 +69,18 @@ struct SSHKeyRecord: Identifiable, Codable, Equatable {
     var requireBiometry: Bool = true
     var createdAt = Date()
     var lastUsedAt: Date?
+    /// The kind of key it is when no connect path signs in with it
+    /// ("ECDSA brainpoolP256r1", "DSA"), read off its private key (B780):
+    /// one 1.0.8 imported without its public half. nil: it signs in, or it
+    /// hasn't been read.
+    var refused: String?
+
+    /// The kind of key a connect path can't sign in with, when this is one:
+    /// what its private key said (``refused``), else what its public key
+    /// line says (``StoredKey/refusedType(ofPublicKeyLine:)``).
+    var refusedType: String? {
+        refused ?? StoredKey.refusedType(ofPublicKeyLine: publicKey)
+    }
 
     var badgeText: String {
         if source == .secureEnclave { return "SE · \(algorithm == .seP256 ? "P256" : algorithm.rawValue)" }
@@ -81,7 +93,7 @@ struct SSHKeyRecord: Identifiable, Codable, Equatable {
 extension SSHKeyRecord {
     private enum CodingKeys: String, CodingKey {
         case id, name, algorithm, comment, fingerprint, publicKey, source, boundHosts,
-             keychainRef, requireBiometry, createdAt, lastUsedAt
+             keychainRef, requireBiometry, createdAt, lastUsedAt, refused
         /// The real algorithm, where `algorithm` holds what older builds read.
         case keyAlgorithm
         case bits
@@ -101,6 +113,7 @@ extension SSHKeyRecord {
         requireBiometry = try container.decode(Bool.self, forKey: .requireBiometry)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastUsedAt = try container.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        refused = (try? container.decodeIfPresent(String.self, forKey: .refused)).flatMap { $0 }
         // Unreadable here means unreadable everywhere: the store carries the
         // record as stored, not guessed at.
         let olderBuildsName = try container.decode(SSHKeyAlgorithm.self, forKey: .algorithm)
@@ -134,6 +147,7 @@ extension SSHKeyRecord {
         try container.encode(requireBiometry, forKey: .requireBiometry)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
+        try container.encodeIfPresent(refused, forKey: .refused)
     }
 
     /// The algorithm of a record with no (readable) `keyAlgorithm`: one an
@@ -237,7 +251,7 @@ final class SSHKeyStore {
         guard connection.authMethod == .key else { return false }
         let record = keys.first { $0.id == connection.sshKeyId }
             ?? connection.keychainRef.flatMap { ref in keys.first { $0.keychainRef == ref } }
-        guard let record, record.publicKey.isEmpty,
+        guard let record, record.publicKey.isEmpty, record.refused == nil,
               backing.learnFacts(id: record.id, privateKey: privateKey) else { return false }
         adopt()
         return true

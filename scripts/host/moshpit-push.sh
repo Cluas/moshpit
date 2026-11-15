@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 1
+# moshpit-scripts: 3
 # moshpit-push.sh — seal one agent status and hand it to the Moshpit push relay.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-push.sh, next to the stamp
@@ -247,7 +247,7 @@ trap 'exit 0' HUP INT TERM
 # device must never cost another its notification, so nothing in here exits the
 # script in hook mode.
 send_one() {
-  RELAY_URL=""; SEND_TOKEN=""; SECRET=""; CONN=""; APNS_TOKEN=""; APNS_ENV=""; SEND_IAT=""
+  RELAY_URL=""; SEND_TOKEN=""; SECRET=""; CONN=""; APNS_TOKEN=""; APNS_ENV=""; SEND_IAT=""; NOTIFY=""
   # A conf is READ, never run (B357). It used to be sourced, so whatever a
   # value held ran as shell on this host at every push, and the send token
   # is the relay's own answer: a relay returning `x;curl ... | sh`, or a
@@ -262,6 +262,7 @@ send_one() {
       APNS_TOKEN=*) APNS_TOKEN=${LINE#APNS_TOKEN=} ;;
       APNS_ENV=*) APNS_ENV=${LINE#APNS_ENV=} ;;
       SEND_IAT=*) SEND_IAT=${LINE#SEND_IAT=} ;;
+      NOTIFY=*) NOTIFY=${LINE#NOTIFY=} ;;
     esac
   done < "$1" 2>/dev/null || return 0
   [ -n "${RELAY_URL:-}" ] || return 0
@@ -280,6 +281,15 @@ send_one() {
   if [ -n "$TESTCONN" ] && [ "$CONN" != "$TESTCONN" ]; then return 0; fi
   PHONE=$(printf '%s' "$APNS_TOKEN" | tr 'ABCDEF' 'abcdef')
   case " $DELIVERED " in *" $PHONE "*) return 0 ;; esac
+  # The phone's notifications are off (B6NS): the app writes it here, and
+  # nothing goes to that phone — by this pairing or its others here, older
+  # than this one (newest first, B664). The phone's notification service
+  # cannot drop a push it was sent; this is the one place to stop it. A
+  # push test still goes: the person asked for it.
+  if [ "$NOTIFY" = "off" ] && [ -z "$TESTMODE" ]; then
+    DELIVERED="$DELIVERED $PHONE"
+    return 0
+  fi
 
   PLAIN=$(printf '{"conn":"%s","host":"%s","sess":"%s","pane":"%s","agent":"%s","state":"%s","title":"%s","ts":%s%s}' \
     "$(esc "${CONN:-}")" "$(esc "$HOST")" "$(esc "$SESSION")" "$(esc "$PANE")" \

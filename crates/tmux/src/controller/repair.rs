@@ -43,6 +43,7 @@ impl Controller {
         }
         self.backfilled_panes.insert(pane.to_owned());
         self.backfills_in_flight.insert(pane.to_owned());
+        self.supersede_snapshot(pane);
         // A dump whose reply never lands must not hold this pane's repaints
         // forever.
         self.arm(
@@ -266,6 +267,9 @@ impl Controller {
 
     /// The repaint's two commands: the screen, then the cursor.
     fn send_resync_pair(&mut self, pane: &str, reveal: bool) {
+        // The pane's live screen is on its way in its own stream: an
+        // overview picture asked before stands for nothing now (B751).
+        self.supersede_snapshot(pane);
         // Frame first, cursor second: %output between the two replies lands
         // on the fresh frame and is already in the cursor's answer.
         self.send_command(

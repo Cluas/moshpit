@@ -37,6 +37,8 @@ pub struct SshKeyRow {
     pub unused_since: Option<String>,
     /// Whether it has a public key to copy or share.
     pub has_public_key: bool,
+    /// The kind of key it is when the app can't sign in with it (B780).
+    pub refused: Option<String>,
 }
 
 /// A key's avatar (`Avatar`): its kind, as its gradient tells it.
@@ -122,6 +124,7 @@ impl From<SshKeyRow> for Key {
             hosts: k.hosts,
             unused_since: k.unused_since,
             has_public_key: k.has_public_key,
+            refused: k.refused,
         }
     }
 }

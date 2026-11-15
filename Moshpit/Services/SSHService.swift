@@ -414,6 +414,10 @@ extension SSHService {
         case .password:
             return .password(secret)
         case .key:
+            // The key as stored, before it is checked (B780): one of a kind
+            // no connect path signs with says so from now on; one 1.0.8
+            // imported without its public half shows what it is (B726).
+            RustCredentialHost.keyRead?(connection, secret)
             return .key(try await signableKey(secret, for: connection,
                                               onPassphrase: onKeyPassphrase))
         }

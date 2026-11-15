@@ -29,6 +29,7 @@ fn key(id: &str, name: &str, avatar: Avatar) -> Key {
         hosts: vec!["m1-pro".into(), "nas".into()],
         unused_since: None,
         has_public_key: true,
+        refused: None,
     }
 }
 
@@ -117,6 +118,53 @@ fn a_keys_row_says_its_badge_after_its_name() {
             "{label}"
         );
     }
+    channel.close();
+}
+
+/// B780: a key the app can't sign in with — a brainpool key 1.0.8 took —
+/// says so on its row in the app's language, where its fingerprint would
+/// be, and its actions are Delete alone: there is no public key to copy.
+#[test]
+fn a_key_the_app_cant_sign_in_with_says_so_and_still_deletes() {
+    let refused = Key {
+        badge: "ECDSA".into(),
+        fingerprint: String::new(),
+        hosts: vec![],
+        has_public_key: false,
+        refused: Some("ECDSA brainpoolP256r1".into()),
+        ..key("BP01", "router", Avatar::Imported)
+    };
+    let (mut app, channel) = start(Screen::SshKeys, Params::default(), "ssh-keys");
+    app.answer_dialogs_myself();
+    let told = hear(&channel);
+    post(
+        &mut app,
+        &channel,
+        &keys(vec![], vec![refused.clone()], None),
+    );
+    app.wait_for("id:ssh-key-row-BP01").unwrap();
+    assert!(
+        app.screen()
+            .matches("label:router, ECDSA, Can't sign in with ECDSA brainpoolP256r1 keys yet")
+            .unwrap()
+    );
+    app.press("id:ssh-key-row-BP01").unwrap();
+    assert!(wait_dialog(&mut app), "the row's actions never showed");
+    let sheet = app.pending_dialog().cloned().unwrap();
+    assert_eq!(common::dialog_buttons(&sheet), ["Delete Key", "Cancel"]);
+    app.answer_dialog(DialogAnswer::Press("Delete Key".into()))
+        .unwrap();
+    assert_eq!(next(&told), json!({"ev": "confirm-delete", "id": "BP01"}));
+    quiet(&told);
+    channel.close();
+
+    let (mut app, channel) = start(Screen::SshKeys, zh_hans(), "ssh-keys");
+    post(&mut app, &channel, &keys(vec![], vec![refused], None));
+    app.wait_for("id:ssh-key-row-BP01").unwrap();
+    assert!(
+        app.screen()
+            .shows("暂时还不能用 ECDSA brainpoolP256r1 密钥登录")
+    );
     channel.close();
 }
 

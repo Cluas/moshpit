@@ -23,9 +23,12 @@ public enum PushClosed {
     /// The file the app and the notification service extension share; nil
     /// with no App Group container (an unsigned build).
     public static var appGroupFile: PushClosedFile? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup)
-            .map { PushClosedFile(url: $0.appendingPathComponent(filename)) }
+        // Beside the standing set, in the App Group's folder kept out of
+        // backups (B785, ``DeviceLocalFiles``): the Rust receive path finds
+        // it beside the standing file (`PushClosedFile::beside`), and a
+        // phone restored from a backup starts with none of the old phone's
+        // pane endings. A root copy an earlier build kept is deleted.
+        DeviceLocalFiles.url(filename).map(PushClosedFile.init(url:))
     }
 
     /// How long the lock is waited for: what the file says refines a card,

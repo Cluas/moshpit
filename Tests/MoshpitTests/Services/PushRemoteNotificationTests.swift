@@ -44,8 +44,25 @@ struct PushRemoteNotificationTests {
             Issue.record("not opened")
             return
         }
-        #expect(status.title?.hasPrefix("Bash: 构") == true)
-        #expect(status.title?.contains("\u{FFFD}") == true)
+        // The half character the cut left at the very end is dropped, not
+        // shown as a trailing replacement character.
+        #expect(status.title == "Bash: 构")
+    }
+
+    /// B635: any other byte that isn't UTF-8 reads as U+FFFD, the status
+    /// still opened.
+    @Test("other bytes that aren't UTF-8 read as the replacement character")
+    func otherInvalidBytes() throws {
+        let conn = UUID()
+        for (bytes, shown) in [([0x61, 0xFF, 0x62] as [UInt8], "Bash: a\u{FFFD}b"),
+                               ([0xE6, 0x9E, 0x20, 0x6F, 0x6B], "Bash: \u{FFFD} ok"),
+                               ([0x80], "Bash: \u{FFFD}")] {
+            var plaintext = Data(#"{"conn":"\#(conn.uuidString)","host":"m1-pro","pane":"%3","state":"done","ts":1755900000,"title":"Bash: "#.utf8)
+            plaintext.append(contentsOf: bytes)
+            plaintext.append(Data(#""}"#.utf8))
+            let status = PushSealedBox.decodeStatus(plaintext)
+            #expect(status?.title == shown, "\(bytes)")
+        }
     }
 
     /// B635: opened by the paired host's key but holding no status: its own

@@ -295,12 +295,20 @@ fn is_test_stamp(read: &str) -> bool {
 /// a date beyond `Int`'s range read from a damaged pairings file; here it
 /// saturates.
 pub fn push_conf(pairing: &PushPairing) -> String {
+    push_conf_as(pairing, false)
+}
+
+/// [`push_conf`] with the phone's notifications switched off (`muted`,
+/// B700): a last line `NOTIFY=off`, and the sender sends nothing on it.
+/// On, the conf is as it always was, so a host paired before is not
+/// rewritten for it.
+pub fn push_conf_as(pairing: &PushPairing, muted: bool) -> String {
     let iat = pairing
         .send_token_issued_at
         .unwrap_or(Date::from_unix(0.0))
         .unix()
         .trunc() as i64;
-    format!(
+    let mut conf = format!(
         "RELAY_URL={}\nSEND_TOKEN={}\nSECRET={}\nCONN={}\nAPNS_TOKEN={}\nAPNS_ENV={}\nSEND_IAT={iat}\n",
         pairing.relay_url,
         pairing.send_token,
@@ -308,7 +316,11 @@ pub fn push_conf(pairing: &PushPairing) -> String {
         pairing.connection_id,
         pairing.apns_token.as_deref().unwrap_or(""),
         pairing.apns_env.as_deref().unwrap_or("production"),
-    )
+    );
+    if muted {
+        conf.push_str("NOTIFY=off\n");
+    }
+    conf
 }
 
 /// A nonce the phone can match a self-test push against.
@@ -340,11 +352,20 @@ fn verify_failure(path: &str, want: &str, got: &str) -> String {
 /// The installer over one channel.
 pub struct HostInstaller<'a, C: HostChannel> {
     pub channel: &'a C,
+    /// The phone's notifications are off (B700): a pairing it writes says
+    /// so ([`push_conf_as`]).
+    pub muted: bool,
 }
 
 impl<'a, C: HostChannel> HostInstaller<'a, C> {
     pub fn new(channel: &'a C) -> Self {
-        Self { channel }
+        Self { channel, muted: false }
+    }
+
+    /// This installer, writing pairings `muted` or not.
+    pub fn muted(mut self, muted: bool) -> Self {
+        self.muted = muted;
+        self
     }
 
     async fn run(&self, command: &str) -> Result<Vec<u8>, ChannelError> {
@@ -524,7 +545,7 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
             conn: conn.clone(),
             install: None,
         };
-        let conf = push_conf(pairing);
+        let conf = push_conf_as(pairing, self.muted);
         let path = component.path().expect("a pairing is a file");
         self.run(&commands::write_file(
             &path,
@@ -1030,7 +1051,18 @@ pub fn pairing_needs_rewrite(manifest: &InstallManifest, ready: &PushPairing) ->
 /// [`pairing_needs_rewrite`] for install `install`'s own conf (B443): also
 /// when this phone's legacy conf is still there to move over.
 pub fn pairing_needs_rewrite_as(manifest: &InstallManifest, ready: &PushPairing, install: Option<&str>) -> bool {
-    let expected = scripts::content_digest(&push_conf(ready));
+    pairing_needs_rewrite_muted(manifest, ready, install, false)
+}
+
+/// [`pairing_needs_rewrite_as`] for a conf written `muted` or not (B700):
+/// the switch turned is a rewrite too.
+pub fn pairing_needs_rewrite_muted(
+    manifest: &InstallManifest,
+    ready: &PushPairing,
+    install: Option<&str>,
+    muted: bool,
+) -> bool {
+    let expected = scripts::content_digest(&push_conf_as(ready, muted));
     let conn = ready.connection_id.to_string();
     let install = install.filter(|id| crate::manifest::is_install_id(id));
     let digest = |install: Option<&str>| manifest.pairing_entry_of(&conn, install).and_then(|c| c.digest.clone());

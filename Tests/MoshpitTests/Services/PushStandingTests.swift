@@ -83,9 +83,9 @@ struct PushStandingTests {
     /// for byte afterwards (it is the installed app's too), along with any
     /// copies the store made of it.
     private func withRawStore(_ body: (URL) throws -> Void) throws {
-        let container = try #require(FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup))
-        let url = container.appendingPathComponent("standing-attention.json")
+        // In the folder kept out of backups (B785).
+        let url = try #require(PushStanding.appGroupFile?.url)
+        let container = url.deletingLastPathComponent()
         let manager = FileManager.default
         let siblings = Set((try? manager.contentsOfDirectory(atPath: container.path)) ?? [])
         let saved = try? Data(contentsOf: url)
@@ -177,6 +177,54 @@ struct PushStandingFileTests {
         let stored = try JSONSerialization.jsonObject(with: Data(contentsOf: file.url)) as? [String: Any]
         let first = (stored?[Self.conn] as? [[String: Any]])?.first
         #expect(first?["lifetime"] as? Double == PushStanding.lifetime, "the file says how long it stands")
+    }
+
+    /// B785: the standing set, the finish records and the widget's snapshot
+    /// live in a folder kept out of backups — a phone restored from one,
+    /// or set up by Quick Start, starts with none of the old phone's. What
+    /// an earlier build kept at the container's root (and beside it) is
+    /// deleted, not carried in; what the folder holds stays.
+    @Test("the device's own state is kept out of backups, and an earlier build's copy isn't carried in")
+    func deviceStateIsNotBackedUp() throws {
+        let container = FileManager.default.temporaryDirectory
+            .appendingPathComponent("container-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: container) }
+        for name in ["standing-attention.json", "standing-attention.json.lock",
+                     "standing-attention.json.backup", "push-pairings.json"] {
+            try Data("{}".utf8).write(to: container.appendingPathComponent(name))
+        }
+        let url = try #require(DeviceLocalFiles.url("standing-attention.json", in: container))
+        let folder = url.deletingLastPathComponent()
+        #expect(folder.lastPathComponent == "device-only")
+        #expect(try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        let root = try FileManager.default.contentsOfDirectory(atPath: container.path)
+        #expect(Set(root) == ["device-only", "push-pairings.json"], "the old copies went, nothing else")
+        try Data("{}".utf8).write(to: url, options: .atomic)
+        #expect(DeviceLocalFiles.url("standing-attention.json", in: container) == url)
+        #expect(FileManager.default.fileExists(atPath: url.path), "what the folder holds stays")
+        #expect(try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true,
+                "still after a save replaced the file")
+
+        // The pane endings (B636) live beside the standing set, as the Rust
+        // receive path finds them (`PushClosedFile::beside`), and an
+        // earlier build's root copy goes the same way.
+        try Data("{}".utf8).write(to: container.appendingPathComponent("closed-turns.json"))
+        let closed = try #require(DeviceLocalFiles.url("closed-turns.json", in: container))
+        #expect(closed.deletingLastPathComponent() == folder)
+        #expect(!FileManager.default.fileExists(atPath: container.appendingPathComponent("closed-turns.json").path))
+    }
+
+    /// B785: the app's own files resolve in the folder — the standing set
+    /// and the pane endings side by side, as the Rust side expects.
+    @Test("the standing set and the pane endings share the device-only folder",
+          .enabled(if: AppGroupContainer.isAvailable, AppGroupContainer.skipReason))
+    func standingAndEndingsShareTheFolder() throws {
+        let standing = try #require(PushStanding.appGroupFile?.url)
+        let closed = try #require(PushClosed.appGroupFile?.url)
+        #expect(standing.deletingLastPathComponent().lastPathComponent == "device-only")
+        #expect(closed.deletingLastPathComponent() == standing.deletingLastPathComponent())
+        #expect(PushFinishes.appGroupFile?.url.deletingLastPathComponent() == standing.deletingLastPathComponent())
     }
 
     /// B347: the app and the notification service write the file at the same

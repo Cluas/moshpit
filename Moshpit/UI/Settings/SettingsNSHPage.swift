@@ -387,6 +387,8 @@ final class SettingsModel {
             if !Self.apply(change, to: settings) {
                 Log.ui.error("settings: refused \(String(describing: change), privacy: .public)")
             }
+            // The hosts the phone is on hear of it now (B700).
+            if case .notifications = change { HostCare.shared.notificationsChanged() }
         case .setup:
             break
         }

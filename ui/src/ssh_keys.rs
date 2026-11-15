@@ -91,6 +91,11 @@ pub struct Key {
     pub unused_since: Option<String>,
     /// Whether it has a public key to copy or share.
     pub has_public_key: bool,
+    /// The kind of key it is when the app can't sign in with it
+    /// (`"ECDSA brainpoolP256r1"`, B780): its row says so where a
+    /// fingerprint would be.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
 }
 
 /// What the page shows.
@@ -438,7 +443,11 @@ fn key_row(key: Key, tell: Tell, toasts: Toasts) -> Row {
         .on_press(open.clone())
         .on_long_press(open)
         .test_id(&format!("ssh-key-row-{}", key.id));
-    if !key.fingerprint.is_empty() {
+    if let Some(kind) = &key.refused {
+        // B780: one the app can't sign in with says why, before a sign-in
+        // fails; it can still go (Delete Key).
+        row = row.subtitle(t!("Can't sign in with %@ keys yet", arg1 = kind));
+    } else if !key.fingerprint.is_empty() {
         row = row.subtitle(key.fingerprint.clone()).mono_subtitle();
     }
     if let Some(detail) = detail {
@@ -517,6 +526,7 @@ mod tests {
             hosts: vec!["m1-pro".into()],
             unused_since: None,
             has_public_key: true,
+            refused: None,
         }
     }
 

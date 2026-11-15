@@ -39,6 +39,7 @@ mod input;
 mod repair;
 mod sidecar;
 mod size;
+mod snapshot;
 mod timers;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -198,6 +199,10 @@ pub enum Notification {
     ClientCount { request: u64, count: i64 },
     /// Answer to [`Controller::request_pane_path`].
     PanePath { request: u64, path: Option<String> },
+    /// A never-shown pane's visible screen, as text rows, for the
+    /// overview's picture ([`Controller::snapshot_panes`], B751): never fed
+    /// to the pane's terminal.
+    PaneSnapshot { pane: String, rows: Vec<String> },
     /// Answer to [`Controller::query_prefix_key`].
     PrefixKey { request: u64, key: String },
     /// Everything sent before [`Controller::restore_suppressed_status`]'s
@@ -402,6 +407,12 @@ enum Reply {
         pane: String,
         alternate: bool,
     },
+    /// A never-shown pane's screen for the overview (B751), asked at
+    /// `generation`.
+    Snapshot {
+        pane: String,
+        generation: u64,
+    },
     ResyncFrame {
         pane: String,
         reveal: bool,
@@ -591,6 +602,8 @@ pub struct Controller {
 
     backfilled_panes: BTreeSet<String>,
     backfills_in_flight: BTreeSet<String>,
+    /// The overview's snapshots of panes never shown (B751).
+    snapshots: snapshot::Snapshots,
     deferred_resyncs: BTreeMap<String, bool>,
     backfill_reject_streak: BTreeMap<String, u32>,
     resyncs_in_flight: BTreeSet<String>,
@@ -684,6 +697,7 @@ impl Controller {
             server_current_window: None,
             window_links: BTreeMap::new(),
             backfilled_panes: BTreeSet::new(),
+            snapshots: snapshot::Snapshots::default(),
             backfills_in_flight: BTreeSet::new(),
             deferred_resyncs: BTreeMap::new(),
             backfill_reject_streak: BTreeMap::new(),
@@ -1010,6 +1024,7 @@ impl Controller {
         // destroys with the client).
         self.group = GroupState::default();
         self.backfills_in_flight.clear();
+        self.forget_snapshots();
         self.deferred_resyncs.clear();
         let panes: Vec<String> = self.pane_resize_awaiting_capture.iter().cloned().collect();
         for pane in &panes {
@@ -1455,6 +1470,9 @@ impl Controller {
             Reply::StaleCopyMode { pane } => self.stale_copy_mode_answered(&pane, response),
             Reply::PaneMode { pane } => self.pane_mode_answered(&pane, response),
             Reply::PanePath { request } => self.pane_path_answered(request, response),
+            Reply::Snapshot { pane, generation } => {
+                self.snapshot_answered(&pane, generation, response)
+            }
             Reply::AgentHooks => self.agent_hooks_answered(response),
         }
     }

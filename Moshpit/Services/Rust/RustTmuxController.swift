@@ -84,6 +84,9 @@ final class RustTmuxController: MultiplexerControlling {
     @ObservationIgnored var onPaneInput: ((String) -> Void)?
     /// The agent stamps were read again.
     @ObservationIgnored var onAgentHooksUpdated: (() -> Void)?
+    /// A never-shown pane's visible screen, for the overview's picture
+    /// (B751): text rows, never fed to the pane.
+    @ObservationIgnored var onPaneSnapshot: ((String, [String]) -> Void)?
     /// A pinch settled on a font size.
     @ObservationIgnored var onFontSizeCommitted: ((Double) -> Void)?
     /// A host path in a pane was tapped.
@@ -557,6 +560,20 @@ final class RustTmuxController: MultiplexerControlling {
 
     func coordinator(for paneId: String) -> CoreTerminalHost.Coordinator? {
         panes[paneId]?.coordinator
+    }
+
+    /// Asks for the visible screens of the overview's `panes` (B751): the
+    /// core skips those shown already, sends one `capture-pane` each, a few
+    /// at a time, and answers through ``onPaneSnapshot``. A refusal (no
+    /// connection) says nothing: the overview just has no picture.
+    func snapshotPanes(_ panes: [String]) {
+        guard !panes.isEmpty else { return }
+        _ = driver?.perform(.snapshotPanes(panes: panes))
+    }
+
+    /// The overview closed: what is asked or on its way is dropped.
+    func stopSnapshots() {
+        _ = driver?.perform(.stopSnapshots)
     }
 
     /// Pane `paneId`'s terminal if it has one already (every pane of the

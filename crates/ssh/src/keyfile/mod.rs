@@ -353,6 +353,20 @@ pub fn describe_stored(text: &str) -> Option<StoredKey> {
     import(text, None, None, "").ok()
 }
 
+/// The kind of key a stored key is when it is one no connect path signs
+/// in with, by name (`"ECDSA brainpoolP256r1"`, `"DSA"`): what the key
+/// list and the key picker say of it (B780). `None` for a key that signs
+/// in, one behind a passphrase, and text that isn't a private key.
+pub fn refused_kind(text: &str) -> Option<String> {
+    if !text.contains("-----BEGIN") {
+        return None;
+    }
+    match import(text, None, None, "") {
+        Err(ImportError::Unsupported(kind)) => Some(kind),
+        _ => None,
+    }
+}
+
 /// What to do with a key as the keychain holds it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Assessment {

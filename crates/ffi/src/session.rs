@@ -258,6 +258,12 @@ pub enum SessionEventKind {
     PaneBell {
         pane: String,
     },
+    /// A never-shown pane's visible screen, for the overview's picture
+    /// (B751).
+    PaneSnapshot {
+        pane: String,
+        rows: Vec<String>,
+    },
     AgentHooksUpdated,
     AttachStalled,
     TmuxActionsDropped,
@@ -712,6 +718,12 @@ pub enum TmuxIntent {
     },
     ScrollBegan,
     PollAgentHooks,
+    /// The overview's pictures of panes never shown (B751).
+    SnapshotPanes {
+        panes: Vec<String>,
+    },
+    /// The overview closed.
+    StopSnapshots,
     DeferResize {
         pane: String,
         cols: u16,
@@ -1262,6 +1274,8 @@ impl TmuxIntent {
             TmuxIntent::InputModeChanged { pane } => TmuxAction::InputModeChanged { pane },
             TmuxIntent::ScrollBegan => TmuxAction::ScrollBegan,
             TmuxIntent::PollAgentHooks => TmuxAction::PollAgentHooks,
+            TmuxIntent::SnapshotPanes { panes } => TmuxAction::SnapshotPanes(panes),
+            TmuxIntent::StopSnapshots => TmuxAction::StopSnapshots,
             TmuxIntent::DeferResize { pane, cols, rows } => {
                 TmuxAction::DeferResize { pane, cols, rows }
             }
@@ -1295,6 +1309,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
         EventKind::TreeChanged => SessionEventKind::TreeChanged,
         EventKind::PaneActivity { pane } => SessionEventKind::PaneActivity { pane },
         EventKind::PaneBell { pane } => SessionEventKind::PaneBell { pane },
+        EventKind::PaneSnapshot { pane, rows } => SessionEventKind::PaneSnapshot { pane, rows },
         EventKind::AgentHooksUpdated => SessionEventKind::AgentHooksUpdated,
         EventKind::AttachStalled => SessionEventKind::AttachStalled,
         EventKind::TmuxActionsDropped => SessionEventKind::TmuxActionsDropped,

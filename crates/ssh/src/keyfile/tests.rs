@@ -1314,3 +1314,35 @@ fn keys_the_swift_code_stored_read_back_unchanged() {
     }
     assert!(seen >= 24, "{seen}");
 }
+
+/// B780: a stored key no connect path signs with says what kind it is, by
+/// name — a brainpool curve's, not its OID — so the key list and the
+/// picker can say so before a sign-in fails. A key that signs, one behind a
+/// passphrase and a password say nothing.
+#[test]
+fn a_stored_key_that_cant_sign_says_what_kind_it_is() {
+    assert_eq!(
+        refused_kind(&fixture("matrix/openssl-brainpool256-sec1")).as_deref(),
+        Some("ECDSA brainpoolP256r1")
+    );
+    assert_eq!(
+        refused_kind(&fixture("matrix/openssl-dsa-traditional")).as_deref(),
+        Some("DSA")
+    );
+    assert_eq!(
+        refused_kind(&fixture("matrix/openssl-secp256k1-sec1")).as_deref(),
+        Some("ECDSA secp256k1")
+    );
+    for signs in [
+        "matrix/openssl-p256-sec1",
+        "matrix/keygen-rsa2048-pkcs8",
+        "ed25519",
+    ] {
+        assert_eq!(refused_kind(&fixture(signs)), None, "{signs}");
+    }
+    assert_eq!(
+        refused_kind(&fixture("matrix/keygen-ecdsa256-pem-encrypted")),
+        None
+    );
+    assert_eq!(refused_kind("hunter2"), None);
+}
