@@ -212,9 +212,17 @@ fix much faster.
 Moshpit is licensed under GPL-3.0-only (see [LICENSE](LICENSE)). By submitting a
 pull request you agree that your contribution is licensed under the same terms.
 
-This public repository is published from the maintainer's development tree:
-`scripts/export-oss.sh` there produces exactly the files you see here — one
-commit per development commit, with the original author, date and message and
-a `Source-Commit` trailer naming its origin. The App Store release pipeline
-and store metadata, and the marketing site, are separate private repositories.
-Pull requests are merged into that tree and appear here on the next export.
+Moshpit is developed here. Commits up to the move carry a `Source-Commit`
+trailer: they were published from the maintainer's earlier, private
+development tree, one commit per development commit, with the original
+author, date and message. The App Store release pipeline and store metadata,
+and the marketing site, are separate private repositories. Pull requests are
+merged into `main` here.
+
+Every push and pull request runs a leak scan (`scripts/oss-scan.py --public`,
+in `.github/workflows/leak-scan.yml`) on what it adds: access tokens, App
+Store Connect key ids, private-key material, device UDIDs, a person's home
+folder, tailnet addresses. Fixtures use `example.com`, `192.0.2.x`,
+`198.51.100.x`, `100.64.0.x`, `/Users/dev` and `/home/dev`. The maintainers'
+own pushes also go through a pre-push gate (`scripts/setup-hooks.sh` installs
+it) with the same scan and a few private lists of their own.
