@@ -49,18 +49,15 @@ impl Server {
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     }
 
+    /// A `-C` client of `target`; of the latest session with none, as the
+    /// app's own `-CC attach` is.
     fn client(&self, target: &str) -> (Child, ChildStdin, Receiver<Vec<u8>>) {
+        let mut args = vec!["-L", &self.socket, "-f", "/dev/null", "-C", "attach"];
+        if !target.is_empty() {
+            args.extend(["-t", target]);
+        }
         let mut child = Command::new(tmux_bin())
-            .args([
-                "-L",
-                &self.socket,
-                "-f",
-                "/dev/null",
-                "-C",
-                "attach",
-                "-t",
-                target,
-            ])
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -113,6 +110,8 @@ impl Drop for Server {
 
 struct Phone {
     controller: Controller,
+    /// Every command the controller wrote.
+    sent: Vec<String>,
     child: Child,
     stdin: ChildStdin,
     rx: Receiver<Vec<u8>>,
@@ -140,6 +139,7 @@ impl Phone {
             for output in self.controller.drain_outputs() {
                 if let Output::Command(command) = output {
                     let line = format!("{command}\n");
+                    self.sent.push(command);
                     if self.stdin.write_all(line.as_bytes()).is_err() {
                         // tmux's client is gone: the test says so.
                         return;
@@ -198,6 +198,7 @@ fn a_real_tmux_keeps_the_desktop_where_it_is_and_drops_the_group_with_the_phone(
     );
     let (child, stdin, rx) = server.client("main");
     let mut phone = Phone {
+        sent: Vec::new(),
         controller: Controller::new(Config::default()),
         child,
         stdin,
@@ -296,6 +297,7 @@ fn a_real_tmux_keeps_the_phone_off_a_group_with_a_desktops_control_client() {
     let (_desk, _desk_in, _desk_rx) = server.client("main");
     let (child, stdin, rx) = server.client("main");
     let mut phone = Phone {
+        sent: Vec::new(),
         controller: Controller::new(Config::default()),
         child,
         stdin,
@@ -326,6 +328,7 @@ impl Server {
     fn phone(&self, target: &str) -> Phone {
         let (child, stdin, rx) = self.client(target);
         let mut phone = Phone {
+            sent: Vec::new(),
             controller: Controller::new(Config::default()),
             child,
             stdin,
@@ -539,6 +542,7 @@ impl Server {
     fn sidecar(&self, target: &str, renderer_pid: i64) -> Phone {
         let (child, stdin, rx) = self.client(target);
         let mut sidecar = Phone {
+            sent: Vec::new(),
             controller: Controller::new(Config {
                 renders_output: false,
                 ..Config::default()
@@ -627,6 +631,7 @@ fn a_pane_picked_on_the_desktop_leaves_the_phone_on_its_own() {
     );
     let (child, stdin, rx) = server.client("main");
     let mut phone = Phone {
+        sent: Vec::new(),
         controller: Controller::new(Config::default()),
         child,
         stdin,
@@ -1093,4 +1098,93 @@ fn a_rebuilt_sidecar_takes_the_renderer_out_of_an_old_group() {
     );
     let _ = renderer.kill();
     let _ = renderer.wait();
+}
+
+/// B788 (B812): over SSH from the empty state — no server — the phone's New
+/// Session "x": an exec channel makes it (`new-session -d`), then the
+/// phone's control client attaches (`-CC attach`, no target), and again
+/// after its link drops. On Canary 150 the user's tmux 3.6a server was gone
+/// after it, a disconnect shown and back to New Session. The session stays,
+/// the phone is on it (through its own group from 3.8 on), nothing the phone
+/// sends ends it, and the server lives.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_first_session_made_on_the_phone_stays() {
+    const LS: &str = "#{session_id} #{session_name} #{session_attached}";
+    let server = Server {
+        socket: format!("moshpit-b459-{}-firstsession", std::process::id()),
+    };
+    assert!(server.tmux(&["ls"]).is_empty(), "no server yet");
+    // The exec channel's `first_session_command`.
+    server.tmux(&["new-session", "-d", "-s", "x"]);
+    let server_pid = server.pid();
+    let x = server.tmux(&["display-message", "-p", "-t", "=x:", "#{session_id}"]);
+    assert!(x.starts_with('$'), "made: {x:?}");
+    let mut sent = Vec::new();
+    for round in 1..=2 {
+        let mut phone = server.phone("");
+        phone.pump(1000);
+        // What could end a session, logged for the record (B788).
+        for command in &phone.sent {
+            if command.starts_with("kill-session")
+                || command.contains("destroy-unattached")
+                || command.starts_with("new-session")
+                || command.starts_with("switch-client")
+            {
+                eprintln!("b788 round {round}: {command}");
+            }
+        }
+        eprintln!(
+            "b788 round {round}: sessions {:?}",
+            server.tmux(&["ls", "-F", LS])
+        );
+        sent.append(&mut phone.sent);
+        assert!(
+            server.alive(&server_pid),
+            "round {round}: the server crashed"
+        );
+        assert_eq!(
+            phone.controller.snapshot().active_session_id.as_deref(),
+            Some(x.as_str()),
+            "round {round}: the phone shows x"
+        );
+        // Where the phone's client is: x, or its own group of x.
+        let on = server
+            .tmux(&["list-clients", "-F", "#{client_control_mode} #{session_id}"])
+            .lines()
+            .find_map(|line| line.strip_prefix("1 ").map(str::to_owned))
+            .unwrap_or_default();
+        let of = server.tmux(&["display-message", "-p", "-t", &on, "#{@moshpit_group_of}"]);
+        assert!(
+            on == x || (server.groups() && of == x),
+            "round {round}: the phone on {on:?} (a group of {of:?}), not x {x:?}\n{}",
+            server.clients()
+        );
+        // Its link drops.
+        let _ = phone.child.kill();
+        let _ = phone.child.wait();
+        std::thread::sleep(Duration::from_millis(500));
+        eprintln!(
+            "b788 round {round} dropped: sessions {:?}",
+            server.tmux(&["ls", "-F", LS])
+        );
+        assert!(
+            server.alive(&server_pid),
+            "round {round}: the server crashed at the drop"
+        );
+        assert_eq!(
+            server.tmux(&["display-message", "-p", "-t", "=x:", "#{session_id}"]),
+            x,
+            "round {round}: x is gone: {}",
+            server.tmux(&["ls"])
+        );
+    }
+    let ends_x: Vec<&String> = sent
+        .iter()
+        .filter(|c| {
+            c.starts_with("kill-session")
+                && (c.contains(&format!("'{x}'")) || c.contains("'=x'") || c.ends_with(" x"))
+        })
+        .collect();
+    assert!(ends_x.is_empty(), "the phone ended x: {ends_x:?}");
 }
