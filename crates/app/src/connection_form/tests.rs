@@ -1228,3 +1228,84 @@ fn only_a_connections_own_item_can_be_missing() {
     let mut draft = Draft::new(false);
     assert!(!draft.secret_missing("box"));
 }
+
+// MARK: - F1: a connection through another
+
+/// The draft of a connection through another shows it; picking one turns
+/// mosh and the proxy off, and saves SSH with no proxy of its own; none
+/// again saves direct, mosh still off.
+#[test]
+fn f1_a_draft_goes_through_another_and_saves_as_ssh() {
+    let bastion = uuid();
+    let mut c = studio();
+    c.connection_protocol = ConnectionProtocol::Mosh;
+    c.use_socks_proxy = Some(true);
+    c.socks_proxy_host = Some("192.0.2.9".to_owned());
+    let mut draft = Draft::of(&c);
+    assert_eq!(draft.fields.via, "");
+    assert!(draft.fields.mosh && draft.fields.socks);
+    assert!(draft.set("via", &json!(bastion.to_string())));
+    assert_eq!(draft.fields.via, bastion.to_string());
+    assert!(!draft.fields.mosh, "mosh can't take the way");
+    assert!(!draft.fields.socks, "the jump host's proxy carries its leg");
+    let saved = draft.applied(&c, (60000, 61000));
+    assert_eq!(saved.via_connection_id, Some(bastion));
+    assert_eq!(saved.connection_protocol, ConnectionProtocol::Ssh);
+    assert_eq!(saved.use_socks_proxy, Some(false));
+    assert_eq!(Draft::of(&saved).fields.via, bastion.to_string());
+
+    assert!(draft.set("via", &json!("")));
+    let direct = draft.applied(&c, (60000, 61000));
+    assert_eq!(direct.via_connection_id, None);
+    assert_eq!(
+        direct.connection_protocol,
+        ConnectionProtocol::Ssh,
+        "left off"
+    );
+
+    // A draft that kept mosh on through one is not saved that way.
+    draft.fields.via = bastion.to_string();
+    draft.fields.mosh = true;
+    draft.fields.socks = true;
+    let forced = draft.applied(&c, (60000, 61000));
+    assert_eq!(forced.connection_protocol, ConnectionProtocol::Ssh);
+    assert_eq!(forced.use_socks_proxy, Some(false));
+}
+
+/// The menu's choices are the other connections that go direct, each its
+/// name and address; a connection others go through has none, and names
+/// them.
+#[test]
+fn f1_what_the_form_offers_to_go_through() {
+    let mut bastion = studio();
+    bastion.name = "bastion".to_owned();
+    bastion.username = "dev".to_owned();
+    bastion.host = "bastion.example.com".to_owned();
+    let mut hpc = blank();
+    hpc.name = "hpc".to_owned();
+    hpc.via_connection_id = Some(bastion.id);
+    let mut nas = blank();
+    nas.name = "nas".to_owned();
+    nas.username = "root".to_owned();
+    nas.host = "nas.lan".to_owned();
+    let saved = vec![bastion.clone(), hpc.clone(), nas.clone()];
+    assert_eq!(
+        via_choices(&saved, Some(hpc.id)),
+        vec![
+            screen::ViaChoice {
+                id: bastion.id.to_string(),
+                name: "bastion".into(),
+                detail: "dev@bastion.example.com".into(),
+            },
+            screen::ViaChoice {
+                id: nas.id.to_string(),
+                name: "nas".into(),
+                detail: "root@nas.lan".into(),
+            },
+        ]
+    );
+    assert!(via_choices(&saved, Some(bastion.id)).is_empty());
+    assert_eq!(via_users(&saved, Some(bastion.id)), ["hpc"]);
+    assert!(via_users(&saved, Some(nas.id)).is_empty());
+    assert!(via_users(&saved, None).is_empty());
+}

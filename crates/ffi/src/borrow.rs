@@ -94,7 +94,7 @@ pub enum SftpWhyValue {
 impl BorrowFailure {
     fn ssh(failure: &Failure) -> Self {
         Self::Ssh {
-            cause: cause_value(&failure.cause),
+            cause: cause_value(failure),
             log: failure.log.clone(),
         }
     }

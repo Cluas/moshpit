@@ -1078,5 +1078,19 @@
   "A share wasn't delivered: that pane is closed.": "Un élément partagé n’a pas été remis : ce panneau est fermé.",
   "Send to…": "Envoyer à…",
   "Discard": "Abandonner",
-  "Panes running %@ come first.": "Les panneaux qui exécutent %@ apparaissent en premier."
+  "Panes running %@ come first.": "Les panneaux qui exécutent %@ apparaissent en premier.",
+  "JUMP HOST": "HÔTE DE REBOND",
+  "Connect via": "Se connecter via",
+  "Direct": "Connexion directe",
+  "Deleted connection": "Connexion supprimée",
+  "Signs in to it first with its own key or password, then reaches this host from there.": "Se connecte d’abord à celle-ci avec sa propre clé ou son mot de passe, puis rejoint cet hôte depuis là.",
+  "mosh needs UDP straight to the host; through another connection it's SSH only.": "mosh a besoin d’UDP direct jusqu’à l’hôte ; via une autre connexion, c’est SSH uniquement.",
+  "This connection is the jump host for %@, so it connects directly.": "Cette connexion est l’hôte de rebond de %@ ; elle se connecte donc directement.",
+  "Connections that go through it (%@) won't connect until another is picked in Edit.": "Les connexions qui passent par celle-ci (%@) ne se connecteront plus tant qu’une autre n’est pas choisie dans Modifier.",
+  "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "L’hôte de rebond « %@ » ne relaie pas les connexions. Active le transfert TCP sur celui-ci (AllowTcpForwarding).",
+  "The jump host “%@” got no answer from %@ in time.": "L’hôte de rebond « %@ » n’a pas eu de réponse de %@ à temps.",
+  "The jump host “%@” couldn't reach %@ on port %@.": "L’hôte de rebond « %@ » n’a pas pu joindre %@ sur le port %@.",
+  "The connection this one goes through was deleted. Pick another in Edit.": "La connexion par laquelle passe celle-ci a été supprimée. Choisis-en une autre dans Modifier.",
+  "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "La connexion par laquelle passe celle-ci passe elle-même par une autre. Choisis dans Modifier une connexion directe.",
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Cette connexion passe par une autre, mais impossible de savoir laquelle. Choisis-la à nouveau dans Modifier."
 }

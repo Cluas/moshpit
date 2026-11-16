@@ -74,6 +74,27 @@ enum RustCopy {
             case .unreadable:
                 return String(localized: "mosh-server didn't start: it never said where to reach it.")
             }
+        case .tunnel(let via, let host, let port, let why):
+            // The jump host's answer about the host behind it (F1): a host
+            // on its network, so never the local-network permission.
+            switch why {
+            case .prohibited:
+                return String(localized: "The jump host “\(via)” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).")
+            case .timedOut:
+                return String(localized: "The jump host “\(via)” got no answer from \(host) in time.")
+            case .connectFailed, .other:
+                return String(localized: "The jump host “\(via)” couldn't reach \(host) on port \(String(port)).")
+            }
+        case .route(let why):
+            // Never a direct dial instead (F1).
+            switch why {
+            case .deleted:
+                return String(localized: "The connection this one goes through was deleted. Pick another in Edit.")
+            case .chained:
+                return String(localized: "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.")
+            case .unresolved:
+                return String(localized: "This connection goes through another, but which one couldn't be told. Pick it again in Edit.")
+            }
         case .plain:
             switch kind {
             case .lost:

@@ -14,8 +14,8 @@
 //! is the value, an array or dictionary names its members by index, always
 //! greater than its own.
 
-use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::{BTreeSet, HashMap};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
@@ -390,6 +390,9 @@ pub struct ConnectionRecord {
     pub socks_proxy_port: Option<i64>,
     /// The emoji its mark shows in place of its host key's face.
     pub emoji: Option<String>,
+    /// The saved connection it goes through (a UUID; F1).
+    #[uniffi(default = None)]
+    pub via_connection_id: Option<String>,
 }
 
 impl From<&ServerConnection> for ConnectionRecord {
@@ -427,6 +430,7 @@ impl From<&ServerConnection> for ConnectionRecord {
             socks_proxy_host: c.socks_proxy_host.clone(),
             socks_proxy_port: c.socks_proxy_port,
             emoji: c.emoji.clone(),
+            via_connection_id: c.via_connection_id.map(|id| id.to_string()),
         }
     }
 }
@@ -466,7 +470,38 @@ impl TryFrom<ConnectionRecord> for ServerConnection {
         connection.socks_proxy_host = c.socks_proxy_host;
         connection.socks_proxy_port = c.socks_proxy_port;
         connection.emoji = c.emoji;
+        connection.via_connection_id = match c.via_connection_id.as_deref() {
+            None | Some("") => None,
+            Some(id) => Some(uuid(id)?),
+        };
         Ok(connection)
+    }
+}
+
+/// The saved connections that go through another (F1), by id, as the
+/// store last read or wrote them: what a session's spec reaching the core
+/// without its way through is checked against
+/// ([`crate::session::SessionSpec`]), so a caller that forgot it fails the
+/// connect instead of dialling the host directly.
+static THROUGH: LazyLock<Mutex<HashMap<Uuid, Uuid>>> = LazyLock::new(Default::default);
+
+/// Whether the saved connection `id` goes through another (F1).
+pub(crate) fn goes_through(id: &str) -> bool {
+    Uuid::parse(id).is_some_and(|id| lock(&THROUGH).contains_key(&id))
+}
+
+/// Notes which of `store`'s connections go through another, and that
+/// `gone` (deleted) goes through nothing.
+fn note_routes(store: &ConnectionStore, gone: Option<Uuid>) {
+    let mut through = lock(&THROUGH);
+    if let Some(gone) = gone {
+        through.remove(&gone);
+    }
+    for c in store.connections() {
+        match c.via_connection_id {
+            Some(via) => through.insert(c.id, via),
+            None => through.remove(&c.id),
+        };
     }
 }
 
@@ -478,10 +513,9 @@ pub struct ConnectionStoreHandle(Mutex<ConnectionStore>);
 impl ConnectionStoreHandle {
     #[uniffi::constructor]
     pub fn new(host: Arc<dyn PreferencesHost>, mode: ReadinessMode) -> Arc<Self> {
-        Arc::new(Self(Mutex::new(ConnectionStore::new(
-            defaults(host),
-            readiness(mode),
-        ))))
+        let store = ConnectionStore::new(defaults(host), readiness(mode));
+        note_routes(&store, None);
+        Arc::new(Self(Mutex::new(store)))
     }
 
     pub fn connections(&self) -> Vec<ConnectionRecord> {
@@ -493,24 +527,24 @@ impl ConnectionStoreHandle {
     }
 
     pub fn add(&self, connection: ConnectionRecord) -> Result<(), StoreError> {
-        lock(&self.0).add(connection.try_into()?);
+        let mut store = lock(&self.0);
+        store.add(connection.try_into()?);
+        note_routes(&store, None);
         Ok(())
     }
 
     pub fn update(&self, connection: ConnectionRecord) -> Result<(), StoreError> {
-        let mut connection: ServerConnection = connection.try_into()?;
         let mut store = lock(&self.0);
-        // F1: the record has no way through another connection (the Swift
-        // form can't pick one): a save from there keeps the stored one.
-        if let Some(stored) = store.connections().iter().find(|c| c.id == connection.id) {
-            connection.via_connection_id = stored.via_connection_id;
-        }
-        store.update(connection);
+        store.update(connection.try_into()?);
+        note_routes(&store, None);
         Ok(())
     }
 
     pub fn delete(&self, id: String) -> Result<(), StoreError> {
-        lock(&self.0).delete(uuid(&id)?);
+        let id = uuid(&id)?;
+        let mut store = lock(&self.0);
+        store.delete(id);
+        note_routes(&store, Some(id));
         Ok(())
     }
 
@@ -522,12 +556,16 @@ impl ConnectionStoreHandle {
     }
 
     pub fn reload_if_needed(&self) {
-        lock(&self.0).reload_if_needed();
+        let mut store = lock(&self.0);
+        store.reload_if_needed();
+        note_routes(&store, None);
     }
 
     /// Read the list again, trusted or not (`ConnectionStore.load()`).
     pub fn load(&self) {
-        lock(&self.0).load();
+        let mut store = lock(&self.0);
+        store.load();
+        note_routes(&store, None);
     }
 
     /// Remove what sessions remember about connections no longer saved,
@@ -2059,10 +2097,10 @@ mod tests {
         assert_eq!(from_value(&cycle), None);
     }
 
-    /// A save through the record (the Swift form) keeps the connection a
-    /// stored one goes through (F1): the record can't say it.
+    /// The connection a stored one goes through crosses the record both
+    /// ways (F1): a save from Swift keeps it, and clears it when cleared.
     #[test]
-    fn f1_a_record_save_keeps_the_way_through() {
+    fn f1_a_record_carries_the_way_through() {
         let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
         let bastion = Uuid::new_v4();
         let mut hpc = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.5));
@@ -2076,9 +2114,15 @@ mod tests {
         let mut record = store.connections()[0].clone();
         record.name = "renamed".into();
         store.update(record).unwrap();
-        let reread = ConnectionStore::new(Arc::new(HostDefaults(host)), Readiness::Always);
+        let reread = ConnectionStore::new(Arc::new(HostDefaults(host.clone())), Readiness::Always);
         assert_eq!(reread.connections()[0].name, "renamed");
         assert_eq!(reread.connections()[0].via_connection_id, Some(bastion));
+        let mut record = store.connections()[0].clone();
+        assert_eq!(record.via_connection_id, Some(bastion.to_string()));
+        record.via_connection_id = None;
+        store.update(record).unwrap();
+        let reread = ConnectionStore::new(Arc::new(HostDefaults(host)), Readiness::Always);
+        assert_eq!(reread.connections()[0].via_connection_id, None);
     }
 
     #[test]

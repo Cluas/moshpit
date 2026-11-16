@@ -61,6 +61,9 @@ pub enum HopBroken {
     /// More than one hop: the connection it goes through goes through
     /// another itself, or it names itself.
     Chained,
+    /// It goes through another, but the dial wasn't told which (a caller
+    /// that left the way out): refused, never dialled direct instead.
+    Unresolved,
 }
 
 /// One saved connection, as far as a session is concerned.

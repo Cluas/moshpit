@@ -811,6 +811,9 @@ async fn dial_once(
                     HopBroken::Chained => {
                         "the connection this one goes through goes through another"
                     }
+                    HopBroken::Unresolved => {
+                        "this connection goes through another, but the dial wasn't told which"
+                    }
                 },
             ));
         }

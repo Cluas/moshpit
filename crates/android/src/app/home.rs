@@ -505,10 +505,24 @@ pub(crate) fn ask_delete(app: &mut App, c: Uuid) {
         .find(|s| s.id == c)
         .map(|s| s.display_name())
         .unwrap_or_default();
+    // The connections that go through it fail until another is picked
+    // (F1): never a direct dial instead.
+    let through: Vec<String> =
+        moshpit_store::connections::reached_through(app.connections.connections(), c)
+            .into_iter()
+            .map(|s| s.display_name())
+            .collect();
+    let mut message = "Its saved password or pasted key goes with it.".to_owned();
+    if !through.is_empty() {
+        message.push_str(&format!(
+            " Connections that go through it ({}) won't connect until another is picked in Edit.",
+            through.join(", ")
+        ));
+    }
     app.ask(Question::DeleteConnection(c), |token| Ask::Confirm {
         token,
         title: format!("Delete {name}?"),
-        message: "Its saved password or pasted key goes with it.".to_owned(),
+        message,
         ok: "Delete".to_owned(),
         destructive: true,
     });

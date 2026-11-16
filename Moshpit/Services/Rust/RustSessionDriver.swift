@@ -54,6 +54,8 @@ final class RustSessionDriver: RustSessionListener {
     /// The connection as last saved while this session ran (B329); nil:
     /// as it started.
     private var adopted: ServerConnection?
+    /// The way through another connection it last dialled with (F1).
+    private var dialledHop: SessionHop?
     /// A save since the session's last connect: its next one is the saved
     /// connection's.
     private var adoptedPending = false
@@ -157,6 +159,8 @@ final class RustSessionDriver: RustSessionListener {
         core.credentials.register(connection) { [weak self] wrong in
             await self?.askPassphrase(wrong: wrong)
         }
+        registerJumpHost(of: connection)
+        dialledHop = Self.hop(for: connection)
         wireShellCoordinator()
         if isMosh { attachPrediction() }
         let grid = session.coordinator.lastReportedSize
@@ -175,6 +179,29 @@ final class RustSessionDriver: RustSessionListener {
     /// for every connection". A connection's stored range is only what the
     /// setting was at its last save, kept for older builds (J1) — dialled
     /// from, a narrowed setting never reached a saved connection (B430).
+    /// The saved connections, for the way one goes through another (F1).
+    /// Set once, at launch.
+    static var savedConnections: () -> [ServerConnection] = { [] }
+
+    /// How `connection` reaches its host when not straight there (F1): the
+    /// jump host's id, name, address and proxy, or a jump host deleted —
+    /// the core then fails the connect, never dialling the host direct.
+    static func hop(for connection: ServerConnection) -> SessionHop? {
+        guard connection.viaConnectionId != nil else { return nil }
+        return sessionHop(connection: ConnectionRecord(connection),
+                          saved: savedConnections().map(ConnectionRecord.init))
+    }
+
+    /// The jump host's credentials, for the core to sign in there with
+    /// (F1): its key, password and second factor are its own.
+    private func registerJumpHost(of connection: ServerConnection) {
+        guard let via = connection.viaConnectionId,
+              let jump = Self.savedConnections().first(where: { $0.id == via }) else { return }
+        core.credentials.register(jump) { [weak self] wrong in
+            await self?.askPassphrase(wrong: wrong)
+        }
+    }
+
     static func spec(for connection: ServerConnection, grid: (cols: Int, rows: Int),
                      udp: (low: Int, high: Int) = AppSettings.shared.udpRange) -> SessionSpec {
         let proxy = connection.useSOCKSProxy == true ? connection.socksProxyHost : nil
@@ -202,7 +229,8 @@ final class RustSessionDriver: RustSessionListener {
             cols: UInt16(clamping: grid.cols),
             rows: UInt16(clamping: grid.rows),
             // B783: a new host's card says it was connected to before.
-            connectedBefore: connection.lastConnectedAt != nil)
+            connectedBefore: connection.lastConnectedAt != nil,
+            hop: hop(for: connection))
     }
 
     /// Closes the session for good, holding the process awake while the
@@ -233,11 +261,18 @@ final class RustSessionDriver: RustSessionListener {
     /// saved credential, not the ones it started with. The transport live
     /// now stays where it is, and so do the protocol and the multiplexer.
     func adopt(_ saved: ServerConnection) {
-        guard saved.id == connection.id, !Self.dialsTheSame(saved, adopted ?? connection) else { return }
+        // Its way through another counts too (F1): another jump host
+        // picked, the jump host edited — or deleted, when nothing about
+        // this connection itself changed.
+        let hop = Self.hop(for: saved)
+        guard saved.id == connection.id,
+              !Self.dialsTheSame(saved, adopted ?? connection) || hop != dialledHop else { return }
         adopted = saved
+        dialledHop = hop
         core.credentials.register(saved) { [weak self] wrong in
             await self?.askPassphrase(wrong: wrong)
         }
+        registerJumpHost(of: saved)
         guard let id, !closed else { return }
         let grid = session.coordinator.lastReportedSize
             ?? SessionHub.ActiveSession.estimateGrid(fontSize: appearance.fontSize)

@@ -1078,5 +1078,19 @@
   "A share wasn't delivered: that pane is closed.": "有 1 個分享沒送出去：那個窗格已經關了。",
   "Send to…": "換個窗格…",
   "Discard": "丟掉",
-  "Panes running %@ come first.": "跑著 %@ 的窗格排在前面。"
+  "Panes running %@ come first.": "跑著 %@ 的窗格排在前面。",
+  "JUMP HOST": "跳板主機",
+  "Connect via": "經由",
+  "Direct": "直接連線",
+  "Deleted connection": "已刪除的連線",
+  "Signs in to it first with its own key or password, then reaches this host from there.": "先用那條連線自己的金鑰或密碼登入，再從那裡連到這台主機。",
+  "mosh needs UDP straight to the host; through another connection it's SSH only.": "mosh 要用 UDP 直接連到主機，經由別的連線時只能用 SSH。",
+  "This connection is the jump host for %@, so it connects directly.": "這條連線是 %@ 的跳板主機，所以它只能直接連線。",
+  "Connections that go through it (%@) won't connect until another is picked in Edit.": "經由它的連線（%@）在編輯裡重新選擇之前都連不上。",
+  "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "跳板主機「%@」不轉發連線。請在它上面開啟 TCP 轉發（AllowTcpForwarding）。",
+  "The jump host “%@” got no answer from %@ in time.": "跳板主機「%@」沒能及時連上 %@。",
+  "The jump host “%@” couldn't reach %@ on port %@.": "跳板主機「%@」連不上 %@ 的 %@ 連接埠。",
+  "The connection this one goes through was deleted. Pick another in Edit.": "經由的連線已被刪除，請在編輯裡重新選擇。",
+  "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "經由的連線自己也經由別的連線。請在編輯裡換一條直接連線的。",
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "這條連線要經由別的連線，但沒能確定是哪一條。請在編輯裡重新選擇。"
 }

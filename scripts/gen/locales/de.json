@@ -1078,5 +1078,19 @@
   "A share wasn't delivered: that pane is closed.": "Ein geteiltes Element wurde nicht zugestellt: Dieses Panel ist geschlossen.",
   "Send to…": "Senden an …",
   "Discard": "Verwerfen",
-  "Panes running %@ come first.": "Panels, in denen %@ läuft, stehen oben."
+  "Panes running %@ come first.": "Panels, in denen %@ läuft, stehen oben.",
+  "JUMP HOST": "JUMP-HOST",
+  "Connect via": "Verbinden über",
+  "Direct": "Direktverbindung",
+  "Deleted connection": "Gelöschte Verbindung",
+  "Signs in to it first with its own key or password, then reaches this host from there.": "Meldet sich zuerst dort mit deren eigenem Schlüssel oder Passwort an und erreicht diesen Host von dort aus.",
+  "mosh needs UDP straight to the host; through another connection it's SSH only.": "mosh braucht UDP direkt zum Host; über eine andere Verbindung geht nur SSH.",
+  "This connection is the jump host for %@, so it connects directly.": "Diese Verbindung ist der Jump-Host für %@ und verbindet sich deshalb direkt.",
+  "Connections that go through it (%@) won't connect until another is picked in Edit.": "Verbindungen über diese (%@) verbinden sich erst wieder, wenn unter „Bearbeiten“ eine andere gewählt ist.",
+  "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "Der Jump-Host „%@“ leitet keine Verbindungen weiter. Schalte dort die TCP-Weiterleitung ein (AllowTcpForwarding).",
+  "The jump host “%@” got no answer from %@ in time.": "Der Jump-Host „%@“ hat von %@ nicht rechtzeitig Antwort bekommen.",
+  "The jump host “%@” couldn't reach %@ on port %@.": "Der Jump-Host „%@“ hat %@ auf Port %@ nicht erreicht.",
+  "The connection this one goes through was deleted. Pick another in Edit.": "Die Verbindung, über die diese geht, wurde gelöscht. Wähle unter „Bearbeiten“ eine andere.",
+  "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "Die Verbindung, über die diese geht, läuft selbst über eine andere. Wähle unter „Bearbeiten“ eine, die sich direkt verbindet.",
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Diese Verbindung geht über eine andere, aber welche, ließ sich nicht feststellen. Wähle sie unter „Bearbeiten“ erneut."
 }

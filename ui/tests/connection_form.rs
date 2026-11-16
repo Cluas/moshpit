@@ -17,7 +17,7 @@ use common::{
 use moshpit_ui::{
     connection_form::{
         Auth, ConnectionPredict, FormState, KeyChoice, Message, Missing, Mux, Other, SaveFailure,
-        Secrets,
+        Secrets, ViaChoice,
     },
     screen::{Params, Screen},
 };
@@ -1612,6 +1612,165 @@ fn a_secret_not_on_this_iphone_says_so_in_the_apps_language() {
             .shows("这台 iPhone 上没有 nas 的私钥，请重新粘贴。"),
         "{:?}",
         app.screen().texts()
+    );
+    channel.close();
+}
+
+// MARK: - JUMP HOST (F1)
+
+fn bastion() -> ViaChoice {
+    ViaChoice {
+        id: "B1".into(),
+        name: "bastion".into(),
+        detail: "dev@bastion.example.com".into(),
+    }
+}
+
+/// With another saved connection to go through, JUMP HOST offers it under
+/// Connect via, Direct first, its address under its name. Picking it tells
+/// the host, turns mosh off and its switch off limits with the reason, and
+/// takes PROXY away (the jump host's own proxy carries its leg); Direct
+/// again brings PROXY back and leaves mosh off.
+#[test]
+fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = draft();
+    state.mosh = true;
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    // The select's identifier is its menu's (a native control).
+    find(&mut app, "text:Connect via");
+    for text in ["JUMP HOST", "Connect via", "Direct", "PROXY"] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
+    }
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    assert_eq!(
+        natives.prop(menu, "items"),
+        Some(json!([
+            {"id": "", "title": "Direct", "checked": true},
+            {"id": "B1", "title": "bastion", "detail": "dev@bastion.example.com"},
+        ]))
+    );
+    let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
+    assert_eq!(natives.prop(mosh, "on"), Some(json!(true)));
+    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(true)));
+
+    emit(&mut app, menu, "select", json!("B1"));
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "set", "key": "via", "value": "B1"})
+    );
+    find(
+        &mut app,
+        "text:mosh needs UDP straight to the host; through another connection it's SSH only.",
+    );
+    assert!(app.screen().shows("bastion"));
+    assert!(!app.screen().shows("PROXY"), "{:?}", app.screen().texts());
+    assert!(!app.screen().shows("SOCKS5"));
+    let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
+    assert_eq!(natives.prop(mosh, "on"), Some(json!(false)));
+    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(false)));
+
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    emit(&mut app, menu, "select", json!(""));
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "set", "key": "via", "value": ""})
+    );
+    find(&mut app, "text:PROXY");
+    assert!(app.screen().shows("Survives network changes; needs UDP."));
+    let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
+    assert_eq!(natives.prop(mosh, "on"), Some(json!(false)), "left off");
+    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(true)));
+    channel.close();
+}
+
+/// No other saved connection: nothing to go through, no JUMP HOST.
+#[test]
+fn f1_without_another_connection_there_is_no_jump_host() {
+    let (mut app, channel, _natives) = start_tall(Params::default());
+    show(&mut app, &channel, draft());
+    find(&mut app, "id:connection-form-name");
+    assert!(!app.screen().shows("JUMP HOST"));
+    assert!(!app.screen().matches("id:connection-form-via").unwrap());
+    channel.close();
+}
+
+/// A connection others go through connects directly (one hop): its row is
+/// off and names them, and there is no menu to open.
+#[test]
+fn f1_a_jump_host_connects_directly_and_says_why() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let mut state = draft();
+    state.editing = true;
+    state.via_users = vec!["hpc".into(), "gpu".into()];
+    show(&mut app, &channel, state);
+    find(&mut app, "id:connection-form-via");
+    assert!(
+        app.screen()
+            .shows("This connection is the jump host for hpc, gpu, so it connects directly."),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(
+        natives
+            .find("moshpit/menu", "connection-form-via")
+            .is_none()
+    );
+    channel.close();
+}
+
+/// Saved through a connection since deleted: the row says so (not Direct,
+/// which it isn't: it fails rather than dial direct) until another is
+/// picked.
+#[test]
+fn f1_a_deleted_jump_host_shows_as_such() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let mut state = draft();
+    state.editing = true;
+    state.via = "GONE".into();
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    find(&mut app, "text:Deleted connection");
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(
+        items.as_array().unwrap().last(),
+        Some(&json!({"id": "GONE", "title": "Deleted connection", "checked": true}))
+    );
+    channel.close();
+}
+
+/// In Chinese, as the app says it.
+#[test]
+fn f1_the_jump_host_in_chinese() {
+    let (mut app, channel, natives) = start_tall(zh_hans());
+    let mut state = draft();
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    find(&mut app, "text:经由");
+    for text in [
+        "跳板主机",
+        "经由",
+        "直接连接",
+        "先用那条连接自己的密钥或密码登录，再从那里连到这台主机。",
+    ] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
+    }
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    emit(&mut app, menu, "select", json!("B1"));
+    find(
+        &mut app,
+        "text:mosh 要用 UDP 直接连到主机，经由别的连接时只能用 SSH。",
     );
     channel.close();
 }

@@ -1078,5 +1078,19 @@
   "A share wasn't delivered: that pane is closed.": "Um item compartilhado não foi entregue: esse painel está fechado.",
   "Send to…": "Enviar para…",
   "Discard": "Descartar",
-  "Panes running %@ come first.": "Os painéis com %@ aparecem primeiro."
+  "Panes running %@ come first.": "Os painéis com %@ aparecem primeiro.",
+  "JUMP HOST": "HOST DE SALTO",
+  "Connect via": "Conectar via",
+  "Direct": "Conexão direta",
+  "Deleted connection": "Conexão excluída",
+  "Signs in to it first with its own key or password, then reaches this host from there.": "Primeiro entra nela com a própria chave ou senha e, de lá, chega a este host.",
+  "mosh needs UDP straight to the host; through another connection it's SSH only.": "O mosh precisa de UDP direto até o host; por outra conexão, só SSH.",
+  "This connection is the jump host for %@, so it connects directly.": "Esta conexão é o host de salto de %@, então se conecta diretamente.",
+  "Connections that go through it (%@) won't connect until another is picked in Edit.": "As conexões que passam por ela (%@) não vão conectar até você escolher outra em Editar.",
+  "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "O host de salto “%@” não encaminha conexões. Ative lá o encaminhamento TCP (AllowTcpForwarding).",
+  "The jump host “%@” got no answer from %@ in time.": "O host de salto “%@” não teve resposta de %@ a tempo.",
+  "The jump host “%@” couldn't reach %@ on port %@.": "O host de salto “%@” não alcançou %@ na porta %@.",
+  "The connection this one goes through was deleted. Pick another in Edit.": "A conexão pela qual esta passa foi excluída. Escolha outra em Editar.",
+  "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "A conexão pela qual esta passa passa por outra. Escolha em Editar uma que se conecte diretamente.",
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Esta conexão passa por outra, mas não deu para saber qual. Escolha de novo em Editar."
 }

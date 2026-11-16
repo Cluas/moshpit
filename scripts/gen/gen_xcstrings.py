@@ -744,6 +744,42 @@ add("Proxy Port", "代理端口", "プロキシのポート")
 # Under a port field whose text is not a port (B294).
 # A labelled field Save needs filled, in its empty state (B319).
 add("Required", "必填", "必須")
+# The jump host a connection goes through (the connection form, F1).
+add("JUMP HOST", "跳板主机", "踏み台")
+add("Connect via", "经由", "経由")
+add("Direct", "直接连接", "直接接続")
+add("Deleted connection", "已删除的连接", "削除された接続")
+add("Signs in to it first with its own key or password, then reaches this host from there.",
+    "先用那条连接自己的密钥或密码登录，再从那里连到这台主机。",
+    "まずその接続自身の鍵かパスワードでログインし、そこからこのホストに接続します。")
+add("mosh needs UDP straight to the host; through another connection it's SSH only.",
+    "mosh 要用 UDP 直接连到主机，经由别的连接时只能用 SSH。",
+    "mosh はホストまで直接 UDP が届く必要があるので、別の接続を経由するときは SSH だけです。")
+add("This connection is the jump host for %@, so it connects directly.",
+    "这条连接是 %@ 的跳板主机，所以它只能直接连接。",
+    "この接続は %@ の踏み台なので、直接接続します。")
+add("Connections that go through it (%@) won't connect until another is picked in Edit.",
+    "经由它的连接（%@）在编辑里重新选择之前都连不上。",
+    "これを経由する接続（%@）は、編集で別の接続を選ぶまで接続できません。")
+# A connect through a jump host that failed (RustCopy, F1).
+add("The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).",
+    "跳板主机「%@」不转发连接。请在它上面打开 TCP 转发（AllowTcpForwarding）。",
+    "踏み台「%@」は接続を転送しません。そちらで TCP 転送（AllowTcpForwarding）を有効にしてください。")
+add("The jump host “%@” got no answer from %@ in time.",
+    "跳板主机「%@」没能及时连上 %@。",
+    "踏み台「%@」から %@ への接続が時間内に応答しませんでした。")
+add("The jump host “%@” couldn't reach %@ on port %@.",
+    "跳板主机「%@」连不上 %@ 的 %@ 端口。",
+    "踏み台「%@」から %@ のポート %@ に接続できませんでした。")
+add("The connection this one goes through was deleted. Pick another in Edit.",
+    "经由的连接已被删除，请在编辑里重新选择。",
+    "経由する接続が削除されました。編集で別の接続を選んでください。")
+add("The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.",
+    "经由的连接自己也经由别的连接。请在编辑里换一条直接连接的。",
+    "経由する接続がさらに別の接続を経由しています。編集で直接接続するものを選んでください。")
+add("This connection goes through another, but which one couldn't be told. Pick it again in Edit.",
+    "这条连接要经由别的连接，但没能确定是哪一条。请在编辑里重新选择。",
+    "この接続は別の接続を経由しますが、どれか判断できませんでした。編集でもう一度選んでください。")
 # A host's emoji (the connection form, §4.13).
 add("Emoji", "表情", "絵文字")
 add("Shows on the host's mark in place of its key's pattern.", "主机头像上显示这个表情，不再用主机密钥生成的图案。", "ホストのアイコンに、ホスト鍵から作った模様の代わりに表示します。")

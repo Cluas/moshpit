@@ -83,6 +83,10 @@ pub struct ConnectionDraft {
     pub socks_proxy_port: String,
     /// The emoji field as typed; empty: the host key's face.
     pub emoji: String,
+    /// The saved connection this one goes through (a UUID; F1); empty:
+    /// straight to its host.
+    #[uniffi(default = "")]
+    pub via: String,
     pub stored: StoredCredential,
     /// The connection's own secret this device doesn't hold (B782,
     /// [`connection_draft_secret_missing`]).
@@ -215,6 +219,7 @@ impl From<&Draft> for ConnectionDraft {
             socks_proxy_host: f.socks_host.clone(),
             socks_proxy_port: f.socks_port.clone(),
             emoji: f.emoji.clone(),
+            via: f.via.clone(),
             stored: match d.stored {
                 Stored::None => StoredCredential::None,
                 Stored::Password => StoredCredential::Password,
@@ -265,6 +270,7 @@ fn draft(d: &ConnectionDraft, given: SecretsGiven) -> Draft {
             AuthMethod::Key => Auth::Key,
         },
     });
+    f.via = d.via.clone();
     draft.key = d.selected_key.as_deref().and_then(Uuid::parse);
     draft.stored = match &d.stored {
         StoredCredential::None => Stored::None,
@@ -511,6 +517,9 @@ pub fn connection_form_message(
         .collect();
     let editing = editing.and_then(|id| Uuid::parse(&id));
     model.fields.others = form::others(&saved, editing);
+    // What it may go through, and who goes through it (F1).
+    model.fields.via_choices = form::via_choices(&saved, editing);
+    model.fields.via_users = form::via_users(&saved, editing);
     model.message(&self::keys(keys), (udp_start, udp_end))
 }
 

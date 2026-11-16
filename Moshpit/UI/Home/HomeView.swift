@@ -205,8 +205,20 @@ struct HomeView: View {
         ) { connection in
             Button("Delete", role: .destructive) { delete(connection) }
             Button("Cancel", role: .cancel) { deletingConnection = nil }
-        } message: { _ in
-            Text("Removes the saved server and its stored credentials from this device.")
+        } message: { connection in
+            // The connections that go through it fail until another is
+            // picked (F1): never a direct dial instead.
+            let through = store.connections
+                .filter { $0.viaConnectionId == connection.id }
+                .map(\.displayName)
+            let removes = String(localized: "Removes the saved server and its stored credentials from this device.")
+            if through.isEmpty {
+                Text(verbatim: removes)
+            } else {
+                let names = ListFormatter.localizedString(byJoining: through)
+                let fail = String(localized: "Connections that go through it (\(names)) won't connect until another is picked in Edit.")
+                Text(verbatim: "\(removes) \(fail)")
+            }
         }
     }
 

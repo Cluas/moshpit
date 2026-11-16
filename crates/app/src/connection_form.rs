@@ -29,6 +29,10 @@
 //! - A password or pasted key of the connection's own that this device
 //!   doesn't hold (a restore brings no keychain item) is not kept: the
 //!   field says so, and Save waits for a new one (B782).
+//! - A connection may go through another saved one (F1), one hop: the
+//!   choices are the others that reach their hosts directly, none for a
+//!   connection others go through ([`via_choices`], [`via_users`]);
+//!   through one, it saves as SSH without a proxy of its own.
 
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::connections::{
@@ -245,6 +249,13 @@ impl Draft {
                 others: Vec::new(),
                 // The host's to say (B782).
                 missing: None,
+                via: c
+                    .via_connection_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_default(),
+                // The host's, at message time (F1).
+                via_choices: Vec::new(),
+                via_users: Vec::new(),
             },
             key: c.ssh_key_id,
             stored: Stored::of(c),
@@ -292,6 +303,7 @@ impl Draft {
             ("tmuxPath", Some(t), _) => s.tmux_path = t,
             ("herdrPath", Some(t), _) => s.herdr_path = t,
             ("emoji", Some(t), _) => s.emoji = t,
+            ("via", Some(t), _) => screen::go_through(s, t),
             ("mosh", _, Some(f)) => s.mosh = f,
             ("socks", _, Some(f)) => s.socks = f,
             ("auth", Some(t), _) => match t.as_str() {
@@ -471,7 +483,12 @@ impl Draft {
         c.ssh_port = port.into();
         c.username = s.username.trim().to_owned();
         c.auth_method = self.auth_method();
-        c.connection_protocol = if s.mosh {
+        // Through another connection, SSH only and no proxy of its own
+        // (F1): the draft says so already, and a draft that doesn't is not
+        // saved otherwise.
+        c.via_connection_id = Uuid::parse(s.via.trim());
+        let through = c.via_connection_id.is_some();
+        c.connection_protocol = if s.mosh && !through {
             ConnectionProtocol::Mosh
         } else {
             ConnectionProtocol::Ssh
@@ -480,7 +497,7 @@ impl Draft {
         c.mosh_port_range_end = udp.1;
         // Empty: `mosh-server` on PATH, the capability probe intact.
         c.mosh_server_path = non_empty(&s.mosh_server_path);
-        c.use_socks_proxy = Some(s.socks);
+        c.use_socks_proxy = Some(s.socks && !through);
         // Spaces round a pasted address are not the proxy's (B511).
         c.socks_proxy_host = non_empty(s.socks_host.trim());
         c.socks_proxy_port = Some(
@@ -595,6 +612,33 @@ pub fn others(saved: &[ServerConnection], editing: Option<Uuid>) -> Vec<screen::
             port: u16::try_from(c.port).unwrap_or(DEFAULT_PORT),
         })
         .collect()
+}
+
+/// What the connection `editing` (`None`: a new one) may go through (F1):
+/// the other saved connections that reach their hosts directly, as the
+/// menu shows them; none for one that others go through.
+pub fn via_choices(saved: &[ServerConnection], editing: Option<Uuid>) -> Vec<screen::ViaChoice> {
+    moshpit_store::connections::jump_host_choices(saved, editing)
+        .into_iter()
+        .map(|c| screen::ViaChoice {
+            id: c.id.to_string(),
+            name: c.display_name(),
+            detail: format!("{}@{}", c.username.trim(), c.host.trim()),
+        })
+        .collect()
+}
+
+/// What the connections that go through `editing` are called (F1): it
+/// connects directly, and its row says why.
+pub fn via_users(saved: &[ServerConnection], editing: Option<Uuid>) -> Vec<String> {
+    editing
+        .map(|id| {
+            moshpit_store::connections::reached_through(saved, id)
+                .into_iter()
+                .map(ServerConnection::display_name)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Settings' UDP range as the mosh row shows it: "60000 – 61000", as on

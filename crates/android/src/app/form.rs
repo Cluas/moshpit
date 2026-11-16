@@ -7,7 +7,9 @@
 //! keychain here, never posted to the screen or taken from it (NSH-GAPS
 //! #11); the shared model hears only whether each holds one.
 
-use moshpit_app::connection_form::{Draft, Given, Intent, SavePlan, others};
+use moshpit_app::connection_form::{
+    Draft, Given, Intent, SavePlan, others, via_choices, via_users,
+};
 use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::connections::{AuthMethod, ServerConnection};
@@ -76,7 +78,11 @@ impl FormDraft {
 pub fn message(app: &App, draft: &FormDraft) -> String {
     let mut model = draft.model.clone();
     // The others, for the warning of a duplicate (B532).
-    model.fields.others = others(app.connections.connections(), draft.editing);
+    let saved = app.connections.connections();
+    model.fields.others = others(saved, draft.editing);
+    // What it may go through, and who goes through it (F1).
+    model.fields.via_choices = via_choices(saved, draft.editing);
+    model.fields.via_users = via_users(saved, draft.editing);
     model.message(app.keys.keys(), app.settings.udp_range())
 }
 
