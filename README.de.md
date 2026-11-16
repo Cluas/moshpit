@@ -19,7 +19,7 @@ und eine Live-Aktivität zeigt, wer wartet, wer arbeitet und wie lange schon.
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/01-lock.png" width="250" alt="Wer dich braucht und wofür – direkt auf dem Sperrbildschirm."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/03-home.png" width="250" alt="Wer arbeitet, wer wartet – auf einen Blick."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/02-pane.png" width="250" alt="Antippen, und du bist im Panel, das gefragt hat.">
+<a href="#gallery"><img src="docs/readme/de-DE/hero.png" width="900" alt="Wer dich braucht und wofür – direkt auf dem Sperrbildschirm. · Wer arbeitet, wer wartet – auf einen Blick. · Antippen, und du bist im Panel, das gefragt hat."></a>
 
 </div>
 
@@ -76,10 +76,6 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 
 ### Vor allem ein Terminal
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/05-overview.png" width="220" alt="Alle tmux- und herdr-Panels auf einem Bildschirm."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/08-keyboard.png" width="220" alt="Eine Tastatur fürs Terminal.">
-</p>
-
 | Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **SSH und Mosh** | Mosh mit Vorhersage-Echo. Sitzungen überstehen den Wechsel zwischen WLAN und 5G, den Ruhezustand und schlechtes Hotel-WLAN. Hat eine Verbindung die Zeit im Hintergrund überlebt, macht die App direkt mit ihr weiter, ohne neu zu verbinden |
@@ -94,10 +90,6 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 
 ### Für die Arbeit mit Agents gebaut
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/04-island.png" width="220" alt="Der Fortschritt steht in der Dynamic Island.">
-</p>
-
 | Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **„Wartet auf dich“ zuerst** | Die Übersicht zeigt jeden Agent, der auf dich wartet, über alle Hosts hinweg. Darunter, wer arbeitet und wie lange schon, und wer inaktiv ist |
@@ -108,10 +100,6 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 
 ### Dateien, die ein Agent erwähnt
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/06-preview.png" width="220" alt="Was dein Agent geändert hat, mit einem Tipp öffnen.">
-</p>
-
 Tippe in der Ausgabe eines Agents auf einen Pfad, und die Datei öffnet sich auf dem iPhone: Bilder erscheinen als Vorschau, Videos werden abgespielt, Text liest du als Text. Von dort aus kannst du durch ihren Ordner blättern und die Datei weiterteilen.
 
 ### Spracheingabe
@@ -120,24 +108,35 @@ Diktiert wird auf dem Gerät. **Qwen3-ASR** (0.6B, einmaliger Download) erkennt 
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/de-DE/02-home-terminal.png" width="480" alt="Start und Terminal nebeneinander.">
-</p>
-
 Links die Hosts, rechts das Terminal. Mit Hardware-Tastatur zeigt <kbd>⌘K</kbd> alle Panels, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> wählt ein Fenster, und <kbd>⌘W</kbd> führt zurück zur Übersicht.
 
 ### Der Begleiter und die App-Symbole
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/07-pet.png" width="220" alt="Brüte dir einen Pixel-Begleiter fürs Warten aus.">
-</p>
 
 | Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **Ein Pixel-Begleiter** | Er schlüpft in der Übersicht aus einem Ei, setzt sich auf die Karte des Agents, der dich am dringendsten braucht, übernimmt dessen Status und leistet dir in der Dynamic Island und in der Live-Aktivität Gesellschaft. Ist er eingeschaltet, wird auch das Gesicht jedes Hosts zu einem Pixel-Wesen, gezeichnet aus demselben Schlüssel |
 | **22 App-Symbole** | Alle in den Einstellungen: standardmäßig ein Pixel-Ei, für jede der sechs Arten des Begleiters eins, auf dem er über ein Panel lugt (jeweils auch in einer schimmernden Variante), dazu Classic und acht weitere. Ist dein Begleiter geschlüpft, fragt die Übersicht, ob du zum Symbol seiner Art wechseln willst |
 
-Alle Screenshots hier sind dieselben wie im App Store. Der Workflow „Screenshots“ erstellt sie und erneuert sie nach jedem vollständigen Lauf. Alle Sprachen und das iPad: [alle Screenshots](https://blog.cluas.eu.org/moshpit/shots/#de-DE).
+<a id="gallery"></a>
+
+## Screenshots
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/01-lock.png" width="220" alt="Wer dich braucht und wofür – direkt auf dem Sperrbildschirm."></a><br>Wer dich braucht und wofür – direkt auf dem Sperrbildschirm.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/03-home.png" width="220" alt="Wer arbeitet, wer wartet – auf einen Blick."></a><br>Wer arbeitet, wer wartet – auf einen Blick.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/02-pane.png" width="220" alt="Antippen, und du bist im Panel, das gefragt hat."></a><br>Antippen, und du bist im Panel, das gefragt hat.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/05-overview.png" width="220" alt="Alle tmux- und herdr-Panels auf einem Bildschirm."></a><br>Alle tmux- und herdr-Panels auf einem Bildschirm.</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/08-keyboard.png" width="220" alt="Eine Tastatur fürs Terminal."></a><br>Eine Tastatur fürs Terminal.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/04-island.png" width="220" alt="Der Fortschritt steht in der Dynamic Island."></a><br>Der Fortschritt steht in der Dynamic Island.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/06-preview.png" width="220" alt="Was dein Agent geändert hat, mit einem Tipp öffnen."></a><br>Was dein Agent geändert hat, mit einem Tipp öffnen.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/de-DE/07-pet.png" width="220" alt="Brüte dir einen Pixel-Begleiter fürs Warten aus."></a><br>Brüte dir einen Pixel-Begleiter fürs Warten aus.</td>
+</tr>
+</table>
+
+Alle Screenshots hier zeigen die App pur, ohne Rahmen und Text. Der Workflow „Screenshots“ erstellt sie und erneuert sie nach jedem vollständigen Lauf. Alle Sprachen und das iPad: [alle Screenshots](https://blog.cluas.eu.org/moshpit/shots/#de-DE).
 
 ## Ehrlich von Grund auf
 

@@ -19,7 +19,7 @@ et une Activité en direct qui affiche qui attend, qui travaille, et depuis comb
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/01-lock.png" width="250" alt="Qui a besoin de vous et pourquoi, sur l’écran verrouillé."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/03-home.png" width="250" alt="Qui travaille, qui vous attend : tout se voit d’un coup d’œil."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/02-pane.png" width="250" alt="Touchez, et vous voilà dans le panneau qui demande.">
+<a href="#gallery"><img src="docs/readme/fr-FR/hero.png" width="900" alt="Qui a besoin de vous et pourquoi, sur l’écran verrouillé. · Qui travaille, qui vous attend : tout se voit d’un coup d’œil. · Touchez, et vous voilà dans le panneau qui demande."></a>
 
 </div>
 
@@ -76,10 +76,6 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 
 ### D’abord un terminal
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/05-overview.png" width="220" alt="Tous vos panneaux tmux et herdr sur un seul écran."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/08-keyboard.png" width="220" alt="Un clavier pensé pour le terminal.">
-</p>
-
 | Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **SSH et Mosh** | Mosh avec son écho prédictif. Les sessions résistent aux bascules Wi-Fi/5G, à la mise en veille et aux mauvais réseaux d’hôtel, et une connexion restée en vie pendant que l’app était en arrière-plan reprend sans reconnexion |
@@ -94,10 +90,6 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 
 ### Pensé pour le travail avec des agents
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/04-island.png" width="220" alt="L’avancement, directement dans la Dynamic Island.">
-</p>
-
 | Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **« Vous attend » en premier** | L’accueil liste tous les agents qui vous attendent, sur tous vos hôtes. En dessous : qui travaille, depuis combien de temps, et qui est inactif |
@@ -108,10 +100,6 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 
 ### Les fichiers que mentionne un agent
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/06-preview.png" width="220" alt="Ouvrez le fichier que votre agent vient de modifier.">
-</p>
-
 Touchez un chemin dans la sortie d’un agent et le fichier s’ouvre sur le téléphone : une image s’affiche en aperçu, une vidéo se lance, un fichier texte se lit comme du texte. De là, vous pouvez parcourir son dossier et partager le fichier.
 
 ### Voix
@@ -120,24 +108,35 @@ La dictée se fait sur l’appareil. **Qwen3-ASR** (0.6B, téléchargé une seul
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/fr-FR/02-home-terminal.png" width="480" alt="Accueil et terminal, côte à côte.">
-</p>
-
 Les hôtes à gauche, le terminal à droite. Avec un clavier physique, <kbd>⌘K</kbd> affiche tous les panneaux, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> choisit une fenêtre et <kbd>⌘W</kbd> ramène à l’accueil.
 
 ### Le compagnon et les icônes
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/07-pet.png" width="220" alt="Faites éclore un compagnon en pixels pour patienter.">
-</p>
 
 | Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **Un compagnon en pixels** | Il éclot d’un œuf sur l’accueil, se perche sur la carte de l’agent qui a le plus besoin de vous, prend l’état de cet agent, et vous tient compagnie dans la Dynamic Island et l’Activité en direct. Quand il est activé, le visage de chaque hôte devient une créature en pixels, tirée de la même clé |
 | **Vingt-deux icônes** | Toutes dans Réglages : un œuf en pixels par défaut, le compagnon qui dépasse d’un panneau pour chacune de ses six espèces (chacune avec sa version scintillante), Classic et huit autres. Quand votre compagnon éclot, l’accueil vous demande si vous voulez passer à l’icône de son espèce |
 
-Toutes les captures d’écran de cette page viennent du jeu publié sur l’App Store, produit par le workflow Screenshots et renouvelé après chaque exécution complète. Pour les autres langues et l’iPad : [toutes les captures d’écran](https://blog.cluas.eu.org/moshpit/shots/#fr-FR).
+<a id="gallery"></a>
+
+## Captures d’écran
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/01-lock.png" width="220" alt="Qui a besoin de vous et pourquoi, sur l’écran verrouillé."></a><br>Qui a besoin de vous et pourquoi, sur l’écran verrouillé.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/03-home.png" width="220" alt="Qui travaille, qui vous attend : tout se voit d’un coup d’œil."></a><br>Qui travaille, qui vous attend : tout se voit d’un coup d’œil.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/02-pane.png" width="220" alt="Touchez, et vous voilà dans le panneau qui demande."></a><br>Touchez, et vous voilà dans le panneau qui demande.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/05-overview.png" width="220" alt="Tous vos panneaux tmux et herdr sur un seul écran."></a><br>Tous vos panneaux tmux et herdr sur un seul écran.</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/08-keyboard.png" width="220" alt="Un clavier pensé pour le terminal."></a><br>Un clavier pensé pour le terminal.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/04-island.png" width="220" alt="L’avancement, directement dans la Dynamic Island."></a><br>L’avancement, directement dans la Dynamic Island.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/06-preview.png" width="220" alt="Ouvrez le fichier que votre agent vient de modifier."></a><br>Ouvrez le fichier que votre agent vient de modifier.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/fr-FR/07-pet.png" width="220" alt="Faites éclore un compagnon en pixels pour patienter."></a><br>Faites éclore un compagnon en pixels pour patienter.</td>
+</tr>
+</table>
+
+Captures d’écran brutes de l’app, produites par le workflow Screenshots et renouvelées après chaque exécution complète. Pour les autres langues et l’iPad : [toutes les captures d’écran](https://blog.cluas.eu.org/moshpit/shots/#fr-FR).
 
 ## Honnête par principe
 

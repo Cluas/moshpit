@@ -448,9 +448,13 @@ final class ShotsUITest: XCTestCase {
             if app.keyboards.firstMatch.waitForExistence(timeout: 15) {
                 settle(1)
                 // A reply going in, so the shot isn't 02's again.
-                app.typeText("add a test for the jitter cap")
+                // The pane's tty echoes and nothing reads it, so each locale's
+                // text piled up on the staged screen (and under 02's shot).
+                // Ctrl-U (kill line) wipes the pending input and its echo.
+                app.typeText("\u{15}add a test for the jitter cap")
                 settle(2)
                 keep(locale, "08-keyboard")
+                app.typeText("\u{15}")
             } else {
                 XCTFail("\(locale.name): the keyboard never came up")
             }

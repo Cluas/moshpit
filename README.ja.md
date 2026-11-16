@@ -19,7 +19,7 @@ iPhone と iPad で SSH、Mosh、tmux、herdr。質問が来るたびに暗号�
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/01-lock.png" width="250" alt="誰が何を待っているか、ロック画面でわかる"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/03-home.png" width="250" alt="誰が作業中で、誰が待っているか、ひと目で"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/02-pane.png" width="250" alt="タップすれば、聞いてきたペインへ">
+<a href="#gallery"><img src="docs/readme/ja/hero.png" width="900" alt="誰が何を待っているか、ロック画面でわかる · 誰が作業中で、誰が待っているか、ひと目で · タップすれば、聞いてきたペインへ"></a>
 
 </div>
 
@@ -76,10 +76,6 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### まずはターミナルとして
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/05-overview.png" width="220" alt="tmuxもherdrも、ペインをまとめて見渡せる"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/08-keyboard.png" width="220" alt="ターミナルのための キーボード">
-</p>
-
 | 機能 | 内容 |
 | :-- | :-- |
 | **SSH と Mosh** | Mosh は予測エコーつき。Wi-Fi と 5G の切り替え、スリープ、ホテルの不安定なネットワークでもセッションは切れません。アプリがバックグラウンドにいる間も生きていた接続は、再接続せずにそのまま使い続けられます |
@@ -94,10 +90,6 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### エージェントの作業のために
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/04-island.png" width="220" alt="アプリを開かなくても、進み具合がわかる">
-</p>
-
 | 機能 | 内容 |
 | :-- | :-- |
 | **「あなた待ち」が先頭** | ホームには、すべてのホストであなたを待っているエージェントが並びます。その下に、作業中のエージェントとその経過時間、待機中のエージェント |
@@ -108,10 +100,6 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### エージェントが挙げたファイル
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/06-preview.png" width="220" alt="エージェントが変えたファイルを、タップで確認">
-</p>
-
 エージェントの出力にあるパスをタップすると、そのファイルがスマホで開きます。画像はプレビューされ、動画は再生され、テキストはテキストとして読めます。そこからファイルのあるフォルダを見て回ったり、ファイルを共有したりもできます。
 
 ### 音声入力
@@ -120,24 +108,35 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ja/02-home-terminal.png" width="480" alt="ホームとターミナルを並べて">
-</p>
-
 左にホスト、右にターミナル。ハードウェアキーボードでは、<kbd>⌘K</kbd> ですべてのペインを表示、<kbd>⌘1</kbd>–<kbd>⌘9</kbd> でウィンドウを選択、<kbd>⌘W</kbd> でホームに戻ります。
 
 ### コンパニオンとアイコン
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/07-pet.png" width="220" alt="待ち時間の相棒を、たまごから育てる">
-</p>
 
 | 機能 | 内容 |
 | :-- | :-- |
 | **ピクセルのコンパニオン** | ホームでたまごから孵り、いちばんあなたを必要としているエージェントのカードにとまって、そのエージェントの状態に合わせて姿を変えます。Dynamic Island とライブアクティビティでもそばにいます。オンにすると、各ホストの顔も、同じ鍵から描かれたピクセルの生き物になります |
 | **22 種類のアイコン** | すべて設定にあります。デフォルトはピクセルのたまご。ほかに、6 種類のコンパニオンがそれぞれペインの向こうから顔を出すアイコン（どれにもキラキラ版があります）、Classic、さらに 8 つ。コンパニオンが孵ると、その種類のアイコンに切り替えるかどうかをホームで尋ねます |
 
-ここにあるスクリーンショットはすべて App Store 用のもので、Screenshots ワークフローで作られ、ワークフローを最後まで実行するたびに更新されます。すべての言語と iPad 版は[スクリーンショット一覧](https://blog.cluas.eu.org/moshpit/shots/#ja)で見られます。
+<a id="gallery"></a>
+
+## スクリーンショット
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/01-lock.png" width="220" alt="誰が何を待っているか、ロック画面でわかる"></a><br>誰が何を待っているか、ロック画面でわかる</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/03-home.png" width="220" alt="誰が作業中で、誰が待っているか、ひと目で"></a><br>誰が作業中で、誰が待っているか、ひと目で</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/02-pane.png" width="220" alt="タップすれば、聞いてきたペインへ"></a><br>タップすれば、聞いてきたペインへ</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/05-overview.png" width="220" alt="tmuxもherdrも、ペインをまとめて見渡せる"></a><br>tmuxもherdrも、ペインをまとめて見渡せる</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/08-keyboard.png" width="220" alt="ターミナルのための キーボード"></a><br>ターミナルのための キーボード</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/04-island.png" width="220" alt="アプリを開かなくても、進み具合がわかる"></a><br>アプリを開かなくても、進み具合がわかる</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/06-preview.png" width="220" alt="エージェントが変えたファイルを、タップで確認"></a><br>エージェントが変えたファイルを、タップで確認</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ja/07-pet.png" width="220" alt="待ち時間の相棒を、たまごから育てる"></a><br>待ち時間の相棒を、たまごから育てる</td>
+</tr>
+</table>
+
+ここにあるのはアプリの画面そのままのスクリーンショットで、Screenshots ワークフローで作られ、ワークフローを最後まで実行するたびに更新されます。すべての言語と iPad 版は [スクリーンショット一覧](https://blog.cluas.eu.org/moshpit/shots/#ja)で見られます。
 
 ## 隠しごとのない作り
 
