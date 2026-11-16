@@ -3,7 +3,7 @@ import Testing
 @testable import Moshpit
 
 /// The pet counts each device's finished tasks under an id the device keeps
-/// in its preferences (``CompanionPet/deviceId(_:readiness:)``). That is a
+/// in its preferences (``CompanionPet/deviceId(_:protectedData:)``). That is a
 /// write into preferences sealed until the first unlock, and the
 /// sealed-launch rule holds (B866): nothing is written while they can't be
 /// trusted — a write then can leave the file holding that one key.
@@ -17,17 +17,17 @@ struct PetDeviceIdTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let sealed = DefaultsReadiness { false }
-        let launchOnly = CompanionPet.deviceId(defaults, readiness: sealed)
+        let sealed: () -> Bool = { false }
+        let launchOnly = CompanionPet.deviceId(defaults, protectedData: sealed)
         #expect(!launchOnly.isEmpty)
         #expect(defaults.object(forKey: "moshpit.pet.device") == nil,
                 "written while the preferences could still be sealed")
 
-        let open = DefaultsReadiness { true }
-        let kept = CompanionPet.deviceId(defaults, readiness: open)
+        let open: () -> Bool = { true }
+        let kept = CompanionPet.deviceId(defaults, protectedData: open)
         #expect(defaults.string(forKey: "moshpit.pet.device") == kept)
-        #expect(CompanionPet.deviceId(defaults, readiness: open) == kept, "the same id, every launch")
-        #expect(CompanionPet.deviceId(defaults, readiness: sealed) == kept,
+        #expect(CompanionPet.deviceId(defaults, protectedData: open) == kept, "the same id, every launch")
+        #expect(CompanionPet.deviceId(defaults, protectedData: sealed) == kept,
                 "a later sealed launch that can read it uses it")
     }
 }

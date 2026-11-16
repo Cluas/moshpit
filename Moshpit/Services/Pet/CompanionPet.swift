@@ -182,11 +182,12 @@ final class CompanionPet {
     /// connection and setting gone. Read sealed, the id is this launch's
     /// alone, and the next trusted launch keeps one.
     static func deviceId(_ defaults: UserDefaults = .standard,
-                         readiness: DefaultsReadiness = .system) -> String {
+                         protectedData: @escaping () -> Bool = { ProtectedDataFlag.app.isAvailable }) -> String {
         let key = "moshpit.pet.device"
         if let id = defaults.string(forKey: key) { return id }
         let id = UUID().uuidString
-        if readiness.isReadable(defaults) {
+        let host = RustPreferencesHost(defaults: defaults, available: protectedData)
+        if storeDefaultsReadable(host: host, mode: .system) {
             defaults.set(id, forKey: key)
         }
         return id
