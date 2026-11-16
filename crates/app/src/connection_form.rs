@@ -338,6 +338,7 @@ impl Draft {
             ("via", Some(t), _) => screen::go_through(s, t),
             ("mosh", _, Some(f)) => s.mosh = f,
             ("socks", _, Some(f)) => s.socks = f,
+            ("jumpOnly", _, Some(f)) => s.jump_only = f,
             ("auth", Some(t), _) => match t.as_str() {
                 "password" => s.auth = Auth::Password,
                 "key" => s.auth = Auth::Key,

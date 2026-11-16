@@ -1501,7 +1501,7 @@ uint64_t uniffi_moshpit_ffi_fn_constructor_coresessions_new(uint64_t credentials
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_HOME_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_HOME_MESSAGE
-RustBuffer uniffi_moshpit_ffi_fn_method_coresessions_home_message(uint64_t ptr, RustBuffer connections, RustBuffer agents, RustBuffer version, int8_t sidebar, RustBuffer locale, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_method_coresessions_home_message(uint64_t ptr, RustBuffer connections, RustBuffer agents, RustBuffer version, int8_t sidebar, RustBuffer locale, uint32_t jump_hosts, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CORESESSIONS_ANSWER_HOST_KEY

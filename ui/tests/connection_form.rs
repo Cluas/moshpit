@@ -1752,7 +1752,7 @@ fn a_saved_jump_host_comes_back_selected_with_edit_under_it() {
     state.via_choices = vec![bastion()];
     state.via = "B1".into();
     show(&mut app, &channel, state);
-    find(&mut app, "text:Edit “bastion”");
+    find(&mut app, "text:Edit jump host…");
     let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
     let items = natives.prop(menu, "items").unwrap();
     assert_eq!(

@@ -347,6 +347,7 @@ fn main() {
                 udp_port: c.udp_port.unwrap_or(60001),
                 tmux: c.mux.as_deref().unwrap_or("tmux") == "tmux",
                 disconnecting: c.disconnecting,
+                via_gone: false,
                 session: c.session.as_ref().map(view),
             })
             .collect();
@@ -361,6 +362,7 @@ fn main() {
             version: scenario.version.as_deref().unwrap_or("v1.0.9 (1)"),
             sidebar: scenario.sidebar,
             locale: "en",
+            jump_hosts: 0,
         });
         let line = serde_json::json!({
             "scenario": scenario.name,

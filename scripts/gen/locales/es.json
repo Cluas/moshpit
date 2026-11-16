@@ -1089,7 +1089,6 @@
   "Signs in to it first with its own key or password, then reaches this host from there.": "Primero inicia sesión en ella con su propia clave o contraseña y, desde ahí, llega a este host.",
   "mosh needs UDP straight to the host; through another connection it's SSH only.": "mosh necesita UDP directo hasta el host; a través de otra conexión solo hay SSH.",
   "This connection is the jump host for %@, so it connects directly.": "Esta conexión es el host de salto de %@, así que se conecta directamente.",
-  "Connections that go through it (%@) won't connect until another is picked in Edit.": "Las conexiones que pasan por ella (%@) no se conectarán hasta que elijas otra en Editar.",
   "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "El host de salto «%@» no reenvía conexiones. Activa allí el reenvío TCP (AllowTcpForwarding).",
   "The jump host “%@” got no answer from %@ in time.": "El host de salto «%@» no obtuvo respuesta de %@ a tiempo.",
   "The jump host “%@” couldn't reach %@ on port %@.": "El host de salto «%@» no pudo llegar a %@ en el puerto %@.",
@@ -1097,9 +1096,13 @@
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "La conexión por la que pasa esta pasa a su vez por otra. Elige en Editar una que se conecte directamente.",
   "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Esta conexión pasa por otra, pero no se pudo saber cuál. Vuelve a elegirla en Editar.",
   "New connection…": "Nueva conexión…",
-  "Edit “%@”": "Editar «%@»",
   "Jump host only": "Solo host de salto",
   "Not listed on Home; pick it under Connect via.": "No aparece en Inicio; elígela en «Conectar a través de».",
   "New Jump Host": "Nuevo host de salto",
-  "Edit Jump Host": "Editar host de salto"
+  "Edit Jump Host": "Editar host de salto",
+  "Edit jump host…": "Editar host de salto…",
+  "Jump hosts (%lld)": "Hosts de salto (%lld)",
+  "Jump host deleted": "Host de salto eliminado",
+  "%@ connects through this host. It won't connect until you pick another way.": "%@ se conecta a través de este host. No se conectará hasta que elijas otra vía.",
+  "%@ connect through this host. They won't connect until you pick another way.": "%@ se conectan a través de este host. No se conectarán hasta que elijas otra vía."
 }

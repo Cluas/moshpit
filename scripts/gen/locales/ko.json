@@ -1089,7 +1089,6 @@
   "Signs in to it first with its own key or password, then reaches this host from there.": "먼저 그 연결의 키나 암호로 로그인한 뒤, 거기서 이 호스트에 연결합니다.",
   "mosh needs UDP straight to the host; through another connection it's SSH only.": "mosh는 호스트까지 UDP가 바로 닿아야 하므로, 다른 연결을 경유할 때는 SSH만 씁니다.",
   "This connection is the jump host for %@, so it connects directly.": "이 연결은 %@의 점프 호스트라서 직접 연결합니다.",
-  "Connections that go through it (%@) won't connect until another is picked in Edit.": "이 연결을 경유하는 연결(%@)은 편집에서 다른 연결을 고를 때까지 연결되지 않습니다.",
   "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "점프 호스트 ‘%@’가 연결을 전달하지 않습니다. 거기서 TCP 전달(AllowTcpForwarding)을 켜세요.",
   "The jump host “%@” got no answer from %@ in time.": "점프 호스트 ‘%@’가 제때 %@의 응답을 받지 못했습니다.",
   "The jump host “%@” couldn't reach %@ on port %@.": "점프 호스트 ‘%@’가 %@의 %@번 포트에 연결하지 못했습니다.",
@@ -1097,9 +1096,13 @@
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "경유하는 연결이 또 다른 연결을 경유합니다. 편집에서 직접 연결하는 것을 고르세요.",
   "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "이 연결은 다른 연결을 경유하지만 어느 것인지 알 수 없습니다. 편집에서 다시 고르세요.",
   "New connection…": "새 연결…",
-  "Edit “%@”": "“%@” 편집",
   "Jump host only": "점프 호스트 전용",
   "Not listed on Home; pick it under Connect via.": "홈에는 표시되지 않습니다. ‘경유’에서 고르세요.",
   "New Jump Host": "새 점프 호스트",
-  "Edit Jump Host": "점프 호스트 편집"
+  "Edit Jump Host": "점프 호스트 편집",
+  "Edit jump host…": "점프 호스트 편집…",
+  "Jump hosts (%lld)": "점프 호스트(%lld)",
+  "Jump host deleted": "점프 호스트가 삭제됨",
+  "%@ connects through this host. It won't connect until you pick another way.": "%@ 연결은 이 호스트를 거칩니다. 다른 경로를 고르기 전까지 연결되지 않습니다.",
+  "%@ connect through this host. They won't connect until you pick another way.": "%@ 연결은 이 호스트를 거칩니다. 다른 경로를 고르기 전까지 연결되지 않습니다."
 }

@@ -2627,7 +2627,7 @@ public protocol CoreSessionsProtocol: AnyObject, Sendable {
      * footer's line; `sidebar`, Home is the iPad's sidebar; `locale`, the
      * language the app shows.
      */
-    func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String, sidebar: Bool, locale: String)  -> String
+    func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String, sidebar: Bool, locale: String, jumpHosts: UInt32)  -> String
     
     func answerHostKey(session: UInt64, prompt: UInt64, trust: Bool) 
     
@@ -2836,7 +2836,7 @@ public convenience init(credentials: CredentialHost, keychain: KeychainHost, pre
      * footer's line; `sidebar`, Home is the iPad's sidebar; `locale`, the
      * language the app shows.
      */
-open func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String, sidebar: Bool, locale: String) -> String  {
+open func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String, sidebar: Bool, locale: String, jumpHosts: UInt32) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_method_coresessions_home_message(
             self.uniffiCloneHandle(),
@@ -2844,7 +2844,8 @@ open func homeMessage(connections: [HomeConnection], agents: AgentMachine?, vers
         FfiConverterOptionTypeAgentMachine.lower(agents),
         FfiConverterString.lower(version),
         FfiConverterBool.lower(sidebar),
-        FfiConverterString.lower(locale),$0
+        FfiConverterString.lower(locale),
+        FfiConverterUInt32.lower(jumpHosts),$0
     )
 })
 }
@@ -12099,6 +12100,10 @@ public struct HomeConnection: Equatable, Hashable {
      */
     public var disconnecting: Bool
     /**
+     * The jump host it goes through was deleted (F1).
+     */
+    public var viaGone: Bool
+    /**
      * Its session in this registry (`connect`'s id), when it has one.
      */
     public var session: UInt64?
@@ -12128,6 +12133,9 @@ public struct HomeConnection: Equatable, Hashable {
          * The host is disconnecting it.
          */disconnecting: Bool, 
         /**
+         * The jump host it goes through was deleted (F1).
+         */viaGone: Bool = false, 
+        /**
          * Its session in this registry (`connect`'s id), when it has one.
          */session: UInt64?) {
         self.id = id
@@ -12140,6 +12148,7 @@ public struct HomeConnection: Equatable, Hashable {
         self.udpPort = udpPort
         self.tmux = tmux
         self.disconnecting = disconnecting
+        self.viaGone = viaGone
         self.session = session
     }
 
@@ -12169,6 +12178,7 @@ public struct FfiConverterTypeHomeConnection: FfiConverterRustBuffer {
                 udpPort: FfiConverterUInt32.read(from: &buf), 
                 tmux: FfiConverterBool.read(from: &buf), 
                 disconnecting: FfiConverterBool.read(from: &buf), 
+                viaGone: FfiConverterBool.read(from: &buf), 
                 session: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
@@ -12184,6 +12194,7 @@ public struct FfiConverterTypeHomeConnection: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.udpPort, into: &buf)
         FfiConverterBool.write(value.tmux, into: &buf)
         FfiConverterBool.write(value.disconnecting, into: &buf)
+        FfiConverterBool.write(value.viaGone, into: &buf)
         FfiConverterOptionUInt64.write(value.session, into: &buf)
     }
 }
@@ -33044,7 +33055,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_petmachine_tap_egg() != 21555) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_method_coresessions_home_message() != 16804) {
+    if (uniffi_moshpit_ffi_checksum_method_coresessions_home_message() != 44839) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_coresessions_answer_host_key() != 61542) {

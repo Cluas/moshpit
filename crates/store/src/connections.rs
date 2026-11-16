@@ -1212,6 +1212,35 @@ mod tests {
         assert_eq!(jump_host_choices(&saved, None).len(), 1);
     }
 
+    /// Deleting a jump host leaves the connections that went through it as
+    /// they were (never switched to Direct): their route reads as deleted,
+    /// until another is picked. Turning "Jump host only" off lists it again.
+    #[test]
+    fn deleting_a_jump_host_leaves_its_users_going_through_nothing() {
+        let mut bastion = ServerConnection::new(Uuid::new_v4(), Date(0.0));
+        bastion.name = "bastion".into();
+        bastion.jump_host_only = true;
+        let mut dev = ServerConnection::new(Uuid::new_v4(), Date(0.0));
+        dev.name = "dev-box".into();
+        dev.via_connection_id = Some(bastion.id);
+        let mut saved = vec![bastion.clone(), dev.clone()];
+        assert_eq!(
+            reached_through(&saved, bastion.id)
+                .iter()
+                .map(|c| c.display_name())
+                .collect::<Vec<_>>(),
+            ["dev-box"]
+        );
+        assert_eq!(dev.route(&saved), Route::Through(&saved[0]));
+        saved.retain(|c| c.id != bastion.id);
+        assert_eq!(saved[0].via_connection_id, Some(bastion.id));
+        assert_eq!(saved[0].route(&saved), Route::Deleted);
+        // Off again: listed on Home.
+        let mut back = bastion;
+        back.jump_host_only = false;
+        assert_eq!(listed_on_home(&[back]).len(), 1);
+    }
+
     /// `jumpHost`, a string an earlier design stored and nothing read, is
     /// not read as the connection to go through (F1) — not even when it
     /// holds another connection's id — and nothing writes it back as one.

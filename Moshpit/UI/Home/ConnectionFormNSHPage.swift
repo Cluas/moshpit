@@ -143,7 +143,9 @@ struct ConnectionFormNSHPage: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Removes the saved server and its stored credentials from this device.")
+                        if let existing {
+                            Text(verbatim: ConnectionDeleteWords.message(for: existing, in: store.connections))
+                        }
                     }
             }
         }

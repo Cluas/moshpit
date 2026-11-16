@@ -1527,7 +1527,7 @@ fn jump_host_section(draft: &Draft) -> AnyElement {
     let tell = draft.tell.clone();
     let edit = choices.iter().find(|c| c.id == via).map(|c| {
         let (id, tell) = (c.id.clone(), draft.tell.clone());
-        row(t!("Edit “%@”", arg1 = c.name.as_str()))
+        row(t!("Edit jump host…"))
             .on_press(move || tell(json!({"ev": "edit-jump", "id": id})))
             .test_id("connection-form-edit-jump")
     });

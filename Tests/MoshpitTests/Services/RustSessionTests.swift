@@ -58,7 +58,7 @@ final class FakeCoreSessions: CoreSessionsProtocol, @unchecked Sendable {
                      locale: String)] = []
     var home = #"{"op":"home","connections":[],"version":"v"}"#
     func homeMessage(connections: [HomeConnection], agents: AgentMachine?, version: String,
-                     sidebar: Bool, locale: String) -> String {
+                     sidebar: Bool, locale: String, jumpHosts: UInt32) -> String {
         homeAsked.append((connections, agents != nil, version, sidebar, locale))
         return home
     }

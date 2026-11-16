@@ -1089,7 +1089,6 @@
   "Signs in to it first with its own key or password, then reaches this host from there.": "Primeiro entra nela com a própria chave ou senha e, de lá, chega a este host.",
   "mosh needs UDP straight to the host; through another connection it's SSH only.": "O mosh precisa de UDP direto até o host; por outra conexão, só SSH.",
   "This connection is the jump host for %@, so it connects directly.": "Esta conexão é o host de salto de %@, então se conecta diretamente.",
-  "Connections that go through it (%@) won't connect until another is picked in Edit.": "As conexões que passam por ela (%@) não vão conectar até você escolher outra em Editar.",
   "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": "O host de salto “%@” não encaminha conexões. Ative lá o encaminhamento TCP (AllowTcpForwarding).",
   "The jump host “%@” got no answer from %@ in time.": "O host de salto “%@” não teve resposta de %@ a tempo.",
   "The jump host “%@” couldn't reach %@ on port %@.": "O host de salto “%@” não alcançou %@ na porta %@.",
@@ -1097,9 +1096,13 @@
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "A conexão pela qual esta passa passa por outra. Escolha em Editar uma que se conecte diretamente.",
   "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Esta conexão passa por outra, mas não deu para saber qual. Escolha de novo em Editar.",
   "New connection…": "Nova conexão…",
-  "Edit “%@”": "Editar “%@”",
   "Jump host only": "Somente host de salto",
   "Not listed on Home; pick it under Connect via.": "Não aparece na tela inicial; escolha em “Conectar via”.",
   "New Jump Host": "Novo host de salto",
-  "Edit Jump Host": "Editar host de salto"
+  "Edit Jump Host": "Editar host de salto",
+  "Edit jump host…": "Editar host de salto…",
+  "Jump hosts (%lld)": "Hosts de salto (%lld)",
+  "Jump host deleted": "Host de salto excluído",
+  "%@ connects through this host. It won't connect until you pick another way.": "%@ se conecta por este host. Não vai conectar até você escolher outro caminho.",
+  "%@ connect through this host. They won't connect until you pick another way.": "%@ se conectam por este host. Não vão conectar até você escolher outro caminho."
 }

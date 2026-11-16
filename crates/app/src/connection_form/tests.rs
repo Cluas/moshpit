@@ -1393,3 +1393,27 @@ fn a_jump_host_only_connection_is_in_the_picker() {
     assert_eq!(v["jumpOnly"], true);
     assert_eq!(v["nested"], true);
 }
+
+/// The toggle's edit reaches the draft; turning "Jump host only" off saves
+/// the connection back onto Home, and a deleted jump host's users keep
+/// their `via` (shown as Deleted connection), not Direct.
+#[test]
+fn turning_jump_host_only_off_brings_the_connection_back() {
+    let mut jump = blank();
+    jump.jump_host_only = true;
+    let mut draft = Draft::of(&jump);
+    assert!(draft.fields.jump_only);
+    assert_eq!(
+        draft.handle(&serde_json::json!({"ev": "set", "key": "jumpOnly", "value": false})),
+        None
+    );
+    assert!(!draft.fields.jump_only);
+    let saved = draft.applied(&jump, (60000, 61000));
+    assert!(!saved.jump_host_only);
+    assert_eq!(moshpit_store::connections::listed_on_home(&[saved]).len(), 1);
+
+    let mut user = blank();
+    user.via_connection_id = Some(Uuid::new_v4());
+    let kept = Draft::of(&user).applied(&user, (60000, 61000));
+    assert_eq!(kept.via_connection_id, user.via_connection_id);
+}

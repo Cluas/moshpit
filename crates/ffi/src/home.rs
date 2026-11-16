@@ -36,6 +36,9 @@ pub struct HomeConnection {
     pub tmux: bool,
     /// The host is disconnecting it.
     pub disconnecting: bool,
+    /// The jump host it goes through was deleted (F1).
+    #[uniffi(default = false)]
+    pub via_gone: bool,
     /// Its session in this registry (`connect`'s id), when it has one.
     pub session: Option<u64>,
 }
@@ -54,6 +57,7 @@ impl CoreSessions {
         version: String,
         sidebar: bool,
         locale: String,
+        jump_hosts: u32,
     ) -> String {
         let saved: Vec<SavedConnection> = connections
             .into_iter()
@@ -69,6 +73,7 @@ impl CoreSessions {
                 udp_port: c.udp_port,
                 tmux: c.tmux,
                 disconnecting: c.disconnecting,
+                via_gone: c.via_gone,
             })
             .collect();
         home::message(&HomeInput {
@@ -82,6 +87,7 @@ impl CoreSessions {
             version: &version,
             sidebar,
             locale: &locale,
+            jump_hosts,
         })
     }
 }
@@ -241,6 +247,7 @@ mod tests {
             udp_port: 60001,
             tmux: true,
             disconnecting: false,
+            via_gone: false,
             session,
         }
     }
@@ -407,6 +414,7 @@ mod tests {
             "v1.0.9 (1)".into(),
             true,
             "en".into(),
+            0,
         );
         let cards = cards(&json);
         assert_eq!(cards[0].link, Link::Dead);

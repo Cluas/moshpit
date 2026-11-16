@@ -29,6 +29,7 @@ pub fn state(app: &App) -> HomeState {
         .connections
         .connections()
         .iter()
+        .filter(|saved| !saved.jump_host_only)
         .map(|saved| {
             let name = saved.display_name();
             let conn = app.sessions.conn(saved.id);
@@ -50,6 +51,7 @@ pub fn state(app: &App) -> HomeState {
                     .as_deref()
                     .map(moshpit_app::home::creature),
                 emoji: saved.emoji.clone(),
+                via_gone: false,
                 name,
                 user: saved.username.clone(),
                 host: saved.host.clone(),
@@ -74,6 +76,7 @@ pub fn state(app: &App) -> HomeState {
         connections,
         version: app.options.version.clone(),
         sidebar: false,
+        jump_hosts: 0,
     }
 }
 

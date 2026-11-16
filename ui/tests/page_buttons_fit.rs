@@ -42,6 +42,7 @@ fn empty_home(locale: &str) -> (App, std::sync::Arc<Channel>) {
         connections: Vec::new(),
         version: "v1.0.9 (1)".into(),
         sidebar: false,
+        jump_hosts: 0,
     };
     post(
         &mut app,
