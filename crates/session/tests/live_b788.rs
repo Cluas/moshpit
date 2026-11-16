@@ -4,6 +4,11 @@
 //! the probed PATH; the exec making the first session didn't, on a host
 //! whose non-interactive PATH has no Homebrew (a Mac's, over SSH).
 //!
+//! B850: the same bare `tmux` in every other exec — the courtesy teardown
+//! that hands the windows back (the pins, the size lease, the zoom mark,
+//! the status line) — failed on such a host, and what the phone set on the
+//! server stayed there after it disconnected.
+//!
 //! Ignored by default (they need sshd and tmux): see `live.rs`.
 //!
 //! ```sh
@@ -141,4 +146,72 @@ async fn new_session_is_made_with_tmux_only_on_the_probed_path() {
     let _ = host_tmux(&sockets.0, &["kill-server"]);
     assert!(made, "no session x on the host: {listed:?}");
     assert!(attached, "the phone isn't in x: {listed:?}");
+}
+
+/// What the phone leaves on window `window`: its pin (`window-size
+/// manual`), its size lease and its zoom mark.
+fn marks(sockets: &Path, window: &str) -> Vec<String> {
+    let shown = |option: &str| {
+        String::from_utf8_lossy(
+            &host_tmux(sockets, &["show-options", "-wqv", "-t", window, option]).stdout,
+        )
+        .trim()
+        .to_owned()
+    };
+    let mut marks = Vec::new();
+    if shown("window-size") == "manual" {
+        marks.push("window-size manual".to_owned());
+    }
+    for option in ["@moshpit_size_owner", "@moshpit_zoomed"] {
+        let value = shown(option);
+        if !value.is_empty() {
+            marks.push(format!("{option} {value}"));
+        }
+    }
+    marks
+}
+
+/// B850: what the phone set on a window wider than it — its pin, its size
+/// lease — goes when it disconnects, on a host whose non-interactive PATH
+/// has no Homebrew. The courtesy teardown ran `tmux` on the bare PATH,
+/// found none, and the window stayed at the phone's size.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd and tmux; see the module docs"]
+async fn a_disconnect_hands_the_window_back_with_tmux_only_on_the_probed_path() {
+    need_sshd!();
+    let Some((sshd, _home, sockets)) = limited_host().await else {
+        return;
+    };
+    assert!(
+        host_tmux(
+            &sockets.0,
+            &["new-session", "-d", "-s", "work", "-x", "200", "-y", "60"]
+        )
+        .status
+        .success()
+    );
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let mut spec = spec(sshd.port);
+    spec.multiplexer = Multiplexer::Tmux;
+    let id = bench.sessions.connect(spec);
+    bench.sessions.set_visible(Some(id));
+    bench.connected(id).await;
+    let pinned = eventually(&mut bench, 20, |_| !marks(&sockets.0, "work:").is_empty()).await;
+    let set = marks(&sockets.0, "work:");
+    let _ = bench.sessions.disconnect(id).await;
+    let mut left = marks(&sockets.0, "work:");
+    for _ in 0..40 {
+        if left.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        left = marks(&sockets.0, "work:");
+    }
+    let _ = host_tmux(&sockets.0, &["kill-server"]);
+    assert!(pinned, "the phone never pinned the window");
+    assert_eq!(
+        left,
+        Vec::<String>::new(),
+        "left on the window (set: {set:?})"
+    );
 }

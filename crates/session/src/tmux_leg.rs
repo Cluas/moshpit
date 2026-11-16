@@ -1216,23 +1216,7 @@ impl Task {
             // the pins and the layouts, each window's only while it is still
             // in a layout of ours (round thirty-four): one script that reads
             // them all before anything changes a size.
-            let renderer: Vec<String> = self
-                .controller
-                .renderer_detach_command(tmux)
-                .into_iter()
-                .collect();
-            let hand_back = self.controller.pin_hand_back_script(tmux, &renderer);
-            let ledger = self.controller.take_pin_ledger();
-            let mut commands: Vec<String> = hand_back.into_iter().collect();
-            commands.extend(
-                leases
-                    .into_iter()
-                    .map(|command| format!("{tmux} {command}")),
-            );
-            if let Some(session) = ledger.hidden_status.as_deref() {
-                // The status line the sidecar turned off, back.
-                commands.extend(moshpit_tmux::boot::status_restore_commands(tmux, session));
-            }
+            let commands = courtesy_commands(&mut self.controller, tmux, leases);
             if !commands.is_empty() {
                 let _ = tokio::time::timeout(COURTESY_BOUND, async {
                     for command in &commands {
@@ -1249,6 +1233,38 @@ impl Task {
         self.pump();
         handoff
     }
+}
+
+/// What a courtesy teardown runs over exec, each through
+/// [`moshpit_tmux::boot::exec`] (B850): the phone's renderer out first
+/// (B270), then the pins and the layouts in one script, the size leases
+/// (`leases`, the controller's), and the status line the sidecar turned off.
+/// Each ran bare `tmux` and did nothing where the exec's PATH has no tmux.
+pub(crate) fn courtesy_commands(
+    controller: &mut Controller,
+    tmux: &str,
+    leases: Vec<String>,
+) -> Vec<String> {
+    let renderer: Vec<String> = controller
+        .renderer_detach_command(tmux)
+        .into_iter()
+        .collect();
+    let hand_back = controller.pin_hand_back_script(tmux, &renderer);
+    let ledger = controller.take_pin_ledger();
+    let mut commands: Vec<String> = hand_back.into_iter().collect();
+    commands.extend(
+        leases
+            .into_iter()
+            .map(|command| format!("{tmux} {command}")),
+    );
+    if let Some(session) = ledger.hidden_status.as_deref() {
+        // The status line the sidecar turned off, back.
+        commands.extend(moshpit_tmux::boot::status_restore_commands(tmux, session));
+    }
+    commands
+        .iter()
+        .map(|command| moshpit_tmux::boot::exec(command))
+        .collect()
 }
 
 /// The name the first session is made with (`first_session`): as typed,
@@ -1272,36 +1288,24 @@ pub(crate) fn first_session_name(name: Option<String>) -> Result<Option<String>,
 /// `c##d` as `c#d`). The app's `tmuxFirstSessionCommand` makes the same
 /// session (B228).
 ///
-/// tmux is found as the control client and `has-session` find it, on the
-/// probed PATH, under `sh -c` (B138). It ran on the bare one: on a Mac,
-/// whose non-interactive PATH has no Homebrew, tmux wasn't found, nothing
-/// was made, and the app attached again to the same empty server (B788).
+/// tmux is found as the control client and `has-session` find it
+/// ([`moshpit_tmux::boot::exec`]). It ran on the bare PATH: on a Mac, whose
+/// non-interactive PATH has no Homebrew, tmux wasn't found, nothing was
+/// made, and the app attached again to the same empty server (B788).
 pub(crate) fn first_session_command(tmux: &str, name: Option<&str>) -> String {
     let mut command = format!("{tmux} new-session -d");
     if let Some(name) = name {
         command.push_str(" -s ");
         command.push_str(&moshpit_herdr::launch::quote(&name.replace('#', "##")));
     }
-    format!(
-        "sh -c {}",
-        moshpit_herdr::launch::quote(&format!(
-            "PATH=\"$PATH:{}\" {command}",
-            moshpit_herdr::launch::EXTRA_PATH_DIRS
-        ))
-    )
+    moshpit_tmux::boot::exec(&command)
 }
 
 /// The exec that asks whether the server has any session (B228): tmux's
 /// own answer, its status, with tmux found as the control client finds it
 /// (`moshpit_tmux::boot`'s PATH). Under `sh -c` (B138).
 pub(crate) fn has_session_command(tmux: &str) -> String {
-    format!(
-        "sh -c {}",
-        moshpit_herdr::launch::quote(&format!(
-            "PATH=\"$PATH:{}\" {tmux} has-session 2>/dev/null",
-            moshpit_herdr::launch::EXTRA_PATH_DIRS
-        ))
-    )
+    moshpit_tmux::boot::exec(&format!("{tmux} has-session 2>/dev/null"))
 }
 
 /// What `has-session`'s status says: 0, a session; 1, none (or no server);
@@ -1421,16 +1425,8 @@ mod first_session_tests {
 
     #[test]
     fn the_first_session_is_detached_and_named_as_typed() {
-        // Under `sh -c`, tmux on the probed PATH (B788).
-        let expected = |command: &str| {
-            format!(
-                "sh -c {}",
-                moshpit_herdr::launch::quote(&format!(
-                    "PATH=\"$PATH:{}\" {command}",
-                    moshpit_herdr::launch::EXTRA_PATH_DIRS
-                ))
-            )
-        };
+        // Under `sh -c`, tmux on the probed PATH (B788, B850).
+        let expected = moshpit_tmux::boot::exec;
         assert_eq!(
             first_session_command("tmux", None),
             expected("tmux new-session -d")
