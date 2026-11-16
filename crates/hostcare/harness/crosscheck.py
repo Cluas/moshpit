@@ -2,7 +2,8 @@
 """Hold the core's host care to the app's Swift host care it replaced.
 
 Runs every scenario through both — `harness/build-swift.sh`'s binary (the
-app's HostAutoCare, HostSetupModel and PushService at 81c121a1) and
+app's HostAutoCare, HostSetupModel and PushService at 81c121a1, kept in
+harness/swift/frozen) and
 `examples/crosscheck.rs` (the machine) — against the same simulated host,
 and compares, per scenario: every command sent to the host (a file write
 by what it writes), the files the host ends with, the pairings the phone
@@ -71,23 +72,21 @@ ATOMIC_WRITE = re.compile(r"^set -e; (?:mkdir -p \"[^\"]*\"; umask 077|umask 077
                           r"mv -f \"\$t\" \"\$p\"$")
 
 # The host scripts each side ships: Swift's as they were at the revision
-# build-swift.sh compiles (its HostScripts literals were those files byte
-# for byte), the machine's as they are now. What changed in them since
-# (install's B350, B357, B358) is not host care's to judge: each side's
-# scripts and their digests are masked to the same names.
-SWIFT_REV = os.environ.get("MOSHPIT_SWIFT_CARE_REV", "81c121a1")
+# build-swift.sh compiles (81c121a1: its HostScripts literals were those
+# files byte for byte, kept in harness/swift/frozen/host-scripts, since no
+# public clone has that commit), the machine's as they are now. What
+# changed in them since (install's B350, B357, B358) is not host care's to
+# judge: each side's scripts and their digests are masked to the same names.
+SWIFT_SCRIPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swift", "frozen", "host-scripts")
 SCRIPTS = {"stamp": "scripts/host/moshpit-stamp.sh", "sender": "scripts/host/moshpit-push.sh"}
 
 
-def scripts_at(rev):
+def scripts_in(folder):
+    """The scripts in `folder`: the repo's own when None."""
     out = {}
     for name, rel in SCRIPTS.items():
-        if rev is None:
-            text = open(os.path.join(ROOT, rel)).read()
-        else:
-            text = subprocess.run(["git", "-C", ROOT, "show", f"{rev}:{rel}"], check=True,
-                                  capture_output=True, text=True).stdout
-        out[name] = text.rstrip("\n")
+        path = os.path.join(ROOT, rel) if folder is None else os.path.join(folder, os.path.basename(rel))
+        out[name] = open(path).read().rstrip("\n")
     return out
 
 
@@ -219,8 +218,8 @@ def main():
     subprocess.run(["cargo", "build", "--quiet", "-p", "moshpit-hostcare", "--example", "crosscheck"],
                    check=True, cwd=ROOT)
     rust_bin = os.path.join(target, "debug", "examples", "crosscheck")
-    swift = runs(swift_bin, names, script_masker(scripts_at(SWIFT_REV)))
-    rust = runs(rust_bin, names, script_masker(scripts_at(None)))
+    swift = runs(swift_bin, names, script_masker(scripts_in(SWIFT_SCRIPTS)))
+    rust = runs(rust_bin, names, script_masker(scripts_in(None)))
     known = json.load(open(os.path.join(HERE, "divergences.json")))
     same = explained = 0
     unexplained = []

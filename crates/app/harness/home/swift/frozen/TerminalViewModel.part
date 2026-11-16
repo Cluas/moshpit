@@ -1,0 +1,36 @@
+    enum Status: Equatable {
+        case idle
+        case connecting
+        case connected
+        case reconnecting   // transport dropped; auto-reconnect in progress
+        case disconnected
+        case failed(String)
+        /// The remote end finished the session for good — its shell exited,
+        /// or mosh-server sent its shutdown — with what to say about it. Not
+        /// a failure, and nothing redials it: reconnecting is the user's call.
+        case ended(String)
+    }
+    var connState: TransportConnState {
+        // One state for the whole automatic reconnect, however many attempts it
+        // takes: `status` flips connecting → failed → connecting on every
+        // keepalive tick, and letting that through made the screen alternate
+        // between "opening the pit" and "line dropped".
+        //
+        // It collapses to `.reconnecting` and not `.offline` because the app is
+        // dialling — `.offline` means nothing is being attempted. Reporting
+        // offline here turned the connecting screen red mid-reconnect, and since
+        // this flag and `status` change on their own schedules, a single
+        // reconnect crossed from blue to red partway through.
+        if isAutoReconnectInFlight { return .reconnecting }
+        switch status {
+        case .connected: return .live
+        case .reconnecting: return .reconnecting
+        case .connecting, .idle: return .connecting
+        case .failed, .disconnected, .ended: return .offline
+        }
+    }
+    func adoptRustStatus(_ status: Status, automatic: Bool, error: String? = nil) {
+        self.status = status
+        isAutoReconnectInFlight = automatic
+        if let error { errorMessage = error }
+    }

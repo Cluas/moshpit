@@ -6,7 +6,7 @@
 
 `run` builds the two front ends — harness/build-swift.sh's store-swift-108,
 the app's storage sources as 1.0.8 shipped them (the release commit
-8c10490a, read out of git), and examples/store_harness.rs — and feeds them:
+8c10490a, kept in harness/swift108/frozen), and examples/store_harness.rs — and feeds them:
 
   A  generated cases to Rust;
   B  what Rust wrote in A, read back (and written again) by Rust;

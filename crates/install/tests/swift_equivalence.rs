@@ -1,7 +1,8 @@
 //! The Rust port against the Swift install code's recorded output, without
 //! swiftc: `tests/fixtures/swift/cases.swift.txt` is what
 //! `harness/swift/main.swift` printed for `cases.txt` over the app's
-//! unchanged sources (`harness/equivalence.py update-goldens`) — host
+//! unchanged sources, kept in `harness/swift/frozen`
+//! (`harness/equivalence.py update-goldens`) — host
 //! scripts and their digests, push confs, all seven agents' merged and
 //! unmerged configs, manifests, probe parses, every command, and installer
 //! flows against a simulated host. Rust must print exactly the same, except

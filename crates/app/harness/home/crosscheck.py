@@ -2,9 +2,10 @@
 """Hold app::home to the app's Swift HomeSnapshot it replaced.
 
 Runs every scenario of `scenarios.json` through both — `build-swift.sh`'s
-binary (the app's HomeSnapshot at 95f649ab, over session objects set up as
-the Rust session path's driver sets them) and `examples/home_crosscheck.rs`
-(app::home over the same session views) — and compares the two
+binary (the app's HomeSnapshot at 95f649ab, kept in swift/frozen, over
+session objects set up as the Rust session path's driver sets them) and
+`examples/home_crosscheck.rs` (app::home over the same session views) — and
+compares the two
 `{"op": "home"}` messages as the screen reads them.
 
 Left out of the comparison: what only the Rust record carries, for R5

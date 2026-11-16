@@ -5,7 +5,8 @@
     equivalence.py update-goldens [--no-build]
 
 `run` builds both front ends (harness/build-swift.sh over the app's
-unchanged Moshpit/Services/Install sources and HostCapabilities, and
+unchanged Moshpit/Services/Install sources and HostCapabilities, kept in
+harness/swift/frozen since the app's went to the core, and
 examples/install_harness.rs) and feeds both the same cases: seeded ones from
 `install_harness gen` and the committed tests/fixtures/swift/cases.txt.
 
@@ -119,6 +120,29 @@ def kind(case):
     return parts[0] + (" " + parts[1] if parts[0] in ("flow", "cmd") else "")
 
 
+# Cases for a command the Swift code never had, so its binary can't answer
+# them ("bad cmd …"): each a fix made on this side as one new command, its
+# difference documented. Their Swift lines are the records
+# divergences.swift.txt keeps, never run again.
+SWIFT_LACKS = (
+    "cmd writekeep ",  # config-mode (B352): a config written keeping its mode
+    "cmd pushtest ",   # self-test-scope (B353): the push self-test for one pairing
+    "cmd stamptest ",  # stamp-test-restores (B355): one command where Swift ran three
+)
+
+
+def swift_lacks(case):
+    return case.startswith(SWIFT_LACKS)
+
+
+def run_swift_divergences(cases, recorded):
+    """The Swift side of the divergence cases: run, but for the ones it
+    lacks, whose line is the record."""
+    runnable = [case for case in cases if not swift_lacks(case)]
+    ran = iter(run_side(SWIFT, runnable)) if runnable else iter(())
+    return [want if swift_lacks(case) else next(ran) for case, want in zip(cases, recorded)]
+
+
 def run(quick):
     seeds = QUICK_SEEDS if quick else SEEDS
     tally, failures, total = {}, [], 0
@@ -143,12 +167,16 @@ def run(quick):
     bad = 0
     divergences = read_lines(os.path.join(FIXTURES, "divergences.txt"))
     if divergences:
-        swift = run_side(SWIFT, divergences)
-        rust = run_side(RUST, divergences)
         recorded = read_lines(os.path.join(FIXTURES, "divergences.swift.txt"))
+        swift = run_swift_divergences(divergences, recorded)
+        rust = run_side(RUST, divergences)
         ported = ported_fixes()
         ids = divergence_ids(os.path.join(FIXTURES, "divergences.txt"))
         for fix, case, s, r, want in zip(ids, divergences, swift, rust, recorded):
+            if fix in ported and swift_lacks(case):
+                # Its port was checked while the Swift code had the command;
+                # no Swift binary can answer it now.
+                continue
             if fix in ported:
                 if s != r:
                     bad += 1
@@ -175,7 +203,7 @@ def update_goldens():
     ported = ported_fixes()
     ids = divergence_ids(os.path.join(FIXTURES, "divergences.txt"))
     before = read_lines(os.path.join(FIXTURES, "divergences.swift.txt"))
-    swift = run_side(SWIFT, divergences)
+    swift = run_swift_divergences(divergences, before)
     swift = [old if fix in ported else now for fix, now, old in zip(ids, swift, before)]
     with open(os.path.join(FIXTURES, "divergences.swift.txt"), "w") as f:
         f.write("\n".join(swift) + "\n")

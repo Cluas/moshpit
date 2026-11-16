@@ -58,12 +58,15 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "store (crates/store/harness)",
         build: r#"crates/store/harness/build-swift.sh "$OUT""#,
-        pins: &["8c10490a"],
+        // Its Swift is kept in harness/swift108/frozen: no commit to read.
+        pins: &[],
     },
     Harness {
         name: "host care (crates/hostcare/harness)",
         build: r#"crates/hostcare/harness/build-swift.sh "$OUT/care-swift""#,
-        pins: &["81c121a1", "8ef981c5"],
+        // Its Swift is kept in harness/swift/frozen and the install
+        // harness's: no commit to read.
+        pins: &[],
     },
     Harness {
         name: "UniFFI smoke (crates/ffi/harness)",
@@ -74,7 +77,8 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
-        pins: &["81c121a1", "e57f7941", "8ef981c5"],
+        // Its Swift is kept in harness/swift/frozen: no commit to read.
+        pins: &[],
     },
     Harness {
         name: "seal (crates/seal/harness)",
@@ -85,7 +89,8 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "Home (crates/app/harness/home)",
         build: r#"crates/app/harness/home/build-swift.sh "$OUT/home-swift""#,
-        pins: &["95f649ab"],
+        // Its Swift is kept in harness/home/swift/frozen: no commit to read.
+        pins: &[],
     },
     Harness {
         // verify-app-language.sh's build, its one-line stub written the same.

@@ -2,8 +2,14 @@
 # Builds the Swift side of the store's equivalence harness for macOS:
 #
 #   store-swift-108   the app's storage sources as 1.0.8 shipped them (the
-#                     release commit 8c10490a, read out of git), with
+#                     release commit 8c10490a), with
 #                     harness/swift108/main.swift and Common.swift.
+#
+# The sources are kept in harness/swift108/frozen, at their paths in the
+# release and unedited, read from nowhere else: no public clone has the
+# release commit (the history was folded on export), so a `git archive` of
+# it built the harness in one clone only. Only the files the build reads
+# are kept.
 #
 # The app's own Swift stores are gone (batch C); they had two front ends
 # here until then. 1.0.8's is the upgrade guard: what this crate writes,
@@ -48,7 +54,6 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 work="${1:-$repo/target/store-harness}"
-release_108=8c10490a
 mkdir -p "$work"
 
 # The cuts, done by one small script: `keep` copies a file without the
@@ -95,7 +100,7 @@ US=$'\x1f'
 keep() { python3 -I "$cutter" keep "$@"; }
 cut() { python3 -I "$cutter" cut "$@"; }
 
-# build <source root>: 1.0.8's sources, archived out of git.
+# build <source root>: 1.0.8's sources (harness/swift108/frozen).
 build() {
     local root="$1"
     local dir="$work/build-108" binary="$work/store-swift-108"
@@ -149,10 +154,6 @@ build() {
         -I "$dir/kit" -L "$dir/kit" -lMoshpitKit -o "$binary" "${files[@]}" "$app"/*.swift
 }
 
-src108="$work/src108"
-rm -rf "$src108"
-mkdir -p "$src108"
-git -C "$repo" archive "$release_108" Moshpit Packages/MoshpitKit | tar -x -C "$src108"
-build "$src108"
+build "$here/swift108/frozen"
 
 echo "$work/store-swift-108"
