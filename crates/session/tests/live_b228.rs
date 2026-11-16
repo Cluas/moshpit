@@ -20,6 +20,7 @@ mod support;
 use std::time::{Duration, Instant};
 
 use moshpit_session::{EventKind, Multiplexer, Protocol, SessionId, TmuxAction};
+use moshpit_tmux::controller::is_group_name;
 use support::*;
 
 macro_rules! need {
@@ -97,7 +98,14 @@ async fn first_session_ends_it(bench: &mut Bench, id: SessionId, tmux: &Tmux) {
             .tmux_view(id)
             .map(|view| (view.snapshot.is_attached, view.no_session))
     );
-    assert_eq!(tmux.sessions(), vec!["b228".to_owned()]);
+    // The phone's own group of it (`b228~mp-…`, B459) is no session of the
+    // person's: only theirs is counted.
+    let sessions: Vec<String> = tmux
+        .sessions()
+        .into_iter()
+        .filter(|name| !is_group_name(name))
+        .collect();
+    assert_eq!(sessions, vec!["b228".to_owned()]);
     assert!(!bench.sessions.view(id).unwrap().attach_stalled);
 }
 
