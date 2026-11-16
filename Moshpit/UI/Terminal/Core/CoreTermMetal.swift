@@ -730,6 +730,26 @@ final class CoreTermMetalCanvas: UIView {
     /// The GPU's last refusal of a frame since this was last asked, if any.
     func takeGPUFailure() -> String? { gpuFailure.take() }
 
+    /// Whether the last render found no drawable free: `nextDrawable()`
+    /// held the main thread its full second and gave nothing (B754).
+    var foundNoDrawable: Bool { lastFailure?.hasPrefix("no drawable") == true }
+
+    /// Drawables taken from this layer and not heard of since (B754).
+    private let taken = CoreTermTakenDrawables()
+
+    /// The drawables of this layer taken within the last `within` seconds
+    /// and not heard of since: one heard of no longer (a drawable the
+    /// system let go without a word, B445) stops counting.
+    func drawablesHeld(now: CFTimeInterval, within: CFTimeInterval) -> Int {
+        taken.held(now: now, within: within)
+    }
+
+    /// When a drawable last came (`CACurrentMediaTime`), 0 before any.
+    var lastAcquiredAt: CFTimeInterval { taken.lastTakenAt }
+
+    /// How many drawables the layer has.
+    var drawableCount: Int { metalLayer.maximumDrawableCount }
+
     // MARK: Encoding
 
     /// Re-encodes the rows `changed` of `rows` (every row when the grid's
@@ -951,15 +971,20 @@ final class CoreTermMetalCanvas: UIView {
         }
         lastFailure = nil
         encodePass(into: drawable.texture, buffer: buffer, rows: rows)
-        let fate = completion.map(CoreTermFrameFate.init)
+        // Held until its fate is known (B754: the pacing counts them).
+        let ledger = taken, ticket = ledger.take(at: CACurrentMediaTime())
+        let fate = CoreTermFrameFate { shown in
+            ledger.giveBack(ticket)
+            completion?(shown)
+        }
         #if !targetEnvironment(simulator)
-        if let fate { drawable.addPresentedHandler { shown in fate.resolve(shown: shown.presentedTime > 0) } }
+        drawable.addPresentedHandler { shown in fate.resolve(shown: shown.presentedTime > 0) }
         #endif
         let failure = gpuFailure
         buffer.addCompletedHandler { buffer in
             if buffer.status == .error {
                 failure.note(buffer.error.map { "\($0)" } ?? "error")
-                fate?.resolve(shown: false)
+                fate.resolve(shown: false)
             }
             #if targetEnvironment(simulator)
             // The simulator's SDK has no addPresentedHandler (iPhoneSimulator's
@@ -968,7 +993,7 @@ final class CoreTermMetalCanvas: UIView {
             // error it was told above, and only the first word counts. The
             // fate timeout (CoreTermPresentation.fateTimeout) stands as on a
             // device.
-            fate?.resolve(shown: true)
+            fate.resolve(shown: true)
             #endif
         }
         buffer.present(drawable)
