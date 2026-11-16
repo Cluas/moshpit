@@ -466,7 +466,7 @@ final class AgentActivityMonitor {
     /// session's and its window's names. Nothing for a pane the tree
     /// doesn't show (the line is then the host alone).
     private func place(connectionId: UUID, paneId: String) -> AgentPaneWhereValue {
-        let vocab = (conns[connectionId]?.connection.multiplexer ?? .tmux).vocabulary
+        let vocab = (conns[connectionId]?.connection.multiplexer ?? .tmux).words
         guard let snapshot = conns[connectionId]?.controller?.snapshot,
               let pane = snapshot.panes[paneId] else {
             return AgentPaneWhereValue(command: "", session: nil, window: nil)

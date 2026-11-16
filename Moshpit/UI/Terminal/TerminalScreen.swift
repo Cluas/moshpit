@@ -1699,9 +1699,9 @@ extension TerminalScreen {
         chrome.pill = transportKind
         chrome.state = connState
         if let plan = livePlan ?? retainedPlan {
-            let vocabulary = connection.multiplexer.vocabulary
-            chrome.crumbs = .init(plan: plan, sessionIcon: vocabulary.sessionIcon,
-                                  windowIcon: vocabulary.windowIcon, live: livePlan != nil)
+            let words = connection.multiplexer.words
+            chrome.crumbs = .init(plan: plan, sessionIcon: words.sessionIcon,
+                                  windowIcon: words.windowIcon, live: livePlan != nil)
         }
         chrome.still = stillSwitch
         if veilVisible {

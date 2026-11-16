@@ -12596,6 +12596,113 @@ public func FfiConverterTypeMissingSecret_lower(_ value: MissingSecret) -> RustB
 
 
 /**
+ * A multiplexer's words in the app's language (E7c: the screens' one
+ * list, `moshpit_ui::terminal::picker::Vocab`): what the app's own menus
+ * and prompts call its levels and how they destroy one.
+ */
+public struct MultiplexerWords: Equatable, Hashable {
+    /**
+     * "Session" / "Workspace".
+     */
+    public var session: String
+    public var sessionLower: String
+    public var sessionsLower: String
+    /**
+     * "Window" / "Tab".
+     */
+    public var window: String
+    public var windowLower: String
+    /**
+     * "Kill" / "Close".
+     */
+    public var kill: String
+    /**
+     * The SF Symbols the breadcrumb draws a session and a window with.
+     */
+    public var sessionIcon: String
+    public var windowIcon: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * "Session" / "Workspace".
+         */session: String, sessionLower: String, sessionsLower: String, 
+        /**
+         * "Window" / "Tab".
+         */window: String, windowLower: String, 
+        /**
+         * "Kill" / "Close".
+         */kill: String, 
+        /**
+         * The SF Symbols the breadcrumb draws a session and a window with.
+         */sessionIcon: String, windowIcon: String) {
+        self.session = session
+        self.sessionLower = sessionLower
+        self.sessionsLower = sessionsLower
+        self.window = window
+        self.windowLower = windowLower
+        self.kill = kill
+        self.sessionIcon = sessionIcon
+        self.windowIcon = windowIcon
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MultiplexerWords: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMultiplexerWords: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MultiplexerWords {
+        return
+            try MultiplexerWords(
+                session: FfiConverterString.read(from: &buf), 
+                sessionLower: FfiConverterString.read(from: &buf), 
+                sessionsLower: FfiConverterString.read(from: &buf), 
+                window: FfiConverterString.read(from: &buf), 
+                windowLower: FfiConverterString.read(from: &buf), 
+                kill: FfiConverterString.read(from: &buf), 
+                sessionIcon: FfiConverterString.read(from: &buf), 
+                windowIcon: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MultiplexerWords, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.session, into: &buf)
+        FfiConverterString.write(value.sessionLower, into: &buf)
+        FfiConverterString.write(value.sessionsLower, into: &buf)
+        FfiConverterString.write(value.window, into: &buf)
+        FfiConverterString.write(value.windowLower, into: &buf)
+        FfiConverterString.write(value.kill, into: &buf)
+        FfiConverterString.write(value.sessionIcon, into: &buf)
+        FfiConverterString.write(value.windowIcon, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMultiplexerWords_lift(_ buf: RustBuffer) throws -> MultiplexerWords {
+    return try FfiConverterTypeMultiplexerWords.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMultiplexerWords_lower(_ value: MultiplexerWords) -> RustBuffer {
+    return FfiConverterTypeMultiplexerWords.lower(value)
+}
+
+
+/**
  * What the picker shows (`Picker`).
  */
 public struct MuxPickerPageState: Equatable, Hashable {
@@ -30708,6 +30815,18 @@ public func herdrStampInterval(pushActive: Bool) -> Double  {
 })
 }
 /**
+ * herdr's words (`herdr`), else tmux's (a plain shell's too), in
+ * `locale` (the app's language, as its screens get it).
+ */
+public func multiplexerWords(herdr: Bool, locale: String) -> MultiplexerWords  {
+    return try!  FfiConverterTypeMultiplexerWords_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_multiplexer_words(
+        FfiConverterBool.lower(herdr),
+        FfiConverterString.lower(locale),$0
+    )
+})
+}
+/**
  * What the probe's output says the host has.
  */
 public func hostCapabilitiesParse(output: String) -> HostCapabilitiesValue  {
@@ -31464,6 +31583,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval() != 24183) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_multiplexer_words() != 55286) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_host_capabilities_parse() != 1462) {

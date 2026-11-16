@@ -58,7 +58,7 @@ extension MuxPickerState {
         let snapshot = controller.snapshot
         let hooks = controller.agentHooks
         let herdr = controller.multiplexer == .herdr
-        let vocab = controller.multiplexer.vocabulary
+        let vocab = controller.multiplexer.words
         var panes: [(pane: PaneInfo, place: String)] = []
         for session in snapshot.sortedSessions {
             for window in snapshot.windows(inSession: session.id) {

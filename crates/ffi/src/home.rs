@@ -269,3 +269,40 @@ mod tests {
         sessions.disconnect(id);
     }
 }
+
+/// A multiplexer's words in the app's language (E7c: the screens' one
+/// list, `moshpit_ui::terminal::picker::Vocab`): what the app's own menus
+/// and prompts call its levels and how they destroy one.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MultiplexerWords {
+    /// "Session" / "Workspace".
+    pub session: String,
+    pub session_lower: String,
+    pub sessions_lower: String,
+    /// "Window" / "Tab".
+    pub window: String,
+    pub window_lower: String,
+    /// "Kill" / "Close".
+    pub kill: String,
+    /// The SF Symbols the breadcrumb draws a session and a window with.
+    pub session_icon: String,
+    pub window_icon: String,
+}
+
+/// herdr's words (`herdr`), else tmux's (a plain shell's too), in
+/// `locale` (the app's language, as its screens get it).
+#[uniffi::export]
+pub fn multiplexer_words(herdr: bool, locale: String) -> MultiplexerWords {
+    use moshpit_ui::terminal::{model::Mux, picker::Vocab};
+    let vocab = Vocab::in_locale(if herdr { Mux::Herdr } else { Mux::Tmux }, &locale);
+    MultiplexerWords {
+        session: vocab.session,
+        session_lower: vocab.session_lower,
+        sessions_lower: vocab.sessions_lower,
+        window: vocab.window,
+        window_lower: vocab.window_lower,
+        kill: vocab.kill,
+        session_icon: vocab.session_icon.to_owned(),
+        window_icon: vocab.window_icon.to_owned(),
+    }
+}

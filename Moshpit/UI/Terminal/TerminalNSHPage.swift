@@ -718,14 +718,14 @@ struct TerminalNSHChrome: Equatable {
         if let ground { message["ground"] = ground }
         if let crumbs { message["crumbs"] = Self.json(crumbs) }
         if let empty {
-            let vocabulary = empty.mux.vocabulary
+            let words = empty.mux.words
             message["empty"] = [
                 "mux": empty.mux.rawValue,
                 "missing": empty.missing,
                 "settled": empty.settled,
-                "session": vocabulary.session,
-                "sessionLower": vocabulary.sessionLower,
-                "sessionsLower": vocabulary.sessionPluralLower,
+                "session": words.session,
+                "sessionLower": words.sessionLower,
+                "sessionsLower": words.sessionsLower,
             ] as [String: Any]
         }
         if let banner { message["banner"] = Self.json(banner) }

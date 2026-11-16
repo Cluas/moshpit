@@ -177,3 +177,47 @@ struct AgentHook: Equatable, Sendable {
     var command: String?
     var title: String?
 }
+
+// MARK: - The multiplexer's words (E7c)
+
+extension Multiplexer {
+    /// The multiplexer's words in the app's language, the screens' one list
+    /// (`ui/src/terminal/picker.rs` `Vocab`, through the core): herdr's
+    /// workspace, tab and Close; tmux's session, window and Kill (a plain
+    /// shell's too, never shown).
+    var words: MultiplexerWords {
+        multiplexerWords(herdr: self == .herdr, locale: NSHScreenParams.locale)
+    }
+}
+
+extension WindowInfo {
+    /// The row/crumb title for a window, saying each thing once.
+    ///
+    /// tmux names windows after their command, so "2: logs" carries two facts.
+    /// herdr names tabs after their own number by default, and "1: 1" is the
+    /// same fact twice — a tree of five of those is a wall of digits. Those
+    /// (and the pathological empty name) render as the multiplexer's own word:
+    /// "Tab 1" / "Window 1".
+    func displayTitle(_ words: MultiplexerWords) -> String {
+        if name.isEmpty || name == String(index) {
+            return "\(words.window) \(index)"
+        }
+        return "\(index): \(name)"
+    }
+}
+
+extension TmuxSnapshot {
+    /// A session row's label, disambiguated when the name alone isn't one.
+    ///
+    /// herdr labels a workspace after its cwd, so four workspaces sitting at
+    /// `~` all read "~" — identical rows with no way to tell which is which
+    /// short of tapping through. When a name is shared, the raw id ("w4") is
+    /// appended: it's what `herdr` CLI addressing uses, so it's a handle, not
+    /// decoration. tmux never hits this branch — it refuses duplicate session
+    /// names outright.
+    func sessionDisplayName(_ session: SessionInfo) -> String {
+        let twins = sessions.values.lazy.filter { $0.name == session.name }
+        guard twins.count > 1 else { return session.name }
+        return "\(session.name) · \(session.id)"
+    }
+}

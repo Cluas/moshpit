@@ -256,7 +256,7 @@ struct HomeNSHTests {
         let titles = { (key: String) -> [String] in
             (menus[key]?() ?? []).flatMap { ($0 as? UIMenu)?.children ?? [$0] }.map(\.title)
         }
-        let tmux = Multiplexer.tmux.vocabulary
+        let tmux = Multiplexer.tmux.words
         #expect(titles("home-head-\(id)") == [String(localized: "Open"), String(localized: "Edit…"),
                                               String(localized: "Disconnect"),
                                               String(localized: "Delete…")])
@@ -265,14 +265,14 @@ struct HomeNSHTests {
                                                                 String(localized: "Delete…")])
         #expect(titles("home-session-\(id)-$1") == [
             String(localized: "Rename"), String(localized: "New \(tmux.window)"),
-            String(localized: "\(tmux.killVerb) \(tmux.session)"),
+            String(localized: "\(tmux.kill) \(tmux.session)"),
         ])
         #expect(titles("home-window-\(id)-@2") == [
             String(localized: "Rename"), String(localized: "New Pane"),
-            String(localized: "\(tmux.killVerb) \(tmux.window)"),
-            String(localized: "\(tmux.killVerb) \(String(localized: "Pane"))"),
+            String(localized: "\(tmux.kill) \(tmux.window)"),
+            String(localized: "\(tmux.kill) \(String(localized: "Pane"))"),
         ])
-        #expect(titles("home-pane-\(id)-%3") == [String(localized: "\(tmux.killVerb) \(String(localized: "Pane"))")])
+        #expect(titles("home-pane-\(id)-%3") == [String(localized: "\(tmux.kill) \(String(localized: "Pane"))")])
         #expect(menus["home-session-\(Self.edge.uuidString)-$1"] == nil, "a saved host has no tree")
         #expect(HomeNSHMenus.corners(for: Self.rows())["home-window-\(id)-@2"] == 7)
         var herdr = Self.rows()[0]

@@ -2469,6 +2469,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_theme_editor_message(RustBuffer theme, int
 double uniffi_moshpit_ffi_fn_func_herdr_stamp_interval(int8_t push_active, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
+RustBuffer uniffi_moshpit_ffi_fn_func_multiplexer_words(int8_t herdr, RustBuffer locale, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PARSE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PARSE
 RustBuffer uniffi_moshpit_ffi_fn_func_host_capabilities_parse(RustBuffer output, RustCallStatus *_Nonnull out_status
@@ -3260,6 +3265,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_theme_editor_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 uint16_t uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_MULTIPLEXER_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_MULTIPLEXER_WORDS
+uint16_t uniffi_moshpit_ffi_checksum_func_multiplexer_words(void
     
 );
 #endif

@@ -259,7 +259,7 @@ final class MuxPickerModel {
     static func menus(for state: MuxPickerState,
                       perform: @escaping (MuxPickerAction, String) -> Void) -> [String: () -> [UIMenuElement]] {
         guard state.kind != .panes else { return [:] }
-        let vocab = state.mux.vocabulary
+        let vocab = state.mux.words
         let noun = state.kind == .sessions ? vocab.session : vocab.window
         var menus: [String: () -> [UIMenuElement]] = [:]
         for row in state.rows {
@@ -269,7 +269,7 @@ final class MuxPickerModel {
                     UIAction(title: String(localized: "Rename"), image: UIImage(systemName: "pencil")) { _ in
                         perform(.rename, id)
                     },
-                    UIAction(title: String(localized: "\(vocab.killVerb) \(noun)"),
+                    UIAction(title: String(localized: "\(vocab.kill) \(noun)"),
                              image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
                         perform(.kill, id)
                     },
