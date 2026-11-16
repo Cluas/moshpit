@@ -190,16 +190,32 @@ pub fn assert_bar_follows_scrolling(app: &mut Headless, list: &str, glass: bool)
 /// last set.
 type Native = (String, HashMap<String, serde_json::Value>);
 
-/// The host's native components on a screen, by their container's node,
-/// and how far each view's touch area reaches past its bounds (its
-/// `hit_slop`, which the layout's bounds leave out).
+/// The host's native components on a screen, by their container's node;
+/// how far each view's touch area reaches past its bounds (its `hit_slop`,
+/// which the layout's bounds leave out); and each view's opacity and its
+/// background's alpha (its `ViewStyle`), which say what is seen.
 #[derive(Clone, Default)]
 pub struct Natives(
     Arc<Mutex<HashMap<nsh_core::NodeId, Native>>>,
     Arc<Mutex<HashMap<nsh_core::NodeId, nsh_core::EdgeInsets>>>,
+    Arc<Mutex<HashMap<nsh_core::NodeId, (f32, u8)>>>,
 );
 
 impl Natives {
+    /// `node`'s own opacity (1 until a style says otherwise).
+    pub fn opacity(&self, node: nsh_core::NodeId) -> f32 {
+        self.2.lock().unwrap().get(&node).map_or(1.0, |(o, _)| *o)
+    }
+
+    /// Whether `node` paints a background nothing shows through.
+    pub fn opaque_background(&self, node: nsh_core::NodeId) -> bool {
+        self.2
+            .lock()
+            .unwrap()
+            .get(&node)
+            .is_some_and(|(_, a)| *a == 0xff)
+    }
+
     /// How far a touch on `node` may land past its bounds, each side.
     pub fn hit_slop(&self, node: nsh_core::NodeId) -> nsh_core::EdgeInsets {
         self.1
@@ -271,8 +287,14 @@ impl Natives {
     fn apply(&self, batch: &nsh_core::MountBatch) {
         let mut natives = self.0.lock().unwrap();
         let mut slops = self.1.lock().unwrap();
+        let mut looks = self.2.lock().unwrap();
         for item in &batch.items {
             match item {
+                nsh_core::MountItem::ViewStyle { id, style } => {
+                    // RGBA, the alpha in the low byte.
+                    let alpha = (style.background_color.0 & 0xff) as u8;
+                    looks.insert(*id, (style.opacity, alpha));
+                }
                 nsh_core::MountItem::ViewProps { id, props } => {
                     slops.insert(*id, props.hit_slop);
                 }
@@ -292,6 +314,7 @@ impl Natives {
                 nsh_core::MountItem::Delete { id } => {
                     natives.remove(id);
                     slops.remove(id);
+                    looks.remove(id);
                 }
                 _ => {}
             }

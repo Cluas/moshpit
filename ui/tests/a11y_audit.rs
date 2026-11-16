@@ -515,3 +515,20 @@ fn a_short_bar_button_is_44_pt_wide_to_touch() {
         channel.close();
     }
 }
+
+/// B835, B836: no text is drawn over another, in every language, at every
+/// size. The audit took what no one sees for what is drawn: the terminal
+/// bar's breadcrumb measures itself with a copy at no opacity (it read as
+/// "trainer" over "claude", "›" over "trainer"), and the pane overview,
+/// opaque and as wide as the screen, is drawn over the terminal (the
+/// backstage's "3 / 4" read as over the overview's "New window").
+#[test]
+fn no_text_is_drawn_over_another() {
+    none(
+        "texts over one another",
+        findings()
+            .iter()
+            .filter(|f| f.what.contains(" overlaps "))
+            .collect(),
+    );
+}

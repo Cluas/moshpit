@@ -156,6 +156,37 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
     };
     let right = |b: &Bounds<Points>| b.origin.x.0 + b.size.width.0;
 
+    // What no one sees: a view at no opacity (it, or a view around it: a
+    // measuring copy), or one a later layer as wide as the screen, with a
+    // background nothing shows through, covers whole (a screen drawn over
+    // another: the pane overview over the terminal). The views are in tree
+    // order, which is the order they are drawn in, so a covering view
+    // comes after what it covers. A smaller view drawn over a text still
+    // counts as hiding it: that is for the audit to find.
+    let opacity = |node: &LayoutNode| {
+        ancestors(node)
+            .iter()
+            .fold(natives.opacity(node.id), |o, a| o * natives.opacity(a.id))
+    };
+    let index: HashMap<NodeId, usize> = nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
+    let contains = |outer: &Bounds<Points>, inner: &Bounds<Points>| {
+        outer.origin.x.0 <= inner.origin.x.0 + 0.5
+            && outer.origin.y.0 <= inner.origin.y.0 + 0.5
+            && right(outer) + 0.5 >= right(inner)
+            && outer.origin.y.0 + outer.size.height.0 + 0.5
+                >= inner.origin.y.0 + inner.size.height.0
+    };
+    let unseen = |node: &LayoutNode| {
+        opacity(node) <= 0.01
+            || nodes[index[&node.id] + 1..].iter().any(|over| {
+                !over.hidden
+                    && over.bounds.size.width.0 >= width - 0.5
+                    && natives.opaque_background(over.id)
+                    && opacity(over) >= 0.99
+                    && contains(&over.bounds, &node.bounds)
+            })
+    };
+
     for node in nodes.iter().filter(|n| shown(n) && !skipped(n)) {
         let what = describe(node);
         let presses = screen.press_target(&format!("view:{}", node.id)) == Ok(Some(node.id));
@@ -182,6 +213,7 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
                 ));
             }
         }
+        let seen = !unseen(node);
         if presses || node.text.is_some() {
             if let Some(around) = empty_around(node) {
                 found.push(format!(
@@ -189,7 +221,8 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
                     describe(around)
                 ));
             }
-            if !sideways(node)
+            if seen
+                && !sideways(node)
                 && (node.bounds.origin.x.0 < -0.5 || right(&node.bounds) > width + 0.5)
             {
                 found.push(format!(
@@ -199,7 +232,9 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
                 ));
             }
         }
-        let Some(text) = &node.text else { continue };
+        let Some(text) = node.text.as_ref().filter(|_| seen) else {
+            continue;
+        };
         let attributed = &text.text;
         if attributed.text.trim().is_empty() {
             continue;
@@ -260,6 +295,7 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
         .filter(|n| {
             shown(n)
                 && !skipped(n)
+                && !unseen(n)
                 && n.text
                     .as_ref()
                     .is_some_and(|t| !t.text.text.trim().is_empty())
