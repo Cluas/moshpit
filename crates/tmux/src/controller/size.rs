@@ -1179,10 +1179,32 @@ impl Controller {
                 continue;
             };
             if window_size(&then[3]) != window_size(&now[3]) {
-                self.note_pristine_layout(window, then);
+                self.file_earlier_layout(window, then, &now[3]);
                 self.note_ours(window, &now[3]);
             }
         }
+    }
+
+    /// `then`: a read taken before something resized `window`, filed as its
+    /// record. B871: a record the pin's own read took, reaching tmux after
+    /// the renderer's move or attach, holds the squash (`now`'s width)
+    /// instead: the read before is the window's.
+    fn file_earlier_layout(&mut self, window: &str, then: &[String], now: &str) {
+        let stale = self
+            .size
+            .pristine_layouts
+            .get(window)
+            .is_some_and(|record| {
+                // Widths: the status line makes rows differ for nothing.
+                let cols = |layout: &str| window_size(layout).map(|size| size.0);
+                cols(&record.layout) == cols(now) && cols(&record.layout) != cols(&then[3])
+            });
+        if stale && let Some(record) = self.size.pristine_layouts.remove(window) {
+            self.note_pristine_layout(window, then);
+            self.note_ours(window, &record.layout);
+            return;
+        }
+        self.note_pristine_layout(window, then);
     }
 
     /// The second read, when a first one went out.
@@ -1223,7 +1245,7 @@ impl Controller {
                 continue;
             };
             if window_size(&then[3]) != window_size(&now[3]) {
-                self.note_pristine_layout(window, then);
+                self.file_earlier_layout(window, then, &now[3]);
                 self.note_ours(window, &now[3]);
             }
         }
