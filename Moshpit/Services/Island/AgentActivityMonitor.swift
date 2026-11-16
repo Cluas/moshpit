@@ -264,6 +264,7 @@ final class AgentActivityMonitor {
         if conns.isEmpty {
             sweepTimer?.invalidate()
             sweepTimer = nil
+            lastSweep = nil
         }
         let now = self.now
         drive { $0.untrack(conn: connectionId.uuidString, keepWaitingCards: keepWaitingCards, now: now) }
@@ -339,9 +340,29 @@ final class AgentActivityMonitor {
         }
     }
 
+    /// When the sweep last ran, by the wall's clock — never the test's: a
+    /// script's clock jumps by the minute between two sweeps, a suspension
+    /// is time that really passed (B822).
+    @ObservationIgnored private var lastSweep: Date?
+
+    /// A sweep this much later than the last one: the app was suspended
+    /// (iOS freezes it in the background, its timer and its polls with it;
+    /// the wall's clock runs on through the device's sleep).
+    static let suspendedAfter: TimeInterval = sweepInterval * 3
+
     /// Every two seconds: a hook poll for every tracked controller, and the
     /// machine's sweep with the pane on screen.
     func sweep() {
+        // Back from a suspension (B822): what the polls last showed may not
+        // hold any more, so a question waits for its connection's next poll
+        // before it is announced. The first sweep back used to announce it on
+        // the poll from before, sound and all, though it was answered at the
+        // desk meanwhile.
+        let started = Date()
+        if let last = lastSweep, started.timeIntervalSince(last) > Self.suspendedAfter {
+            drive { $0.resumed() }
+        }
+        lastSweep = started
         for (id, ref) in conns {
             // The link (B662): a session reconnecting or offline pauses its
             // agents in the machine, which no longer takes the polls'

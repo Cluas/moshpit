@@ -1073,6 +1073,12 @@ public protocol AgentMachineProtocol: AnyObject, Sendable {
     func output(conn: String, pane: String, place: AgentPaneWhereValue, now: Double)  -> [AgentEffectValue]
     
     /**
+     * The app was suspended and is back (B822): a question its stamps
+     * raised waits for its connection's next poll before it is announced.
+     */
+    func resumed()  -> [AgentEffectValue]
+    
+    /**
      * The switches as they are now, and what changing them does: the
      * island ended when the Live Activity is switched off (B436).
      */
@@ -1300,6 +1306,18 @@ open func output(conn: String, pane: String, place: AgentPaneWhereValue, now: Do
         FfiConverterString.lower(pane),
         FfiConverterTypeAgentPaneWhereValue_lower(place),
         FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+    /**
+     * The app was suspended and is back (B822): a question its stamps
+     * raised waits for its connection's next poll before it is announced.
+     */
+open func resumed() -> [AgentEffectValue]  {
+    return try!  FfiConverterSequenceTypeAgentEffectValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_agentmachine_resumed(
+            self.uniffiCloneHandle(),$0
     )
 })
 }
@@ -31579,6 +31597,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_output() != 7407) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_agentmachine_resumed() != 61336) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_set_settings() != 32826) {

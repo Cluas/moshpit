@@ -334,6 +334,17 @@ pub struct Monitor {
     /// Connections whose link is down, since when (B662).
     down: BTreeMap<String, f64>,
     posted_attention: BTreeSet<Key>,
+    /// Questions announced that the waiting set couldn't hold (B821), with
+    /// when: no set (no shared container) or a write that failed. Their
+    /// card is drawn from here, as it would be from the set.
+    unkept: BTreeMap<Key, f64>,
+    /// Connections no poll has come in for since the platform was
+    /// suspended ([`Monitor::resumed`], B822): what they last showed may
+    /// have changed.
+    unconfirmed: BTreeSet<String>,
+    /// Questions whose grace ran out while their connection was
+    /// unconfirmed: waiting for its poll, noted once.
+    awaiting_poll: BTreeSet<Key>,
     /// Connections a poll has come in for since they were tracked: what
     /// stands there can be told.
     polled: BTreeSet<String>,
@@ -350,10 +361,10 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    /// `announced` is the record as stored; what is a day old, or from the
-    /// future, is dropped. `standing` and `finishes` are the files shared
-    /// with the notification service; none (no shared container) means
-    /// nothing can be standing (every prompt an edge) and every long finish
+    /// `announced` is the record as stored; what is a day old is dropped.
+    /// `standing` and `finishes` are the files shared with the notification
+    /// service; none (no shared container) means every prompt is an edge,
+    /// carded from what this app announced (B821), and every long finish
     /// rings.
     pub fn new(
         tunables: Tunables,
@@ -382,6 +393,9 @@ impl Monitor {
             pending: BTreeMap::new(),
             down: BTreeMap::new(),
             posted_attention: BTreeSet::new(),
+            unkept: BTreeMap::new(),
+            unconfirmed: BTreeSet::new(),
+            awaiting_poll: BTreeSet::new(),
             polled: BTreeSet::new(),
             unjudged: BTreeSet::new(),
             headline_offset: 0,
@@ -399,7 +413,7 @@ impl Monitor {
     /// stored one: every question still standing announced again after a
     /// reboot, its earlier card never withdrawn. The stored episodes join the
     /// ones this process recorded — its own win, being newer — what is a
-    /// day old or from the future is dropped, and the record is saved. A
+    /// day old is dropped, and the record is saved. A
     /// question standing now that the stored record names is the one
     /// announced before: its announcement is called off, and its card is
     /// ours to withdraw once it is answered.
@@ -517,6 +531,7 @@ impl Monitor {
         self.trees.remove(conn);
         self.polled.remove(conn);
         self.unjudged.remove(conn);
+        self.unconfirmed.remove(conn);
         self.panes.retain(|key, _| key.0 != conn);
         self.pending.retain(|key, _| key.0 != conn);
         self.sync(now);
@@ -651,6 +666,18 @@ impl Monitor {
             self.effects.push(Effect::Note(format!("link down: {conn} — its agents paused")));
         }
         self.sync(now);
+    }
+
+    /// The platform was suspended, and is back (B822): its sweeps and its
+    /// polls stopped meanwhile — iOS freezes the app in the background — so
+    /// what each connection last showed may no longer hold. Until a poll
+    /// for it comes in, a question its stamps raised is not announced: the
+    /// first sweep back used to announce what the last poll before the
+    /// suspension showed, sound and all, though it was answered at the desk
+    /// meanwhile, and withdraw it a poll later.
+    pub fn resumed(&mut self) {
+        self.unconfirmed = self.conns.keys().cloned().collect();
+        self.effects.push(Effect::Note("resumed: announcements wait for each connection's poll".to_owned()));
     }
 
     /// Rotate which agent the pill shows.
@@ -818,10 +845,12 @@ impl Monitor {
         if !self.conns.contains_key(conn) {
             return;
         }
-        // A poll came: the link is up (B662).
+        // A poll came: the link is up (B662), and what it shows is current
+        // (B822).
         if self.down.contains_key(conn) {
             self.link(conn, true, now);
         }
+        self.unconfirmed.remove(conn);
         let hold = stamp_hold(interval, self.tunables.stamp_margin);
         let mut changed = false;
         let mut answered: BTreeMap<String, f64> = BTreeMap::new();
@@ -885,6 +914,17 @@ impl Monitor {
             // The earliest start known: a stamp can date the turn before
             // what the phone saw of it (a bell's "needs you" first).
             let turn_since = in_turn(new_state).then(|| turn_began.map_or(since, |began| began.min(since)));
+            // A herdr question the app dated by the phone, not yet announced,
+            // that the push has since recorded (B824): the push's date is the
+            // question's (B592), whichever came first. The host's push comes
+            // after the host's grace, inside the app's, and the app's
+            // announcement then counted as another question and rang again.
+            let pushed = if hook.since.is_none() && new_state == AgentState::Attention {
+                self.pushed_since(&key, now)
+            } else {
+                None
+            };
+            let announced_episode = self.announced.get(&key).copied();
             match self.panes.get_mut(&key) {
                 Some(p) => {
                     // Taking a pane over is a new episode when the stamp
@@ -898,12 +938,27 @@ impl Monitor {
                         || (!p.hook_owned && hook.since.is_some())
                         || (new_state == AgentState::Attention
                             && hook.since.is_some_and(|stamped| stamped > p.since));
+                    let dated_by_push = pushed.filter(|pushed| {
+                        !state_changed
+                            && p.state == AgentState::Attention
+                            && *pushed != p.since
+                            && announced_episode != Some(p.since)
+                    });
                     p.command = command.clone();
                     p.place = hook.place.clone();
                     p.detail = title.clone();
                     p.state = new_state;
                     if state_changed {
                         p.since = since;
+                    } else if let Some(pushed) = dated_by_push {
+                        // Its grace runs on as it was: the question has
+                        // waited since the app first saw it.
+                        if let Some((episode, _)) = self.pending.get_mut(&key)
+                            && *episode == p.since
+                        {
+                            *episode = pushed;
+                        }
+                        p.since = pushed;
                     }
                     p.visible = true;
                     p.hook_owned = true;
@@ -1199,17 +1254,34 @@ impl Monitor {
             .map(|(key, (episode, at))| (*at, key.clone(), *episode))
             .collect();
         due.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-        for (_, key, episode) in due {
+        for (at, key, episode) in due {
             self.pending.remove(&key);
             // The window did its job if the question is gone or superseded.
             let Some(p) = self.panes.get(&key).filter(|p| p.state == AgentState::Attention && p.since == episode)
             else {
+                self.awaiting_poll.remove(&key);
                 self.effects.push(Effect::Note(format!(
                     "announce cancelled: pane {} left the episode within the grace",
                     key.1
                 )));
                 continue;
             };
+            // A stamp's question waits, after a suspension, for the poll that
+            // says it still stands (B822). An app suspended mid-grace swept on
+            // its return before any poll was in: what its last poll showed,
+            // maybe answered at the desk meanwhile, was announced, sound and
+            // all, as the app came back, and withdrawn a poll later.
+            if p.last_hook_state == Some(AgentState::Attention) && self.unconfirmed.contains(&key.0) {
+                if self.awaiting_poll.insert(key.clone()) {
+                    self.effects.push(Effect::Note(format!(
+                        "announce waits: pane {} — no poll since the app was suspended",
+                        key.1
+                    )));
+                }
+                self.pending.insert(key, (episode, at));
+                continue;
+            }
+            self.awaiting_poll.remove(&key);
             let (command, detail) = (p.command.clone(), p.detail.clone());
             self.announced.insert(key.clone(), episode);
             self.save_announced();
@@ -1245,22 +1317,39 @@ impl Monitor {
         if !self.settings.notifications {
             return;
         }
-        let edge = match &self.standing {
-            Some(standing) => standing.note_standing(
-                &key.0,
-                Entry {
-                    pane: key.1.clone(),
-                    agent: Some(display_command(command).to_owned()),
-                    title: detail,
-                    location: Some(self.place(key)),
-                    since: episode as i64,
-                    recorded_at: Date::from_unix(now),
-                    lifetime: Some(LIFETIME_SECONDS),
-                },
-                Date::from_unix(now),
-            ),
-            None => true,
+        let at = Date::from_unix(now);
+        let (edge, kept) = match &self.standing {
+            Some(standing) => {
+                let edge = standing.note_standing(
+                    &key.0,
+                    Entry {
+                        pane: key.1.clone(),
+                        agent: Some(display_command(command).to_owned()),
+                        title: detail,
+                        location: Some(self.place(key)),
+                        since: episode as i64,
+                        recorded_at: at,
+                        lifetime: Some(LIFETIME_SECONDS),
+                    },
+                    at,
+                );
+                let kept = standing
+                    .standing(&key.0, at)
+                    .iter()
+                    .any(|entry| entry.pane == key.1 && entry.since == episode as i64);
+                (edge, kept)
+            }
+            None => (true, false),
         };
+        if kept {
+            self.unkept.remove(key);
+        } else {
+            self.effects.push(Effect::Note(format!(
+                "waiting set can't hold pane {} — carded from what this app announced",
+                key.1
+            )));
+            self.unkept.insert(key.clone(), now);
+        }
         self.posted_attention.insert(key.clone());
         self.render_digest(&key.0, edge, now);
     }
@@ -1269,11 +1358,7 @@ impl Monitor {
     /// share, from the newest standing entry.
     fn render_digest(&mut self, conn: &str, edge: bool, now: f64) {
         let id = format!("{ATTENTION_CARD}{conn}");
-        let standing = self
-            .standing
-            .as_ref()
-            .map(|file| file.standing(conn, Date::from_unix(now)))
-            .unwrap_or_default();
+        let standing = self.waiting(conn, now);
         let Some(newest) = standing.first() else {
             self.effects.push(Effect::Withdraw(id));
             return;
@@ -1287,6 +1372,43 @@ impl Monitor {
             connection_id: conn.to_owned(),
             pane_id: newest.pane.clone(),
         }));
+    }
+
+    /// What waits on `conn`, newest first: the waiting set's entries, and
+    /// the questions this app announced that the set couldn't hold (B821).
+    /// The card was drawn from the set alone, so with no set — no shared
+    /// container — or a write that failed, an announced question withdrew
+    /// the card it should have posted.
+    fn waiting(&mut self, conn: &str, now: f64) -> Vec<Entry> {
+        let mut entries = self
+            .standing
+            .as_ref()
+            .map(|file| file.standing(conn, Date::from_unix(now)))
+            .unwrap_or_default();
+        let posted = &self.posted_attention;
+        self.unkept.retain(|key, _| posted.contains(key));
+        let unkept: Vec<Entry> = self
+            .unkept
+            .iter()
+            .filter(|(key, _)| key.0 == conn && !entries.iter().any(|entry| entry.pane == key.1))
+            .filter_map(|(key, at)| {
+                let p = self.panes.get(key)?;
+                Some(Entry {
+                    pane: key.1.clone(),
+                    agent: Some(display_command(&p.command).to_owned()),
+                    title: p.detail.clone(),
+                    location: Some(self.place(key)),
+                    since: p.since as i64,
+                    recorded_at: Date::from_unix(*at),
+                    lifetime: Some(LIFETIME_SECONDS),
+                })
+            })
+            .collect();
+        if !unkept.is_empty() {
+            entries.extend(unkept);
+            entries.sort_by(|a, b| b.recorded_at.partial_cmp(&a.recorded_at).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        entries
     }
 
     /// The finish card: a long turn rings once between this card and the
@@ -1767,10 +1889,13 @@ pub fn needs_sending(state: &IslandState, last: Option<&(IslandState, f64)>, now
 }
 
 /// The announced-episode record as stored, without what is older than
-/// `ttl` or more than a minute in the future.
+/// `ttl`. An episode is dated by the host's clock (its `@moshpit_since`),
+/// so the phone's can't say one is "from the future" (B823): a host ahead
+/// of the phone by more than a minute had every entry dropped as such at
+/// launch, and each question still waiting was announced, and rang, again.
 pub fn decode_announced(raw: &BTreeMap<String, f64>, now: f64, ttl: f64) -> BTreeMap<String, f64> {
     raw.iter()
-        .filter(|(_, at)| **at <= now + 60.0 && now - **at <= ttl)
+        .filter(|(_, at)| now - **at <= ttl)
         .map(|(key, at)| (key.clone(), *at))
         .collect()
 }
