@@ -224,6 +224,49 @@ fn a_question_is_carded_when_the_waiting_set_cannot_hold_it() {
     }
 }
 
+/// B822: after a suspension, a question waits for the poll that says it
+/// still stands. The app suspended mid-grace swept on its return before any
+/// poll had come in: the question its last poll showed, answered at the
+/// desk meanwhile, was announced with a sound as the app came back, and
+/// withdrawn a poll later.
+#[test]
+fn after_a_suspension_a_question_waits_for_the_poll_that_says_it_stands() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.poll("%1", "attention", T0, T0 + 1.0);
+    bench.monitor.sweep(None, T0 + 3.0);
+    // Suspended for ten minutes; back, it sweeps before the poll answers.
+    bench.monitor.resumed();
+    bench.monitor.sweep(None, T0 + 600.0);
+    let effects = bench.monitor.take_effects();
+    assert!(posts(&effects).is_empty(), "announced on what the poll before the suspension showed: {effects:?}");
+    // The poll says it was answered: nothing, ever.
+    bench.poll("%1", "working", T0 + 400.0, T0 + 601.0);
+    bench.monitor.sweep(None, T0 + 602.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty());
+
+    // Still waiting, by the poll that came in: announced then, once.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.poll("%1", "attention", T0, T0 + 1.0);
+    bench.monitor.resumed();
+    bench.monitor.sweep(None, T0 + 600.0);
+    bench.monitor.sweep(None, T0 + 602.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty());
+    bench.poll("%1", "attention", T0, T0 + 603.0);
+    bench.monitor.sweep(None, T0 + 604.0);
+    let effects = bench.monitor.take_effects();
+    assert_eq!(posts(&effects).len(), 1, "{effects:?}");
+    bench.monitor.sweep(None, T0 + 606.0);
+    assert!(posts(&bench.monitor.take_effects()).is_empty(), "once");
+
+    // A bell's question has no poll to wait for (B663): announced as before.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    let place = PaneWhere { command: "claude".into(), ..PaneWhere::default() };
+    bench.monitor.bell(CONN, "%2", place, T0 + 1.0);
+    bench.monitor.resumed();
+    bench.monitor.sweep(None, T0 + 600.0);
+    assert_eq!(posts(&bench.monitor.take_effects()).len(), 1);
+}
+
 /// B823: the record names episodes by the host's clock, and a host ahead
 /// of the phone by more than a minute had every one of its entries read as
 /// "from the future" and dropped at launch: each question still waiting

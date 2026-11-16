@@ -346,6 +346,12 @@ impl AgentMachine {
         self.drive(|monitor| monitor.cycle_headline(now))
     }
 
+    /// The app was suspended and is back (B822): a question its stamps
+    /// raised waits for its connection's next poll before it is announced.
+    pub fn resumed(&self) -> Vec<AgentEffectValue> {
+        self.drive(|monitor| monitor.resumed())
+    }
+
     /// The agent cards the notification center holds, by identifier, and
     /// the saved connections' ids (none while they can't be told): a card
     /// nothing stands behind any more is withdrawn (B433).

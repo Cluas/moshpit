@@ -592,6 +592,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_link(uint64_t ptr, RustBuff
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_output(uint64_t ptr, RustBuffer conn, RustBuffer pane, RustBuffer place, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_resumed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(uint64_t ptr, RustBuffer settings, RustCallStatus *_Nonnull out_status
@@ -3586,6 +3591,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_link(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_output(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_resumed(void
     
 );
 #endif

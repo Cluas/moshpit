@@ -338,6 +338,13 @@ pub struct Monitor {
     /// when: no set (no shared container) or a write that failed. Their
     /// card is drawn from here, as it would be from the set.
     unkept: BTreeMap<Key, f64>,
+    /// Connections no poll has come in for since the platform was
+    /// suspended ([`Monitor::resumed`], B822): what they last showed may
+    /// have changed.
+    unconfirmed: BTreeSet<String>,
+    /// Questions whose grace ran out while their connection was
+    /// unconfirmed: waiting for its poll, noted once.
+    awaiting_poll: BTreeSet<Key>,
     /// Connections a poll has come in for since they were tracked: what
     /// stands there can be told.
     polled: BTreeSet<String>,
@@ -387,6 +394,8 @@ impl Monitor {
             down: BTreeMap::new(),
             posted_attention: BTreeSet::new(),
             unkept: BTreeMap::new(),
+            unconfirmed: BTreeSet::new(),
+            awaiting_poll: BTreeSet::new(),
             polled: BTreeSet::new(),
             unjudged: BTreeSet::new(),
             headline_offset: 0,
@@ -522,6 +531,7 @@ impl Monitor {
         self.trees.remove(conn);
         self.polled.remove(conn);
         self.unjudged.remove(conn);
+        self.unconfirmed.remove(conn);
         self.panes.retain(|key, _| key.0 != conn);
         self.pending.retain(|key, _| key.0 != conn);
         self.sync(now);
@@ -656,6 +666,18 @@ impl Monitor {
             self.effects.push(Effect::Note(format!("link down: {conn} — its agents paused")));
         }
         self.sync(now);
+    }
+
+    /// The platform was suspended, and is back (B822): its sweeps and its
+    /// polls stopped meanwhile — iOS freezes the app in the background — so
+    /// what each connection last showed may no longer hold. Until a poll
+    /// for it comes in, a question its stamps raised is not announced: the
+    /// first sweep back used to announce what the last poll before the
+    /// suspension showed, sound and all, though it was answered at the desk
+    /// meanwhile, and withdraw it a poll later.
+    pub fn resumed(&mut self) {
+        self.unconfirmed = self.conns.keys().cloned().collect();
+        self.effects.push(Effect::Note("resumed: announcements wait for each connection's poll".to_owned()));
     }
 
     /// Rotate which agent the pill shows.
@@ -823,10 +845,12 @@ impl Monitor {
         if !self.conns.contains_key(conn) {
             return;
         }
-        // A poll came: the link is up (B662).
+        // A poll came: the link is up (B662), and what it shows is current
+        // (B822).
         if self.down.contains_key(conn) {
             self.link(conn, true, now);
         }
+        self.unconfirmed.remove(conn);
         let hold = stamp_hold(interval, self.tunables.stamp_margin);
         let mut changed = false;
         let mut answered: BTreeMap<String, f64> = BTreeMap::new();
@@ -1204,17 +1228,34 @@ impl Monitor {
             .map(|(key, (episode, at))| (*at, key.clone(), *episode))
             .collect();
         due.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-        for (_, key, episode) in due {
+        for (at, key, episode) in due {
             self.pending.remove(&key);
             // The window did its job if the question is gone or superseded.
             let Some(p) = self.panes.get(&key).filter(|p| p.state == AgentState::Attention && p.since == episode)
             else {
+                self.awaiting_poll.remove(&key);
                 self.effects.push(Effect::Note(format!(
                     "announce cancelled: pane {} left the episode within the grace",
                     key.1
                 )));
                 continue;
             };
+            // A stamp's question waits, after a suspension, for the poll that
+            // says it still stands (B822). An app suspended mid-grace swept on
+            // its return before any poll was in: what its last poll showed,
+            // maybe answered at the desk meanwhile, was announced, sound and
+            // all, as the app came back, and withdrawn a poll later.
+            if p.last_hook_state == Some(AgentState::Attention) && self.unconfirmed.contains(&key.0) {
+                if self.awaiting_poll.insert(key.clone()) {
+                    self.effects.push(Effect::Note(format!(
+                        "announce waits: pane {} — no poll since the app was suspended",
+                        key.1
+                    )));
+                }
+                self.pending.insert(key, (episode, at));
+                continue;
+            }
+            self.awaiting_poll.remove(&key);
             let (command, detail) = (p.command.clone(), p.detail.clone());
             self.announced.insert(key.clone(), episode);
             self.save_announced();
