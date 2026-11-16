@@ -1,4 +1,4 @@
-<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
+<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit のアイコン：ターミナルのペインの向こうから顔を出すピクセルのたまご">
@@ -47,15 +47,17 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ## 対応エージェント
 
-| エージェント | ホーム、Dynamic Island、ライブアクティビティでの状態 | 「あなた待ち」のプッシュ通知 | 「完了」のプッシュ通知 |
+| エージェント | 状態 | あなた待ち | 完了 |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓（権限の要求） | ✓ |
-| Gemini CLI | ✓ | ✓（ツールの権限） | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory（`droid`） | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+**状態**はホーム、Dynamic Island、ライブアクティビティに表示されます。**あなた待ち**と**完了**はプッシュ通知です。¹ Codex は権限リクエストで知らせます。² Gemini CLI はツールが権限を求めるときだけ知らせます。
 
 *ホストを設定* は、ホスト上で見つかったエージェントの分だけフックをインストールします。tmux では、ホームに出る状態はこのフックから来ます。herdr では herdr 自身が状態を報告するので、設定は何もいりません。プッシュ通知は、エージェントがどこで動いていても（tmux でも、herdr でも、素のシェルでも）フックから送られます。
 
@@ -74,14 +76,11 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### まずはターミナルとして
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/05-overview.png" alt="tmuxもherdrも、ペインをまとめて見渡せる"></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/08-keyboard.png" alt="ターミナルのための キーボード"></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/05-overview.png" width="220" alt="tmuxもherdrも、ペインをまとめて見渡せる"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/08-keyboard.png" width="220" alt="ターミナルのための キーボード">
+</p>
 
-| | |
+| 機能 | 内容 |
 | :-- | :-- |
 | **SSH と Mosh** | Mosh は予測エコーつき。Wi-Fi と 5G の切り替え、スリープ、ホテルの不安定なネットワークでもセッションは切れません。アプリがバックグラウンドにいる間も生きていた接続は、再接続せずにそのまま使い続けられます |
 | **つながらない理由を伝える** | ポートが接続を拒否したのか、名前を解決できなかったのか（またはローカルネットワークの許可がオフなのか）、ホストが応答しなかったのか（VPN を確認してください）、このネットワークからの経路がないのかを示します |
@@ -95,9 +94,11 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### エージェントの作業のために
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/04-island.png" width="250" align="right" alt="アプリを開かなくても、進み具合がわかる">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/04-island.png" width="220" alt="アプリを開かなくても、進み具合がわかる">
+</p>
 
-| | |
+| 機能 | 内容 |
 | :-- | :-- |
 | **「あなた待ち」が先頭** | ホームには、すべてのホストであなたを待っているエージェントが並びます。その下に、作業中のエージェントとその経過時間、待機中のエージェント |
 | **ロック画面にプッシュ通知** | エンドツーエンドで暗号化され、アプリを閉じていても届きます。タップすれば、質問してきたペインに入れます |
@@ -105,15 +106,13 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 | **新しいワークツリー** | スマホから、新しい git ワークツリーでエージェントを起動できます。リポジトリを選び、ブランチ名をつけ、必要なら最初のプロンプトも渡せます |
 | **ペインに共有** | どのアプリからでも、画像をエージェントのペインに直接共有できます |
 
-<br clear="right">
-
 ### エージェントが挙げたファイル
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/06-preview.png" width="250" align="right" alt="エージェントが変えたファイルを、タップで確認">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/06-preview.png" width="220" alt="エージェントが変えたファイルを、タップで確認">
+</p>
 
 エージェントの出力にあるパスをタップすると、そのファイルがスマホで開きます。画像はプレビューされ、動画は再生され、テキストはテキストとして読めます。そこからファイルのあるフォルダを見て回ったり、ファイルを共有したりもできます。
-
-<br clear="right">
 
 ### 音声入力
 
@@ -121,22 +120,22 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ja/02-home-terminal.png" width="360" align="right" alt="ホームとターミナルを並べて">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ja/02-home-terminal.png" width="300" alt="ホームとターミナルを並べて">
+</p>
 
 左にホスト、右にターミナル。ハードウェアキーボードでは、<kbd>⌘K</kbd> ですべてのペインを表示、<kbd>⌘1</kbd>–<kbd>⌘9</kbd> でウィンドウを選択、<kbd>⌘W</kbd> でホームに戻ります。
 
-<br clear="right">
-
 ### コンパニオンとアイコン
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/07-pet.png" width="250" align="right" alt="待ち時間の相棒を、たまごから育てる">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ja/07-pet.png" width="220" alt="待ち時間の相棒を、たまごから育てる">
+</p>
 
-| | |
+| 機能 | 内容 |
 | :-- | :-- |
 | **ピクセルのコンパニオン** | ホームでたまごから孵り、いちばんあなたを必要としているエージェントのカードにとまって、そのエージェントの状態に合わせて姿を変えます。Dynamic Island とライブアクティビティでもそばにいます。オンにすると、各ホストの顔も、同じ鍵から描かれたピクセルの生き物になります |
 | **22 種類のアイコン** | すべて設定にあります。デフォルトはピクセルのたまご。ほかに、6 種類のコンパニオンがそれぞれペインの向こうから顔を出すアイコン（どれにもキラキラ版があります）、Classic、さらに 8 つ。コンパニオンが孵ると、その種類のアイコンに切り替えるかどうかをホームで尋ねます |
-
-<br clear="right">
 
 ここにあるスクリーンショットはすべて App Store 用のもので、Screenshots ワークフローで作られ、ワークフローを最後まで実行するたびに更新されます。すべての言語と iPad 版は[スクリーンショット一覧](https://blog.cluas.eu.org/moshpit/shots/#ja)で見られます。
 

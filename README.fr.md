@@ -1,4 +1,4 @@
-<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
+<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="L’icône de Moshpit : un œuf en pixels qui dépasse d’un panneau de terminal">
@@ -47,15 +47,17 @@ Non, si vos agents ne tournent pas sur une machine que vous pouvez joindre : Mo
 
 ## Agents pris en charge
 
-| Agent | État dans l’accueil, la Dynamic Island et l’Activité en direct | Notification « Vous attend » | Notification « Terminé » |
+| Agent | État | Vous attend | Terminé |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ (demandes d’autorisation) | ✓ |
-| Gemini CLI | ✓ | ✓ (autorisation d’outil) | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory (`droid`) | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+L’**état** s’affiche dans l’Accueil, la Dynamic Island et l’Activité en direct ; **Vous attend** et **Terminé** sont des notifications push. ¹ Codex prévient par ses demandes d’autorisation. ² Gemini CLI ne prévient que lorsqu’un outil demande une autorisation.
 
 *Configurer un hôte* installe les hooks des agents qu’il trouve sur l’hôte. Avec tmux, l’état affiché dans l’accueil vient de ces hooks ; avec herdr, c’est herdr qui le fournit, sans rien à configurer. Les notifications push, elles, viennent des hooks où que tourne l’agent : dans tmux, dans herdr ou dans un simple shell.
 
@@ -74,14 +76,11 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 
 ### D’abord un terminal
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/05-overview.png" alt="Tous vos panneaux tmux et herdr sur un seul écran."></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/08-keyboard.png" alt="Un clavier pensé pour le terminal."></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/05-overview.png" width="220" alt="Tous vos panneaux tmux et herdr sur un seul écran."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/08-keyboard.png" width="220" alt="Un clavier pensé pour le terminal.">
+</p>
 
-| | |
+| Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **SSH et Mosh** | Mosh avec son écho prédictif. Les sessions résistent aux bascules Wi-Fi/5G, à la mise en veille et aux mauvais réseaux d’hôtel, et une connexion restée en vie pendant que l’app était en arrière-plan reprend sans reconnexion |
 | **Dit pourquoi la connexion échoue** | Le port a refusé la connexion, le nom n’a pas pu être résolu (ou l’autorisation Réseau local est désactivée), l’hôte n’a pas répondu (vérifiez votre VPN), ou il n’existe aucune route depuis ce réseau |
@@ -95,9 +94,11 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 
 ### Pensé pour le travail avec des agents
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/04-island.png" width="250" align="right" alt="L’avancement, directement dans la Dynamic Island.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/04-island.png" width="220" alt="L’avancement, directement dans la Dynamic Island.">
+</p>
 
-| | |
+| Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **« Vous attend » en premier** | L’accueil liste tous les agents qui vous attendent, sur tous vos hôtes. En dessous : qui travaille, depuis combien de temps, et qui est inactif |
 | **Notifications sur l’écran verrouillé** | Chiffrées de bout en bout et livrées même quand l’app est fermée. Touchez-en une et vous voilà dans le panneau qui a posé la question |
@@ -105,15 +106,13 @@ L’app joint votre hôte en SSH ou Mosh, et pilote tmux par son mode contrôle 
 | **Un nouveau worktree** | Lancez un agent sur un nouveau git worktree depuis votre téléphone : choisissez un dépôt, nommez une branche et, si vous le voulez, donnez-lui son premier prompt |
 | **Partager vers un panneau** | Envoyez une image depuis n’importe quelle app directement dans le panneau d’un agent |
 
-<br clear="right">
-
 ### Les fichiers que mentionne un agent
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/06-preview.png" width="250" align="right" alt="Ouvrez le fichier que votre agent vient de modifier.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/06-preview.png" width="220" alt="Ouvrez le fichier que votre agent vient de modifier.">
+</p>
 
 Touchez un chemin dans la sortie d’un agent et le fichier s’ouvre sur le téléphone : une image s’affiche en aperçu, une vidéo se lance, un fichier texte se lit comme du texte. De là, vous pouvez parcourir son dossier et partager le fichier.
-
-<br clear="right">
 
 ### Voix
 
@@ -121,22 +120,22 @@ La dictée se fait sur l’appareil. **Qwen3-ASR** (0.6B, téléchargé une seul
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/fr-FR/02-home-terminal.png" width="360" align="right" alt="Accueil et terminal, côte à côte.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/fr-FR/02-home-terminal.png" width="300" alt="Accueil et terminal, côte à côte.">
+</p>
 
 Les hôtes à gauche, le terminal à droite. Avec un clavier physique, <kbd>⌘K</kbd> affiche tous les panneaux, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> choisit une fenêtre et <kbd>⌘W</kbd> ramène à l’accueil.
 
-<br clear="right">
-
 ### Le compagnon et les icônes
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/07-pet.png" width="250" align="right" alt="Faites éclore un compagnon en pixels pour patienter.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/fr-FR/07-pet.png" width="220" alt="Faites éclore un compagnon en pixels pour patienter.">
+</p>
 
-| | |
+| Fonction | Ce qu’elle fait |
 | :-- | :-- |
 | **Un compagnon en pixels** | Il éclot d’un œuf sur l’accueil, se perche sur la carte de l’agent qui a le plus besoin de vous, prend l’état de cet agent, et vous tient compagnie dans la Dynamic Island et l’Activité en direct. Quand il est activé, le visage de chaque hôte devient une créature en pixels, tirée de la même clé |
 | **Vingt-deux icônes** | Toutes dans Réglages : un œuf en pixels par défaut, le compagnon qui dépasse d’un panneau pour chacune de ses six espèces (chacune avec sa version scintillante), Classic et huit autres. Quand votre compagnon éclot, l’accueil vous demande si vous voulez passer à l’icône de son espèce |
-
-<br clear="right">
 
 Toutes les captures d’écran de cette page viennent du jeu publié sur l’App Store, produit par le workflow Screenshots et renouvelé après chaque exécution complète. Pour les autres langues et l’iPad : [toutes les captures d’écran](https://blog.cluas.eu.org/moshpit/shots/#fr-FR).
 

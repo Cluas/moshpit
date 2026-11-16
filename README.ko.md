@@ -1,4 +1,4 @@
-<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
+<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 아이콘: 터미널 패널 너머로 고개를 내민 픽셀 알">
@@ -47,15 +47,17 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ## 지원하는 에이전트
 
-| 에이전트 | 홈, Dynamic Island, 실시간 현황의 상태 | “기다리는 중” 푸시 알림 | “완료” 푸시 알림 |
+| 에이전트 | 상태 | 기다리는 중 | 완료 |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ (권한 요청) | ✓ |
-| Gemini CLI | ✓ | ✓ (도구 권한) | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory (`droid`) | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+**상태**는 홈, Dynamic Island, 실시간 현황에 표시되고, **기다리는 중**과 **완료**는 푸시 알림입니다. ¹ Codex는 권한 요청으로 알립니다. ² Gemini CLI는 도구가 권한을 요청할 때만 알립니다.
 
 *호스트 설정*은 호스트에서 찾은 에이전트에만 훅을 설치합니다. tmux에서는 홈에 보이는 상태가 이 훅에서 오고, herdr에서는 herdr가 직접 알려 주므로 따로 설정할 것이 없습니다. 푸시 알림은 에이전트가 어디서 돌든 훅이 보냅니다. tmux 안이든, herdr 안이든, 일반 셸이든 마찬가지입니다.
 
@@ -74,14 +76,11 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### 먼저, 제대로 된 터미널
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/05-overview.png" alt="tmux, herdr 패널을 한 화면에"></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/08-keyboard.png" alt="터미널을 위해 만든 키보드"></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/05-overview.png" width="220" alt="tmux, herdr 패널을 한 화면에"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/08-keyboard.png" width="220" alt="터미널을 위해 만든 키보드">
+</p>
 
-| | |
+| 기능 | 설명 |
 | :-- | :-- |
 | **SSH와 Mosh** | Mosh는 예측 에코를 지원합니다. Wi-Fi와 5G 사이 전환, 잠자기, 불안정한 호텔 네트워크에서도 세션이 유지되고, 앱이 백그라운드에 있는 동안 살아남은 연결은 다시 연결하지 않고 그대로 이어서 씁니다 |
 | **연결이 안 되는 이유를 알려 줍니다** | 포트가 연결을 거부했는지, 이름을 찾지 못했는지(또는 로컬 네트워크 권한이 꺼져 있는지), 호스트가 응답하지 않았는지(VPN을 확인하세요), 이 네트워크에서 가는 경로가 없는지 구분해서 보여 줍니다 |
@@ -95,9 +94,11 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### 에이전트 작업을 위해
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/04-island.png" width="250" align="right" alt="앱을 안 열어도 진행 상황이 보여요">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/04-island.png" width="220" alt="앱을 안 열어도 진행 상황이 보여요">
+</p>
 
-| | |
+| 기능 | 설명 |
 | :-- | :-- |
 | **“기다리는 중”이 맨 위에** | 홈은 모든 호스트에서 나를 기다리는 에이전트를 먼저 보여 줍니다. 그 아래로 작업 중인 에이전트와 작업 시간, 대기 중인 에이전트가 이어집니다 |
 | **잠금 화면의 푸시 알림** | 종단 간 암호화되며, 앱이 닫혀 있어도 도착합니다. 탭하면 질문한 그 패널로 들어갑니다 |
@@ -105,15 +106,13 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 | **새 워크트리** | 휴대폰에서 새 git worktree를 만들고 에이전트를 시작합니다. 저장소를 고르고, 브랜치 이름을 정하고, 원하면 첫 프롬프트도 함께 넘깁니다 |
 | **패널로 공유** | 어떤 앱에서든 이미지를 에이전트의 패널로 바로 공유합니다 |
 
-<br clear="right">
-
 ### 에이전트가 언급한 파일
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/06-preview.png" width="250" align="right" alt="에이전트가 고친 파일, 탭 한 번으로 열기">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/06-preview.png" width="220" alt="에이전트가 고친 파일, 탭 한 번으로 열기">
+</p>
 
 에이전트 출력에 나온 경로를 탭하면 그 파일이 휴대폰에서 열립니다. 이미지는 미리 보고, 동영상은 재생하고, 텍스트는 텍스트로 읽습니다. 거기서 파일이 있는 폴더를 둘러보거나 파일을 다른 곳으로 공유할 수 있습니다.
-
-<br clear="right">
 
 ### 음성 입력
 
@@ -121,22 +120,22 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ko/02-home-terminal.png" width="360" align="right" alt="홈과 터미널을 나란히">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ko/02-home-terminal.png" width="300" alt="홈과 터미널을 나란히">
+</p>
 
 왼쪽에는 호스트, 오른쪽에는 터미널이 있습니다. 하드웨어 키보드에서는 <kbd>⌘K</kbd>로 모든 패널을 보고, <kbd>⌘1</kbd>–<kbd>⌘9</kbd>로 창을 고르고, <kbd>⌘W</kbd>로 홈에 돌아갑니다.
 
-<br clear="right">
-
 ### 컴패니언과 아이콘
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/07-pet.png" width="250" align="right" alt="같이 기다려 줄 픽셀 친구를 키워요">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/07-pet.png" width="220" alt="같이 기다려 줄 픽셀 친구를 키워요">
+</p>
 
-| | |
+| 기능 | 설명 |
 | :-- | :-- |
 | **픽셀 컴패니언** | 홈에서 알을 깨고 나와, 나를 가장 급하게 기다리는 에이전트의 카드 위에 올라앉아 그 에이전트의 상태를 따라 하고, Dynamic Island와 실시간 현황에서도 곁을 지킵니다. 켜 두면 호스트마다의 얼굴도 같은 키에서 그려 낸 픽셀 크리처로 바뀝니다 |
 | **아이콘 22개** | 모두 설정에 있습니다. 기본은 픽셀 알이고, 컴패니언 여섯 종이 각각 패널 너머로 고개를 내민 아이콘(종마다 반짝이 하나씩), Classic, 그리고 여덟 개가 더 있습니다. 컴패니언이 부화하면 홈에서 아이콘을 그 종으로 바꿀지 묻습니다 |
-
-<br clear="right">
 
 여기 실린 스크린샷은 모두 App Store용 세트로, Screenshots 워크플로가 만들고 전체 실행이 끝날 때마다 새로 바뀝니다. 모든 언어와 iPad 스크린샷은 [전체 스크린샷](https://blog.cluas.eu.org/moshpit/shots/#ko)에서 볼 수 있습니다.
 

@@ -1,4 +1,4 @@
-<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
+<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="App-Symbol von Moshpit: ein Pixel-Ei, das über ein Terminal-Panel lugt">
@@ -47,15 +47,17 @@ Nein, wenn deine Agents auf keinem Rechner laufen, an den du herankommst: Moshpi
 
 ## Unterstützte Agents
 
-| Agent | Status in Übersicht, Dynamic Island und Live-Aktivität | Push „Wartet auf dich“ | Push „Fertig“ |
+| Agent | Status | Wartet auf dich | Fertig |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ (Berechtigungsanfragen) | ✓ |
-| Gemini CLI | ✓ | ✓ (Tool-Berechtigung) | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory (`droid`) | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+Der **Status** erscheint in der Übersicht, in der Dynamic Island und in der Live-Aktivität; **Wartet auf dich** und **Fertig** sind Push-Mitteilungen. ¹ Codex fragt über seine Berechtigungsanfragen. ² Gemini CLI fragt nur, wenn ein Tool eine Berechtigung braucht.
 
 *Host einrichten* installiert die Hooks für die Agents, die es auf dem Host findet. Unter tmux stammt der Status in der Übersicht von diesen Hooks; unter herdr meldet herdr ihn selbst, ganz ohne Einrichtung. Die Push-Mitteilungen kommen immer von den Hooks, egal wo der Agent läuft: in tmux, in herdr oder in einer einfachen Shell.
 
@@ -74,14 +76,11 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 
 ### Vor allem ein Terminal
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/05-overview.png" alt="Alle tmux- und herdr-Panels auf einem Bildschirm."></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/08-keyboard.png" alt="Eine Tastatur fürs Terminal."></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/05-overview.png" width="220" alt="Alle tmux- und herdr-Panels auf einem Bildschirm."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/08-keyboard.png" width="220" alt="Eine Tastatur fürs Terminal.">
+</p>
 
-| | |
+| Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **SSH und Mosh** | Mosh mit Vorhersage-Echo. Sitzungen überstehen den Wechsel zwischen WLAN und 5G, den Ruhezustand und schlechtes Hotel-WLAN. Hat eine Verbindung die Zeit im Hintergrund überlebt, macht die App direkt mit ihr weiter, ohne neu zu verbinden |
 | **Sagt, woran die Verbindung scheitert** | Der Port hat die Verbindung abgelehnt, der Name ließ sich nicht auflösen (oder die Berechtigung „Lokales Netzwerk“ ist aus), der Host hat nicht geantwortet (prüf dein VPN), oder aus diesem Netz gibt es keine Route dorthin |
@@ -95,9 +94,11 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 
 ### Für die Arbeit mit Agents gebaut
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/04-island.png" width="250" align="right" alt="Der Fortschritt steht in der Dynamic Island.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/04-island.png" width="220" alt="Der Fortschritt steht in der Dynamic Island.">
+</p>
 
-| | |
+| Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **„Wartet auf dich“ zuerst** | Die Übersicht zeigt jeden Agent, der auf dich wartet, über alle Hosts hinweg. Darunter, wer arbeitet und wie lange schon, und wer inaktiv ist |
 | **Push-Mitteilungen auf dem Sperrbildschirm** | Ende-zu-Ende-verschlüsselt und zugestellt, auch wenn die App geschlossen ist. Ein Tipp darauf, und du bist in dem Panel, das gefragt hat |
@@ -105,15 +106,13 @@ Die App verbindet sich per SSH oder Mosh mit deinem Host und steuert tmux über 
 | **Ein frischer Worktree** | Starte vom iPhone aus einen Agent in einem neuen git worktree: Repository wählen, Branch benennen und auf Wunsch gleich den ersten Prompt mitgeben |
 | **In ein Panel teilen** | Teile ein Bild aus jeder beliebigen App direkt in das Panel eines Agents |
 
-<br clear="right">
-
 ### Dateien, die ein Agent erwähnt
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/06-preview.png" width="250" align="right" alt="Was dein Agent geändert hat, mit einem Tipp öffnen.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/06-preview.png" width="220" alt="Was dein Agent geändert hat, mit einem Tipp öffnen.">
+</p>
 
 Tippe in der Ausgabe eines Agents auf einen Pfad, und die Datei öffnet sich auf dem iPhone: Bilder erscheinen als Vorschau, Videos werden abgespielt, Text liest du als Text. Von dort aus kannst du durch ihren Ordner blättern und die Datei weiterteilen.
-
-<br clear="right">
 
 ### Spracheingabe
 
@@ -121,22 +120,22 @@ Diktiert wird auf dem Gerät. **Qwen3-ASR** (0.6B, einmaliger Download) erkennt 
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/de-DE/02-home-terminal.png" width="360" align="right" alt="Start und Terminal nebeneinander.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/de-DE/02-home-terminal.png" width="300" alt="Start und Terminal nebeneinander.">
+</p>
 
 Links die Hosts, rechts das Terminal. Mit Hardware-Tastatur zeigt <kbd>⌘K</kbd> alle Panels, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> wählt ein Fenster, und <kbd>⌘W</kbd> führt zurück zur Übersicht.
 
-<br clear="right">
-
 ### Der Begleiter und die App-Symbole
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/07-pet.png" width="250" align="right" alt="Brüte dir einen Pixel-Begleiter fürs Warten aus.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/de-DE/07-pet.png" width="220" alt="Brüte dir einen Pixel-Begleiter fürs Warten aus.">
+</p>
 
-| | |
+| Funktion | Was dahintersteckt |
 | :-- | :-- |
 | **Ein Pixel-Begleiter** | Er schlüpft in der Übersicht aus einem Ei, setzt sich auf die Karte des Agents, der dich am dringendsten braucht, übernimmt dessen Status und leistet dir in der Dynamic Island und in der Live-Aktivität Gesellschaft. Ist er eingeschaltet, wird auch das Gesicht jedes Hosts zu einem Pixel-Wesen, gezeichnet aus demselben Schlüssel |
 | **22 App-Symbole** | Alle in den Einstellungen: standardmäßig ein Pixel-Ei, für jede der sechs Arten des Begleiters eins, auf dem er über ein Panel lugt (jeweils auch in einer schimmernden Variante), dazu Classic und acht weitere. Ist dein Begleiter geschlüpft, fragt die Übersicht, ob du zum Symbol seiner Art wechseln willst |
-
-<br clear="right">
 
 Alle Screenshots hier sind dieselben wie im App Store. Der Workflow „Screenshots“ erstellt sie und erneuert sie nach jedem vollständigen Lauf. Alle Sprachen und das iPad: [alle Screenshots](https://blog.cluas.eu.org/moshpit/shots/#de-DE).
 

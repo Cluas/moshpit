@@ -46,15 +46,17 @@ It isn't if your agents don't run on a machine you can reach: Moshpit is a termi
 
 ## Supported agents
 
-| Agent | State on Home, the Island and the Live Activity | "Needs you" push | "Finished" push |
+| Agent | State | "Needs you" | "Finished" |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓ (permission requests) | ✓ |
-| Gemini CLI | ✓ | ✓ (tool permission) | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory (`droid`) | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+**State** shows on Home, the Dynamic Island and the Live Activity; **"Needs you"** and **"Finished"** are pushes. ¹ Codex asks through its permission requests. ² Gemini CLI asks only when a tool needs permission.
 
 *Set up a host* installs the hooks for the agents it finds on the host. On tmux, the state on Home comes from them; on herdr, herdr reports it, with no setup at all. The pushes come from the hooks wherever the agent runs: in tmux, in herdr or in a plain shell.
 
@@ -73,14 +75,11 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 
 ### A terminal first
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/05-overview.png" alt="Every tmux and herdr pane at a glance."></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/08-keyboard.png" alt="A keyboard made for the terminal."></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/05-overview.png" width="220" alt="Every tmux and herdr pane at a glance."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/08-keyboard.png" width="220" alt="A keyboard made for the terminal.">
+</p>
 
-| | |
+| Feature | What it means |
 | :-- | :-- |
 | **SSH and Mosh** | Mosh with its predictive echo. Sessions survive Wi-Fi/5G handoffs, sleep and bad hotel networks, and a connection that lived through the app being in the background is picked up again without a reconnect |
 | **Says why it can't connect** | The port refused the connection, the name didn't resolve (or the Local Network permission is off), the host didn't answer (check your VPN), or there's no route from this network |
@@ -94,9 +93,11 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 
 ### Built for agent work
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/04-island.png" width="250" align="right" alt="Progress right on the Dynamic Island.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/04-island.png" width="220" alt="Progress right on the Dynamic Island.">
+</p>
 
-| | |
+| Feature | What it means |
 | :-- | :-- |
 | **"Needs you" first** | Home lists every agent waiting on you, across all your hosts. Below it, who is working, for how long, and who is idle |
 | **Pushes on the Lock Screen** | Encrypted end to end and delivered even with the app closed. Tap one and you are in the pane that asked |
@@ -104,15 +105,13 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 | **A fresh worktree** | Start an agent on a new git worktree from your phone: pick a repo, name a branch, optionally hand it the first prompt |
 | **Share into a pane** | Share an image from any app straight into an agent's pane |
 
-<br clear="right">
-
 ### Files an agent mentions
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/06-preview.png" width="250" align="right" alt="Open the file your agent just touched.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/06-preview.png" width="220" alt="Open the file your agent just touched.">
+</p>
 
 Tap a path in an agent's output and the file opens on the phone: an image previews, a video plays, text reads as text. From there you can browse its folder and share the file on.
-
-<br clear="right">
 
 ### Voice
 
@@ -120,22 +119,22 @@ Dictation runs on the device. **Qwen3-ASR** (0.6B, a one-time download) hears Ch
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/en-US/02-home-terminal.png" width="360" align="right" alt="Home and terminal, side by side.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/en-US/02-home-terminal.png" width="300" alt="Home and terminal, side by side.">
+</p>
 
 Hosts on the left, the terminal on the right. On a hardware keyboard, <kbd>⌘K</kbd> shows all panes, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> picks a window and <kbd>⌘W</kbd> goes back to Home.
 
-<br clear="right">
-
 ### The companion and the icons
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/07-pet.png" width="250" align="right" alt="Hatch a pixel buddy to wait with you.">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/07-pet.png" width="220" alt="Hatch a pixel buddy to wait with you.">
+</p>
 
-| | |
+| Feature | What it means |
 | :-- | :-- |
 | **A pixel companion** | It hatches from an egg on Home, perches on the card of whichever agent needs you most, takes on that agent's state, and keeps you company on the Dynamic Island and the Live Activity. With it on, each host's face becomes a pixel creature, drawn from the same key |
 | **Twenty-two icons** | All in Settings: a pixel egg by default, the companion peeking over a pane for each of its six species (each with a shiny one), Classic and eight more. When your companion hatches, Home asks whether to switch to its species |
-
-<br clear="right">
 
 Every screenshot here is from the App Store set, made by the Screenshots workflow and refreshed after every complete run. Every language and the iPad: [all screenshots](https://blog.cluas.eu.org/moshpit/shots/).
 

@@ -1,4 +1,4 @@
-<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
+<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 的 App 圖像：一顆像素蛋從終端機窗格後面探出頭">
@@ -47,15 +47,17 @@ iPhone 和 iPad 上的 SSH、Mosh、tmux、herdr 終端機：每個提問都會�
 
 ## 支援的智能體
 
-| 智能體 | 首頁、動態島和即時動態上的狀態 | 「在等你」推播 | 「已完成」推播 |
+| 智能體 | 狀態 | 在等你 | 已完成 |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓（請求權限時） | ✓ |
-| Gemini CLI | ✓ | ✓（工具請求權限時） | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory（`droid`） | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+**狀態**顯示在首頁、動態島和即時動態裡；**在等你**和**已完成**是推播。¹ Codex 在要權限時發問。² Gemini CLI 只在工具要權限時發問。
 
 *設定主機*只會替它在主機上找到的智能體安裝狀態腳本。用 tmux 時，首頁上的狀態來自這些狀態腳本；用 herdr 時，狀態由 herdr 自己回報，完全不用設定。推播則不管智能體在哪裡跑，都由狀態腳本送出：tmux 裡、herdr 裡，或一般的 shell 裡都一樣。
 
@@ -74,14 +76,11 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### 首先是終端機
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/05-overview.png" alt="tmux、herdr 的窗格，一個畫面全看到"></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/08-keyboard.png" alt="專為終端機設計的鍵盤"></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/05-overview.png" width="220" alt="tmux、herdr 的窗格，一個畫面全看到"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/08-keyboard.png" width="220" alt="專為終端機設計的鍵盤">
+</p>
 
-| | |
+| 功能 | 說明 |
 | :-- | :-- |
 | **SSH 和 Mosh** | Mosh 附預測回顯。Wi-Fi 和 5G 之間切換、手機休眠、飯店的爛網路，工作階段都不會斷；App 在背景待了一陣子，只要連線還在，回來就直接接著用，不必重新連線 |
 | **連不上時會說原因** | 是連接埠拒絕連線、主機名稱解析不到（或沒開區域網路權限）、主機沒有回應（檢查一下 VPN），還是從目前的網路根本沒有路由到得了它 |
@@ -95,9 +94,11 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### 為智能體的工作而設計
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/04-island.png" width="250" align="right" alt="不用打開 App，進度就在動態島上">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/04-island.png" width="220" alt="不用打開 App，進度就在動態島上">
+</p>
 
-| | |
+| 功能 | 說明 |
 | :-- | :-- |
 | **「在等你」排第一** | 首頁最上面列出所有主機上在等你的智能體。往下是誰在工作、做了多久，以及誰閒置 |
 | **推播直接上鎖定畫面** | 端對端加密，App 沒開也送得到。點一下就進到發問的那個窗格 |
@@ -105,15 +106,13 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 | **開一個新的工作樹** | 在手機上讓智能體在新的 git worktree 裡開工：選一個儲存庫、取個分支名稱，也可以順便交給它第一則提示詞 |
 | **分享到窗格** | 從任何 App 分享圖片，直接送進智能體的窗格 |
 
-<br clear="right">
-
 ### 智能體提到的檔案
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/06-preview.png" width="250" align="right" alt="改了哪個檔案，點一下就能看">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/06-preview.png" width="220" alt="改了哪個檔案，點一下就能看">
+</p>
 
 點一下智能體輸出裡的路徑，檔案就會在手機上打開：圖片可以預覽，影片可以播放，文字就照文字讀。打開後還能瀏覽它所在的資料夾，或把檔案分享出去。
-
-<br clear="right">
 
 ### 語音
 
@@ -121,22 +120,22 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hant/02-home-terminal.png" width="360" align="right" alt="首頁和終端機並排">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hant/02-home-terminal.png" width="300" alt="首頁和終端機並排">
+</p>
 
 左邊是主機，右邊是終端機。接上硬體鍵盤時，<kbd>⌘K</kbd> 顯示所有窗格，<kbd>⌘1</kbd>–<kbd>⌘9</kbd> 切換視窗，<kbd>⌘W</kbd> 回到首頁。
 
-<br clear="right">
-
 ### 夥伴和 App 圖像
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/07-pet.png" width="250" align="right" alt="孵一隻陪你等的像素夥伴">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/07-pet.png" width="220" alt="孵一隻陪你等的像素夥伴">
+</p>
 
-| | |
+| 功能 | 說明 |
 | :-- | :-- |
 | **像素夥伴** | 在首頁從蛋裡孵出來，停在最需要你的那個智能體的卡片上，跟著它的狀態變化，也會在動態島和即時動態上陪著你。開啟後，每台主機的頭像也會變成一隻像素小怪，長相同樣由主機金鑰決定 |
 | **22 個 App 圖像** | 全都在設定裡：預設是一顆像素蛋；六種夥伴各有一個從窗格後面探出頭的圖像（每種另有一個閃光版），另外還有 Classic 和其他八個。夥伴孵化後，首頁會問你要不要換成牠那一種 |
-
-<br clear="right">
 
 這裡的截圖都來自 App Store 用的那一套，由 Screenshots 工作流程產生，每次完整跑完就會更新。所有語言和 iPad 的截圖：[全部截圖](https://blog.cluas.eu.org/moshpit/shots/#zh-Hant)。
 
