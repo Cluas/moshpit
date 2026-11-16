@@ -94,6 +94,10 @@ struct ThemeTests {
         var original = TerminalTheme.nord
         original.id = "custom-abc"
         original.isBuiltIn = false
+        // A name of its own: an import named as a theme the store already
+        // has (the built-in Nord) is saved as "Nord 2", the store's rule
+        // for every save (`unique_name`), so the name wouldn't round-trip.
+        original.name = "Nord at Night"
         original.setBrightOverride("#ABCDEF", for: .cyan)
 
         let json = try store.exportJSON(original)
