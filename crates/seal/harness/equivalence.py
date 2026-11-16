@@ -5,7 +5,8 @@
     equivalence.py update-goldens [--no-build]
 
 `run` builds both front ends (harness/build-swift.sh over the app's
-unchanged MoshpitKit push sources, and examples/seal_harness.rs) and feeds
+unchanged MoshpitKit push sources, kept in harness/swift/frozen since E7b
+deleted them, and examples/seal_harness.rs) and feeds
 both the same cases: seeded ones from `seal_harness gen` (envelopes sealed and
 then bent every way, status plaintexts Foundation forgives or refuses, card
 text with every kind of whitespace, numeral and emoji, durations in the nine
