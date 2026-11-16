@@ -9,12 +9,13 @@ name: Screenshots
 # a phone.
 #
 # The app is built once (`build`), and the shots are taken by a job per
-# device and group of locales (`shoot`, scripts/shots/plan.py), side by side
-# on the macOS runners a public repository gets at once. A job that failed
-# is retried alone ("Re-run failed jobs"). A run by hand may ask for some
-# devices, locales and slots only (`shots`: 01,04,08). It runs nightly, on
-# each version tag and by hand, never on a push: the whole set takes most of
-# an hour.
+# device and group of locales (`shoot`, scripts/shots/plan.py), side by side:
+# four at most from a nightly or tag run, three from a run by hand, since
+# the account's five macOS runners at once are CI's too and CI keeps one.
+# A job that failed is retried alone ("Re-run failed jobs"). A run by hand
+# may ask for some devices, locales and slots only (`shots`: 01,04,08). It
+# runs nightly, on each version tag and by hand, never on a push: the whole
+# set takes most of an hour.
 #
 # From main or a version tag, the set is published to GitHub Pages at
 # /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link. A
@@ -64,6 +65,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       full: ${{ steps.plan.outputs.full }}
+      parallel: ${{ steps.plan.outputs.parallel }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -77,9 +79,14 @@ jobs:
           for script in scripts/shots/*.sh scripts/shots/stage/*.sh; do bash -n "$script"; done
           shellcheck -S warning scripts/shots/*.sh scripts/shots/stage/*.sh
 
+      # As many shoot jobs as the run may hold macOS runners: four at night
+      # (a scheduled or tag run), three by day (by hand).
       - name: Plan the shoot jobs
         id: plan
-        run: python3 -I scripts/shots/plan.py "$DEVICES" "$LOCALES" "$SHOTS" | tee -a "$GITHUB_OUTPUT"
+        env:
+          JOBS: ${{ github.event_name == 'workflow_dispatch' && '3' || '4' }}
+        shell: bash # -o pipefail: a plan that fails fails the step, not tee
+        run: python3 -I scripts/shots/plan.py "$DEVICES" "$LOCALES" "$SHOTS" "$JOBS" | tee -a "$GITHUB_OUTPUT"
 
   # Debug, for testing: the DEBUG seeds the shots are made with, the same
   # build for either simulator (the app is universal), arm64 only. Its
@@ -177,6 +184,8 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
+      # The plan's own cap, kept by GitHub too.
+      max-parallel: ${{ fromJSON(needs.plan.outputs.parallel) }}
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
