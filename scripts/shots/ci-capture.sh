@@ -32,7 +32,6 @@ locales=("$@"); [ "${#locales[@]}" -gt 0 ] || locales=(en-US)
 # SHOTS_ONLY: the store's slots to shoot, by number (01,05), else all of them.
 asked_slots="${SHOTS_ONLY:-all}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-bundle=com.cluas.moshpit
 work="$(mktemp -d)"
 mkdir -p "$out"
 
@@ -77,11 +76,6 @@ xcrun simctl install "$udid" "$app"
 
 # ── The shots ───────────────────────────────────────────────────────────
 
-# The seeded session: the runner as a host, tmux on the staged socket.
-session=(-MOSHPIT_SEED_USER "$user" -MOSHPIT_SEED_KEY_B64 "$key_b64"
-    -MOSHPIT_SEED_HOST "$host" -MOSHPIT_SEED_PORT "$port"
-    -MOSHPIT_SEED_TRUST_FP "$fingerprint" -MOSHPIT_SEED_NAME devbox
-    -MOSHPIT_SEED_MUX tmux -MOSHPIT_SEED_TMUX_BIN "$stage_tmux")
 # The companion, hatched and grown: the golden "tun" (crates/pet/tests/
 # golden.json), as its record is stored (crates/store pet.rs, moshpit.pet.v1,
 # JSON bytes), passed as plist data in the launch's argument domain, which
@@ -216,7 +210,7 @@ shots_pass() {  # <tag> <test…> -- <locale…>: ShotsUITest's tests (none: all
         TEST_RUNNER_MOSHPIT_SEED_TRUST_FP="$fingerprint" TEST_RUNNER_MOSHPIT_SEED_NAME=devbox \
         TEST_RUNNER_MOSHPIT_SEED_MUX=tmux TEST_RUNNER_MOSHPIT_SEED_TMUX_BIN="$stage_tmux" \
         xcodebuild test-without-building -xctestrun "$SHOTS_XCTESTRUN" -destination "id=$udid" \
-        "${only[@]}" -resultBundlePath "$result" \
+        ${only[@]+"${only[@]}"} -resultBundlePath "$result" \
         > "$out/shots-ui-$device$tag.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device$tag.log" >&2
     kill "$restamper" "$sampler" 2>/dev/null || true
     wait "$restamper" "$sampler" 2>/dev/null || true
@@ -320,9 +314,11 @@ fi
 xcrun simctl spawn "$udid" log show --last 90m --style compact \
     --predicate 'subsystem BEGINSWITH "com.cluas.moshpit"' > "$out/app-$device.log" 2>/dev/null || true
 # sshd (run by root) wrote its log as root.
+# shellcheck disable=SC2024 # read as root, written as the runner, on purpose
 sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
 # Each SSH exec the app ran on the host, timed (stage-host.sh), on a runner.
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    # shellcheck disable=SC2024 # read as root, written as the runner, on purpose
     sudo cat /Users/dev/.moshpit-exec.log > "$out/exec-$device.log" 2>/dev/null || true
 fi
 
