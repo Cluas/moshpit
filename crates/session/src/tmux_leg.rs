@@ -578,7 +578,7 @@ async fn run(
     let mut closed = false;
     // The first session is being made by exec: this attach gave up, the
     // session attaches again once it is there.
-    let mut reattach: Option<oneshot::Receiver<()>> = None;
+    let mut reattach: Option<oneshot::Receiver<Result<(), String>>> = None;
     // Whether the server has any session, asked when the attach would have
     // stalled (B228).
     let mut asked: Option<oneshot::Receiver<Option<bool>>> = None;
@@ -633,10 +633,24 @@ async fn run(
                     break;
                 }
             },
-            () = wait(&mut reattach) => {
-                (task.notes)(TmuxNote::Lost("the first session is made: attaching again".to_owned()));
-                break;
-            }
+            made = wait(&mut reattach) => match made {
+                Ok(()) if !task.sidecar => {
+                    (task.notes)(TmuxNote::Lost("the first session is made: attaching again".to_owned()));
+                    break;
+                }
+                // mosh's sidecar and renderer attach on their own.
+                Ok(()) => {}
+                // Not made: nothing changed on the server. Attaching again
+                // only flashed a disconnect onto the same empty state;
+                // tmux's words go to the notice, and New Session is back
+                // (B788).
+                Err(why) => {
+                    task.controller.surface_failure(why);
+                    task.pump();
+                    let view = task.view();
+                    (task.notes)(TmuxNote::Tree(Box::new(view)));
+                }
+            },
             () = sleep_until(deadline) => {
                 let now = (task.clock)();
                 task.controller.tick(now);
@@ -774,11 +788,16 @@ async fn answer<T>(slot: &mut Option<oneshot::Receiver<T>>) -> Option<T> {
 }
 
 /// Resolves once `slot`'s receiver does (forever without one).
-async fn wait(slot: &mut Option<oneshot::Receiver<()>>) {
+/// How the first session's exec went, once it is done; never while none
+/// is being made.
+async fn wait(slot: &mut Option<oneshot::Receiver<Result<(), String>>>) -> Result<(), String> {
     match slot {
         Some(receiver) => {
-            let _ = receiver.await;
+            let made = receiver
+                .await
+                .unwrap_or_else(|_| Err("new-session failed".to_owned()));
             *slot = None;
+            made
         }
         None => std::future::pending().await,
     }
@@ -995,7 +1014,7 @@ impl Task {
 
     /// Carries out one command; a receiver when the attach must be made
     /// again once it resolves (the first session, made by exec).
-    fn command(&mut self, command: TmuxCommand) -> Option<oneshot::Receiver<()>> {
+    fn command(&mut self, command: TmuxCommand) -> Option<oneshot::Receiver<Result<(), String>>> {
         let now = self.now();
         let c = &mut self.controller;
         match command {
@@ -1133,7 +1152,10 @@ impl Task {
     /// ([`TmuxRefusal::NameHasControlCharacters`], which the registry
     /// answers before it gets here): it was dropped, and a session tmux
     /// named made in its place (B250).
-    fn first_session(&mut self, name: Option<String>) -> Option<oneshot::Receiver<()>> {
+    fn first_session(
+        &mut self,
+        name: Option<String>,
+    ) -> Option<oneshot::Receiver<Result<(), String>>> {
         let name = match first_session_name(name) {
             Ok(name) => name,
             Err(refusal) => {
@@ -1143,15 +1165,26 @@ impl Task {
         };
         let command = first_session_command(&self.tmux, name.as_deref());
         let ssh = self.ssh.clone();
-        let (made, done) = oneshot::channel::<()>();
+        let (made, done) = oneshot::channel();
         tokio::spawn(async move {
-            let run = ssh.run(&command).await;
-            if !matches!(run, Ok(output) if output.success()) {
-                log::info!("tmux: the first session wasn't made");
+            let outcome = match ssh.run(&command).await {
+                Ok(output) if output.success() => Ok(()),
+                // tmux's own words ("duplicate session: x"), or the
+                // shell's.
+                Ok(output) => Err(String::from_utf8_lossy(&output.merged())
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .unwrap_or("new-session failed")
+                    .to_owned()),
+                Err(error) => Err(error.to_string()),
+            };
+            if let Err(why) = &outcome {
+                log::info!("tmux: the first session wasn't made: {why}");
             }
-            let _ = made.send(());
+            let _ = made.send(outcome);
         });
-        (!self.sidecar).then_some(done)
+        Some(done)
     }
 
     /// The end of this controller. A full disconnect first hands back what
@@ -1238,13 +1271,24 @@ pub(crate) fn first_session_name(name: Option<String>) -> Result<Option<String>,
 /// (tmux 3.6a, private socket: `-s 'a#{session_id}b'` is stored as `ab`,
 /// `c##d` as `c#d`). The app's `tmuxFirstSessionCommand` makes the same
 /// session (B228).
+///
+/// tmux is found as the control client and `has-session` find it, on the
+/// probed PATH, under `sh -c` (B138). It ran on the bare one: on a Mac,
+/// whose non-interactive PATH has no Homebrew, tmux wasn't found, nothing
+/// was made, and the app attached again to the same empty server (B788).
 pub(crate) fn first_session_command(tmux: &str, name: Option<&str>) -> String {
     let mut command = format!("{tmux} new-session -d");
     if let Some(name) = name {
         command.push_str(" -s ");
         command.push_str(&moshpit_herdr::launch::quote(&name.replace('#', "##")));
     }
-    command
+    format!(
+        "sh -c {}",
+        moshpit_herdr::launch::quote(&format!(
+            "PATH=\"$PATH:{}\" {command}",
+            moshpit_herdr::launch::EXTRA_PATH_DIRS
+        ))
+    )
 }
 
 /// The exec that asks whether the server has any session (B228): tmux's
@@ -1377,19 +1421,32 @@ mod first_session_tests {
 
     #[test]
     fn the_first_session_is_detached_and_named_as_typed() {
-        assert_eq!(first_session_command("tmux", None), "tmux new-session -d");
+        // Under `sh -c`, tmux on the probed PATH (B788).
+        let expected = |command: &str| {
+            format!(
+                "sh -c {}",
+                moshpit_herdr::launch::quote(&format!(
+                    "PATH=\"$PATH:{}\" {command}",
+                    moshpit_herdr::launch::EXTRA_PATH_DIRS
+                ))
+            )
+        };
+        assert_eq!(
+            first_session_command("tmux", None),
+            expected("tmux new-session -d")
+        );
         assert_eq!(
             first_session_command("/opt/tmux", Some("work")),
-            "/opt/tmux new-session -d -s 'work'"
+            expected("/opt/tmux new-session -d -s 'work'")
         );
         // A `#` stays a `#` once tmux has expanded the name.
         assert_eq!(
             first_session_command("tmux", Some("issue #12")),
-            "tmux new-session -d -s 'issue ##12'"
+            expected("tmux new-session -d -s 'issue ##12'")
         );
         assert_eq!(
             first_session_command("tmux", Some("it's")),
-            "tmux new-session -d -s 'it'\\''s'"
+            expected("tmux new-session -d -s 'it'\\''s'")
         );
     }
 }
