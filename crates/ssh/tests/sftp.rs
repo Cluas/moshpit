@@ -271,6 +271,50 @@ async fn a_file_that_says_it_is_empty_downloads_as_empty() {
     assert_eq!(host.seen().open_handles, 0);
 }
 
+/// B814: a file rewritten while it was being read came down as neither
+/// version — the start of one and the rest of the other, or the old one's
+/// bytes past the new one's end left in the copy — and was handed out as
+/// the picture, cached under the old one's size and time. A file that
+/// changes size while it is read fails the download: nothing half-made is
+/// handed out, and a second try reads it whole.
+#[tokio::test]
+async fn a_file_that_changes_while_it_is_read_is_not_handed_out() {
+    let host = Host::start(Bench::default()).await;
+    for (case, rewritten) in [
+        ("shrank", noise(100, 9)),
+        ("grew", noise(4 * 1024 * 1024, 10)),
+    ] {
+        let at = host.home.join(&format!("{case}.png"));
+        std::fs::write(&at, noise(3 * 1024 * 1024, 8)).unwrap();
+        let sftp = connect(&host).await.sftp().await.unwrap();
+        let local = Scratch::new(case);
+        let destination = local.join("copy.png");
+        let mut rewrote = false;
+        let result = sftp
+            .download(&format!("{case}.png"), &destination, &mut |_| {
+                if !rewrote {
+                    rewrote = true;
+                    // The agent writes it again (truncated, then filled).
+                    std::fs::write(&at, &rewritten).unwrap();
+                }
+                true
+            })
+            .await;
+        assert!(
+            matches!(result, Err(SftpError::Changed(_))),
+            "{case}: {result:?}"
+        );
+        assert_eq!(host.seen().open_handles, 0, "{case}");
+        // Read again, it comes down whole.
+        let copied = sftp
+            .download(&format!("{case}.png"), &destination, &mut |_| true)
+            .await
+            .unwrap();
+        assert_eq!(copied, rewritten.len() as u64, "{case}");
+        assert!(std::fs::read(&destination).unwrap() == rewritten, "{case}");
+    }
+}
+
 /// B463: sshd starts the SFTP server through the account's shell, and an
 /// rc file that prints for every shell (bash reads `~/.bashrc` for sshd's
 /// `-c`) puts its text in front of the server's greeting. That text read as

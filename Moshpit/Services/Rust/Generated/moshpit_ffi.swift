@@ -24978,6 +24978,10 @@ public enum SftpWhyValue: Equatable, Hashable {
      * The phone's side of a transfer.
      */
     case local
+    /**
+     * The file changed while it was read (B814).
+     */
+    case changed
 
 
 
@@ -25013,6 +25017,8 @@ public struct FfiConverterTypeSftpWhyValue: FfiConverterRustBuffer {
         
         case 7: return .local
         
+        case 8: return .changed
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -25047,6 +25053,10 @@ public struct FfiConverterTypeSftpWhyValue: FfiConverterRustBuffer {
         
         case .local:
             writeInt(&buf, Int32(7))
+        
+        
+        case .changed:
+            writeInt(&buf, Int32(8))
         
         }
     }

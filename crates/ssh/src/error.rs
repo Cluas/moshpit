@@ -283,6 +283,10 @@ pub enum SftpError {
     /// The progress callback asked to stop.
     #[error("cancelled")]
     Cancelled,
+    /// The file changed size or time while it was being read (B814): what
+    /// came down is neither version, and isn't handed out.
+    #[error("the file changed while it was read: {0}")]
+    Changed(String),
     /// The local side of a transfer.
     #[error("local file: {0}")]
     Local(#[from] std::io::Error),

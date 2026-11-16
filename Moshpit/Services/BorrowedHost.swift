@@ -274,6 +274,7 @@ final class BorrowedHost: HostConnection {
             case .nameTaken: return HostConnectionError.nameTaken
             case .refused: return writing ? HostConnectionError.writeDenied : HostConnectionError.failed(log)
             case .transport: return HostConnectionError.notAnswering
+            case .changed: return HostConnectionError.changedWhileFetching
             case .unavailable, .local: return HostConnectionError.failed(log)
             }
         }

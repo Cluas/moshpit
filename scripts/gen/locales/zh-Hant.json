@@ -681,6 +681,7 @@
   "CAN'T OPEN": "無法開啟",
   "This file is %@. Download it to preview?": "這個檔案有 %@，要下載下來預覽嗎？",
   "This file is no longer on the host.": "這個檔案已經不在主機上了。",
+  "This file changed while it was being fetched. Try again.": "這個檔案在下載時被改動了，再試一次。",
   "This host has SFTP turned off, and the file is too large to send without it.": "這台主機關閉了 SFTP，檔案又太大，沒辦法用其他方式傳過來。",
   "Couldn't reach the host. Check the connection and try again.": "連不到主機。請檢查連線後再試一次。",
   "Only images, video, audio, PDFs and documents are shown here.": "這裡只顯示圖片、影片、音訊、PDF 和文件。",

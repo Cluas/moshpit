@@ -400,13 +400,13 @@ impl Sftp {
     ) -> Result<u64, SftpError> {
         // The size the host said, and none when it said none (B813: a 0
         // was taken for "unknown" and read to an EOF a device never has).
-        let said = self
+        let before = self
             .unless_cancelled(async {
                 self.raw.fstat(handle).await.map_err(|e| self.fail(e, path))
             })
             .await?
-            .attrs
-            .size;
+            .attrs;
+        let said = before.size;
         let size = said.unwrap_or(0);
         let file = std::fs::File::create(destination)?;
         let mut window = ReadWindow::new(said, READ_CHUNK);
@@ -448,7 +448,27 @@ impl Sftp {
                 }
             }
         }
-        Ok(window.length(received))
+        let length = window.length(received);
+        // Fix (B814): a file the agent wrote again while it was read came
+        // down as neither version — the start of one and the rest of the
+        // other, or the old one's bytes past the new one's end — and was
+        // handed out, cached under the old one's size and time. Its size
+        // and time are asked again: changed, or ended short of the size
+        // said, it fails, and the next try reads it whole.
+        let after = self
+            .unless_cancelled(async {
+                self.raw.fstat(handle).await.map_err(|e| self.fail(e, path))
+            })
+            .await?
+            .attrs;
+        if after.size != before.size
+            || after.mtime != before.mtime
+            || said.is_some_and(|said| length < said)
+        {
+            return Err(SftpError::Changed(path.to_owned()));
+        }
+        file.set_len(length)?;
+        Ok(length)
     }
 
     /// Streams `local` to `remote`, which must not exist yet (SFTP's

@@ -681,6 +681,7 @@
   "CAN'T OPEN": "ÖFFNEN FEHLGESCHLAGEN",
   "This file is %@. Download it to preview?": "Die Datei ist %@ groß. Für die Vorschau laden?",
   "This file is no longer on the host.": "Diese Datei liegt nicht mehr auf dem Host.",
+  "This file changed while it was being fetched. Try again.": "Diese Datei hat sich beim Laden geändert. Versuche es noch einmal.",
   "This host has SFTP turned off, and the file is too large to send without it.": "Auf diesem Host ist SFTP ausgeschaltet, und ohne SFTP ist die Datei zu groß zum Übertragen.",
   "Couldn't reach the host. Check the connection and try again.": "Host nicht erreichbar. Prüfe die Verbindung und versuch es noch einmal.",
   "Only images, video, audio, PDFs and documents are shown here.": "Hier erscheinen nur Bilder, Videos, Audio, PDFs und Dokumente.",

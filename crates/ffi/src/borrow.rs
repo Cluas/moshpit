@@ -89,6 +89,8 @@ pub enum SftpWhyValue {
     Transport,
     /// The phone's side of a transfer.
     Local,
+    /// The file changed while it was read (B814).
+    Changed,
 }
 
 impl BorrowFailure {
@@ -109,6 +111,7 @@ impl BorrowFailure {
             SftpError::Transport(_) => SftpWhyValue::Transport,
             SftpError::Cancelled => return Self::Cancelled,
             SftpError::Local(_) => SftpWhyValue::Local,
+            SftpError::Changed(_) => SftpWhyValue::Changed,
             SftpError::Ssh(ssh) => return Self::ssh(&Failure::from(ssh)),
             _ => SftpWhyValue::Transport,
         };
