@@ -190,11 +190,26 @@ pub fn assert_bar_follows_scrolling(app: &mut Headless, list: &str, glass: bool)
 /// last set.
 type Native = (String, HashMap<String, serde_json::Value>);
 
-/// The host's native components on a screen, by their container's node.
+/// The host's native components on a screen, by their container's node,
+/// and how far each view's touch area reaches past its bounds (its
+/// `hit_slop`, which the layout's bounds leave out).
 #[derive(Clone, Default)]
-pub struct Natives(Arc<Mutex<HashMap<nsh_core::NodeId, Native>>>);
+pub struct Natives(
+    Arc<Mutex<HashMap<nsh_core::NodeId, Native>>>,
+    Arc<Mutex<HashMap<nsh_core::NodeId, nsh_core::EdgeInsets>>>,
+);
 
 impl Natives {
+    /// How far a touch on `node` may land past its bounds, each side.
+    pub fn hit_slop(&self, node: nsh_core::NodeId) -> nsh_core::EdgeInsets {
+        self.1
+            .lock()
+            .unwrap()
+            .get(&node)
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// The node of the `name` component whose `identifier` prop is `id`.
     pub fn find(&self, name: &str, id: &str) -> Option<nsh_core::NodeId> {
         let natives = self.0.lock().unwrap();
@@ -255,8 +270,12 @@ impl Natives {
 
     fn apply(&self, batch: &nsh_core::MountBatch) {
         let mut natives = self.0.lock().unwrap();
+        let mut slops = self.1.lock().unwrap();
         for item in &batch.items {
             match item {
+                nsh_core::MountItem::ViewProps { id, props } => {
+                    slops.insert(*id, props.hit_slop);
+                }
                 nsh_core::MountItem::Component { id, name } => {
                     natives.insert(*id, (name.to_string(), HashMap::new()));
                 }
@@ -272,6 +291,7 @@ impl Natives {
                 }
                 nsh_core::MountItem::Delete { id } => {
                     natives.remove(id);
+                    slops.remove(id);
                 }
                 _ => {}
             }

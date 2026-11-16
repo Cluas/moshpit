@@ -5,7 +5,7 @@
 //! - every view that takes a press itself has a role a screen reader
 //!   announces as something to press, and a name (its label, else the
 //!   texts in it);
-//! - it is at least 44 × 44 pt;
+//! - it is at least 44 × 44 pt to touch, its `hit_slop` counted;
 //! - no view around it, or around a text, is of no size (B659: VoiceOver
 //!   never reaches what is inside one);
 //! - nothing that isn't in a sideways scroll goes past the screen's edges;
@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 
 use nsh_core::{AttributedText, Bounds, EllipsizeMode, NodeId, Points, TextEngine, ViewKind};
 use nsh_testing::{Headless, LayoutNode};
+
+use super::Natives;
 
 /// The roles a screen reader announces as something to press.
 pub const PRESS_ROLES: &[&str] = &[
@@ -63,11 +65,51 @@ fn describe(node: &LayoutNode) -> String {
     format!("view:{}", node.id)
 }
 
+/// The size a touch on `node` lands in: its bounds grown by its
+/// `hit_slop` (which iOS's hit test honours: `nsh-platform-ios`'s
+/// `inside`, and the core's overflow reaches over it), cut to every view
+/// around it that clips (`clipsToBounds` stops the hit test there).
+/// `around` is the views around `node`, nearest first.
+pub fn touch_size(node: &LayoutNode, around: &[&LayoutNode], natives: &Natives) -> (f32, f32) {
+    let slop = natives.hit_slop(node.id);
+    let b = node.bounds;
+    let (mut x0, mut y0) = (b.origin.x.0 - slop.left.0, b.origin.y.0 - slop.top.0);
+    let mut x1 = b.origin.x.0 + b.size.width.0 + slop.right.0;
+    let mut y1 = b.origin.y.0 + b.size.height.0 + slop.bottom.0;
+    for clip in around.iter().filter(|a| a.clips) {
+        let c = clip.bounds;
+        x0 = x0.max(c.origin.x.0);
+        y0 = y0.max(c.origin.y.0);
+        x1 = x1.min(c.origin.x.0 + c.size.width.0);
+        y1 = y1.min(c.origin.y.0 + c.size.height.0);
+    }
+    ((x1 - x0).max(0.0), (y1 - y0).max(0.0))
+}
+
+/// The size a touch on the shown view with test id `id` lands in
+/// ([`touch_size`]); panics when there is none.
+pub fn touch_size_of(app: &Headless, natives: &Natives, id: &str) -> (f32, f32) {
+    let nodes = app.screen().layout_nodes();
+    let by_id: HashMap<NodeId, &LayoutNode> = nodes.iter().map(|n| (n.id, n)).collect();
+    let node = nodes
+        .iter()
+        .find(|n| n.test_id.as_deref() == Some(id) && !n.hidden)
+        .unwrap_or_else(|| panic!("no view {id}"));
+    let mut around = Vec::new();
+    let mut at = node.parent;
+    while let Some(view) = by_id.get(&at) {
+        around.push(*view);
+        at = view.parent;
+    }
+    touch_size(node, &around, natives)
+}
+
 /// What is wrong on `app`'s screen now, one line each, for a viewport
 /// `width` wide. `skip` names test ids (and the views inside them) the
 /// audit leaves alone: a native view drawing its own (the terminal's
-/// grid), or what another bug already covers.
-pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
+/// grid), or what another bug already covers. A target's size counts its
+/// `hit_slop`, as `natives` (the screen's observer) saw it.
+pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Vec<String> {
     let screen = app.screen();
     let nodes = screen.layout_nodes();
     let by_id: HashMap<NodeId, &LayoutNode> = nodes.iter().map(|n| (n.id, n)).collect();
@@ -133,11 +175,10 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
             }
         }
         if presses {
-            let size = node.bounds.size;
-            if size.width.0 < TARGET - 0.5 || size.height.0 < TARGET - 0.5 {
+            let (w, h) = touch_size(node, &ancestors(node), natives);
+            if w < TARGET - 0.5 || h < TARGET - 0.5 {
                 found.push(format!(
-                    "{what}: a target {:.0} × {:.0} pt, under {TARGET}",
-                    size.width.0, size.height.0
+                    "{what}: a target {w:.0} × {h:.0} pt, under {TARGET}"
                 ));
             }
         }
