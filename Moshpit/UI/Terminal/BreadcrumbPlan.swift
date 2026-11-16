@@ -105,7 +105,7 @@ struct BreadcrumbPlan: Equatable {
 extension BreadcrumbPlan {
     /// The trimmed tree the NSH bar names its segments from, posted in the
     /// shape of a Home card's `control` (the ui crate reads it with Home's
-    /// model). Its own type since W15b's cutover removed Swift's
+    /// model). Its own type since the move to the core removed Swift's
     /// HomeSnapshot, whose Control this used to borrow.
     struct Tree: Equatable {
         var mux: String

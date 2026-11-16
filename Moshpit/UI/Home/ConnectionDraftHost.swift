@@ -185,7 +185,7 @@ struct ConnectionSecrets: Equatable {
     /// PEM key (B133). A key behind a passphrase, or text that isn't a key,
     /// is kept as pasted: the connect asks for the passphrase once, or says
     /// what is wrong with it. The Rust key reader's rule
-    /// (`moshpit_ssh::keyfile::storable`, W15a), Android's too.
+    /// (`moshpit_ssh::keyfile::storable`), Android's too.
     static func storable(_ pasted: String) -> String {
         sshKeyStorable(pasted: pasted)
     }

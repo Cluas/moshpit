@@ -147,7 +147,7 @@ func phase(_ p: HostSetupModel.Phase) -> String {
 
 @MainActor
 func run(_ name: String) async -> [String: Any] {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("w15b-x-\(UUID().uuidString)")
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("crosscheck-x-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer {
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)

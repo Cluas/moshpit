@@ -1,4 +1,4 @@
-//! W15b against real programs on this machine's loopback: host care, the
+//! Host care against real programs on this machine's loopback: host care, the
 //! Host Setup screen and push pairing (`moshpit-hostcare`) driven over a
 //! Rust session's own SSH connection (`Sessions::borrow_ssh`, as the app's
 //! platform reaches it), against the in-tree relay.
@@ -24,7 +24,7 @@
 //! screen removes the hooks and unpairs, and the host is left clean.
 //!
 //! ```sh
-//! CARGO_BUILD_JOBS=4 cargo test -p moshpit-session --test live_w15b -- --ignored --nocapture
+//! CARGO_BUILD_JOBS=4 cargo test -p moshpit-session --test live_hostcare_borrowed -- --ignored --nocapture
 //! ```
 
 mod support;
@@ -257,10 +257,10 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
         eprintln!("skipped: needs {SSHD} and go");
         return;
     }
-    let home = Scratch::new("w15b-home");
+    let home = Scratch::new("borrow-home");
     let home_path = home.0.clone();
     // Short: a socket's path has to fit in 104 bytes.
-    let tmux_dir = PathBuf::from(format!("/tmp/w15b-{}", moshpit_seal::random::hex(4)));
+    let tmux_dir = PathBuf::from(format!("/tmp/borrow-{}", moshpit_seal::random::hex(4)));
     std::fs::create_dir_all(&tmux_dir).unwrap();
     // Our tmux server and its socket go when the test ends, passed or not.
     struct Gone(PathBuf);
@@ -289,7 +289,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
             .unwrap()
     };
     assert!(
-        tmux(&["new-session", "-d", "-s", "w15b", "-x", "80", "-y", "24"])
+        tmux(&["new-session", "-d", "-s", "borrow", "-x", "80", "-y", "24"])
             .status
             .success()
     );
@@ -322,7 +322,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
         &[],
     )
     .await;
-    let relay_dir = Scratch::new("w15b-relay");
+    let relay_dir = Scratch::new("borrow-relay");
     let relay = GoRelay::start(&relay_dir).await;
 
     let mut bench = Bench::with(sshd.addr(), Timing::default());
@@ -355,7 +355,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
     let care = Driver::new(machine, phone.clone(), tokio::runtime::Handle::current());
     let conn = Conn {
         id: connection,
-        label: "w15b-host".into(),
+        label: "borrow-host".into(),
     };
     care.with(|m, k| {
         m.set_settings(
@@ -634,7 +634,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
     // What a command takes here, against what the machine waits for one:
     // the budgets must leave a slow host's link a wide margin.
     let (slowest, which) = phone.slowest.lock().unwrap().clone();
-    eprintln!("live w15b: slowest command {slowest:?}: {which}");
+    eprintln!("live borrow: slowest command {slowest:?}: {which}");
     let budgets = moshpit_hostcare::Budgets::default();
     assert!(
         slowest < Duration::from_millis(budgets.care_exec_ms.min(budgets.setup_exec_ms) / 10),
@@ -696,7 +696,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
 
     let commands = phone.commands.lock().unwrap().len();
     eprintln!(
-        "live w15b: {commands} commands on one borrowed connection, {} sign-in(s); relay: {}",
+        "live borrow: {commands} commands on one borrowed connection, {} sign-in(s); relay: {}",
         sshd.accepted(),
         relay
             .log()

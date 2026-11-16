@@ -106,7 +106,7 @@ fn shell(shell: &str, command: &str, home: &Path) -> String {
 
 fn scratch(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!(
-        "w15d-{name}-{}",
+        "remote-paths-{name}-{}",
         moshpit_seal::foundation::uuid::Uuid::new_v4()
     ));
     std::fs::create_dir_all(&root).unwrap();

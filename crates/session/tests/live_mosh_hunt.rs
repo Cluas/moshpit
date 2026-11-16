@@ -1,5 +1,5 @@
 //! The mosh path, and a tmux session's redial, against real programs
-//! (rc1's hunts, B400–B402, B483, B485): a private sshd, mosh-server started
+//! (the hunts, B400–B402, B483, B485): a private sshd, mosh-server started
 //! through it, a private tmux server (`tmux -L`). What the person sees when
 //! the server dies, the return path heals, the control plane goes quiet or
 //! the connection is dialled again.
@@ -94,7 +94,7 @@ async fn a_killed_mosh_server_is_dialed_again() {
     let _ = bench.sessions.disconnect(id).await;
 
     // mosh + tmux: the same tmux session, rendered again.
-    let tmux = Tmux::named("rc1-gone");
+    let tmux = Tmux::named("hunt-gone");
     tmux.new_session("gone");
     tmux.run(&["send-keys", "-t", "gone", "echo kept-$((40+2))", "Enter"]);
     let mut bench = direct(&sshd);
@@ -207,7 +207,7 @@ fn dropped_notices(bench: &Bench, id: SessionId) -> usize {
 async fn a_quiet_control_plane_is_replaced_at_a_roam_and_a_command_meanwhile_lands() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-quiet");
+    let tmux = Tmux::named("hunt-quiet");
     tmux.new_session("quiet");
     let (mut bench, id, _reaper) = mosh_tmux_via(&relay, &tmux, Timing::default()).await;
     let before = windows(&tmux, "quiet");
@@ -249,7 +249,7 @@ async fn a_quiet_control_plane_is_replaced_at_a_roam_and_a_command_meanwhile_lan
 async fn a_command_held_past_the_bound_is_dropped_and_said_once_the_plane_is_back() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-held");
+    let tmux = Tmux::named("hunt-held");
     tmux.new_session("held");
     // A redial into a stalled line fails in 4 s, not 15.
     let timing = Timing {
@@ -332,7 +332,7 @@ async fn heal_and_redial(bench: &mut Bench, relay: &Relay) {
 async fn a_tmux_command_given_while_redialling_lands_on_the_next_attach() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-redial");
+    let tmux = Tmux::named("hunt-redial");
     tmux.new_session("redial");
     let (mut bench, id, _) = tmux_via(&relay, &tmux, Timing::default(), Protocol::Ssh).await;
     let before = windows(&tmux, "redial");
@@ -358,7 +358,7 @@ async fn a_tmux_command_given_while_redialling_lands_on_the_next_attach() {
 async fn a_tmux_command_held_past_the_bound_through_a_redial_is_dropped_and_said() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-redial-late");
+    let tmux = Tmux::named("hunt-redial-late");
     tmux.new_session("late");
     let (mut bench, id, _) = tmux_via(&relay, &tmux, Timing::default(), Protocol::Ssh).await;
     let before = windows(&tmux, "late");
@@ -391,7 +391,7 @@ async fn a_tmux_command_held_past_the_bound_through_a_redial_is_dropped_and_said
 async fn a_tmux_command_given_while_a_return_asks_the_socket_lands_after_it() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-return");
+    let tmux = Tmux::named("hunt-return");
     tmux.new_session("back");
     let timing = Timing {
         resume_in_place: true,
@@ -426,7 +426,7 @@ async fn a_tmux_command_given_while_a_return_asks_the_socket_lands_after_it() {
 async fn a_tmux_command_given_while_mosh_is_redialled_lands_on_the_new_plane() {
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
-    let tmux = Tmux::named("rc1-redial-mosh");
+    let tmux = Tmux::named("hunt-redial-mosh");
     tmux.new_session("mosh");
     // The system's UDP: the killed server's port refuses at once (B402);
     // the proxy would swallow that.
@@ -555,13 +555,13 @@ async fn logger_ready(log: &std::path::Path) {
 #[ignore = "needs sshd, tmux and python3"]
 async fn a_return_given_with_a_paste_reaches_the_program_apart() {
     let sshd = Sshd::start().await;
-    let scratch = Scratch::new("rc1-paste");
+    let scratch = Scratch::new("hunt-paste");
     let script = scratch.join("reads.py");
     std::fs::write(&script, READ_LOGGER).unwrap();
 
     // SSH + tmux: the pane runs the logger.
     let log = scratch.join("tmux.log");
-    let tmux = Tmux::named("rc1-paste");
+    let tmux = Tmux::named("hunt-paste");
     tmux.new_session("paste");
     let program = format!("python3 -I {} {}", script.display(), log.display());
     tmux.run(&["respawn-pane", "-k", "-t", "paste", &program]);
@@ -610,7 +610,7 @@ async fn a_return_given_with_a_paste_reaches_a_herdr_pane_apart() {
         eprintln!("skipped: no {HERDR}");
         return;
     }
-    let scratch = Scratch::new("rc1-paste-herdr");
+    let scratch = Scratch::new("hunt-paste-herdr");
     let script = scratch.join("reads.py");
     std::fs::write(&script, READ_LOGGER).unwrap();
     let log = scratch.join("herdr.log");

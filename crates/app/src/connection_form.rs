@@ -1,7 +1,7 @@
 //! Add Connection and Edit Connection, the host's model: the draft the form
 //! edits, Save's rules, and what saving does to the connection — its fields
 //! and the credential it signs in with. One copy for the NSH screen on iOS
-//! and Android and for the SwiftUI form iOS falls back to (W15d; it was
+//! and Android and for the SwiftUI form iOS falls back to (it was
 //! `ConnectionDraft.swift` and `ConnectionCredential.swift` on iOS and
 //! `crates/android/src/app/form.rs` on Android).
 //!

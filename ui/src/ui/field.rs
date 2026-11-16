@@ -847,7 +847,7 @@ pub enum SecretShown {
 
 impl SecretShown {
     /// From whether the host's field holds text (`typed`) and whether the
-    /// connection keeps a secret (`kept`). W15d's `SecretState` maps as
+    /// connection keeps a secret (`kept`). The host's `SecretState` maps as
     /// Empty → Empty, Saved → Saved, Edited → this with `kept` its
     /// `stored_password` (or `stored_key`).
     pub fn of(typed: bool, kept: bool) -> Self {

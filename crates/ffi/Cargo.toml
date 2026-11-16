@@ -42,7 +42,7 @@ moshpit-seal-ffi = { path = "../seal-ffi" }
 # The companion pet (src/pet.rs, through UniFFI): its record, rules and
 # sprites; the platform supplies the seed, the clock and iCloud.
 moshpit-pet = { path = "../pet" }
-# What the app makes of its coding agents (src/agents.rs, W15c): the island,
+# What the app makes of its coding agents (src/agents.rs): the island,
 # the widget and the cards, decided in Rust.
 moshpit-agents = { path = "../agents" }
 # The session layer the app runs every terminal on (src/session.rs,

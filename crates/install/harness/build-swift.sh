@@ -5,7 +5,7 @@
 # as the module MoshpitKit, then the
 # app's UNCHANGED Moshpit/Services/Install/{HostScripts,InstallManifest,
 # HostChannel,HostInstaller,AgentHookConfig}.swift — gone from the app since
-# W15b moved the installer to the core, so read from the last commit that
+# the installer moved to the core, so read from the last commit that
 # had them ($MOSHPIT_SWIFT_INSTALL_REV, 81c121a1 by default) — the app's
 # Swift capability probe as it last ran it (Moshpit/Services/
 # HostCapabilities.swift before E6a batch 2a handed the probe, its parser,

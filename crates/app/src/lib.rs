@@ -3,7 +3,7 @@
 //! `crates/android`) both run.
 //!
 //! A screen (`moshpit-ui`) draws and tells; its host keeps the draft and
-//! decides what an edit, a tap or a save does. Until W15d each platform had
+//! decides what an edit, a tap or a save does. Until this crate, each platform had
 //! its own host model: Swift on iOS (`ConnectionDraft`, `TerminalShortcut`,
 //! `RemoteFolderModel`, …) and Rust on Android (`crates/android/src/app`).
 //! They live here now, with the stricter of the two rules wherever they

@@ -58,42 +58,42 @@
   "install-claude": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
     "trigger": "Any Host Setup step."
   },
   "install-codex": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
     "trigger": "Any Host Setup step."
   },
   "install-broken-json": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
     "trigger": "Any Host Setup step."
   },
   "install-then-remove": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched. Removing the hooks from a config the install created leaves `{}` where Foundation wrote `{\n\n}` (install's json-layout, B375: a container that changed is rebuilt in the file's own style, and an empty one holds nothing).",
     "trigger": "Any Host Setup step."
   },
   "pair-missing-tools": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
     "trigger": "Any Host Setup step."
   },
   "unpair": {
     "id": "steps-look-first",
     "swift": "HostSetupModel.run and pair (act on the state the page last read)",
-    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (hs1's review, #5).",
+    "symptom": "A Host Setup step acts on the host as the page read it when it opened: whatever another phone (or care) changed since is decided on stale, and the step's manifest write then erases it (review, #5).",
     "rust": "Every step reads the host first (B373: a preflight and the manifest, plus the drift check left out here), and every manifest write is re-read under the host's lock (install's manifest-lock). Two more commands at the start of the step; the same outcome on a host nobody else touched.",
     "trigger": "Any Host Setup step."
   },

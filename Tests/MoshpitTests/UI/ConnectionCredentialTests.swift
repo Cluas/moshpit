@@ -88,7 +88,7 @@ struct ConnectionCredentialTests {
     @Test("A new connection: its password in a fresh item, the connection added; a managed key's item never written")
     @MainActor
     func savingANewConnection() async throws {
-        let name = "w15d.credential.\(UUID().uuidString)"
+        let name = "test.credential.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         let store = ConnectionStore(defaults: defaults)

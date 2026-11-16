@@ -76,7 +76,7 @@ fn history_of(term: &Terminal) -> Vec<String> {
 #[ignore = "needs sshd and tmux"]
 async fn ssh_tmux_local_history_is_tmuxs() {
     let sshd = Sshd::start().await;
-    let tmux = Tmux::named("rc1-sc");
+    let tmux = Tmux::named("scroll-sc");
     tmux.new_session("sc");
     tmux.run(&["send-keys", "-t", "sc", "seq 1 300", "Enter"]);
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -164,7 +164,7 @@ async fn ssh_tmux_a_full_screen_program_across_the_attach_gets_the_first_tick() 
         ("alt-screen mouse app", 1, 0),
         ("claude on the primary screen, repainting", 0, 1),
     ] {
-        let tmux = Tmux::named("rc1-scx");
+        let tmux = Tmux::named("scroll-scx");
         tmux.new_session("scx");
         tmux.run(&["send-keys", "-t", "scx", "seq 1 300", "Enter"]);
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -235,7 +235,7 @@ async fn ssh_tmux_a_full_screen_program_across_the_attach_gets_the_first_tick() 
 #[ignore = "needs sshd, tmux and mosh-server"]
 async fn mosh_tmux_a_scroll_pages_tmuxs_history_and_typing_leaves_it() {
     let sshd = Sshd::start().await;
-    let tmux = Tmux::named("rc1-scm");
+    let tmux = Tmux::named("scroll-scm");
     tmux.new_session("scm");
     tmux.run(&["send-keys", "-t", "scm", "seq 1 300", "Enter"]);
     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -355,7 +355,7 @@ async fn mosh_tmux_a_mouse_app_gets_its_wheel_not_copy_mode() {
     let wheel_of = |out: &std::path::Path| std::fs::read(out).unwrap_or_default();
 
     // Running at the attach: the first tick, no drag's probe first.
-    let tmux = Tmux::named("rc1-whm");
+    let tmux = Tmux::named("scroll-whm");
     tmux.new_session("whm");
     let out = dir.join("at-attach.in");
     tmux.run(&[
@@ -385,7 +385,7 @@ async fn mosh_tmux_a_mouse_app_gets_its_wheel_not_copy_mode() {
 
     // Started after the attach: the first tick is copy-mode (the flags
     // say shell), the drag's probe answers, the next tick leaves it.
-    let tmux = Tmux::named("rc1-whm2");
+    let tmux = Tmux::named("scroll-whm2");
     tmux.new_session("whm2");
     let pane = tmux.run(&["display-message", "-p", "-t", "whm2", "#{pane_id}"]);
     let mut bench = Bench::with(sshd.addr(), moshpit_session::Timing::default());
@@ -424,7 +424,7 @@ async fn mosh_tmux_a_mouse_app_gets_its_wheel_not_copy_mode() {
 #[ignore = "needs sshd, tmux and mosh-server"]
 async fn mosh_tmux_the_persons_own_q_leaves_copy_mode_and_nothing_more() {
     let sshd = Sshd::start().await;
-    let tmux = Tmux::named("w15b-qq");
+    let tmux = Tmux::named("scroll-qq");
     tmux.new_session("qq");
     tmux.run(&["send-keys", "-t", "qq", "seq 1 300", "Enter"]);
     tokio::time::sleep(Duration::from_millis(400)).await;

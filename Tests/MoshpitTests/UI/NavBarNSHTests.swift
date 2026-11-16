@@ -226,7 +226,7 @@ struct NavBarNSHTests {
         defer { done() }
         // A dozen more saved hosts: a list that fits the screen cannot stay
         // collapsed (NSH, like UIKit, scrolls no further than its end).
-        // Home's record is the core's JSON since the cutover (W15b): add the
+        // Home's record is the core's JSON since the move to the core: add the
         // saved cards to its connections.
         var message = HomeNSHTests.message()
         var connections = message["connections"] as? [Any] ?? []

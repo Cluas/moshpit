@@ -1,5 +1,5 @@
-//! pet1's herdr checks against real programs on this machine's loopback,
-//! on w15b's rig (`support`'s `PrivateHerdr` and `Sshd`): an sshd of our
+//! Herdr checks against real programs on this machine's loopback,
+//! on the shared rig (`support`'s `PrivateHerdr` and `Sshd`): an sshd of our
 //! own and a herdr server on a private session under a temp HOME. Nothing
 //! touches `~/.ssh`, the machine's sshd or the user's own herdr.
 //!
@@ -7,7 +7,7 @@
 //!   lands on the pane that sent it.
 //!
 //! ```sh
-//! CARGO_BUILD_JOBS=2 cargo test -p moshpit-session --test live_pet1_herdr -- --ignored --nocapture --test-threads 1
+//! CARGO_BUILD_JOBS=2 cargo test -p moshpit-session --test live_herdr_restart -- --ignored --nocapture --test-threads 1
 //! ```
 
 mod support;

@@ -1,5 +1,5 @@
-//! Running a host's setup from the phone, as a state machine with no I/O
-//! (W15b): what `HostAutoCare`, `HostSetupModel`, `InstallAssistPlan` and
+//! Running a host's setup from the phone, as a state machine with no I/O:
+//! what `HostAutoCare`, `HostSetupModel`, `InstallAssistPlan` and
 //! the pairing half of `PushService` did in the iOS app, for iOS and
 //! Android alike. The pieces it drives — the scripts, the manifest, the
 //! hook configs, the installer's steps ([`moshpit_install`]) and the push

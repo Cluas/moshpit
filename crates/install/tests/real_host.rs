@@ -1217,7 +1217,7 @@ fn outside_tmux_two_sessions_keep_apart() {
     assert_eq!(got, ["attention claude", "done claude"]);
 }
 
-/// A real fire marks the agent as seen on the host (hs1's Codex trust
+/// A real fire marks the agent as seen on the host (the Codex trust
 /// step reads it); Moshpit's own hooks test never does.
 #[test]
 fn a_real_fire_marks_the_agent_seen_and_the_hooks_test_does_not() {
@@ -1491,7 +1491,7 @@ fn two_changes_at_once_both_land() {
 /// find it with no stamp and break it — two waiters together, the second
 /// removing the first's fresh lock: two holders, a change lost (Linux).
 /// And waiters that polled once a second, all in step, gave up after six
-/// tries while the others took their turns (macOS). t3 saw them in 2 of 15
+/// tries while the others took their turns (macOS). They showed in 2 of 15
 /// runs of this suite with three writers; with eight, every round.
 #[test]
 fn many_changes_at_once_all_land() {

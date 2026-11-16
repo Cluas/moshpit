@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the Swift side of the host-care cross-check for macOS: the app's
-# host care as it was before W15b moved it to the core (81c121a1, or
+# host care as it was before it moved to the core (81c121a1, or
 # $MOSHPIT_SWIFT_CARE_REV) — HostAutoCare, HostSetupModel, PushService and
 # the installer they drive — with harness/swift/{stubs,main}.swift.
 #

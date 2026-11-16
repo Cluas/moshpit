@@ -40,7 +40,7 @@ fn stamped(tmux: &Tmux) {
         ("@moshpit_state", "done"),
         ("@moshpit_agent", "claude"),
         ("@moshpit_since", "1790000000"),
-        ("@moshpit_title", "magpie"),
+        ("@moshpit_title", "builder"),
     ] {
         tmux.run(&["set-option", "-p", "-t", "work", option, value]);
     }

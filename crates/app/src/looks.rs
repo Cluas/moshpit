@@ -1,7 +1,7 @@
 //! Settings › Accent's and › Theme's editors, the host's model: the draft
 //! the page edits and what its changes do. One copy for iOS
 //! (`AccentEditorNSHPage.swift`'s `AccentEditorModel`,
-//! `ThemeEditorNSHPage.swift`'s `ThemeEditorModel`, until W15d) and Android
+//! `ThemeEditorNSHPage.swift`'s `ThemeEditorModel`, before this crate) and Android
 //! (`crates/android/src/app/looks.rs`). The colour wells are the hosts'
 //! (UIKit's `UIColorWell`, Android's picker); saving goes through the
 //! stores.

@@ -1,4 +1,4 @@
-//! W15b's herdr hunt against real programs on this machine's loopback: an
+//! The herdr focus hunt against real programs on this machine's loopback: an
 //! sshd of our own and a herdr server on a private session under a temp
 //! HOME (`--session …`; every herdr command carries it). Nothing touches
 //! `~/.ssh`, the machine's sshd or the user's own herdr.
@@ -8,7 +8,7 @@
 //!   dropped or lands elsewhere.
 //!
 //! ```sh
-//! CARGO_BUILD_JOBS=2 cargo test -p moshpit-session --test live_w15b_herdr -- --ignored --nocapture --test-threads 1
+//! CARGO_BUILD_JOBS=2 cargo test -p moshpit-session --test live_herdr_focus -- --ignored --nocapture --test-threads 1
 //! ```
 
 mod support;

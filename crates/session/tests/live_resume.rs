@@ -34,7 +34,7 @@
 //! (`Timing::resume_in_place`). A case is `kind:away_seconds:rtt_ms:fate[:busy]`; kinds are `tmux`,
 //! `mosh`, `moshtmux`, `herdr`, `shell`; `busy` keeps the tmux pane
 //! printing through the suspension. Each case prints one `RESULT` line and
-//! appends it to `$RESUME_OUT` (default `/tmp/rc1/resume-results.tsv`).
+//! appends it to `$RESUME_OUT` (default `/tmp/moshpit-resume/resume-results.tsv`).
 
 mod support;
 
@@ -391,7 +391,7 @@ async fn run_case(case: &Case, lines: &mut Lines) -> Timeline {
         .parse()
         .expect("the link's port");
     let link_addr = SocketAddr::from(([127, 0, 0, 1], link_port));
-    let tmux = matches!(case.kind, Kind::Tmux | Kind::MoshTmux).then(|| Tmux::named("rc1-rs"));
+    let tmux = matches!(case.kind, Kind::Tmux | Kind::MoshTmux).then(|| Tmux::named("resume-rs"));
     if let Some(tmux) = &tmux {
         tmux.new_session("rs");
     }
@@ -863,7 +863,7 @@ async fn resume_timeline() {
         return;
     }
     let cases = std::env::var("RESUME_CASES").unwrap_or_else(|_| "tmux:5:0:alive".to_owned());
-    let out = std::env::var("RESUME_OUT").unwrap_or_else(|_| "/tmp/rc1/resume-results.tsv".into());
+    let out = std::env::var("RESUME_OUT").unwrap_or_else(|_| "/tmp/moshpit-resume/resume-results.tsv".into());
     for text in cases.split(',').filter(|c| !c.is_empty()) {
         let case = Case::parse(text);
         let row = format!("RESULT\t{}", drive(&case, in_place()).await);

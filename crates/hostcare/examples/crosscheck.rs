@@ -226,7 +226,7 @@ impl Run {
 type Step = Box<dyn Fn(&mut HostCare, u64, Clock)>;
 
 fn run(name: &str) -> Value {
-    let dir = std::env::temp_dir().join(format!("w15b-x-{}", moshpit_seal::random::hex(6)));
+    let dir = std::env::temp_dir().join(format!("crosscheck-x-{}", moshpit_seal::random::hex(6)));
     std::fs::create_dir_all(&dir).unwrap();
     let file = PushPairingFile::new(dir.join("push-pairings.json"));
     let conn = Conn {

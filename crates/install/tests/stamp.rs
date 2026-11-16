@@ -53,7 +53,7 @@ fn through_a_real_shell_tmux_gets_the_whole_pane_every_time_and_nothing_else_run
         "%3",
     ] {
         let dir = std::env::temp_dir().join(format!(
-            "w15b-stamp-{}-{}",
+            "stamp-test-{}-{}",
             std::process::id(),
             moshpit_seal::random::hex(4)
         ));

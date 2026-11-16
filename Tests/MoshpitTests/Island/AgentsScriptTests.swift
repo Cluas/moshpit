@@ -5,7 +5,7 @@ import UserNotifications
 @testable import Moshpit
 import MoshpitKit
 
-/// W15c, end to end: the scripts the Rust machine runs (`crates/agents`,
+/// The agent machine, end to end: the scripts the Rust machine runs (`crates/agents`,
 /// `harness::run`) through the app's monitor — the Swift glue over
 /// `AgentMachine`, across the FFI — must do exactly what the machine does
 /// on its own (`Fixtures/agents/rust-transcripts.txt`, written by
@@ -14,7 +14,7 @@ import MoshpitKit
 /// The same test, run against the Swift monitor before it was replaced,
 /// recorded `crates/agents/tests/fixtures/swift/transcripts.txt`: what the
 /// machine was held to (`swift_equivalence.rs`).
-@Suite("Agents scripts (W15c cross-check)", .serialized)
+@Suite("Agents scripts (cross-check)", .serialized)
 @MainActor
 struct AgentsScriptTests {
 

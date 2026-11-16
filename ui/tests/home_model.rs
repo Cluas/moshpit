@@ -185,7 +185,7 @@ fn a_pane_is_called_by_its_project() {
         ("claude", "1", None, None, None),
         ("claude", "moshpit", None, Some("/srv/other"), Some("moshpit")),
         ("claude", "claude", None, Some("/home/dev/src/x/"), Some("x")),
-        ("claude", "Tab 1", Some("magpie"), Some("/srv/other"), Some("magpie")),
+        ("claude", "Tab 1", Some("builder"), Some("/srv/other"), Some("builder")),
         ("claude", "Tab 1", Some("~"), Some("/srv/proj-4"), Some("proj-4")),
     ] {
         assert_eq!(

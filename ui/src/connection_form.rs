@@ -3,8 +3,8 @@
 //! edited with, in Home's sheet, on the redesign's components (`crate::ui`:
 //! [`Section`](crate::ui::section::Section), [`Field`](crate::ui::field::Field),
 //! [`SecretField`](crate::ui::field::SecretField), the switch, segmented
-//! control and select). Its model is W15d's ([`FormState`], [`Secrets`],
-//! [`Field`]): the redesign changed how it looks, not what it keeps.
+//! control and select). Its model ([`FormState`], [`Secrets`],
+//! [`Field`]) predates the redesign, which changed how it looks, not what it keeps.
 //!
 //! The host owns the draft and the saving: it posts what the form starts
 //! from ([`Message`]): `{"op": "form", …}` ([`FormState`]), when the page is

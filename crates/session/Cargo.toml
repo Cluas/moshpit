@@ -20,7 +20,7 @@ moshpit-tmux = { path = "../tmux" }
 tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util"] }
 
 [dev-dependencies]
-# tests/live_w15b.rs: host care over a borrowed connection.
+# tests/live_hostcare_borrowed.rs: host care over a borrowed connection.
 moshpit-hostcare = { path = "../hostcare" }
 moshpit-seal = { path = "../seal" }
 # tests/live_scroll.rs: a pane's recorded bytes replayed into the terminal

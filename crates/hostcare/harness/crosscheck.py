@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hold the core's host care to the app's Swift host care it replaced (W15b).
+"""Hold the core's host care to the app's Swift host care it replaced.
 
 Runs every scenario through both — `harness/build-swift.sh`'s binary (the
 app's HostAutoCare, HostSetupModel and PushService at 81c121a1) and

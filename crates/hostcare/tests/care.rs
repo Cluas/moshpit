@@ -256,7 +256,7 @@ fn unpairing_while_care_reads_the_host_leaves_the_host_unpaired() {
 }
 
 /// B371: an Unpair in Host Setup was undone at the connection's next
-/// session — care minted a new pairing and wrote it back to the host (hs1's
+/// session — care minted a new pairing and wrote it back to the host (the
 /// review, #2). It stands until the person pairs again: care still tends
 /// the host's scripts but pairs nothing, the mark is remembered across app
 /// runs, and Pair ends it.

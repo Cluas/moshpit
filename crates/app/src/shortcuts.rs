@@ -1,7 +1,7 @@
 //! Settings › Shortcuts and the shortcut editor, the host's model: what the
 //! list page shows of the store and what its taps may do, and the editor's
 //! draft and Save. One copy for iOS (`ShortcutsNSHPage.swift`'s
-//! `ShortcutsModel` and `AddShortcutModel`, until W15d) and Android
+//! `ShortcutsModel` and `AddShortcutModel`, before this crate) and Android
 //! (`crates/android/src/app/shortcuts.rs`), with the stricter rule of the
 //! two wherever they differed:
 //!

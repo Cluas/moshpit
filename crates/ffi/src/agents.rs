@@ -1,4 +1,4 @@
-//! The agent-activity machine (`moshpit-agents`, W15c) for the app: what
+//! The agent-activity machine (`moshpit-agents`) for the app: what
 //! `AgentActivityMonitor` drives, through UniFFI. The machine decides; the
 //! app applies — ActivityKit, the notification center, WidgetCenter and the
 //! App Group writes stay Swift.

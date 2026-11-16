@@ -31,7 +31,7 @@ impl Server {
     /// A server of its own with one session, `main`, 120×40, one window split
     /// side by side.
     fn start(test: &str) -> Server {
-        let socket = format!("moshpit-w15b-lease-{}-{test}", std::process::id());
+        let socket = format!("moshpit-lease-{}-{test}", std::process::id());
         let server = Server { socket };
         server.tmux(&["new-session", "-d", "-s", "main", "-x", "120", "-y", "40"]);
         server.tmux(&["split-window", "-h", "-t", "main"]);

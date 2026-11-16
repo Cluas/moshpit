@@ -1156,7 +1156,7 @@ fn paired(rig: &mut Rig, label: &str) -> (moshpit_hostcare::Conn, moshpit_seal::
     (c, phone)
 }
 
-/// B372 (hs1's P4): a Re-pair saved its fresh secret before the relay was
+/// B372 (review P4): a Re-pair saved its fresh secret before the relay was
 /// asked; with the relay down the phone was left holding a secret the
 /// host's conf doesn't carry, and no send token — a working pairing broken,
 /// while the page still said Current. The pairing that worked stays.
@@ -1260,7 +1260,7 @@ fn a_host_conf_the_phone_cant_open_reads_stale() {
 
 // MARK: - A step and another phone (B373)
 
-/// B373 (hs1's P2a): a step wrote back the manifest as the page had read
+/// B373 (review P2a): a step wrote back the manifest as the page had read
 /// it, so another phone's pairing record, written while the page was open,
 /// was erased (its conf left on the host, recorded nowhere).
 #[test]
@@ -1307,7 +1307,7 @@ fn a_step_keeps_what_another_phone_recorded_meanwhile() {
     );
 }
 
-/// B373 (hs1's P2b): the same for an agent's hooks: another phone installs
+/// B373 (review P2b): the same for an agent's hooks: another phone installs
 /// Codex's hooks while A's page is open; A pairs; Codex's record stays, and
 /// the page says its hooks are installed.
 #[test]
@@ -1386,7 +1386,7 @@ fn every_manifest_write_is_read_again_under_the_lock() {
 
 // MARK: - Nothing will push; a Remove remembered (B374)
 
-/// B374 (hs1's P6): removing the only agent's hooks on a paired host left
+/// B374 (review P6): removing the only agent's hooks on a paired host left
 /// it pushing nothing, and the card that says so stayed hidden (it looked
 /// at the stamp script alone); the next app run, care asked to enable
 /// notifications again. It says so, and the Remove is remembered like a no.

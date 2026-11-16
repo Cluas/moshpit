@@ -45,8 +45,9 @@ SELF = "scripts/oss-scan.py"
 # Third-party trees: an agent's name there is somebody else's text (a
 # terminfo's `%t3`).
 NAMES_EXEMPT = ("vendor/",)
-# A name stands alone: not inside a word, an id (`w1:t3`), a format (`%t3`)
-# or a hyphenated branch; after a slash it counts (`/tmp/<name>`).
+# A name stands alone: not inside a word, a herdr id (`w1:t3`), a format
+# (`%t3`) or a version suffix (`1.0.0-rc1`). Joined by a slash or a hyphen
+# it still counts (`/tmp/<name>`, `<name>-lease`, `moshpit-<name>-x`).
 
 TOKENS = re.compile(
     r"ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKI[AD][A-Z0-9]{16,}"
@@ -192,7 +193,7 @@ def main():
     team = None if args.public else team_id(root)
     if team:
         deny = deny + [team]
-    name_pattern = (re.compile(r"(?<![\w:%-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w-])")
+    name_pattern = (re.compile(r"(?<![\w:%])(?<!\d-)(?:" + "|".join(map(re.escape, names)) + r")(?!\w)")
                     if names else None)
 
     leaks = []

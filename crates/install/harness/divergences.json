@@ -162,20 +162,20 @@
       "swift_before": "printf 'home=%s\\n' … for t in openssl curl jq tmux python3 base64; do … done",
       "fix": "The preflight goes on to print `agent.<id>=yes|no` for each of HookAgent::ALL: yes when its config directory is under $HOME or one of its CLI's names is on PATH. HostFacts reads them into `agents`, apart from `tools` (B374).",
       "rust_outcome": "… done; for a in 'claude .claude claude' … 'codebuddy .codebuddy codebuddy cbc'; do set -- $a; … printf 'agent.%s=%s\\n' \"$i\" \"$f\"; done",
-      "severity": "feature: what B374's consent and hs1's agent menu are built on",
+      "severity": "feature: what B374's consent and the agent menu are built on",
       "committed_cases": "Regenerated from Rust: the `cmd preflight` case prints the new command and 126 flows differ only in the fingerprint of the preflight they send; no result changes (no committed preflight answer has an agent line)."
     },
     {
       "id": "manifest-lock",
       "swift": "HostInstaller (installPairing, installHooks, uninstallHooks, uninstall write back the manifest read when the step began)",
-      "symptom": "Each step writes back the whole manifest as it read it when it began. A change another phone (or another screen) made in between is erased: its pairing recorded nowhere though its conf stays, an agent's hooks read as not installed though its config still runs them (hs1's Host Setup review, #5).",
+      "symptom": "Each step writes back the whole manifest as it read it when it began. A change another phone (or another screen) made in between is erased: its pairing recorded nowhere though its conf stays, an agent's hooks read as not installed though its config still runs them (the Host Setup review, #5).",
       "trigger": "Two phones tending one host at once, or a Host Setup page left open while care or another phone changes the host.",
       "minimal_input": "any flow that writes the manifest (no minimal case: Swift has no lock command to compare)",
       "swift_before": "… the step's write of the manifest it read at the start",
       "fix": "HostInstaller::update_manifest: under the host's lock (commands::lock: ~/.moshpit/.lock with the holder's token, a lock older than 60 s broken, a bounded wait before it gives up and says so), the manifest is read again, changed by the step's own change only, written, and the lock let go by its owner (commands::unlock). Host Setup's steps read the host before acting, not the page's copy (B373). Since B376 the token is the phone's (commands::lock(token)): the same command sent again after a dropped connection finds the lock already its own instead of waiting on itself. Since B448 a lock with no `at` yet (its holder between its mkdir and its write) is broken only after four tries in a row found it so, and the time is read before the mkdir: a waiter broke a lock taken a moment before, and two writers held it at once. Since B566 the lock is a symlink to `<time>.<token>` (ln -s: taken and stamped in one step, so there is no lock without a stamp), only a lock older than 60 s is broken (renamed aside, removed only if still the one read, put back otherwise), and waiting is about 10 s of polls 50-200 ms apart, spread by process id; an older Moshpit's directory lock is waited for and broken the same way.",
       "rust_outcome": "… LOCK; cat manifest; write; unlock — around every manifest write",
       "evidence": [
-        "crates/hostcare/tests/setup.rs: a_step_keeps_what_another_phone_recorded_meanwhile, a_pair_keeps_the_hooks_another_phone_installed_meanwhile (hs1's P2a, P2b; red on the old code)",
+        "crates/hostcare/tests/setup.rs: a_step_keeps_what_another_phone_recorded_meanwhile, a_pair_keeps_the_hooks_another_phone_installed_meanwhile (review P2a, P2b; red on the old code)",
         "tests/real_host.rs: a_manifest_change_takes_the_lock_and_lets_it_go, a_held_lock_is_waited_for_and_a_dead_one_broken, two_changes_at_once_both_land"
       ],
       "severity": "medium: records lost between phones, the page then wrong about the host",
@@ -184,7 +184,7 @@
     {
       "id": "nothing-will-push",
       "swift": "InstallState.pairedButNothingWillPush (the stamp script alone)",
-      "symptom": "A paired host whose last agent's hooks were removed pushes nothing, with the stamp script still in place, and the 'nothing will push' card stays hidden (hs1's Host Setup review, #6; probe P6).",
+      "symptom": "A paired host whose last agent's hooks were removed pushes nothing, with the stamp script still in place, and the 'nothing will push' card stays hidden (the Host Setup review, #6; probe P6).",
       "trigger": "Remove the only agent's hooks on a paired host.",
       "minimal_input": "flow status … (a paired manifest: the stamp current, no agent's hooks)",
       "swift_before": "paired=0",
@@ -196,7 +196,7 @@
     {
       "id": "json-layout",
       "swift": "AgentHookConfig.mergedJSON and withoutMoshpitJSON (JSONSerialization with .prettyPrinted and .sortedKeys)",
-      "symptom": "Installing or removing the hooks wrote the person's whole agent config back as Foundation formats it: every key sorted, every line re-indented, numbers rewritten (196.623905 as 196.62390500000001), for one hook entry's sake (hs1's Host Setup review, #7).",
+      "symptom": "Installing or removing the hooks wrote the person's whole agent config back as Foundation formats it: every key sorted, every line re-indented, numbers rewritten (196.623905 as 196.62390500000001), for one hook entry's sake (the Host Setup review, #7).",
       "trigger": "Any hook install or removal on a JSON config the person wrote themselves.",
       "minimal_input": "merge claude {\"model\":\"opus\"} (and every merge/remove case on a non-empty config)",
       "swift_before": "{\n  \"hooks\" : { … },\n  \"model\" : \"opus\"\n}\n",
@@ -245,7 +245,7 @@
     {
       "id": "not-ported",
       "what": "HostAutoCare's orchestration and HostSetupModel are not in this crate; their pure decisions are (installed_hook_agents, agents_to_refresh, pairing_needs_rewrite). HerdrLaunch.attachCommand, which HostCapabilitiesTests also covers, belongs to herdr (W2).",
-      "why_kept": "W15b moved the orchestration to crates/hostcare, with its own cross-check against the app's Swift (crates/hostcare/harness/crosscheck.py)."
+      "why_kept": "The orchestration moved to crates/hostcare, with its own cross-check against the app's Swift (crates/hostcare/harness/crosscheck.py)."
     }
   ]
 }
