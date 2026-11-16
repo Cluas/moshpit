@@ -1787,9 +1787,13 @@ pub const SIZE_PROBE_FORMAT: &str = "#{window_id} #{window_panes} #{window_zoome
 
 /// The host's every window in [`SIZE_PROBE_FORMAT`], read over an exec
 /// channel with `tmux` (B270: before mosh's renderer squashes them), one
-/// row a line.
+/// row a line. As a control client reads them (B776): tmux 3.8 writes a
+/// plain client's layouts as JSON, the sidecar's as before; the rows come
+/// from inside the `%begin`/`%end` frame.
 pub fn layout_listing_command(tmux: &str) -> String {
-    format!("{tmux} list-windows -a -F '{SIZE_PROBE_FORMAT}' 2>/dev/null")
+    format!(
+        "{tmux} -C list-windows -a -F '{SIZE_PROBE_FORMAT}' </dev/null 2>/dev/null | grep -v '^%'"
+    )
 }
 
 /// A size probe's rows (window id, then [`PRISTINE_PROBE_FORMAT`]'s fields),
