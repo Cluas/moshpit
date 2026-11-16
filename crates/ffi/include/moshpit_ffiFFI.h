@@ -2517,6 +2517,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_plan(RustBuffer packages, i
 RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_recheck(RustBuffer packages, int8_t tmux, RustBuffer package_manager, RustBuffer has_tmux, RustBuffer has_mosh_server, RustBuffer has_herdr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOST_CAPABILITIES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOST_CAPABILITIES
+RustBuffer uniffi_moshpit_ffi_fn_func_store_host_capabilities(uint64_t host, RustBuffer connection_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SSH_KEY_ASSESS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SSH_KEY_ASSESS
 RustBuffer uniffi_moshpit_ffi_fn_func_ssh_key_assess(RustBuffer stored, RustBuffer passphrase, RustCallStatus *_Nonnull out_status
@@ -3309,6 +3314,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_plan(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_RECHECK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_RECHECK
 uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_recheck(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOST_CAPABILITIES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOST_CAPABILITIES
+uint16_t uniffi_moshpit_ffi_checksum_func_store_host_capabilities(void
     
 );
 #endif

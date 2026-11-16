@@ -327,7 +327,7 @@ final class SessionHub {
         /// Capabilities probed over the first SSH channel (tmux / mosh-server
         /// presence, OS, package manager). `nil` until the probe completes —
         /// treated optimistically (full feature) in the meantime.
-        private(set) var capabilities: HostCapabilities?
+        private(set) var capabilities: HostCapabilitiesValue?
 
         /// Set when the session ran at less than the user's chosen transport
         /// because the host lacked a dependency (no tmux / no mosh-server).
@@ -559,40 +559,21 @@ final class SessionHub {
             rust?.runHerdrNoticeAction()
         }
 
-        /// Probe (or read cached) host capabilities and publish them on the
-        /// session. Uses any cached value immediately for a fast first paint,
-        /// then re-probes in the foreground so a freshly-installed tool is
-        /// reflected this session. Tolerant: a probe that can't run keeps the
-        /// last known capabilities (or the optimistic default on a cold
-        /// session) so a transient hiccup never degrades a healthy host — and
-        /// never *upgrades* a known-degraded one back to "all present".
+        /// Probe the host again over the session's own connection (W14b),
+        /// for Install Assist's "Re-check" after the person ran the install
+        /// command: the core's probe and its reading of the answer. Returns
+        /// the fresh capabilities, or nil (→ "reconnect to apply") when the
+        /// connection isn't up or the probe couldn't run. Not saved: the
+        /// core's connect is the one writer of `hostcaps.<id>`, and probes
+        /// again on the next connect.
         @discardableResult
-        func probeCapabilities(over ssh: any HostConnection) async -> HostCapabilities {
-            let cache = HostCapabilityCache.shared
-            if let cached = cache.capabilities(for: connection.id) {
-                capabilities = cached
-            }
-            // Only a probe that actually ran may overwrite what we know. A
-            // failed probe returns nil; clobbering a known-degraded host with
-            // the optimistic default would retry `-CC attach` on a tmux-less
-            // box and stall.
-            if let fresh = await cache.probe(over: ssh, for: connection.id) {
-                capabilities = fresh
-                return fresh
-            }
-            return capabilities ?? .unknown
-        }
-
-        /// Re-run the probe over whichever SSH channel this session owns
-        /// (in-band SSH session or the mosh sidecar). Returns the fresh caps,
-        /// or nil if no SSH channel is available. Used by Install Assist's
-        /// "Re-check" after the user runs the install command.
-        @discardableResult
-        func recheckCapabilities() async -> HostCapabilities? {
-            // The Rust session's own connection (W14b), or nil (→ "reconnect
-            // to apply") when it isn't up.
-            guard let rust, let host = try? await rust.side.ready() else { return nil }
-            return await probeCapabilities(over: host)
+        func recheckCapabilities() async -> HostCapabilitiesValue? {
+            guard let rust, let host = try? await rust.side.ready(),
+                  let output = try? await host.executeCommand(hostCapabilitiesProbeCommand()),
+                  let text = String(data: output, encoding: .utf8) else { return nil }
+            let fresh = hostCapabilitiesParse(output: text)
+            capabilities = fresh
+            return fresh
         }
 
         /// Create the FIRST tmux session on a server that has none, on the
@@ -897,9 +878,9 @@ extension SessionHub.ActiveSession {
         retireDeclined()
     }
 
-    /// What the core's probe found about the host, published as the Swift
-    /// path's `probeCapabilities` publishes it (B336).
-    func rustSetCapabilities(_ capabilities: HostCapabilities) {
+    /// What the core's probe found about the host, published on the
+    /// session (B336).
+    func rustSetCapabilities(_ capabilities: HostCapabilitiesValue) {
         self.capabilities = capabilities
     }
 

@@ -2042,6 +2042,31 @@ mod tests {
         }
     }
 
+    /// E7c: what the core's connect saved about a host (`hostcaps.<id>`)
+    /// reads back through the app's own preferences, the package manager
+    /// by its raw id; nothing before a connect has probed it.
+    #[test]
+    fn a_hosts_saved_capabilities_read_back_through_the_host() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let id = "6F9619FF-8B86-D011-B42D-00C04FC964FF";
+        assert_eq!(
+            crate::hostcare::store_host_capabilities(host.clone(), id.into()),
+            None
+        );
+        let caps =
+            moshpit_install::HostCapabilities::parse("/usr/bin/tmux\n::Linux::/usr/bin/apt-get\n");
+        assert!(moshpit_store::session_memory::write(
+            &HostDefaults(host.clone()),
+            &Readiness::Always,
+            &moshpit_store::session_memory::host_capabilities_key(id),
+            &caps,
+        ));
+        let read = crate::hostcare::store_host_capabilities(host, id.into()).expect("saved");
+        assert!(read.has_tmux && !read.has_mosh_server);
+        assert_eq!(read.os, "Linux");
+        assert_eq!(read.package_manager.as_deref(), Some("aptGet"));
+    }
+
     #[test]
     fn a_nested_value_crosses_as_nodes_and_back() {
         let value = Plist::Array(vec![

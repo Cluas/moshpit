@@ -30,20 +30,19 @@ struct SessionMemoryTests {
         /// The key the Rust core keeps `id`'s tmux selection under.
         static func selectionKey(_ id: UUID) -> String { "moshpit.tmux.lastSelection.\(id.uuidString)" }
 
-        /// What the two caches write for `id`: the tmux selection as the
-        /// core writes it (`crates/store/src/session_memory.rs`), the
-        /// capabilities through their own code.
+        /// What the two memories write for `id`, as the core writes them
+        /// (crates/store's session_memory): the tmux selection, and the
+        /// host's capabilities (JSON in Data under `hostcaps.<id>`).
         @MainActor func remember(_ id: UUID) {
             defaults.set(Data(#"{"session":"$1","window":"@2","pane":"%3"}"#.utf8), forKey: Self.selectionKey(id))
-            HostCapabilityCache(defaults: defaults)
-                .store(HostCapabilities(hasTmux: true, hasMoshServer: true, os: "Linux", packageManager: nil),
-                       for: id)
+            defaults.set(Data(#"{"hasTmux":true,"hasMoshServer":true,"os":"Linux","hasHerdr":false,"hasPython3":false}"#.utf8),
+                         forKey: "hostcaps.\(id.uuidString)")
         }
 
         /// Whether each of the two keys is there for `id`.
         @MainActor func remembers(_ id: UUID) -> [Bool] {
             [defaults.data(forKey: Self.selectionKey(id)) != nil,
-             HostCapabilityCache(defaults: defaults).capabilities(for: id) != nil]
+             defaults.data(forKey: "hostcaps.\(id.uuidString)") != nil]
         }
 
         /// Puts `connections` in the suite as a previous trusted run of the

@@ -292,10 +292,10 @@ protocol ConnectionStoreBacking: AnyObject {
 /// What a session remembers about a connection between attempts and app
 /// launches, in `UserDefaults` under the connection's id: where the person
 /// was in tmux (`moshpit.tmux.lastSelection.<id>`, the Rust core's
-/// `session_memory`) and what the host could run (``HostCapabilityCache``).
-/// Both go with their connection (B199).
+/// `session_memory`) and what the host could run (the core's
+/// `hostcaps.<id>`). Both go with their connection (B199).
 enum SessionMemory {
-    /// The tmux selection's (the core's) and ``HostCapabilityCache``'s.
+    /// The tmux selection's and the host capabilities' (both the core's).
     static let prefixes = ["moshpit.tmux.lastSelection.", "hostcaps."]
 
     /// Every key remembering something about connection `id`.

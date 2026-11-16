@@ -452,8 +452,7 @@ final class RustSessionDriver: RustSessionListener {
         }
     }
 
-    /// What the core's probe found about the host, on the session as the
-    /// Swift path publishes it (`probeCapabilities`): Install Assist's
+    /// What the core's probe found about the host, on the session: Install Assist's
     /// package manager and install command, the empty state's "not
     /// installed". The core saves its probe under the app's own
     /// `hostcaps.<UUID>` before it routes the connect, so it is there by the
@@ -461,7 +460,8 @@ final class RustSessionDriver: RustSessionListener {
     /// on this path, and Install Assist had no command until its Re-check
     /// (B336).
     private func publishCapabilities() {
-        guard let known = HostCapabilityCache.shared.reload(for: connection.id) else { return }
+        guard let known = storeHostCapabilities(host: AppStores.preferences,
+                                                connectionId: connection.id.uuidString) else { return }
         session.rustSetCapabilities(known)
     }
 

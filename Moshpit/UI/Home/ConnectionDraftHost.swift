@@ -113,9 +113,8 @@ extension ConnectionDraft {
                 }
                 throw error
             }
-            // What this process learned about the old box; the store's
-            // update forgets the stored copy (B431).
-            HostCapabilityCache.shared.forget(connection.id)
+            // The store's update forgets what was learned about the old
+            // box (B431).
         }
         // Drop any cached (possibly stale) credential so the new one is used.
         await SSHService.shared.clearCachedSecret(for: connection.id)

@@ -13,7 +13,7 @@ struct InstallAssistPlan {
     let packages: [String]
 
     private var tmux: Bool { session.connection.multiplexer == .tmux }
-    private var manager: String? { session.capabilities?.packageManager?.rawValue }
+    private var manager: String? { session.capabilities?.packageManager }
     private var value: AssistPlanValue {
         installAssistPlan(packages: packages, tmux: tmux, packageManager: manager)
     }
@@ -21,7 +21,6 @@ struct InstallAssistPlan {
     var isHerdr: Bool { value.herdr }
     /// What to install, from the CONNECTION rather than the notice's list.
     var installPackages: [String] { value.packages }
-    var packageManager: PackageManager? { session.capabilities?.packageManager }
     var command: String? { value.command }
     /// herdr's installer drops the binary in `~/.local/bin`: say Moshpit
     /// looks there.

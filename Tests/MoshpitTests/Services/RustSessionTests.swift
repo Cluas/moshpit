@@ -431,24 +431,22 @@ struct RustSessionTests {
         connection.multiplexer = .tmux
         let key = "hostcaps.\(connection.id.uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: key) }
-        // An older copy in the app's cache, then the core's own probe written
-        // behind it, as crates/store writes it: JSON in Data, the same key.
-        HostCapabilityCache.shared.store(
-            HostCapabilities(hasTmux: true, hasMoshServer: true, os: "", packageManager: nil),
-            for: connection.id)
-        let probed = HostCapabilities(hasTmux: false, hasMoshServer: true, os: "Linux",
-                                      packageManager: .aptGet)
-        UserDefaults.standard.set(try JSONEncoder().encode(probed), forKey: key)
+        // The core's own probe, as crates/store writes it: JSON in Data
+        // under the connection's key (the core is its one writer, E7c).
+        UserDefaults.standard.set(
+            Data(#"{"hasTmux":false,"hasMoshServer":true,"os":"Linux","packageManager":"aptGet","hasHerdr":false,"hasPython3":false}"#.utf8),
+            forKey: key)
+        let probed = HostCapabilitiesValue(hasTmux: false, hasMoshServer: true, os: "Linux",
+                                           packageManager: "aptGet", hasHerdr: false, hasPython3: false)
         let (driver, session, fake) = driver(connection)
         let task = await started(driver, fake)
         #expect(session.capabilities == nil)
         driver.handle(.degraded(degrade: .tmuxMissing))
         driver.handle(.state(state: .connected))
         await task.value
-        #expect(session.capabilities == probed, "the core's, not the cache's older copy")
+        #expect(session.capabilities == probed, "what the core saved")
         let plan = InstallAssistPlan(session: session, packages: ["tmux"])
-        #expect(plan.packageManager == .aptGet)
-        #expect(plan.command != nil, "the one-line install, as on the Swift path")
+        #expect(plan.command?.contains("apt-get") == true, "the one-line install for the host's apt-get")
     }
 
     @Test("mosh + tmux on a server with no session: the terminal's empty state, not a black screen (B228, B337)")

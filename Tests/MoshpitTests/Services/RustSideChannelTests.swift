@@ -367,7 +367,7 @@ struct RustSideChannelTests {
     func recheck() async throws {
         let ssh = FakeLentSSH()
         ssh.commands = { command in
-            command == HostCapabilities.probeCommand
+            command == hostCapabilitiesProbeCommand()
                 ? .init(stdout: Data("/usr/bin/tmux\n::Linux::/usr/bin/apt-get\n".utf8)) : .init()
         }
         let rig = await rig(lending: ssh)

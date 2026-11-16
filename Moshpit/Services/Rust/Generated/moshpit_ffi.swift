@@ -28377,6 +28377,30 @@ fileprivate struct FfiConverterOptionTypeHerdrReadModel: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeHostCapabilitiesValue: FfiConverterRustBuffer {
+    typealias SwiftType = HostCapabilitiesValue?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeHostCapabilitiesValue.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeHostCapabilitiesValue.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeImportedKey: FfiConverterRustBuffer {
     typealias SwiftType = ImportedKey?
 
@@ -30794,6 +30818,20 @@ public func installAssistRecheck(packages: [String], tmux: Bool, packageManager:
 })
 }
 /**
+ * What the core saved about connection `connection_id`'s host the last
+ * time a connect probed it (`hostcaps.<id>` in the app's defaults,
+ * written by the core's connect alone; E7c dropped the app's second
+ * writer). `None` until a connect has probed it.
+ */
+public func storeHostCapabilities(host: PreferencesHost, connectionId: String) -> HostCapabilitiesValue?  {
+    return try!  FfiConverterOptionTypeHostCapabilitiesValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_host_capabilities(
+        FfiConverterTypePreferencesHost_lower(host),
+        FfiConverterString.lower(connectionId),$0
+    )
+})
+}
+/**
  * What to do with a stored key before a connect (B125): use it, replace it
  * with the converted key, or ask for its passphrase.
  */
@@ -31453,6 +31491,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_install_assist_recheck() != 11923) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_store_host_capabilities() != 40801) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_ssh_key_assess() != 25984) {
