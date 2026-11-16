@@ -175,11 +175,20 @@ final class CompanionPet {
     static var now: Int64 { Int64(Date().timeIntervalSince1970) }
 
     /// A stable id for this device: its tasks count under it.
-    private static func deviceId() -> String {
+    ///
+    /// Kept only once the preferences can be believed (B866): a launch
+    /// before the first unlock reads them as empty, and a write then can
+    /// leave the app's preferences holding this one key (B603) — every
+    /// connection and setting gone. Read sealed, the id is this launch's
+    /// alone, and the next trusted launch keeps one.
+    static func deviceId(_ defaults: UserDefaults = .standard,
+                         readiness: DefaultsReadiness = .system) -> String {
         let key = "moshpit.pet.device"
-        if let id = UserDefaults.standard.string(forKey: key) { return id }
+        if let id = defaults.string(forKey: key) { return id }
         let id = UUID().uuidString
-        UserDefaults.standard.set(id, forKey: key)
+        if readiness.isReadable(defaults) {
+            defaults.set(id, forKey: key)
+        }
         return id
     }
 }
