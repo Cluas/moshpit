@@ -535,6 +535,10 @@ type SpanRun = (StableRowIndex, usize, usize);
 /// How many rows past a hard break a link may go on (a URL five times the
 /// width; the runaway stop).
 const MAX_LINK_ROWS: usize = 4;
+/// How far above a row a detected URL's scheme may stand: its first row
+/// begins a logical line that may run soft-wrapped over many rows, the
+/// rows a program broke it over after that.
+const URL_SCHEME_REACH: StableRowIndex = 24;
 
 /// Where a point stands in what a reflow keeps ([`Terminal::text_place`]).
 #[derive(Debug, Clone, Copy)]
@@ -2285,6 +2289,10 @@ impl Terminal {
     }
 
     /// The selected text (wrapped rows joined, a line break between rows).
+    /// A break inside a link a program broke over rows is no break: the
+    /// address goes on without it or the next row's indent, though the
+    /// selection reaches past the link (B841: the handles dragged from the
+    /// line's start pasted the address with a break and an indent).
     pub fn selection_text(&mut self) -> Option<String> {
         let range = self.selection_range()?;
         let block = self
@@ -2295,7 +2303,17 @@ impl Terminal {
             .selection
             .as_ref()
             .is_some_and(|s| s.kind == SelectKind::Line);
+        // The text as copied, and the same with every break a program made
+        // kept (what the whole-link check below reads).
         let mut out = String::new();
+        let mut kept = String::new();
+        // The row before ended inside a link that goes on on this one.
+        let mut glued = false;
+        // The last row that mentions a URL's scheme: a detected URL's rows
+        // all lie within reach of it.
+        let mut scheme_row = (range.start.0 - URL_SCHEME_REACH..range.start.0)
+            .rev()
+            .find(|&r| r >= self.first_row() && self.row_mentions_scheme(r));
         for row in range.start.0..=range.end.0 {
             let (cells, wrapped) = self.row_cells(row).unwrap_or_default();
             let mut text = String::new();
@@ -2312,20 +2330,93 @@ impl Terminal {
                 text.push_str(&s);
                 next = Some(idx + width);
             }
+            if text.to_ascii_lowercase().contains("http") {
+                scheme_row = Some(row);
+            }
+            let piece = if glued {
+                text.trim_start_matches(' ')
+            } else {
+                &text
+            };
+            glued = false;
             let last = row == range.end.0;
             if wrapped && !last && !block {
-                out.push_str(&text);
+                out.push_str(piece);
+                kept.push_str(&text);
             } else {
-                out.push_str(text.trim_end_matches(' '));
+                out.push_str(piece.trim_end_matches(' '));
+                kept.push_str(text.trim_end_matches(' '));
                 if !last || lines {
-                    out.push('\n');
+                    let scheme_near = scheme_row.is_some_and(|r| row - r <= URL_SCHEME_REACH);
+                    glued = !block && !last && self.link_goes_on(&range, row, scheme_near);
+                    if !glued {
+                        out.push('\n');
+                    }
+                    kept.push('\n');
                 }
             }
         }
-        if !block && let Some(joined) = self.link_text_without_breaks(&range, &out) {
+        if !block && let Some(joined) = self.link_text_without_breaks(&range, &kept) {
             return Some(joined);
         }
         (!out.is_empty()).then_some(out)
+    }
+
+    /// Whether stable row `row` holds a URL's scheme (`http`, any case).
+    fn row_mentions_scheme(&self, row: StableRowIndex) -> bool {
+        self.row_cells(row).is_some_and(|(cells, _)| {
+            let text: String = cells.iter().map(|c| c.2.as_str()).collect();
+            text.to_ascii_lowercase().contains("http")
+        })
+    }
+
+    /// Whether the break a program made after stable row `row` falls inside
+    /// one link: the row's last selected cell with content and the next
+    /// row's first are both the link's, and its text there is part of its
+    /// address (a label broken over rows keeps its break, where it stands
+    /// for a space). `scheme_near`: a detected URL could reach the row; a
+    /// row without an OSC 8 link and without one is no link's, and a big
+    /// selection pays nothing more for it (B732).
+    fn link_goes_on(&self, range: &select::Range, row: StableRowIndex, scheme_near: bool) -> bool {
+        let content = |r: StableRowIndex| -> Vec<Cell> {
+            self.link_cells(r)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|x| !x.blank && range.contains(x.row, x.col, x.width))
+                .collect()
+        };
+        let Some(end) = content(row).pop() else {
+            return false;
+        };
+        if end.uri.is_none() && !scheme_near {
+            return false;
+        }
+        let Some(start) = content(row + 1).into_iter().next() else {
+            return false;
+        };
+        let Some((uri, runs)) = self.link_span(end.row, end.col) else {
+            return false;
+        };
+        let in_link = |r: StableRowIndex, col: usize, width: usize| {
+            runs.iter()
+                .any(|x| x.0 == r && col >= x.1 && col + width - 1 <= x.2)
+        };
+        if !in_link(end.row, end.col, end.width) || !in_link(start.row, start.col, start.width) {
+            return false;
+        }
+        let link_text = |r: StableRowIndex| -> String {
+            self.row_cells(r)
+                .map(|(cells, _)| {
+                    cells
+                        .into_iter()
+                        .filter(|(col, width, _)| in_link(r, *col, *width))
+                        .map(|(_, _, s)| s)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let across = format!("{}{}", link_text(row), link_text(row + 1));
+        uri.contains(across.trim())
     }
 
     /// A selection inside one link a program broke over rows itself copies
