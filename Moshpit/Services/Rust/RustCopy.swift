@@ -48,9 +48,22 @@ enum RustCopy {
     // MARK: Failures
 
     /// The card's text for a failed connect of `connection` (nil: one the
-    /// copy can't name, which says it without its name).
+    /// copy can't name, which says it without its name). On the jump
+    /// host's leg (`leg`, its saved name; F1) the jump host comes first, as
+    /// Home's card says it: "the password is wrong" alone would read as
+    /// the host's own — and `connection` is then the jump host's. What the
+    /// jump host answered about the host behind it names it already.
     static func failure(kind: FailureKindValue, cause: FailureCauseValue,
-                        connection: ServerConnection? = nil) -> String {
+                        connection: ServerConnection? = nil, leg: String? = nil) -> String {
+        let text = words(kind: kind, cause: cause, connection: connection)
+        guard let leg, !leg.isEmpty else { return text }
+        if case .tunnel = cause { return text }
+        return String(localized: "Jump host “\(leg)”: \(text)")
+    }
+
+    /// What happened, whichever leg it happened on.
+    private static func words(kind: FailureKindValue, cause: FailureCauseValue,
+                              connection: ServerConnection?) -> String {
         switch cause {
         case .unreachable(let host, let port, let why):
             return unreachable(host: host, port: port, why: why)

@@ -339,7 +339,7 @@ struct RustSessionTests {
         // An automatic attempt that fails: offline, and no modal.
         driver.handle(.state(state: .failed(kind: .unreachable,
                                             cause: .unreachable(host: "h", port: 22, why: .noRoute),
-                                            log: "no route", retryable: true)))
+                                            log: "no route", retryable: true, leg: nil)))
         #expect(session.viewModel.connState == .offline)
         #expect(session.viewModel.errorMessage == nil)
         // The person's own try again fails: the card.
@@ -348,10 +348,38 @@ struct RustSessionTests {
         driver.handle(.state(state: .connecting))
         driver.handle(.state(state: .failed(kind: .credentials,
                                             cause: .credentials(why: .rejected(user: "u")),
-                                            log: "refused", retryable: false)))
+                                            log: "refused", retryable: false, leg: nil)))
         await retry.value
         // The app's own words, never the core's log.
         #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
+    }
+
+    @Test("a failure on the jump host's leg names the jump host first; one on the host's own doesn't (F1)")
+    func failureNamesTheJumpHostsLeg() async {
+        let rejected = FailureCauseValue.credentials(why: .rejected(user: "dev"))
+        let plain = SSHError.authenticationFailed.description
+        // The jump host turned its password down: its name first.
+        let jump = RustCopy.failure(kind: .credentials, cause: rejected, leg: "bastion")
+        #expect(jump.contains("bastion") && jump.contains(plain), "\(jump)")
+        #expect(jump != plain)
+        // The host's own leg: the words alone, as before.
+        #expect(RustCopy.failure(kind: .credentials, cause: rejected, leg: nil) == plain)
+        #expect(RustCopy.failure(kind: .credentials, cause: rejected) == plain)
+        // The jump host's answer about the host behind it names it once.
+        let tunnel = RustCopy.failure(kind: .unreachable,
+                                      cause: .tunnel(via: "bastion", host: "node01", port: 22, why: .connectFailed),
+                                      leg: "bastion")
+        #expect(tunnel.components(separatedBy: "bastion").count == 2, "\(tunnel)")
+
+        // And the alert says so, from the core's failed state.
+        let (driver, session, fake) = driver(ServerConnection(host: "node01", username: "dev"))
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.state(state: .reconnecting))
+        driver.handle(.state(state: .failed(kind: .credentials, cause: rejected,
+                                            log: "refused", retryable: false, leg: "bastion")))
+        #expect(session.viewModel.errorMessage == jump)
     }
 
     @Test("an automatic redial that ends in a failure nothing will retry says why (B163, B335)")
@@ -365,7 +393,7 @@ struct RustSessionTests {
         driver.handle(.state(state: .reconnecting))
         driver.handle(.state(state: .failed(kind: .credentials,
                                             cause: .credentials(why: .rejected(user: "u")),
-                                            log: "refused", retryable: false)))
+                                            log: "refused", retryable: false, leg: nil)))
         #expect(session.viewModel.connState == .offline)
         #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
         // One the core retries stays behind the redial, with no card.
@@ -376,7 +404,7 @@ struct RustSessionTests {
         quietDriver.handle(.state(state: .reconnecting))
         quietDriver.handle(.state(state: .failed(kind: .unreachable,
                                                  cause: .unreachable(host: "h", port: 22, why: .timedOut),
-                                                 log: "timed out", retryable: true)))
+                                                 log: "timed out", retryable: true, leg: nil)))
         #expect(quiet.viewModel.errorMessage == nil)
     }
 
@@ -391,7 +419,7 @@ struct RustSessionTests {
         driver.handle(.state(state: .reconnecting))
         driver.handle(.state(state: .failed(kind: .credentials,
                                             cause: .credentials(why: .rejected(user: "u")),
-                                            log: "refused", retryable: false)))
+                                            log: "refused", retryable: false, leg: nil)))
         #expect(session.viewModel.errorMessage == SSHError.authenticationFailed.description)
         let retry = await started(driver, fake)
         #expect(fake.reconnected.count == 1)
@@ -547,7 +575,7 @@ struct RustSessionTests {
         // shows no dead card for a connect the person chose not to make.
         driver.handle(.state(state: .failed(kind: .hostKey,
                                             cause: .hostKey(host: "h", port: 22, changed: false),
-                                            log: "not trusted", retryable: false)))
+                                            log: "not trusted", retryable: false, leg: nil)))
         await task.value
         #expect(session.viewModel.errorMessage == nil)
         #expect(session.viewModel.connState == .offline)
@@ -750,7 +778,7 @@ struct RustSessionTests {
         driver.handle(.state(state: .connecting))
         driver.handle(.state(state: .failed(kind: .hostKey,
                                             cause: .hostKey(host: "h", port: 22, changed: true),
-                                            log: "changed", retryable: false)))
+                                            log: "changed", retryable: false, leg: nil)))
         await task.value
         #expect(!session.viewModel.declinedHostKey)
         #expect(!retired)

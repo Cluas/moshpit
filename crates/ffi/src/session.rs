@@ -483,6 +483,10 @@ pub enum SessionStateValue {
         /// English, for the log only.
         log: String,
         retryable: bool,
+        /// The jump host's saved name when the failure is on its leg (F1):
+        /// its credentials, its key, its answer about the host behind it.
+        /// `None`: the connection's own host.
+        leg: Option<String>,
     },
 }
 
@@ -1612,6 +1616,7 @@ fn failure_value(failure: &Failure) -> SessionStateValue {
         cause: cause_value(failure),
         log: failure.log.clone(),
         retryable: failure.retryable,
+        leg: failure.leg.clone(),
     }
 }
 
@@ -1967,6 +1972,24 @@ mod tests {
         }
     }
 
+    /// A failure on the jump host's leg says whose (F1): the card and the
+    /// alert put its name first; one on the host's own leg says nothing.
+    #[test]
+    fn f1_a_failure_says_which_leg_it_is_on() {
+        let rejected =
+            Failure::credentials(CredentialsWhy::Rejected { user: "dev".into() }, "rejected");
+        let SessionStateValue::Failed { leg, .. } =
+            failure_value(&rejected.clone().on_jump("bastion"))
+        else {
+            panic!()
+        };
+        assert_eq!(leg.as_deref(), Some("bastion"));
+        let SessionStateValue::Failed { leg, .. } = failure_value(&rejected) else {
+            panic!()
+        };
+        assert_eq!(leg, None);
+    }
+
     #[test]
     fn a_spec_becomes_the_cores() {
         let spec = SessionSpec {
@@ -2070,7 +2093,8 @@ mod tests {
                             changed: true
                         },
                         log: "refused".into(),
-                        retryable: false
+                        retryable: false,
+                        leg: None
                     }
                 }
             })

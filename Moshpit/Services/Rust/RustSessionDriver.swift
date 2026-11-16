@@ -460,7 +460,7 @@ final class RustSessionDriver: RustSessionListener {
                 viewModel.adoptRustStatus(.disconnected, automatic: false)
             }
             settle()
-        case .failed(let kind, let cause, let log, let retryable):
+        case .failed(let kind, let cause, let log, let retryable, let leg):
             endFirstFrameWait()
             Log.ssh.notice("rust session: failed (\(String(describing: kind), privacy: .public)): \(log, privacy: .public)")
             if kind == .hostKey && refusedHostKey {
@@ -480,7 +480,12 @@ final class RustSessionDriver: RustSessionListener {
             // "Line dropped" with no reason forever (B163, B335). A failure
             // the core retries stays quiet behind the redial.
             let asked = previous == .connecting
-            let message = RustCopy.failure(kind: kind, cause: cause, connection: connection)
+            // On the jump host's leg, the connection a sign-in failure
+            // names is the jump host's (F1).
+            let named = leg == nil ? connection : connection.viaConnectionId.flatMap { via in
+                Self.savedConnections().first { $0.id == via }
+            }
+            let message = RustCopy.failure(kind: kind, cause: cause, connection: named, leg: leg)
             viewModel.adoptRustStatus(.failed(message), automatic: false,
                                       error: asked || !retryable ? message : nil)
             settle()

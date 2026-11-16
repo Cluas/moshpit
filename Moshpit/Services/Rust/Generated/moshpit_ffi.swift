@@ -24542,7 +24542,12 @@ public enum SessionStateValue: Equatable, Hashable {
          */cause: FailureCauseValue, 
         /**
          * English, for the log only.
-         */log: String, retryable: Bool
+         */log: String, retryable: Bool, 
+        /**
+         * The jump host's saved name when the failure is on its leg (F1):
+         * its credentials, its key, its answer about the host behind it.
+         * `None`: the connection's own host.
+         */leg: String?
     )
 
 
@@ -24574,7 +24579,7 @@ public struct FfiConverterTypeSessionStateValue: FfiConverterRustBuffer {
         case 4: return .ended(reason: try FfiConverterTypeEndValue.read(from: &buf)
         )
         
-        case 5: return .failed(kind: try FfiConverterTypeFailureKindValue.read(from: &buf), cause: try FfiConverterTypeFailureCauseValue.read(from: &buf), log: try FfiConverterString.read(from: &buf), retryable: try FfiConverterBool.read(from: &buf)
+        case 5: return .failed(kind: try FfiConverterTypeFailureKindValue.read(from: &buf), cause: try FfiConverterTypeFailureCauseValue.read(from: &buf), log: try FfiConverterString.read(from: &buf), retryable: try FfiConverterBool.read(from: &buf), leg: try FfiConverterOptionString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -24602,12 +24607,13 @@ public struct FfiConverterTypeSessionStateValue: FfiConverterRustBuffer {
             FfiConverterTypeEndValue.write(reason, into: &buf)
             
         
-        case let .failed(kind,cause,log,retryable):
+        case let .failed(kind,cause,log,retryable,leg):
             writeInt(&buf, Int32(5))
             FfiConverterTypeFailureKindValue.write(kind, into: &buf)
             FfiConverterTypeFailureCauseValue.write(cause, into: &buf)
             FfiConverterString.write(log, into: &buf)
             FfiConverterBool.write(retryable, into: &buf)
+            FfiConverterOptionString.write(leg, into: &buf)
             
         }
     }

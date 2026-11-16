@@ -63,7 +63,7 @@ struct RustSideChannelTests {
 
     private static let unreachable = SessionStateValue.failed(
         kind: .unreachable, cause: .unreachable(host: "h", port: 22, why: .noRoute),
-        log: "no route", retryable: true)
+        log: "no route", retryable: true, leg: nil)
 
     // MARK: The session's connection, never a dial
 
