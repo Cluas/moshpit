@@ -899,7 +899,7 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
     // tmux's status line names the session.
-    assert!(term.wait_for("[w10]", 15).await, "{}", term.text());
+    assert!(term.wait_for("[w10", 15).await, "{}", term.text());
     term.write(b"echo mt-$((6*7))\r");
     assert!(term.wait_for("mt-42", 15).await, "{}", term.text());
     let pane = tmux.run(&["display-message", "-p", "-t", "w10", "#{pane_id}"]);
@@ -923,8 +923,21 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
         .sessions
         .tmux(id, moshpit_session::TmuxAction::NewSession { name: None })
         .unwrap();
-    assert!(term.wait_for("[0]", 15).await, "{}", term.text());
-    assert_eq!(empty.sessions().len(), 1, "{:?}", empty.sessions());
+    // Made on the host, the person's one session (the phone's own group of
+    // it aside, `~mp-…` on tmux that groups); then the renderer shows it.
+    let made = || {
+        empty
+            .sessions()
+            .into_iter()
+            .filter(|s| !s.contains('~'))
+            .collect::<Vec<_>>()
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while made().is_empty() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(made(), ["0"], "{:?}", empty.sessions());
+    assert!(term.wait_for("[0", 15).await, "{}", term.text());
     let _ = bench.sessions.disconnect(id).await;
 }
 
