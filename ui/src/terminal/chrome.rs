@@ -49,7 +49,7 @@ pub(crate) enum Kind {
 impl Kind {
     pub(crate) fn of(banner: &BannerModel) -> Kind {
         match banner {
-            BannerModel::ReturnPath => Kind::ReturnPath,
+            BannerModel::ReturnPath { .. } => Kind::ReturnPath,
             BannerModel::Roam { .. } => Kind::Roam,
             BannerModel::Degrade { missing } => Kind::Degrade(*missing),
         }
@@ -57,9 +57,13 @@ impl Kind {
 }
 
 /// What `kind`'s banner says; `srtt`: the smoothed round trip a roam
-/// banner reads in small words after its sentence.
-pub(crate) fn banner_words(kind: Kind, srtt: Option<f64>) -> String {
+/// banner reads in small words after its sentence; `typed`: what was typed
+/// waits for mosh-server (B854), which the return path's banner says.
+pub(crate) fn banner_words(kind: Kind, srtt: Option<f64>, typed: bool) -> String {
     match kind {
+        Kind::ReturnPath if typed => t!(
+            "No UDP reply from mosh-server. What you've typed will be sent when the connection is back."
+        ),
         Kind::ReturnPath => t!("No UDP reply from mosh-server."),
         Kind::Roam => {
             let said = t!("Network changed. mosh is reconnecting.");
@@ -148,11 +152,12 @@ fn banner_slot(ctx: Ctx) -> AnyElement {
 fn banner_view(kind: Kind, current: Memo<Option<Kind>>, ctx: Ctx) -> AnyElement {
     let chrome = ctx.chrome;
     let words = move || -> SharedString {
-        let srtt = chrome.with(|c| match &c.banner {
-            Some(BannerModel::Roam { srtt, .. }) => *srtt,
-            _ => None,
+        let (srtt, typed) = chrome.with(|c| match &c.banner {
+            Some(BannerModel::Roam { srtt, .. }) => (*srtt, false),
+            Some(BannerModel::ReturnPath { typed }) => (None, *typed),
+            _ => (None, false),
         });
-        banner_words(kind, srtt).into()
+        banner_words(kind, srtt, typed).into()
     };
     let shown = move || current.get() == Some(kind);
     match kind {

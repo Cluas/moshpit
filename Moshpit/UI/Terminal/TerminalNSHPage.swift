@@ -688,7 +688,8 @@ struct TerminalNSHChrome: Equatable {
     }
 
     enum Banner: Equatable {
-        case returnPath
+        /// `typed`: what was typed waits for mosh-server (B854).
+        case returnPath(typed: Bool)
         case roam(srtt: Double?, history: [Double])
         case degrade(DegradeNotice.Missing)
     }
@@ -794,8 +795,8 @@ struct TerminalNSHChrome: Equatable {
 
     static func json(_ banner: Banner) -> [String: Any] {
         switch banner {
-        case .returnPath:
-            return ["kind": "returnPath"]
+        case .returnPath(let typed):
+            return ["kind": "returnPath", "typed": typed]
         case .roam(let srtt, let history):
             var json: [String: Any] = ["kind": "roam", "history": history]
             if let srtt { json["srtt"] = srtt }

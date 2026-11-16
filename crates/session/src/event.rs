@@ -687,6 +687,12 @@ pub enum EventKind {
     /// mosh hears the server again after [`EventKind::ReturnPathDead`]: the
     /// offer of SSH goes (B400).
     ReturnPathAlive,
+    /// While mosh's return path is reported dead, whether what the person
+    /// typed waits for mosh-server, kept until it acks (B618): the banner
+    /// says it goes once the connection is back (B854).
+    TypedWaits {
+        waits: bool,
+    },
     /// mosh's smoothed RTT and whether it is roaming.
     MoshMetrics {
         srtt_ms: f64,

@@ -411,6 +411,11 @@ pub enum SessionEventKind {
     },
     ReturnPathDead,
     ReturnPathAlive,
+    /// What was typed waits for mosh-server while the return path is dead
+    /// (B854).
+    TypedWaits {
+        waits: bool,
+    },
     MoshMetrics {
         srtt_ms: f64,
         roaming: bool,
@@ -1520,6 +1525,7 @@ fn event_value(event: core::Event) -> Option<SessionEvent> {
         },
         EventKind::ReturnPathDead => SessionEventKind::ReturnPathDead,
         EventKind::ReturnPathAlive => SessionEventKind::ReturnPathAlive,
+        EventKind::TypedWaits { waits } => SessionEventKind::TypedWaits { waits },
         EventKind::MoshMetrics { srtt_ms, roaming } => {
             SessionEventKind::MoshMetrics { srtt_ms, roaming }
         }

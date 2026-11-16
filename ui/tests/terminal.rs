@@ -642,6 +642,21 @@ fn the_banner_says_what_is_wrong_and_offers_its_remedy() {
         &with(chrome(), json!({"banner": {"kind": "returnPath"}})),
     );
     app.wait_for("id:mosh-returnpath-banner").unwrap();
+    assert!(app.screen().shows("No UDP reply from mosh-server."));
+    // What was typed meanwhile waits for mosh-server, kept until it acks
+    // (B618): the banner says it goes once the connection is back (B854).
+    show(
+        &mut app,
+        &channel,
+        &with(
+            chrome(),
+            json!({"banner": {"kind": "returnPath", "typed": true}}),
+        ),
+    );
+    app.wait_for(
+        "text:No UDP reply from mosh-server. What you've typed will be sent when the connection is back.",
+    )
+    .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
     app.press("id:mosh-returnpath-switch-ssh").unwrap();
     assert_eq!(next_intent(&heard), json!({"ev": "banner-action"}));
     app.press("id:mosh-returnpath-dismiss").unwrap();

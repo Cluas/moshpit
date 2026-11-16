@@ -134,7 +134,9 @@ pub fn chrome(app: &App, page: &TerminalPage) -> Chrome {
     }
     (chrome.content, chrome.empty) = content(conn, mux, state);
     chrome.banner = if conn.return_path_dead {
-        Some(Banner::ReturnPath)
+        // What was typed waiting for mosh-server (B854) isn't followed on
+        // Android yet: the banner says the outage alone.
+        Some(Banner::ReturnPath { typed: false })
     } else if conn.roaming {
         Some(Banner::Roam {
             srtt: conn.srtt_ms,
@@ -189,7 +191,7 @@ pub fn chrome(app: &App, page: &TerminalPage) -> Chrome {
 
 fn banner_key(banner: &Banner) -> String {
     match banner {
-        Banner::ReturnPath => "return-path".to_owned(),
+        Banner::ReturnPath { .. } => "return-path".to_owned(),
         Banner::Roam { .. } => "roam".to_owned(),
         Banner::Degrade { missing } => format!("degrade-{missing:?}"),
     }

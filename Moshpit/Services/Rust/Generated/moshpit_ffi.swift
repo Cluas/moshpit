@@ -24061,6 +24061,12 @@ public enum SessionEventKind: Equatable, Hashable {
     )
     case returnPathDead
     case returnPathAlive
+    /**
+     * What was typed waits for mosh-server while the return path is dead
+     * (B854).
+     */
+    case typedWaits(waits: Bool
+    )
     case moshMetrics(srttMs: Double, roaming: Bool
     )
     /**
@@ -24181,27 +24187,30 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
         
         case 18: return .returnPathAlive
         
-        case 19: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
+        case 19: return .typedWaits(waits: try FfiConverterBool.read(from: &buf)
         )
         
-        case 20: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
+        case 20: return .moshMetrics(srttMs: try FfiConverterDouble.read(from: &buf), roaming: try FfiConverterBool.read(from: &buf)
         )
         
-        case 21: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
+        case 21: return .moshDiagnostics(datagramsReceived: try FfiConverterUInt64.read(from: &buf), parseFailures: try FfiConverterUInt64.read(from: &buf), gapEvents: try FfiConverterUInt64.read(from: &buf), appliedHostNum: try FfiConverterUInt64.read(from: &buf), packetsSent: try FfiConverterUInt64.read(from: &buf), lastUserNum: try FfiConverterUInt64.read(from: &buf), serverAckedUserNum: try FfiConverterUInt64.read(from: &buf), channelState: try FfiConverterString.read(from: &buf), inputHeld: try FfiConverterBool.read(from: &buf)
         )
         
-        case 22: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
+        case 22: return .inputDiscarded(stream: try FfiConverterUInt64.read(from: &buf), bytes: try FfiConverterUInt64.read(from: &buf), why: try FfiConverterTypeDiscardedValue.read(from: &buf)
         )
         
-        case 23: return .closed
-        
-        case 24: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
+        case 23: return .resumeChecked(awayMs: try FfiConverterUInt64.read(from: &buf), waitedMs: try FfiConverterUInt64.read(from: &buf), outcome: try FfiConverterTypeResumeOutcomeValue.read(from: &buf), throughTmux: try FfiConverterBool.read(from: &buf), held: try FfiConverterUInt32.read(from: &buf)
         )
         
-        case 25: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        case 24: return .closed
+        
+        case 25: return .flushed(token: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 26: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
+        case 26: return .herdrAnswer(token: try FfiConverterUInt64.read(from: &buf), answer: try FfiConverterTypeHerdrAnswerValue.read(from: &buf)
+        )
+        
+        case 27: return .delivered(token: try FfiConverterUInt64.read(from: &buf), delivered: try FfiConverterBool.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -24310,14 +24319,19 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             writeInt(&buf, Int32(18))
         
         
-        case let .moshMetrics(srttMs,roaming):
+        case let .typedWaits(waits):
             writeInt(&buf, Int32(19))
+            FfiConverterBool.write(waits, into: &buf)
+            
+        
+        case let .moshMetrics(srttMs,roaming):
+            writeInt(&buf, Int32(20))
             FfiConverterDouble.write(srttMs, into: &buf)
             FfiConverterBool.write(roaming, into: &buf)
             
         
         case let .moshDiagnostics(datagramsReceived,parseFailures,gapEvents,appliedHostNum,packetsSent,lastUserNum,serverAckedUserNum,channelState,inputHeld):
-            writeInt(&buf, Int32(20))
+            writeInt(&buf, Int32(21))
             FfiConverterUInt64.write(datagramsReceived, into: &buf)
             FfiConverterUInt64.write(parseFailures, into: &buf)
             FfiConverterUInt64.write(gapEvents, into: &buf)
@@ -24330,14 +24344,14 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case let .inputDiscarded(stream,bytes,why):
-            writeInt(&buf, Int32(21))
+            writeInt(&buf, Int32(22))
             FfiConverterUInt64.write(stream, into: &buf)
             FfiConverterUInt64.write(bytes, into: &buf)
             FfiConverterTypeDiscardedValue.write(why, into: &buf)
             
         
         case let .resumeChecked(awayMs,waitedMs,outcome,throughTmux,held):
-            writeInt(&buf, Int32(22))
+            writeInt(&buf, Int32(23))
             FfiConverterUInt64.write(awayMs, into: &buf)
             FfiConverterUInt64.write(waitedMs, into: &buf)
             FfiConverterTypeResumeOutcomeValue.write(outcome, into: &buf)
@@ -24346,22 +24360,22 @@ public struct FfiConverterTypeSessionEventKind: FfiConverterRustBuffer {
             
         
         case .closed:
-            writeInt(&buf, Int32(23))
+            writeInt(&buf, Int32(24))
         
         
         case let .flushed(token):
-            writeInt(&buf, Int32(24))
+            writeInt(&buf, Int32(25))
             FfiConverterUInt64.write(token, into: &buf)
             
         
         case let .herdrAnswer(token,answer):
-            writeInt(&buf, Int32(25))
+            writeInt(&buf, Int32(26))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterTypeHerdrAnswerValue.write(answer, into: &buf)
             
         
         case let .delivered(token,delivered):
-            writeInt(&buf, Int32(26))
+            writeInt(&buf, Int32(27))
             FfiConverterUInt64.write(token, into: &buf)
             FfiConverterBool.write(delivered, into: &buf)
             

@@ -60,7 +60,8 @@ struct TerminalNSHTests {
         known.empty = .init(mux: .tmux, missing: false, settled: true)
         states.append(known)
         for banner: TerminalNSHChrome.Banner in [
-            .returnPath, .roam(srtt: 182.5, history: [100, 182.5]), .roam(srtt: nil, history: []),
+            .returnPath(typed: false), .returnPath(typed: true),
+            .roam(srtt: 182.5, history: [100, 182.5]), .roam(srtt: nil, history: []),
             .degrade(.tmux), .degrade(.herdr), .degrade(.moshServer),
         ] {
             var state = chrome()

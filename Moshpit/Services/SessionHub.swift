@@ -369,6 +369,11 @@ final class SessionHub {
         /// works through the same proxy). Fires at most once per transport.
         var moshReturnPathDead = false
 
+        /// While mosh's return path is dead, what was typed waits for
+        /// mosh-server, kept until it acks (B618): the banner says it goes
+        /// once the connection is back (B854).
+        var moshTypedWaits = false
+
         init(connection: ServerConnection) {
             self.connection = connection
             self.viewModel = TerminalViewModel(connection: connection)

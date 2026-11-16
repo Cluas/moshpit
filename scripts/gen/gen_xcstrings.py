@@ -1484,6 +1484,10 @@ add("Reconnecting…", "正在重连…", "再接続中…")
 # state, the one banner and the copied link's chip.
 add("Waiting for network…", "等待网络…", "ネットワークを待っています…")
 add("No UDP reply from mosh-server.", "收不到 mosh-server 的 UDP 回包。", "mosh-server から UDP の応答がありません。")
+# The dead return path's banner, with what was typed waiting for mosh-server (B854)
+add("No UDP reply from mosh-server. What you've typed will be sent when the connection is back.",
+    "收不到 mosh-server 的 UDP 回包。你输入的内容会在连接恢复后发送。",
+    "mosh-server から UDP の応答がありません。入力した内容は、接続が戻りしだい送信されます。")
 add("Use SSH", "改用 SSH", "SSH を使う")
 add("Network changed. mosh is reconnecting.", "网络换了，mosh 正在接上。", "ネットワークが変わりました。mosh が再接続しています。")
 add("%@ isn't installed here, so this is a plain shell.", "这台主机没装 %@，现在是普通 shell。", "このホストには %@ がないため、通常のシェルです。")
