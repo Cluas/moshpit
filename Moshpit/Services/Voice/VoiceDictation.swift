@@ -203,12 +203,27 @@ final class VoiceDictationController {
     /// budget running out does, rather than leaving a Whisper decode working
     /// for nobody.
     @ObservationIgnored private var finalPass: Task<Void, Never>?
+    /// The mic is open: started, and not stopped since.
+    @ObservationIgnored private var capturing = false
 
     init(engineFactory: @escaping (DictationRequest, [String]) async throws -> [DictationEngine]
              = DictationEngineFactory.candidates,
          audioSource: DictationAudioSource = MicrophoneAudioSource()) {
         makeEngines = engineFactory
         self.audioSource = audioSource
+    }
+
+    /// Let go mid-dictation: the terminal it belongs to went away (back to
+    /// Home, a notification opening another pane). That is a cancel, and
+    /// nothing else would make it one: the capture's stop observers hold
+    /// the audio engine, so the mic stayed on, the orange dot with it and
+    /// other apps' audio ducked, feeding an engine whose update stream kept
+    /// it, model and all, for good (B861).
+    deinit {
+        if capturing { audioSource.stop() }
+        engine?.cancel()
+        consumeTask?.cancel()
+        finalPass?.cancel()
     }
 
     /// Kick off a session. Safe to call only from `.idle`/`.failed`; anything
@@ -336,11 +351,16 @@ final class VoiceDictationController {
                     Task { @MainActor [weak self] in await self?.handleInterruption() }
                 })
         } catch {
+            // The mic can fail after the audio session went active (with
+            // other apps' audio ducked) and the tap went in: stop it, or the
+            // music stays quiet behind the failure card (B860).
+            stopAudio()
             engine.cancel()
             self.engine = nil
             phase = .failed(.audioCapture(error.localizedDescription))
             return
         }
+        capturing = true
         phase = .listening
     }
 
@@ -477,6 +497,7 @@ final class VoiceDictationController {
 
     private func stopAudio() {
         audioSource.stop()
+        capturing = false
         level = 0
     }
 
