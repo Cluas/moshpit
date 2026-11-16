@@ -67,6 +67,40 @@ if [ -z "$udid" ]; then
     udid="$(xcrun simctl create "shots-$device" "$type" "$runtime")"
 fi
 log "simulator $udid ($device, want $px)"
+
+# Whether the selected Xcode can run this simulator, asked of Xcode itself
+# (xcdevice, the device layer xcodebuild uses) rather than simctl: a runner
+# image whose newest Xcode was a beta (27.3, 43822605849's iPhone 1) booted
+# the simulator through simctl, then xcodebuild found its iOS 27.0 runtime
+# "not available" and the job lost forty minutes before it failed. Not
+# listed, or listed as unavailable: stop here, with what the runner has.
+usable="$(xcrun xcdevice list --timeout=10 2>/dev/null | python3 -I -c '
+import json, sys
+udid = sys.argv[1]
+try:
+    devices = json.load(sys.stdin)
+except ValueError:
+    print("unknown")
+    sys.exit()
+for d in devices:
+    if d.get("identifier") == udid:
+        error = (d.get("error") or {}).get("description") or "unavailable"
+        print("yes" if d.get("available") else error)
+        break
+else:
+    print("not listed")
+' "$udid")" || usable=unknown
+case "$usable" in
+    yes) ;;
+    unknown) echo "✘ xcdevice didn't answer; going on without its check" >&2 ;;
+    *)
+        echo "✘ $(xcodebuild -version | head -1) can't run simulator $udid: $usable." >&2
+        echo "  The iOS runtimes on this runner:" >&2
+        xcrun simctl list runtimes 2>&1 | grep -E 'iOS' | sed 's/^/    /' >&2 || true
+        fail "no usable $device simulator for this Xcode: re-run the job (another runner image), or select the Xcode the build used"
+        ;;
+esac
+
 xcrun simctl boot "$udid" 2>/dev/null || true
 xcrun simctl bootstatus "$udid" -b >/dev/null
 xcrun simctl ui "$udid" appearance dark
@@ -289,23 +323,36 @@ PY
 # its launch at 85 s, "Timed out while acquiring background assertion",
 # and the iPad's a UI query at 490 s; each then took a second pass). So
 # the app is launched once by itself first, as the tests launch it, the
-# runner waited on until its CPU settles (three minutes at most), and the
-# app closed.
+# simulator waited on until its own CPU settles (three minutes at most),
+# and the app closed.
+#
+# What settles is the simulator's, not the runner's: the runner's idle %
+# (top's) read 0 to 6 all through the wait on every job (43822605849,
+# 43825166503), whatever the simulator did, so a wait for 70 % idle never
+# ended before its three minutes. The simulator's own processes (its
+# runtime's daemons and the app, by their paths) are summed instead, in %
+# of one core: under one core twice running, it's warm.
+sim_cpu() {
+    LC_ALL=C ps -A -o %cpu=,command= | awk -v dev="/Devices/$udid/" '
+        index($0, dev) || index($0, ".simruntime/") { sum += $1 }
+        END { print int(sum + 0.5) }'
+}
 warm_up() {
-    local bundle start idle calm=0 seen=""
+    local bundle start cpu calm=0 seen=""
     bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
     start=$(date +%s)
     xcrun simctl launch "$udid" "$bundle" "${common[@]}" "${quiet[@]}" >/dev/null 2>&1 ||
         echo "✘ the warm-up launch failed; on to the tests" >&2
     sleep 10
     while [ $(($(date +%s) - start)) -lt 180 ]; do
-        idle="$(top -l 2 -s 3 -n 0 | awk '/^CPU usage/ { v = $7 } END { sub("%", "", v); print int(v) }')"
-        seen="$seen ${idle:-?}"
-        if [ "${idle:-0}" -ge 70 ]; then calm=$((calm + 1)); else calm=0; fi
+        cpu="$(sim_cpu)"
+        seen="$seen ${cpu:-?}"
+        if [ -n "$cpu" ] && [ "$cpu" -lt 100 ]; then calm=$((calm + 1)); else calm=0; fi
         [ "$calm" -lt 2 ] || break
+        sleep 5
     done
     xcrun simctl terminate "$udid" "$bundle" >/dev/null 2>&1 || true
-    log "$device · warmed up in $(($(date +%s) - start)) s (the runner's idle %, every 3 s:$seen)"
+    log "$device · warmed up in $(($(date +%s) - start)) s (the simulator's CPU %, every 5 s:$seen)"
 }
 
 # "<test> <locale>" for each asked shot neither the capture nor
