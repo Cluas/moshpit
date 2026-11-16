@@ -265,10 +265,11 @@ private struct NSHPageSurface: UIViewRepresentable {
 }
 
 extension View {
-    /// Rules 1 and 2 of ``NSHPage``: no safe area (the keyboard's neither),
-    /// no SwiftUI navigation bar.
+    /// Rules 1 and 2 of ``NSHPage``: no safe area (the keyboard's neither;
+    /// the sides' kept beside the iPad's sidebar, ``NSHPageSafeArea``), no
+    /// SwiftUI navigation bar.
     func nshPage() -> some View {
-        ignoresSafeArea(.all)
+        modifier(NSHPageSafeArea())
             .toolbar(.hidden, for: .navigationBar)
     }
 }

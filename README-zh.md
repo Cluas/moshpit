@@ -1,4 +1,4 @@
-<!-- source: README.md 560d39fd435598271a84bd5e529a6e12cda12d7c -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 的图标：一颗像素蛋从终端窗格后面探出头">
@@ -15,7 +15,7 @@ iPhone 和 iPad 上的 SSH、Mosh、tmux、herdr 终端：每个提问都是一�
 
 **[App Store](https://apps.apple.com/app/id6799896801)** &nbsp;·&nbsp; **[官网](https://moshpit.cluas.eu.org/zh)** &nbsp;·&nbsp; **[文档](https://moshpit.cluas.eu.org/zh/docs)** &nbsp;·&nbsp; **[Issues](https://github.com/Cluas/moshpit/issues)**
 
-[English](README.md) · **简体中文**
+[English](README.md) · **简体中文** · [繁體中文](README.zh-Hant.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português (Brasil)](README.pt-BR.md)
 
 <br>
 
@@ -47,15 +47,17 @@ iPhone 和 iPad 上的 SSH、Mosh、tmux、herdr 终端：每个提问都是一�
 
 ## 支持的智能体
 
-| 智能体 | 首页、灵动岛和实时活动里的状态 | 「在等你」推送 | 「已完成」推送 |
+| 智能体 | 状态 | 在等你 | 已完成 |
 | :-- | :-: | :-: | :-: |
 | Claude Code | ✓ | ✓ | ✓ |
-| Codex | ✓ | ✓（要权限时） | ✓ |
-| Gemini CLI | ✓ | ✓（工具要权限时） | ✓ |
+| Codex | ✓ | ✓ ¹ | ✓ |
+| Gemini CLI | ✓ | ✓ ² | ✓ |
 | Qwen Code | ✓ | ✓ | ✓ |
 | Qoder | ✓ | ✓ | ✓ |
 | Factory（`droid`） | ✓ | ✓ | ✓ |
 | CodeBuddy | ✓ | ✓ | ✓ |
+
+**状态**显示在首页、灵动岛和实时活动里；**在等你**和**已完成**是推送。¹ Codex 在要权限时提问。² Gemini CLI 只在工具要权限时提问。
 
 「配置主机」只给它在主机上找到的智能体装状态脚本。在 tmux 上，首页的状态来自这些脚本；在 herdr 上，状态由 herdr 自己报告，什么都不用配。推送则不管智能体跑在哪儿都由状态脚本发出：tmux 里、herdr 里，还是普通的 shell 里。
 
@@ -74,14 +76,11 @@ App 通过 SSH 或 Mosh 连到你的主机，用控制模式驱动 tmux，用 he
 
 ### 首先是一个真正的终端
 
-<table>
-<tr>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/05-overview.png" alt="tmux、herdr 的窗格，一屏看全"></td>
-<td width="50%"><img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/08-keyboard.png" alt="为终端做的键盘"></td>
-</tr>
-</table>
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/05-overview.png" width="220" alt="tmux、herdr 的窗格，一屏看全"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/08-keyboard.png" width="220" alt="为终端做的键盘">
+</p>
 
-| | |
+| 功能 | 说明 |
 | :-- | :-- |
 | **SSH 和 Mosh** | Mosh 带预测回显。Wi-Fi 和 5G 来回切、手机息屏、酒店的烂网络，会话都不断；App 在后台待过一阵回来，连接还活着就直接接着用，不用重连 |
 | **连不上会说为什么** | 端口拒绝了连接，主机名解析不出来（或者没给本地网络权限），对方没应答（看看 VPN），还是从这个网络根本没有到它的路由 |
@@ -95,9 +94,11 @@ App 通过 SSH 或 Mosh 连到你的主机，用控制模式驱动 tmux，用 he
 
 ### 为智能体干活而做
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/04-island.png" width="250" align="right" alt="不开 App，也知道跑到哪了">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/04-island.png" width="220" alt="不开 App，也知道跑到哪了">
+</p>
 
-| | |
+| 功能 | 说明 |
 | :-- | :-- |
 | **「在等你」排最前** | 首页最上面是所有主机上等你回话的智能体。往下是谁在干活、干了多久、谁闲着 |
 | **推送直接上锁屏** | 端到端加密，App 没开也照样送到。点一下，就在提问的那个窗格里 |
@@ -105,15 +106,13 @@ App 通过 SSH 或 Mosh 连到你的主机，用控制模式驱动 tmux，用 he
 | **新开一个 worktree** | 在手机上给智能体开一个新的 git worktree：选仓库、起分支名，顺手把第一句提示词也交给它 |
 | **分享进窗格** | 从任何 App 分享一张图，直接进到智能体的窗格 |
 
-<br clear="right">
-
 ### 智能体提到的文件
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/06-preview.png" width="250" align="right" alt="改了哪个文件，点一下就能看">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/06-preview.png" width="220" alt="改了哪个文件，点一下就能看">
+</p>
 
 点一下智能体输出里的路径，文件就在手机上打开：图片直接看，视频直接放，文本直接读。还能翻它所在的文件夹，顺手分享出去。
-
-<br clear="right">
 
 ### 语音
 
@@ -121,22 +120,22 @@ App 通过 SSH 或 Mosh 连到你的主机，用控制模式驱动 tmux，用 he
 
 ### iPad
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hans/02-home-terminal.png" width="360" align="right" alt="首页和终端并排">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hans/02-home-terminal.png" width="480" alt="首页和终端并排">
+</p>
 
 左边主机，右边终端。接外接键盘时 <kbd>⌘K</kbd> 显示全部窗格，<kbd>⌘1</kbd>–<kbd>⌘9</kbd> 切窗口，<kbd>⌘W</kbd> 回到首页。
 
-<br clear="right">
-
 ### 伙伴和图标
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/07-pet.png" width="250" align="right" alt="孵一只陪你等的伙伴">
+<p align="center">
+<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hans/07-pet.png" width="220" alt="孵一只陪你等的伙伴">
+</p>
 
-| | |
+| 功能 | 说明 |
 | :-- | :-- |
 | **像素伙伴** | 在首页从蛋里孵出来，蹲在最需要你的那个智能体的卡片上，跟着它的状态变，灵动岛和实时活动里也有它。打开以后，每台主机的头像也变成一只像素小怪，长相同样由主机密钥决定 |
 | **22 个桌面图标** | 都在设置里：默认是一颗像素蛋；六种伙伴各有一个从窗格后面探出头的图标，每种还有一个闪光版；另有 Classic 和其他八个。伙伴孵出来以后，首页会问你要不要换成它那一种 |
-
-<br clear="right">
 
 这里的截图都是 App Store 用的那一套，由 Screenshots 工作流生成，每次完整跑完就自动换上新的。其他语言和 iPad 的截图见[全部截图](https://blog.cluas.eu.org/moshpit/shots/#zh-Hans)。
 

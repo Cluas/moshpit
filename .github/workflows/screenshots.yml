@@ -3,19 +3,25 @@ name: Screenshots
 # The App Store and README screenshots: a Debug simulator build of the app,
 # a host staged on the runner itself (sshd on loopback, tmux on a private
 # socket, a throwaway key), the app seeded to each screen on the iPhone 6.9"
-# and iPad 13" simulators, and the PNGs kept as the run's artifact.
+# and iPad 13" simulators, and the PNGs kept as artifacts.
 # scripts/shots/ci-capture.sh does the staging and the shots; the lock
 # screen and the Dynamic Island come from scripts/shots/external/, taken on
-# a phone. Each device shoots on a runner of its own, in parallel (one
-# simulator per machine: the shots stall less, and a failed device can be
-# rerun alone). A run takes about an hour, so it runs nightly, on each
-# version tag and by hand, never on a push.
+# a phone.
 #
-# A complete set from main or a version tag (both devices, every slot,
-# every locale, the store's sizes: scripts/shots/pages.py) is published to
-# GitHub Pages at
-# /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link.
-# Anything less publishes nothing, and the last good set stays up.
+# The app is built once (`build`), and the shots are taken by a job per
+# device and group of locales (`shoot`, scripts/shots/plan.py), side by side
+# on the macOS runners a public repository gets at once. A job that failed
+# is retried alone ("Re-run failed jobs"). A run by hand may ask for some
+# devices, locales and slots only (`shots`: 01,04,08). It runs nightly, on
+# each version tag and by hand, never on a push: the whole set takes most of
+# an hour.
+#
+# From main or a version tag, the set is published to GitHub Pages at
+# /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link. A
+# run that shot part of it is laid over the set that is live; either way
+# the set that goes up must be whole (every slot of both devices in every
+# locale, at the store's sizes), or nothing goes up and the last good set
+# stays.
 on:
   schedule:
     - cron: "23 18 * * *" # 02:23 in Shanghai, 18:23 UTC: off-peak for the runners
@@ -29,7 +35,11 @@ on:
         options: [both, iphone, ipad]
         default: both
       locales:
-        description: Locales, space-separated, or "all" (every locale the app ships, LOCALES below)
+        description: Locales, separated by commas or spaces, or "all" (every locale with captions)
+        type: string
+        default: all
+      shots:
+        description: "The store's slots by number, like 01,04,08 (each device's order in scripts/shots/captions), or all"
         type: string
         default: all
 
@@ -40,27 +50,37 @@ concurrency:
   group: screenshots-${{ github.ref }}
   cancel-in-progress: false
 
-jobs:
-  shots:
-    name: Screenshots (${{ matrix.device }}, ${{ inputs.locales || 'all' }})
-    runs-on: xcode-27
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        # The devices asked for (a scheduled or tag run asks for both).
-        device: ${{ fromJSON(inputs.devices == 'iphone' && '["iphone"]' || inputs.devices == 'ipad' && '["ipad"]' || '["iphone","ipad"]') }}
+env:
+  DEVICES: ${{ inputs.devices || 'both' }}
+  LOCALES: ${{ inputs.locales || 'all' }}
+  SHOTS: ${{ inputs.shots || 'all' }}
 
+jobs:
+  # The shoot jobs this run needs (a scheduled or tag run: every one).
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      full: ${{ steps.plan.outputs.full }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Plan the shoot jobs
+        id: plan
+        run: python3 -I scripts/shots/plan.py "$DEVICES" "$LOCALES" "$SHOTS" | tee -a "$GITHUB_OUTPUT"
+
+  # Debug, for testing: the DEBUG seeds the shots are made with, the same
+  # build for either simulator (the app is universal), arm64 only. Its
+  # products go to every shoot job.
+  build:
+    name: Build
+    runs-on: xcode-27
+    timeout-minutes: 60
     env:
       SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
-      # Every locale the app ships, shot for every simulator shot. Trim here.
-      LOCALES_ALL: en-US zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
-      DEVICE: ${{ matrix.device }}
-      # A scheduled or tag run has no inputs: every locale.
-      LOCALES: ${{ inputs.locales || 'all' }}
-      # The lock screen and the Dynamic Island, taken on a phone.
-      SHOTS_EXTERNAL: ${{ github.workspace }}/scripts/shots/external
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -71,15 +91,14 @@ jobs:
           XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
           sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
           xcodebuild -version
-          xcrun simctl list devices available | grep -E 'iPhone|iPad' || true
           iphones=$(xcrun simctl list devices available |
             sed -nE 's/^ +(iPhone.*[^ ]) \([0-9A-F-]{36}\).*/\1/p')
           SIMULATOR="iPhone 18 Pro"
           grep -qxF "$SIMULATOR" <<< "$iphones" || SIMULATOR=$(tail -1 <<< "$iphones")
           echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
 
-      - name: Install xcodegen and tmux
-        run: brew install xcodegen tmux
+      - name: Install xcodegen
+        run: brew install xcodegen
 
       - name: Install the Rust toolchain
         run: |
@@ -115,9 +134,6 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-
 
-      # Debug: the DEBUG seeds the shots are made with. The same build for
-      # either simulator (the app is universal); arm64 only. For testing too: the
-      # shots a page has to be waited for are ShotsUITest's.
       - name: Build the app
         run: |
           xcodebuild build-for-testing \
@@ -128,41 +144,91 @@ jobs:
             -derivedDataPath build/dd \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             CODE_SIGNING_ALLOWED=NO
-          ls -d build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app
-          echo "SHOTS_XCTESTRUN=$(ls build/dd/Build/Products/*.xctestrun | head -1)" >> "$GITHUB_ENV"
+          ls -d build/dd/Build/Products/Debug-iphonesimulator/{Moshpit,MoshpitUITests-Runner}.app \
+            build/dd/Build/Products/*.xctestrun
+
+      # What test-without-building needs: the app (its unit tests inside),
+      # the UI tests' runner, and the .xctestrun that names them relative
+      # to the products folder.
+      - name: Keep the build
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ github.run_number }}
+          path: |
+            build/dd/Build/Products/*.xctestrun
+            build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app
+            build/dd/Build/Products/Debug-iphonesimulator/MoshpitUITests-Runner.app
+          retention-days: 3
+          if-no-files-found: error
+
+  shoot:
+    name: Shots (${{ matrix.device }} ${{ matrix.group }}, ${{ matrix.locales }}, ${{ matrix.shots }})
+    needs: [plan, build]
+    runs-on: xcode-27
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      DEVICE: ${{ matrix.device }}
+      GROUP_LOCALES: ${{ matrix.locales }}
+      SHOTS_ONLY: ${{ matrix.shots }}
+      # The lock screen and the Dynamic Island, taken on a phone.
+      SHOTS_EXTERNAL: ${{ github.workspace }}/scripts/shots/external
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The build's Xcode, for its simulators and test runner.
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install tmux
+        run: brew install tmux
+
+      - name: Fetch the build
+        uses: actions/download-artifact@v8
+        with:
+          name: build-${{ github.run_number }}
+          path: build/dd/Build/Products
 
       - name: The shots
         run: |
-          [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
+          SHOTS_XCTESTRUN=$(find build/dd/Build/Products -maxdepth 1 -name '*.xctestrun' | head -1)
+          export SHOTS_XCTESTRUN
           case "$DEVICE" in iphone) out=shots/iphone-6.9 ;; ipad) out=shots/ipad-13 ;; esac
           # shellcheck disable=SC2086 # one locale per word
           scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
-            "$out" "$DEVICE" $LOCALES
+            "$out" "$DEVICE" $GROUP_LOCALES
 
       - name: Keep the shots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: shots-${{ github.run_number }}-${{ matrix.device }}
+          name: shots-${{ github.run_number }}-${{ matrix.device }}-${{ matrix.group }}
           path: shots
           if-no-files-found: warn
 
-      # This device's whole set or nothing: every slot in every locale, at
-      # the store's sizes. The publish job needs both devices' to pass.
+      # This job's part of the set, whole: its device, locales and slots,
+      # at the store's sizes.
       - name: Check the set
-        run: python3 -I scripts/shots/pages.py check shots --device "$DEVICE"
+        run: |
+          python3 -I scripts/shots/pages.py check shots --device "$DEVICE" \
+            --locales "$GROUP_LOCALES" --slots "$SHOTS_ONLY"
 
-  # After both devices passed their check, for the whole set only (a run by
-  # hand for one device or some locales publishes nothing), from main or a
-  # version tag.
+  # After every shoot job passed its check, from main or a version tag: this
+  # run's shots, laid over the live set when the run shot only part of it,
+  # checked whole, and deployed.
   publish:
     name: Publish to GitHub Pages
-    needs: shots
-    if: >-
-      (inputs.devices || 'both') == 'both' && (inputs.locales || 'all') == 'all' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [plan, shoot]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: write
@@ -177,12 +243,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Fetch both devices' shots
+      - name: The site's address
+        id: pages
+        uses: actions/configure-pages@v6
+
+      - name: Fetch the live set
+        if: needs.plan.outputs.full != 'true'
+        env:
+          BASE: ${{ steps.pages.outputs.base_url }}
+        run: python3 -I scripts/shots/pages.py fetch "$BASE" shots
+
+      - name: Fetch this run's shots
         uses: actions/download-artifact@v8
         with:
           pattern: shots-${{ github.run_number }}-*
           merge-multiple: true
-          path: shots
+          path: run
+
+      # This run's store images in place of the live ones.
+      - name: Lay this run's shots over
+        run: |
+          mkdir -p shots
+          cp -R run/. shots/
+          find run -path '*/store/*' -name '*.png' | sed 's|^run/||' | sort | sed 's/^/  from this run: /'
 
       - name: Lay out the site
         run: python3 -I scripts/shots/pages.py site shots site

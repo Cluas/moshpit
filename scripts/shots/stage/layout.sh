@@ -14,7 +14,8 @@
 stage_layout() {
     # devbox: the payments work. Its claude asks to edit; codex runs the
     # tests; a window split three ways (claude writing tests, vitest watching,
-    # the server's log); a shell where an earlier claude finished.
+    # the server's log); a shell where an earlier claude finished; then the
+    # server, the database, the log and the docs.
     tmux kill-server 2>/dev/null || true
     tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
         "exec sh $scripts/claude-session.sh"
@@ -24,6 +25,14 @@ stage_layout() {
     tmux split-window -v -t work:review.1 -c "$stage/payments-api" "exec sh $hold tail $text/review-tail.txt"
     tmux select-pane -t work:review.0
     tmux new-window -t work -n shell -c "$stage/infra" "exec sh $hold zsh $text/shell.txt"
+    # The rest of a working session: the dev server, the database, the
+    # worker's log, the docs being written. No agent in them, so Home's
+    # counts and the Live Activity stay as they are; they fill the
+    # overview's grid (the iPad's held one row, the rest of it empty).
+    tmux new-window -t work -n server -c "$stage/payments-api" "exec sh $hold node $text/server.txt"
+    tmux new-window -t work -n db -c "$stage/payments-api" "exec sh $hold psql $text/db.txt"
+    tmux new-window -t work -n logs -c "$stage/payments-api" "exec sh $hold tail $text/logs.txt"
+    tmux new-window -t work -n docs -c "$stage/payments-api" "exec sh $hold nvim $text/docs.txt"
     tmux select-window -t work:claude
 
     # gpu-01: a training run (claude at work) and an eval waiting on gemini's

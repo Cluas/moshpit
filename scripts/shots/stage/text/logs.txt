@@ -1,0 +1,8 @@
+2026-11-16T09:40:58Z info  worker started queue=webhooks concurrency=4
+2026-11-16T09:41:02Z info  evt_1Q2 received type=invoice.paid
+2026-11-16T09:41:03Z warn  evt_1Q2 handler timeout after 1500ms, will retry
+2026-11-16T09:41:05Z info  evt_1Q7 received type=charge.refunded
+2026-11-16T09:41:06Z info  evt_1Q7 delivered in 44ms
+2026-11-16T09:41:08Z info  evt_1Q2 delivered after 2 tries
+2026-11-16T09:41:20Z info  invoices listed count=20 took=17ms
+2026-11-16T09:41:31Z info  health ok uptime=3m19s

@@ -63,7 +63,8 @@ struct TerminalNSHPage<Anchors: View>: View {
                 onFailure: onFailure)
             anchors()
         }
-        .ignoresSafeArea(.all)
+        // Every safe area, but the sides' beside the iPad's sidebar (B843).
+        .modifier(NSHPageSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { update() }
         // The changed values themselves, never the view's captured ones: an
