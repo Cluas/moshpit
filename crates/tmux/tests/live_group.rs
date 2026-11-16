@@ -21,6 +21,12 @@ struct Server {
     socket: String,
 }
 
+/// The tmux the tests drive: `MOSHPIT_TEST_TMUX`, else the one on PATH
+/// (B812: the group needs 3.8; the crash tests run on any).
+fn tmux_bin() -> String {
+    std::env::var("MOSHPIT_TEST_TMUX").unwrap_or_else(|_| "tmux".to_owned())
+}
+
 impl Server {
     /// A server of its own: the tests run side by side in one process.
     fn start(test: &str) -> Server {
@@ -35,7 +41,7 @@ impl Server {
     }
 
     fn tmux(&self, args: &[&str]) -> String {
-        let out = Command::new("tmux")
+        let out = Command::new(tmux_bin())
             .args(["-L", &self.socket, "-f", "/dev/null"])
             .args(args)
             .output()
@@ -44,7 +50,7 @@ impl Server {
     }
 
     fn client(&self, target: &str) -> (Child, ChildStdin, Receiver<Vec<u8>>) {
-        let mut child = Command::new("tmux")
+        let mut child = Command::new(tmux_bin())
             .args([
                 "-L",
                 &self.socket,
@@ -81,7 +87,7 @@ impl Server {
         Command::new("python3")
             .args(["-c", "import pty,sys; pty.spawn(sys.argv[1:])"])
             .args([
-                "tmux",
+                &tmux_bin(),
                 "-L",
                 &self.socket,
                 "-f",
@@ -178,6 +184,10 @@ fn eventually(seconds: u64, mut check: impl FnMut() -> bool) -> bool {
 #[ignore = "needs tmux; see the module docs"]
 fn a_real_tmux_keeps_the_desktop_where_it_is_and_drops_the_group_with_the_phone() {
     let server = Server::start("desktop");
+    if !server.groups() {
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
     let mut desk = server.desktop("main");
     assert!(
         eventually(10, || server
@@ -244,15 +254,29 @@ fn a_real_tmux_keeps_the_desktop_where_it_is_and_drops_the_group_with_the_phone(
     phone.pump(300);
     assert_eq!(window_of("main"), desk_window, "the desktop's window");
 
-    // The app killed, the link gone: the client dies.
+    // The app killed, the link gone: the client dies. B812: the group stays
+    // (no `destroy-unattached`: tmux reaping it under a client still
+    // pointing at it crashed the server), and the next attach sweeps it.
     let _ = phone.child.kill();
     let _ = phone.child.wait();
+    std::thread::sleep(Duration::from_millis(500));
     assert!(
-        eventually(10, || server.tmux(&["ls", "-F", "#{session_name}"])
-            == "main"),
-        "the group went with the phone: {}",
+        server
+            .tmux(&["ls", "-F", "#{session_name}"])
+            .contains("~mp-iPhone-"),
+        "left for the sweep: {}",
         server.tmux(&["ls", "-F", "#{session_name}"])
     );
+    let again = server.phone("main");
+    assert!(
+        eventually(10, || !server
+            .tmux(&["ls", "-F", "#{session_id}"])
+            .lines()
+            .any(|id| id == group_id)),
+        "the next attach swept it: {}",
+        server.tmux(&["ls", "-F", "#{session_id} #{session_name}"])
+    );
+    drop(again);
     assert_eq!(
         server
             .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
@@ -310,8 +334,9 @@ impl Server {
         };
         let now = phone.now();
         phone.controller.begin_control_mode(now);
+        let grouped = self.groups();
         let attached = phone.pump_until(15, |c| {
-            c.phone_group().is_some() && c.snapshot().active_window_id.is_some()
+            (c.phone_group().is_some() || !grouped) && c.snapshot().active_window_id.is_some()
         });
         assert!(attached, "{:?}", phone.controller.snapshot());
         phone.pump(300);
@@ -334,6 +359,25 @@ impl Server {
             "the desktop attached"
         );
         desk
+    }
+
+    /// Whether the phone gets its own group here (B812: tmux 3.8 and later).
+    fn groups(&self) -> bool {
+        let version = self.tmux(&["display-message", "-p", "#{version}"]);
+        let version = version.strip_prefix("next-").unwrap_or(&version);
+        let parsed = version.split_once('.').and_then(|(major, rest)| {
+            let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?))
+        });
+        version == "master" || parsed.is_some_and(|v| v >= (3, 8))
+    }
+
+    /// Whether the server is still the one started (not crashed).
+    fn alive(&self, pid: &str) -> bool {
+        Command::new("kill")
+            .args(["-0", pid])
+            .status()
+            .is_ok_and(|status| status.success())
     }
 
     fn window_of(&self, target: &str) -> String {
@@ -463,7 +507,8 @@ impl Server {
     /// when tmux's client does — and with it the mosh session.
     fn renderer(&self, target: &str) -> Child {
         let attach = format!(
-            "exec tmux -L {} -f /dev/null attach -t '{target}'",
+            "exec {} -L {} -f /dev/null attach -t '{target}'",
+            tmux_bin(),
             self.socket
         );
         let renderer = Command::new("python3")
@@ -722,6 +767,10 @@ fn a_window_handed_back_after_its_panes_changed_is_not_left_zoomed() {
 #[ignore = "needs tmux; see the module docs"]
 fn over_mosh_the_phones_window_switches_leave_the_desktop_where_it_is() {
     let server = Server::start("moshgroup");
+    if !server.groups() {
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
     let mut renderer = server.renderer("=main");
     let pid = server.renderer_pid().unwrap();
     let mut desk = server.desktop_on("main");
@@ -779,18 +828,26 @@ fn over_mosh_the_phones_window_switches_leave_the_desktop_where_it_is() {
         ),
         "the phone shows the session, not its group"
     );
-    // The phone leaves: mosh-server's client ends, then the sidecar's.
+    // The phone leaves: mosh-server's client ends, then the sidecar's. B812:
+    // its group stays (no `destroy-unattached`), and the next attach sweeps
+    // it.
     let _ = renderer.kill();
     let _ = renderer.wait();
     let _ = sidecar.child.kill();
     let _ = sidecar.child.wait();
+    std::thread::sleep(Duration::from_millis(500));
+    let again = server.phone("main");
     assert!(
-        eventually(10, || !server
+        eventually(10, || server
             .tmux(&["ls", "-F", "#{session_name}"])
-            .contains("~mp-")),
-        "the phone's group went with it: {}",
+            .lines()
+            .filter(|name| name.contains("~mp-"))
+            .count()
+            <= 1),
+        "the phone's old group swept at the next attach: {}",
         server.tmux(&["ls", "-F", "#{session_name}"])
     );
+    drop(again);
     assert_eq!(
         server
             .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
@@ -802,4 +859,168 @@ fn over_mosh_the_phones_window_switches_leave_the_desktop_where_it_is() {
     assert_eq!(server.window_of("main"), desk_window);
     let _ = desk.kill();
     let _ = desk.wait();
+}
+
+impl Server {
+    fn pid(&self) -> String {
+        self.tmux(&["display-message", "-p", "#{pid}"])
+    }
+
+    /// Another session that keeps the server up: a crash is the server
+    /// gone with it still there.
+    fn keep(&self) {
+        self.tmux(&["new-session", "-d", "-s", "keep"]);
+    }
+}
+
+/// B812: a phone whose connection stalls (iOS in the background, the link
+/// frozen: its control client reads nothing, its output piles up) is marked
+/// exiting by the server, yet still points at its group; a desktop opening
+/// a terminal then had tmux reap the group (`destroy-unattached`) under it,
+/// and the server crashed on that client's next redraw check (3.2a–3.7:
+/// SIGSEGV in `server_client_loop`, `curw->window` at 0x10). No group of
+/// ours ever has `destroy-unattached`, and before 3.8 there is no group.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_stalled_phone_never_takes_the_server_down() {
+    let server = Server::start("stall");
+    server.keep();
+    let pid = server.pid();
+    let mut phone = server.phone("main");
+    phone.pump(500);
+    let name = server
+        .tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_name} #{client_control_mode}",
+        ])
+        .lines()
+        .find(|line| line.ends_with(" 1"))
+        .and_then(|line| line.split(' ').next())
+        .unwrap()
+        .to_owned();
+    // The link freezes: the client stops reading; output piles up.
+    let stopped = Command::new("kill")
+        .args(["-STOP", &phone.child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(stopped.success());
+    server.tmux(&[
+        "send-keys",
+        "-t",
+        "main:1",
+        "while :; do date; sleep 0.01; done",
+        "Enter",
+    ]);
+    std::thread::sleep(Duration::from_secs(2));
+    // The server gives up on it (as "too far behind" does after 300 s).
+    server.tmux(&["detach-client", "-t", &name]);
+    std::thread::sleep(Duration::from_millis(300));
+    // A desktop opens a terminal.
+    let mut desk = server.desktop("main");
+    std::thread::sleep(Duration::from_millis(1500));
+    let alive = server.alive(&pid);
+    let _ = Command::new("kill")
+        .args(["-CONT", &phone.child.id().to_string()])
+        .status();
+    let _ = phone.child.kill();
+    let _ = desk.kill();
+    let _ = desk.wait();
+    assert!(alive, "the server crashed");
+    assert!(
+        !server
+            .tmux(&["show-options", "-g", "destroy-unattached"])
+            .contains(" on"),
+        "the global option untouched"
+    );
+}
+
+/// B812: a window index the phone's group and its session no longer share
+/// — a close left a gap, a manual `move-window -r` renumbered the session
+/// alone — and the next close crashed the server with a group in place,
+/// whatever the group's options (3.2a–3.7). Before 3.8 there is no group.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_renumbered_session_never_takes_the_server_down() {
+    let server = Server::start("renumber");
+    server.keep();
+    let pid = server.pid();
+    let mut desk = server.desktop_on("main");
+    let mut phone = server.phone("main");
+    let windows: Vec<String> = server
+        .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    // On the last window.
+    let now = phone.now();
+    phone.controller.select_window(windows.last().unwrap(), now);
+    phone.pump(800);
+    // A gap, a renumber of the session alone, a close.
+    server.tmux(&["kill-window", "-t", &windows[1]]);
+    std::thread::sleep(Duration::from_millis(300));
+    server.tmux(&["move-window", "-r", "-t", "main:"]);
+    std::thread::sleep(Duration::from_millis(300));
+    server.tmux(&["kill-window", "-t", &windows[0]]);
+    std::thread::sleep(Duration::from_millis(800));
+    let alive = server.alive(&pid);
+    let _ = phone.child.kill();
+    let _ = desk.kill();
+    let _ = desk.wait();
+    assert!(alive, "the server crashed");
+}
+
+/// B812: the attach's sweep ends only a group no client is on — never
+/// another phone's in use. Two phones on one session (3.8): the first
+/// drops; at its next attach, its old group goes, the second phone's stays
+/// and still switches windows.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn the_sweep_never_ends_another_phones_group() {
+    let server = Server::start("twophones");
+    if !server.groups() {
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
+    let mut first = server.phone("main");
+    let mut second = server.phone("main");
+    first.pump(300);
+    second.pump(300);
+    let first_group = first.controller.phone_group().unwrap().to_owned();
+    let second_group = second.controller.phone_group().unwrap().to_owned();
+    assert_ne!(first_group, second_group);
+    let _ = first.child.kill();
+    let _ = first.child.wait();
+    std::thread::sleep(Duration::from_millis(500));
+    let names = || server.tmux(&["ls", "-F", "#{session_name}"]);
+    assert!(
+        names().contains(&first_group),
+        "left for the sweep: {}",
+        names()
+    );
+    let again = server.phone("main");
+    assert!(
+        eventually(10, || !names().contains(&first_group)),
+        "the dropped phone's group swept: {}",
+        names()
+    );
+    second.pump(500);
+    assert!(
+        names().contains(&second_group),
+        "the second phone's group stays: {}",
+        names()
+    );
+    let windows: Vec<String> = server
+        .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let target = windows.last().unwrap().clone();
+    let now = second.now();
+    second.controller.select_window(&target, now);
+    let moved = second.pump_until(10, |c| {
+        c.snapshot().active_window_id.as_deref() == Some(target.as_str())
+    });
+    assert!(moved, "the second phone still works");
+    drop(again);
 }
