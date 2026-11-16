@@ -1001,10 +1001,15 @@ async fn mosh_with_tmux_makes_the_first_session_when_asked() {
         .sessions
         .tmux(id, moshpit_session::TmuxAction::NewSession { name: None })
         .unwrap();
-    // The status line names it: `[0]`, or from tmux 3.8 the phone's own
-    // group of it, `[0~mp-…` (B773, B812).
+    // Made on the host, the person's one session (the phone's own group of
+    // it aside, `~mp-…` from tmux 3.8); then the renderer shows it: `[0]`,
+    // or `[0~mp-…` (B773, B812, B853).
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while theirs(empty.sessions()).is_empty() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(theirs(empty.sessions()), ["0"], "{:?}", empty.sessions());
     assert!(term.wait_for("[0", 15).await, "{}", term.text());
-    assert_eq!(theirs(empty.sessions()).len(), 1, "{:?}", empty.sessions());
     let _ = bench.sessions.disconnect(id).await;
 }
 
