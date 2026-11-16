@@ -724,8 +724,16 @@ fn malformed(text: &str) -> Event {
 
 // MARK: Text helpers
 
+/// Every trailing `\r`, not one: a pty still in cooked mode turns tmux's
+/// `\r\n` into `\r\r\n` (the first lines of a mosh sidecar's stream), and
+/// a session named in `%session-changed` read `a\r`, so its group was named
+/// `a_~mp-…` and the renderer was taken for another session's (B873).
 fn strip_cr(line: &[u8]) -> &[u8] {
-    line.strip_suffix(b"\r").unwrap_or(line)
+    let mut line = line;
+    while let Some(rest) = line.strip_suffix(b"\r") {
+        line = rest;
+    }
+    line
 }
 
 /// Swift's `String(data: raw, encoding: .utf8) ?? String(decoding: raw, as:
@@ -849,6 +857,18 @@ fn is_octal(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_doubled_carriage_return_does_not_end_up_in_a_session_name() {
+        let events = ControlParser::new().feed_collect(b"%session-changed $1 a\r\r\n");
+        assert_eq!(
+            events,
+            [Event::SessionChanged {
+                session_id: "$1".to_owned(),
+                name: "a".to_owned()
+            }]
+        );
+    }
 
     #[test]
     fn split_swift_matches_the_swift_standard_library() {
