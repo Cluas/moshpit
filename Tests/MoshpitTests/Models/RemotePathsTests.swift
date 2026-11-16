@@ -454,6 +454,104 @@ struct RemotePathLinksTests {
         #expect(fake.calls.count == 1, "a fresh miss is not asked about again right away")
     }
 
+    /// Whether `links` asks for another link pass (`onResolved`) within
+    /// `limit`: what the terminal runs a pass on.
+    private func asksForAPass(_ links: RemotePathLinks, within limit: Duration) async -> Bool {
+        var asked = false
+        links.onResolved = { asked = true }
+        let deadline = ContinuousClock.now + limit
+        while !asked, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return asked
+    }
+
+    /// B817: a probe that got no answer — no connection yet, a session
+    /// still coming back — was kept as a miss for 30 s, and nothing asked
+    /// again after that: the link pass runs on new output, an answer, or the
+    /// pane coming on screen, and a quiet screen has none of them. A path
+    /// printed while the connection came back stayed plain text for good
+    /// (the screenshots' "Wrote bench/latency.png" never opened from its
+    /// tap; the Files sheet did). No answer is not a miss: the pass is asked
+    /// for again shortly, without new output, and the path becomes a link.
+    @Test("a probe that got no answer is asked again shortly, without new output")
+    func noAnswerIsAskedAgain() async throws {
+        let fake = FakeProbe()
+        fake.table = ["bench/latency.png": .init(path: "/r/bench/latency.png", isDirectory: false)]
+        var reachable = false
+        let links = RemotePathLinks(workingDirectory: { "/r" },
+                                    probe: { cwd, batch in reachable ? fake.run(cwd, batch) : nil },
+                                    retryAfterNoAnswer: 0.5)
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == nil)
+        // After the batch went out (its debounce) and before its retry.
+        try await Task.sleep(for: .milliseconds(400))
+        reachable = true
+        #expect(await asksForAPass(links, within: .seconds(5)),
+                "nothing asked for another pass after a probe that got no answer")
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == nil, "asked again")
+        await settle(links)
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == "/r/bench/latency.png")
+    }
+
+    /// And when the session is live again, what got no answer while it was
+    /// away is asked at once, not at its retry (up to 30 s later).
+    @Test("a reconnect asks for a pass at once, and what got no answer is asked again")
+    func reconnectAsksAtOnce() async throws {
+        let fake = FakeProbe()
+        fake.table = ["bench/latency.png": .init(path: "/r/bench/latency.png", isDirectory: false)]
+        var reachable = false
+        let links = RemotePathLinks(workingDirectory: { "/r" },
+                                    probe: { cwd, batch in reachable ? fake.run(cwd, batch) : nil },
+                                    retryAfterNoAnswer: 30)
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == nil)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == nil, "waits for its retry")
+        reachable = true
+        var asked = false
+        links.onResolved = { asked = true }
+        links.connectionCameBack()
+        #expect(asked, "the reconnect asked for no pass")
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == nil, "asked again")
+        await settle(links)
+        #expect(links.resolvedPath(for: candidate("bench/latency.png")) == "/r/bench/latency.png")
+    }
+
+    /// Nor is a dead connection asked on every pass: until the retry, the
+    /// unanswered path waits.
+    @Test("an unanswered path isn't asked again on every pass before its retry")
+    func noAnswerWaitsForItsRetry() async throws {
+        var calls = 0
+        let links = RemotePathLinks(workingDirectory: { "/r" },
+                                    probe: { _, _ in calls += 1; return nil },
+                                    retryAfterNoAnswer: 30)
+        _ = links.resolvedPath(for: candidate("bench/latency.png"))
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(calls == 1)
+        for _ in 0..<5 { _ = links.resolvedPath(for: candidate("bench/latency.png")) }
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(calls == 1, "a pass asked a host that hadn't answered again at once")
+    }
+
+    /// The same for a miss: an agent names a file a moment before it writes
+    /// it, and the miss was only asked about again if something new was
+    /// printed after its window. Once the window passes, the pass is asked
+    /// for, and the file that has appeared since becomes a link.
+    @Test("a miss comes back to the pass once its window passes, without new output")
+    func missComesBackWithoutOutput() async throws {
+        let fake = FakeProbe()
+        let links = RemotePathLinks(workingDirectory: { "/r" }, probe: { fake.run($0, $1) },
+                                    retryAfterMiss: 0.6)
+        #expect(links.resolvedPath(for: candidate("out/a.png")) == nil)
+        // After the batch went out (its debounce) and before its retry.
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(fake.calls.count == 1)
+        fake.table = ["out/a.png": .init(path: "/r/out/a.png", isDirectory: false)]
+        #expect(await asksForAPass(links, within: .seconds(5)), "the miss never came back to the pass")
+        #expect(links.resolvedPath(for: candidate("out/a.png")) == nil, "asked again")
+        await settle(links)
+        #expect(links.resolvedPath(for: candidate("out/a.png")) == "/r/out/a.png")
+    }
+
     @Test("a miss is asked about again once the retry window has passed")
     func missRetries() async throws {
         var clock = Date(timeIntervalSince1970: 1000)

@@ -450,6 +450,10 @@ final class RustSessionDriver: RustSessionListener {
             session.moshReturnPathDead = false
             publishCapabilities()
             viewModel.adoptRustStatus(.connected, automatic: false)
+            // What the terminal's paths got no answer for while the session
+            // was away is asked at once (B818); a tmux pane's links are made
+            // anew with its pane.
+            session.coordinator.pathLinks?.connectionCameBack()
             wireTmuxIfExpected()
             wireSidecarIfExpected()
             wireHerdrIfExpected()

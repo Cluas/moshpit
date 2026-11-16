@@ -1328,7 +1328,9 @@ enum CoreTerminalHost {
             // A host path is opened in the app, never handed to the system:
             // `file://` here names a file on the REMOTE machine.
             if let path = RemotePathLink.path(from: trimmed) {
-                Log.input.info("path open \(path, privacy: .private)")
+                // Notice, not info: a capture's `log show` keeps it. No path:
+                // captures are shared (B818).
+                Log.input.notice("path open")
                 let open = onOpenRemotePath
                 Task { @MainActor in open?(path) }
                 return
