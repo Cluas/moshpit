@@ -1,0 +1,18 @@
+# Webhook retries
+
+Stripe events are retried with exponential backoff:
+
+| attempt | wait   |
+|---------|--------|
+| 1       | 0.8 s  |
+| 2       | 1.6 s  |
+| 3       | 3.2 s  |
+
+After the third failure the event is marked `failed` and shows
+up in the dashboard's dead-letter list. Retry it from there, or:
+
+    npm run replay -- evt_1Q2
+
+~
+~
+"docs/webhooks.md" 18L, 412B

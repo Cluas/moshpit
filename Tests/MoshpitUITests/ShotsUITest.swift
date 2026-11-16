@@ -270,10 +270,10 @@ final class ShotsUITest: XCTestCase {
             // Each pane visited once, so the overview has a picture of each
             // (it draws the panes the app has shown; dry run 5's build and
             // review cards were empty): the sideways swipe walks the
-            // session's six panes and back to the one that asked.
+            // session's ten panes and back to the one that asked.
             let area = app.nsh("terminal-pane-area")
-            for _ in 0..<5 { area.swipeLeft(); settle(1.2) }
-            for _ in 0..<5 { area.swipeRight(); settle(0.8) }
+            for _ in 0..<9 { area.swipeLeft(); settle(1.2) }
+            for _ in 0..<9 { area.swipeRight(); settle(0.8) }
             app.nsh("terminal-crumb-window").tap()
             // Dry run 5: the overview opens (its debug shot shows it) but
             // isn't in the accessibility tree yet, so its ids can't be

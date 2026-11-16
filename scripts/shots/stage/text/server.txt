@@ -1,0 +1,12 @@
+➜  payments-api git:(fix-webhook-retry) npm run dev
+
+> payments-api@2.4.0 dev
+> node --watch src/server.js
+
+[09:38:12] listening on http://localhost:3000
+[09:38:12] connected to postgres://localhost:5432/payments
+[09:40:51] GET  /health 200 2ms
+[09:41:02] POST /webhooks/stripe 200 41ms
+[09:41:05] POST /webhooks/stripe 200 38ms
+[09:41:06] POST /webhooks/stripe 200 44ms
+[09:41:20] GET  /invoices?limit=20 200 17ms
