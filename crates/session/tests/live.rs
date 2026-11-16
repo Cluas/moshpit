@@ -26,6 +26,15 @@ use moshpit_session::{
 };
 use support::*;
 
+/// The person's sessions: the phone's own group of one (`<name>~mp-…`,
+/// made from tmux 3.8 on, B459/B812) is none of theirs.
+fn theirs(sessions: Vec<String>) -> Vec<String> {
+    sessions
+        .into_iter()
+        .filter(|name| !moshpit_tmux::controller::is_group_name(name))
+        .collect()
+}
+
 macro_rules! need_sshd {
     () => {
         if !Sshd::available() {
@@ -530,15 +539,16 @@ async fn tmux_attaches_and_a_pane_echoes() {
     assert!(term.wait_for("tmux-42", 15).await, "{}", term.text());
     let captured = tmux.run(&["capture-pane", "-p", "-t", &active.pane]);
     assert!(captured.contains("tmux-42"), "{captured}");
-    assert_eq!(tmux.sessions(), vec!["w10".to_owned()]);
+    assert_eq!(theirs(tmux.sessions()), vec!["w10".to_owned()]);
     let _ = bench.sessions.disconnect(id).await;
     // The disconnect handed the window back: no size override left.
     let size = tmux.run(&["show-options", "-w", "-t", "w10", "-v", "window-size"]);
     assert!(size.is_empty() || size == "latest", "{size:?}");
 }
 
-/// A server without sessions: the attach never confirms, the session
-/// stays up and says the attach stalled — and no session is created.
+/// A server without sessions: the session stays up on the empty state
+/// (B228: no stalled attach, the person's first session to make) — and no
+/// session is created.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_never_creates_a_session() {
@@ -550,11 +560,24 @@ async fn tmux_never_creates_a_session() {
     // The terminal is on screen: its windows are ours to size.
     bench.sessions.set_visible(Some(id));
     bench.connected(id).await;
-    bench
-        .until(id, 15, |kind| {
-            (*kind == EventKind::AttachStalled).then_some(())
-        })
-        .await;
+    while !bench
+        .sessions
+        .tmux_view(id)
+        .is_some_and(|view| view.no_session)
+    {
+        let stalled = bench
+            .until(id, 15, |kind| match kind {
+                EventKind::AttachStalled => Some(true),
+                EventKind::TreeChanged => Some(false),
+                _ => None,
+            })
+            .await;
+        assert!(
+            !stalled,
+            "a server with no session read as a stalled attach"
+        );
+    }
+    assert!(!bench.sessions.view(id).unwrap().attach_stalled);
     assert!(tmux.sessions().is_empty(), "{:?}", tmux.sessions());
     assert_eq!(
         bench.sessions.view(id).unwrap().state,
@@ -898,8 +921,9 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     let _reaper = mosh_server_pid(&mut bench, id).await;
     let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
-    // tmux's status line names the session.
-    assert!(term.wait_for("[w10]", 15).await, "{}", term.text());
+    // tmux's status line names the session: `[w10]`, or from tmux 3.8 the
+    // phone's own group of it, `[w10~mp-…` (B773, B812).
+    assert!(term.wait_for("[w10", 15).await, "{}", term.text());
     term.write(b"echo mt-$((6*7))\r");
     assert!(term.wait_for("mt-42", 15).await, "{}", term.text());
     let pane = tmux.run(&["display-message", "-p", "-t", "w10", "#{pane_id}"]);
@@ -914,17 +938,46 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     bench.sessions.set_visible(Some(id));
     let _reaper = mosh_server_pid(&mut bench, id).await;
     let (_, panes) = bench.panes(id, 10).await;
+    let _term = Term::attach(shell(&panes).stream);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert!(empty.sessions().is_empty(), "{:?}", empty.sessions());
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// mosh with tmux, no session on the server: the person's "new session"
+/// from the empty state makes one, and the renderer, waiting, attaches it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
+async fn mosh_with_tmux_makes_the_first_session_when_asked() {
+    // B788 over mosh: no session is made yet (public/main 0ab623bf, tmux
+    // 3.6a and 3.8). `MOSHPIT_LIVE_B788=1` runs it; its fix un-skips it.
+    if std::env::var_os("MOSHPIT_LIVE_B788").is_none() {
+        eprintln!("skipped: B788 over mosh, until its fix");
+        return;
+    }
+    need_sshd!();
+    let sshd = Sshd::start().await;
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let mut spec = mosh_spec(sshd.port);
+    spec.multiplexer = Multiplexer::Tmux;
+    let empty = Tmux::new();
+    spec.tmux_path = Some(empty.prefix());
+    let id = bench.sessions.connect(spec);
+    // The terminal is on screen: its windows are ours to size.
+    bench.sessions.set_visible(Some(id));
+    let _reaper = mosh_server_pid(&mut bench, id).await;
+    let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(empty.sessions().is_empty(), "{:?}", empty.sessions());
-    // The person's "new session" from the empty state: the renderer, waiting,
-    // attaches it.
     bench
         .sessions
         .tmux(id, moshpit_session::TmuxAction::NewSession { name: None })
         .unwrap();
-    assert!(term.wait_for("[0]", 15).await, "{}", term.text());
-    assert_eq!(empty.sessions().len(), 1, "{:?}", empty.sessions());
+    // The status line names it: `[0]`, or from tmux 3.8 the phone's own
+    // group of it, `[0~mp-…` (B773, B812).
+    assert!(term.wait_for("[0", 15).await, "{}", term.text());
+    assert_eq!(theirs(empty.sessions()).len(), 1, "{:?}", empty.sessions());
     let _ = bench.sessions.disconnect(id).await;
 }
 
