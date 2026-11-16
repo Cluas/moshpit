@@ -905,6 +905,7 @@
   "Speech is transcribed on this device and never leaves it.": "語音只在這部裝置上轉寫，不會離開裝置。",
   "Waiting for network…": "等待網路…",
   "No UDP reply from mosh-server.": "收不到 mosh-server 的 UDP 回應。",
+  "No UDP reply from mosh-server. What you've typed will be sent when the connection is back.": "收不到 mosh-server 的 UDP 回應。你輸入的內容會在連線恢復後送出。",
   "Use SSH": "改用 SSH",
   "Network changed. mosh is reconnecting.": "網路換了，mosh 正在接上。",
   "%@ isn't installed here, so this is a plain shell.": "這台主機沒裝 %@，現在是一般 shell。",

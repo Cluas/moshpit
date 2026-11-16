@@ -905,6 +905,7 @@
   "Speech is transcribed on this device and never leaves it.": "A voz é transcrita neste dispositivo e nunca sai dele.",
   "Waiting for network…": "Aguardando a rede…",
   "No UDP reply from mosh-server.": "Nenhuma resposta UDP do mosh-server.",
+  "No UDP reply from mosh-server. What you've typed will be sent when the connection is back.": "Nenhuma resposta UDP do mosh-server. O que você digitou será enviado quando a conexão voltar.",
   "Use SSH": "Usar SSH",
   "Network changed. mosh is reconnecting.": "A rede mudou. O mosh está reconectando.",
   "%@ isn't installed here, so this is a plain shell.": "O %@ não está instalado aqui, então este é um shell comum.",

@@ -1714,7 +1714,7 @@ extension TerminalScreen {
         }
         (chrome.content, chrome.empty) = nshContent
         if active?.moshReturnPathDead == true {
-            chrome.banner = .returnPath
+            chrome.banner = .returnPath(typed: active?.moshTypedWaits == true)
         } else if metrics?.isRoaming == true {
             chrome.banner = .roam(srtt: metrics?.srttMs, history: metrics?.srttHistory ?? [])
         } else if let notice = active?.degrade {

@@ -304,7 +304,12 @@ pub enum Missing {
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Banner {
     /// mosh's UDP return path is dead (`MoshReturnPathBannerView`).
-    ReturnPath,
+    /// `typed`: what the person typed meanwhile waits for mosh-server and
+    /// goes once the connection is back (B618, B854).
+    ReturnPath {
+        #[serde(default)]
+        typed: bool,
+    },
     /// mosh is roaming to a new network path (`RoamBanner`).
     Roam {
         #[serde(default)]

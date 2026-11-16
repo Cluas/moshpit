@@ -265,6 +265,10 @@ pub enum MoshNote {
     /// A datagram from the server, after a [`MoshNote::ReturnPathDead`]: the
     /// path heals (B400). The next outage is reported again.
     ReturnPathAlive,
+    /// While the return path is reported dead, whether keystrokes wait for
+    /// mosh-server's ack (kept until it comes, B618): the banner says they
+    /// go once the connection is back (B854). Said as it changes.
+    TypedWaits(bool),
     /// mosh-server ended the session; the transport acked it and closed.
     SessionEnded,
     /// mosh-server is gone: after first contact its port refuses
@@ -473,6 +477,8 @@ async fn run(
     let mut gone = false;
     // A ReturnPathDead said, and nothing heard since.
     let mut path_reported = false;
+    // TypedWaits as last said.
+    let mut typed_waits = false;
     loop {
         while let Some(event) = transport.poll_event() {
             match event {
@@ -543,6 +549,11 @@ async fn run(
         if due {
             diagnostics_sent = Some((Instant::now(), diagnostics.clone()));
             notes(MoshNote::Diagnostics(diagnostics));
+        }
+        let waits = path_reported && transport.undelivered_keystroke_bytes() > 0;
+        if waits != typed_waits {
+            typed_waits = waits;
+            notes(MoshNote::TypedWaits(waits));
         }
         if finished {
             break;
@@ -1407,6 +1418,43 @@ mod tests {
             })
             .unwrap();
         bench.read_until(b"back").await;
+    }
+
+    /// B854: while the return path is reported dead, keys typed into it
+    /// wait for mosh-server's ack (B618 keeps them until it comes): that is
+    /// said, and unsaid once the path heals and the keys are acked.
+    #[tokio::test(start_paused = true)]
+    async fn typing_into_a_dead_return_path_is_said_to_wait() {
+        let (net, end) = fake::network();
+        let mut bench = start(net);
+        tokio::spawn(EchoServer::new(end).serve());
+        bench.until(|n| *n == MoshNote::FirstContact).await;
+        bench.net.drop_down(true);
+        let within = Duration::from_secs(60);
+        tokio::time::timeout(
+            within,
+            bench.until(|n| matches!(n, MoshNote::ReturnPathDead { .. })),
+        )
+        .await
+        .expect("the outage is reported");
+        bench
+            .mosh
+            .commands
+            .send(MoshCommand::Keys {
+                bytes: b"blind".to_vec(),
+                end: 5,
+            })
+            .unwrap();
+        let typed = |n: &MoshNote| matches!(n, MoshNote::TypedWaits(_));
+        let (_, note) = tokio::time::timeout(within, bench.until(typed))
+            .await
+            .expect("said");
+        assert_eq!(note, MoshNote::TypedWaits(true));
+        bench.net.drop_down(false);
+        let (_, note) = tokio::time::timeout(within, bench.until(typed))
+            .await
+            .expect("unsaid");
+        assert_eq!(note, MoshNote::TypedWaits(false));
     }
 
     /// B400: the server heard again after a dead return path is said, once;

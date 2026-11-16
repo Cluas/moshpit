@@ -352,6 +352,9 @@ final class RustSessionDriver: RustSessionListener {
         case .returnPathAlive:
             // mosh hears the server again: the offer of SSH goes (B400).
             session.moshReturnPathDead = false
+            session.moshTypedWaits = false
+        case .typedWaits(let waits):
+            session.moshTypedWaits = waits
         case .moshMetrics(let srtt, let roaming):
             session.metricsSink?(srtt, roaming)
             session.coordinator.prediction?.srttMs = srtt

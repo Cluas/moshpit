@@ -3677,6 +3677,7 @@ impl Actor {
                     self.emit(EventKind::ReturnPathAlive);
                 }
             }
+            MoshNote::TypedWaits(waits) => self.emit(EventKind::TypedWaits { waits }),
             MoshNote::SessionEnded => self.life.ended(generation, EndReason::MoshServerEnded, now),
             // The loop stopped (its Finished follows): dial again — a new
             // mosh-server, tmux attached again (B402).

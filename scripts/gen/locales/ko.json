@@ -905,6 +905,7 @@
   "Speech is transcribed on this device and never leaves it.": "음성은 이 기기에서 받아쓰며 기기를 떠나지 않습니다.",
   "Waiting for network…": "네트워크를 기다리는 중…",
   "No UDP reply from mosh-server.": "mosh-server에서 UDP 응답이 없습니다.",
+  "No UDP reply from mosh-server. What you've typed will be sent when the connection is back.": "mosh-server에서 UDP 응답이 없습니다. 입력한 내용은 연결이 돌아오면 전송됩니다.",
   "Use SSH": "SSH 사용",
   "Network changed. mosh is reconnecting.": "네트워크가 바뀌었습니다. mosh가 다시 연결하는 중입니다.",
   "%@ isn't installed here, so this is a plain shell.": "이 호스트에 %@이(가) 없어 일반 셸로 열었습니다.",

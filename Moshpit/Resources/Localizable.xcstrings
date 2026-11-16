@@ -29373,6 +29373,58 @@
         }
       }
     },
+    "No UDP reply from mosh-server. What you've typed will be sent when the connection is back.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine UDP-Antwort von mosh-server. Was du getippt hast, wird gesendet, sobald die Verbindung wieder steht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh-server no responde por UDP. Lo que has escrito se enviará cuando vuelva la conexión."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune réponse UDP de mosh-server. Ce que vous avez tapé sera envoyé dès que la connexion reviendra."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh-server から UDP の応答がありません。入力した内容は、接続が戻りしだい送信されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh-server에서 UDP 응답이 없습니다. 입력한 내용은 연결이 돌아오면 전송됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma resposta UDP do mosh-server. O que você digitou será enviado quando a conexão voltar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到 mosh-server 的 UDP 回包。你输入的内容会在连接恢复后发送。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到 mosh-server 的 UDP 回應。你輸入的內容會在連線恢復後送出。"
+          }
+        }
+      }
+    },
     "No Whisper model is downloaded yet. Pick one in Settings → Voice Input → Model.": {
       "localizations": {
         "de": {
