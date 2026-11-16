@@ -225,6 +225,7 @@ def divergences():
         "zoom-flags": boot(100) + lines(
             *[b"%layout-change @1 " + layout + b" b25d,80x24,0,0,0 " + flags for flags in zoom]
         ),
+        "doubled-cr": boot(100) + b"%session-changed $1 a\r\r\n",
         "unicode-delimiter": boot(100) + lines(
             "%window-renamed @1 \u0301x".encode(),
             "%session-changed $1 \u0301s".encode(),

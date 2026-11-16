@@ -77,7 +77,7 @@
 {"ev":"unlinked-window-renamed","window":"@7","name":"́x"}
 {"ev":"client-session-changed","client":"/dev/ttys1","session":"$2","name":"会话 👨‍👩‍👧"}
 {"ev":"window-add","window":"@6"}
-{"ev":"window-add","window":"@7\u000d"}
+{"ev":"window-add","window":"@7"}
 {"ev":"output","pane":"%1","hex":"5c5cff00205c3132"}
 {"ev":"output","pane":"%1","hex":"5c305c30310a5c78205c"}
 {"ev":"output","pane":"%1","hex":"e6b58be8af"}

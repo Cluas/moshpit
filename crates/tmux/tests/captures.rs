@@ -138,5 +138,5 @@ fn divergence_fixtures_show_each_documented_fix() {
         }
         checked += 1;
     }
-    assert_eq!(checked, 7);
+    assert_eq!(checked, 8);
 }

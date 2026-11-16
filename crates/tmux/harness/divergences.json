@@ -52,6 +52,16 @@
       "swift_fix": "fix(tmux): read a zoomed window from any flags field that carries Z"
     },
     {
+      "id": "doubled-cr",
+      "swift": "TmuxControlClient.swift (line splitting drops one trailing CR)",
+      "symptom": "A mosh pty still in cooked mode turns tmux's CRLF into CR CR LF, so a session named in %session-changed (or any line) kept a trailing CR: 'a\\r'.",
+      "trigger": "'%session-changed $1 a' followed by CR CR LF, the first lines of a mosh sidecar's stream.",
+      "fix": "Every trailing CR is stripped, not one (B873). Unlike the other fixes the Swift parser was retired (E3) without it: Rust is the reference and the frozen *.swift.jsonl lines that ended in CR CR (response lines in captures/cjk-emoji, synthetic/recovery) take the stripped form.",
+      "fixtures": ["doubled-cr"],
+      "swift_before": "events",
+      "swift_fix": "none (Swift retired; Rust fix 41c1eaba)"
+    },
+    {
       "id": "quadratic-buffer",
       "swift": "TmuxControlClient.swift:220-230 (drainLines)",
       "symptom": "Every extracted line re-copies the rest of the buffer (buffer = Data(buffer[next...])), so one feed costs O(lines x bytes): 0.8 MB/s for a 3.8 MB feed, ~20-30 MB/s at 4-64 KB feeds.",
