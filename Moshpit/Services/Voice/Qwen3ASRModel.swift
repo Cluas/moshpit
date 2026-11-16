@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MoshpitKit
 import SherpaOnnxC
 
 // MARK: - Catalog entry
@@ -117,22 +118,45 @@ final class Qwen3ASRModel: WhisperLoadedModel {
     /// between decodes and 1.50 GB at a decode's peak with it, against
     /// 0.53 GB and 0.98 GB without; a dictation's preview passes decode
     /// every second or so, so the model sat at its peak for the whole
-    /// dictation, beside the live terminals. Decoding is a little slower
-    /// without (allocations per run), within the noise of the measurement.
+    /// dictation, beside the live terminals. Without it every decode
+    /// faults in fresh pages (2.5 times the page faults): about 20% more
+    /// CPU per decode, 0.5 s more on a 10 s sentence's final pass (14
+    /// interleaved pairs, B760).
     static let sessionOptions = "EnableCpuMemArena=0\nEnableMemPattern=0\n"
 
-    /// The provider string carrying ``sessionOptions``: the options written
-    /// to a file under `directory`, or plain "cpu" when that fails —
-    /// sherpa-onnx exits the process if a named config file can't be
-    /// opened, so the file is written and checked right before use.
-    static func provider(writingOptionsTo directory: URL) -> String {
+    /// Devices with at least this much memory keep the arena (B760): 8 GB
+    /// phones (iPhone 15 Pro and later) report about 8 GB, 6 GB phones well
+    /// under 7. There the faster decode is worth the extra 0.4 GB, which
+    /// only lasts while dictating — the store releases the model 30 s after
+    /// its last use (B678). Below it, jetsam headroom beside the terminals
+    /// matters more than half a second.
+    static let arenaMemoryThreshold: UInt64 = 7_500_000_000
+
+    static func keepsArena(physicalMemory: UInt64) -> Bool {
+        physicalMemory >= arenaMemoryThreshold
+    }
+
+    /// The provider string for a device with `physicalMemory` bytes. At
+    /// ``arenaMemoryThreshold`` and above, plain "cpu": onnxruntime's
+    /// defaults, arena on. Below it, "cpu:<file>" with ``sessionOptions``
+    /// written to a file under `directory` — or, when that fails, plain
+    /// "cpu" again, logged: sherpa-onnx exits the process if a named config
+    /// file can't be opened, so the file is written and checked right
+    /// before use.
+    static func provider(physicalMemory: UInt64, writingOptionsTo directory: URL) -> String {
+        if keepsArena(physicalMemory: physicalMemory) { return "cpu" }
         let file = directory.appendingPathComponent("qwen3-asr-session.cfg")
         do {
             try Data(sessionOptions.utf8).write(to: file, options: .atomic)
         } catch {
+            Log.voice.error(
+                "voice arena: on, the arena-off options could not be written: \(error.localizedDescription, privacy: .public)")
             return "cpu"
         }
-        guard FileManager.default.isReadableFile(atPath: file.path) else { return "cpu" }
+        guard FileManager.default.isReadableFile(atPath: file.path) else {
+            Log.voice.error("voice arena: on, the arena-off options could not be read back")
+            return "cpu"
+        }
         return "cpu:" + file.path
     }
 
@@ -148,7 +172,12 @@ final class Qwen3ASRModel: WhisperLoadedModel {
         let decoderPath = folder.appendingPathComponent("decoder.int4.onnx").path
         let tokenizerPath = folder.appendingPathComponent("tokenizer").path
         let threads = Int32(max(1, min(4, ProcessInfo.processInfo.activeProcessorCount - 2)))
-        let providerString = provider(writingOptionsTo: FileManager.default.temporaryDirectory)
+        let memory = ProcessInfo.processInfo.physicalMemory
+        let providerString = provider(physicalMemory: memory, writingOptionsTo: FileManager.default.temporaryDirectory)
+        // B760: which arena mode the device got; numbers only.
+        let memoryGB = String(format: "%.1f", Double(memory) / 1e9)
+        Log.voice.info(
+            "voice arena: \(providerString == "cpu" ? "on" : "off", privacy: .public) memory_gb=\(memoryGB, privacy: .public)")
         let maxLength = maxTotalLen
         let recognizer: OpaquePointer? = await Task.detached(priority: .userInitiated) {
             // The strings only have to live through the call: sherpa-onnx
