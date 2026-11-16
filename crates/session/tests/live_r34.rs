@@ -189,7 +189,8 @@ impl Drop for Desktop {
 }
 
 /// The non-control client tmux lists that isn't the desktop: the phone's
-/// renderer, `(pid, session name)`.
+/// renderer, `(pid, session name)` — the session it views, through the
+/// phone's own group of it from tmux 3.8 on (`a~mp-…`, B773, B812).
 fn renderer(tmux: &Tmux, desktop: Option<&Desktop>) -> Option<(i64, String)> {
     let rows = tmux.run(&[
         "list-clients",
@@ -200,7 +201,11 @@ fn renderer(tmux: &Tmux, desktop: Option<&Desktop>) -> Option<(i64, String)> {
         let mut words = row.splitn(3, ' ');
         let control = words.next()?;
         let pid: i64 = words.next()?.parse().ok()?;
-        let session = words.next()?.to_owned();
+        let session = words.next()?;
+        let session = session
+            .split(moshpit_tmux::controller::GROUP_MARK)
+            .next()?
+            .to_owned();
         (control == "0" && desktop.and_then(|d| d.pid) != Some(pid)).then_some((pid, session))
     })
 }
