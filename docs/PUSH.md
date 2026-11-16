@@ -488,10 +488,9 @@ Bash: rm -rf build — mac-mini · work
 
 The place is the connection's name and the session (a digits-only session name
 is dropped — tmux's default `0` read as a broken counter); the window is gone,
-because the body now says WHAT. The extension carries its own strings catalog
-(`Extensions/MoshpitPush/Localizable.xcstrings`, written by
-`scripts/gen/gen_xcstrings.py` from the same table as the app's), which is what
-lets the sentence be translated in a process whose `Bundle.main` is not the app.
+because the body now says WHAT. The sentences are crates/seal's (`copy.rs`), in
+the app's nine languages, written in the language the app recorded: the
+extension runs on that core (E7b), so it needs no strings catalog of its own.
 Durations are Foundation's own unit formatting and need no catalog. Show detail
 off keeps the prompt out of a finished card exactly as it keeps the question
 out of a needs-you card.

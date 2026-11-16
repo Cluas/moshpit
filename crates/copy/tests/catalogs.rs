@@ -278,13 +278,12 @@ fn the_chinese_copy_keeps_the_rules() {
 fn the_scan_finds_every_place() {
     let (texts, catalogs) = all_texts();
     assert!(
-        catalogs >= 5,
-        "the app's, three extensions' and Info.plist's catalogs: {catalogs}"
+        catalogs >= 4,
+        "the app's, two extensions' and Info.plist's catalogs: {catalogs}"
     );
     for place in [
         "Moshpit/Resources/Localizable.xcstrings",
         "Moshpit/Resources/InfoPlist.xcstrings",
-        "Extensions/MoshpitPush/Localizable.xcstrings",
         "scripts/gen/locales/zh-Hant.json",
         "ui/locales/strings.json",
         "crates/seal/src/copy.rs",

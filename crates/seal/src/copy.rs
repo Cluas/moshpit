@@ -12,9 +12,9 @@
 //! ```
 //!
 //! The two sentences and the duration come in the app's nine languages
-//! ([`Language`]); the sentences are the notification service's own string
-//! catalog (`Extensions/MoshpitPush/Localizable.xcstrings`), the durations
-//! what Foundation's unit formatter writes on macOS 27.
+//! ([`Language`]): the sentences are this file's own (the notification
+//! service's string catalog held them until it ran on this crate, E7b), the
+//! durations what Foundation's unit formatter writes on macOS 27.
 
 use crate::foundation::text;
 

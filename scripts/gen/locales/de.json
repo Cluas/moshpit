@@ -645,8 +645,6 @@
   "tmux + mosh aren't installed on this host.": "tmux und mosh sind auf diesem Host nicht installiert.",
   "working": "arbeitet",
   "idle": "inaktiv",
-  "✓ %@ finished": "✓ %@ fertig",
-  "%@ needs you": "%@ braucht dich",
   "NSFaceIDUsageDescription": "Entsperrt SSH-Schlüssel mit Face ID",
   "NSMicrophoneUsageDescription": "Die Spracheingabe nutzt das Mikrofon, damit du Befehle und Prompts direkt ins Terminal sprechen kannst. Audio wird auf diesem Gerät in Text umgewandelt, mit Apples Sprachmodell oder einem geladenen Modell, und nirgendwohin hochgeladen.",
   "NSSpeechRecognitionUsageDescription": "Das Diktat erkennt Sprache auf dem Gerät. Weder deine Stimme noch der erkannte Text verlassen dieses Gerät; Moshpit nutzt keine serverseitige Erkennung.",
