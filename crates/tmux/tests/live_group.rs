@@ -232,7 +232,8 @@ fn a_real_tmux_keeps_the_desktop_where_it_is_and_drops_the_group_with_the_phone(
         .find(|line| line.contains("~mp-iPhone-"))
         .expect("the phone made its group")
         .to_owned();
-    assert!(group.ends_with("$0 on"), "{group}");
+    // B812: marked, and never `destroy-unattached`.
+    assert!(group.ends_with("$0 off"), "{group}");
     let snapshot = phone.controller.snapshot();
     assert_eq!(snapshot.active_session_id.as_deref(), Some("$0"));
     assert_eq!(snapshot.sessions.len(), 1, "{:?}", snapshot.sessions);
@@ -395,6 +396,12 @@ impl Server {
 #[ignore = "needs tmux; see the module docs"]
 fn a_new_window_in_another_session_leaves_its_desktop_where_it_is() {
     let server = Server::start("newwin");
+    if !server.groups() {
+        // B812: before tmux 3.8 the phone is on the session itself, which
+        // a desktop on it shares; only a group of its own keeps them apart.
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
     server.tmux(&["new-session", "-d", "-s", "dev", "-x", "120", "-y", "40"]);
     server.tmux(&["new-window", "-t", "dev"]);
     server.tmux(&["select-window", "-t", "dev:0"]);
@@ -449,10 +456,13 @@ fn killing_the_session_on_screen_leaves_the_phone_on_another() {
         .clone()
         .unwrap();
     let dev = server.tmux(&["display-message", "-p", "-t", "=dev:", "#{session_id}"]);
+    let grouped = server.groups();
     let now = phone.now();
     phone.controller.kill_session(&main, now);
     let moved = phone.pump_until(10, |c| {
-        c.phone_group().is_some() && c.snapshot().active_window_id.is_some()
+        (c.phone_group().is_some() || !grouped)
+            && c.snapshot().active_session_id.as_deref() == Some(dev.as_str())
+            && c.snapshot().active_window_id.is_some()
     });
     assert_eq!(
         phone.child.try_wait().unwrap(),
@@ -461,7 +471,9 @@ fn killing_the_session_on_screen_leaves_the_phone_on_another() {
     );
     assert!(moved, "{:?}", phone.controller.snapshot());
     let clients = server.clients();
-    assert!(clients.contains(" dev~mp-"), "clients: {clients}");
+    // From 3.8 through its own group of dev; before, on dev itself (B812).
+    let on_dev = if grouped { " dev~mp-" } else { " dev" };
+    assert!(clients.contains(on_dev), "clients: {clients}");
     assert_eq!(
         phone.controller.snapshot().active_session_id.as_deref(),
         Some(dev.as_str())
@@ -480,6 +492,13 @@ fn killing_the_session_on_screen_leaves_the_phone_on_another() {
 #[ignore = "needs tmux; see the module docs"]
 fn a_session_killed_under_the_phone_leaves_it_on_another() {
     let server = Server::start("killunder");
+    if !server.groups() {
+        // B812: before tmux 3.8 the phone is on the session itself, and
+        // tmux's `detach-on-destroy` ends its client with it; the app
+        // attaches again, as it did before groups.
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
     server.tmux(&["new-session", "-d", "-s", "dev", "-x", "80", "-y", "24"]);
     let mut phone = server.phone("main");
     server.tmux(&["kill-session", "-t", "=main"]);
@@ -640,8 +659,10 @@ fn a_pane_picked_on_the_desktop_leaves_the_phone_on_its_own() {
     };
     let now = phone.now();
     phone.controller.begin_control_mode(now);
+    // The active pane is the window's, group or not (B812: none before 3.8).
+    let grouped = server.groups();
     let shown = phone.pump_until(15, |c| {
-        c.phone_group().is_some()
+        (c.phone_group().is_some() || !grouped)
             && c.snapshot().active_window_id.as_deref() == Some(window.as_str())
     });
     assert!(shown, "{:?}", phone.controller.snapshot());
