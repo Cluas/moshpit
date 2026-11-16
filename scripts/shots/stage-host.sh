@@ -112,8 +112,14 @@ if [ "$user" != "$(id -un)" ]; then
 if [[ -n $ZSH_EXECUTION_STRING ]]; then
     zmodload -F zsh/datetime p:EPOCHREALTIME b:strftime 2>/dev/null
     strftime -s _moshpit_t '%H:%M:%S' ${EPOCHREALTIME%.*}
-    print -r -- "$_moshpit_t.${${EPOCHREALTIME#*.}[1,3]} ${ZSH_EXECUTION_STRING[1,200]}" >> ~/.moshpit-exec.log
-    unset _moshpit_t
+    # An exec a line (a newline as \n): the path probe whole (B817: its
+    # directory and patterns come last), any other long one's start and end.
+    _moshpit_s=${ZSH_EXECUTION_STRING//$'\n'/\\n}
+    if [[ $_moshpit_s != *moshpit-probe* ]] && (( ${#_moshpit_s} > 600 )); then
+        _moshpit_s="${_moshpit_s[1,300]} [...] ${_moshpit_s[-300,-1]}"
+    fi
+    print -r -- "$_moshpit_t.${${EPOCHREALTIME#*.}[1,3]} $_moshpit_s" >> ~/.moshpit-exec.log
+    unset _moshpit_t _moshpit_s
 fi
 EOF
     as_user sh -c ': > "$HOME/.moshpit-exec.log"'
