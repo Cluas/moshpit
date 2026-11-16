@@ -1,4 +1,4 @@
-<!-- source: README.md 560d39fd435598271a84bd5e529a6e12cda12d7c -->
+<!-- source: README.md 6c585bea06aec83880bcb57346ee39d0aa3a9b2b -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 的图标：一颗像素蛋从终端窗格后面探出头">
@@ -15,7 +15,7 @@ iPhone 和 iPad 上的 SSH、Mosh、tmux、herdr 终端：每个提问都是一�
 
 **[App Store](https://apps.apple.com/app/id6799896801)** &nbsp;·&nbsp; **[官网](https://moshpit.cluas.eu.org/zh)** &nbsp;·&nbsp; **[文档](https://moshpit.cluas.eu.org/zh/docs)** &nbsp;·&nbsp; **[Issues](https://github.com/Cluas/moshpit/issues)**
 
-[English](README.md) · **简体中文**
+[English](README.md) · **简体中文** · [繁體中文](README.zh-Hant.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português (Brasil)](README.pt-BR.md)
 
 <br>
 

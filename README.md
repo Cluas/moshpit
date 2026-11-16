@@ -14,7 +14,7 @@ and a Live Activity for who is waiting, who is working, and for how long.
 
 **[App Store](https://apps.apple.com/app/id6799896801)** &nbsp;·&nbsp; **[Website](https://moshpit.cluas.eu.org)** &nbsp;·&nbsp; **[Docs](https://moshpit.cluas.eu.org/docs)** &nbsp;·&nbsp; **[Issues](https://github.com/Cluas/moshpit/issues)**
 
-**English** · [简体中文](README-zh.md)
+**English** · [简体中文](README-zh.md) · [繁體中文](README.zh-Hant.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Español](README.es.md) · [Français](README.fr.md) · [Português (Brasil)](README.pt-BR.md)
 
 <br>
 
