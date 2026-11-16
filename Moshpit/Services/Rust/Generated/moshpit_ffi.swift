@@ -10070,6 +10070,11 @@ public func FfiConverterTypeAddKeyPem_lower(_ value: AddKeyPem) -> RustBuffer {
 public struct AgentCardValue: Equatable, Hashable {
     public var id: String
     public var title: String
+    /**
+     * Where: the connection's name and the session, the card's subtitle
+     * (B639).
+     */
+    public var subtitle: String
     public var body: String
     public var sound: Bool
     public var level: AgentCardLevel
@@ -10078,9 +10083,14 @@ public struct AgentCardValue: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, title: String, body: String, sound: Bool, level: AgentCardLevel, connectionId: String, paneId: String) {
+    public init(id: String, title: String, 
+        /**
+         * Where: the connection's name and the session, the card's subtitle
+         * (B639).
+         */subtitle: String, body: String, sound: Bool, level: AgentCardLevel, connectionId: String, paneId: String) {
         self.id = id
         self.title = title
+        self.subtitle = subtitle
         self.body = body
         self.sound = sound
         self.level = level
@@ -10106,6 +10116,7 @@ public struct FfiConverterTypeAgentCardValue: FfiConverterRustBuffer {
             try AgentCardValue(
                 id: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterString.read(from: &buf), 
                 body: FfiConverterString.read(from: &buf), 
                 sound: FfiConverterBool.read(from: &buf), 
                 level: FfiConverterTypeAgentCardLevel.read(from: &buf), 
@@ -10117,6 +10128,7 @@ public struct FfiConverterTypeAgentCardValue: FfiConverterRustBuffer {
     public static func write(_ value: AgentCardValue, into buf: inout [UInt8]) {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.subtitle, into: &buf)
         FfiConverterString.write(value.body, into: &buf)
         FfiConverterBool.write(value.sound, into: &buf)
         FfiConverterTypeAgentCardLevel.write(value.level, into: &buf)

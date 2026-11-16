@@ -115,6 +115,8 @@ pub fn location(status: &Status, label: Option<&str>) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Card {
     pub title: String,
+    /// Where: the connection's name and the session (B639).
+    pub subtitle: String,
     pub body: String,
     pub sound: bool,
     pub level: InterruptionLevel,
@@ -197,6 +199,7 @@ pub fn summary(
     );
     Some(Card {
         title: words.title,
+        subtitle: words.subtitle,
         body: words.body,
         sound: words.sound,
         level: words.level,
@@ -210,8 +213,9 @@ pub fn summary(
 
 /// Render a status into a card (`PushRemoteNotification.apply`).
 ///
-/// With "Show detail" off the body names where — never what the agent is
-/// running, asking, or was asked; `detail` keeps the real text either way.
+/// The subtitle names where (B639); with "Show detail" off the body is
+/// empty — never what the agent is running, asking, or was asked; `detail`
+/// keeps the real text either way.
 /// A `done` says what finished (the host sends the prompt the turn
 /// answered) and how long it ran; every other state renders as a question.
 pub fn render(status: &Status, how: Render<'_>) -> Card {
@@ -252,6 +256,7 @@ pub fn render(status: &Status, how: Render<'_>) -> Card {
     };
     Card {
         title: words.title,
+        subtitle: words.subtitle,
         body: words.body,
         sound: words.sound,
         level: words.level,
@@ -320,7 +325,8 @@ mod tests {
     fn an_attention_push_reads_like_its_local_twin_and_routes_like_one() {
         let card = render(&attention(), Render::default());
         assert_eq!(card.title, "claude needs you");
-        assert_eq!(card.body, "Bash: rm -rf build — m1-pro · work");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "m1-pro · work");
         assert_eq!(card.connection_id, "3F2504E0-4F89-11D3-9A0C-0305E82C3301");
         assert_eq!(card.pane_id, "%3");
         assert_eq!(card.state, "attention");
@@ -341,7 +347,8 @@ mod tests {
         spoof.host = "m1-pro\u{200F}".into();
         let card = render(&spoof, Render::default());
         assert_eq!(card.title, "claude needs you");
-        assert_eq!(card.body, "Allow?moc.elpmaxe.tsurt — — m1-pro · work");
+        assert_eq!(card.body, "Allow?moc.elpmaxe.tsurt —");
+        assert_eq!(card.subtitle, "m1-pro · work");
         assert_eq!(
             card.detail, "Allow?\u{202E}moc.elpmaxe.tsurt —",
             "userInfo keeps what was sent"
@@ -355,7 +362,8 @@ mod tests {
             Render::default(),
         );
         assert_eq!(card.title, "✓ claude finished");
-        assert_eq!(card.body, "m1-pro · work");
+        assert_eq!(card.body, "");
+        assert_eq!(card.subtitle, "m1-pro · work");
     }
 
     #[test]
@@ -372,10 +380,8 @@ mod tests {
         );
         assert!(card.title.starts_with("✓ claude finished · "));
         assert!(card.title.contains("12"));
-        assert_eq!(
-            card.body,
-            "Upload the build with the new Xcode — m1-pro · work"
-        );
+        assert_eq!(card.body, "Upload the build with the new Xcode");
+        assert_eq!(card.subtitle, "m1-pro · work");
     }
 
     #[test]
@@ -398,10 +404,12 @@ mod tests {
             off,
         );
         assert_eq!(done.title, "✓ claude finished");
-        assert_eq!(done.body, "m1-pro · work");
+        assert_eq!(done.body, "");
+        assert_eq!(done.subtitle, "m1-pro · work");
         let asked = render(&attention(), off);
         assert_eq!(asked.title, "claude needs you");
-        assert_eq!(asked.body, "m1-pro · work");
+        assert_eq!(asked.body, "");
+        assert_eq!(asked.subtitle, "m1-pro · work");
         // The unrendered copy stays: the app matches nonces through it.
         assert_eq!(asked.detail, "Bash: rm -rf build");
     }
@@ -415,7 +423,8 @@ mod tests {
                 ..Render::default()
             },
         );
-        assert_eq!(card.body, "Bash: rm -rf build — mac-mini · work");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "mac-mini · work");
         assert_eq!(location(&attention(), Some("  ")), "m1-pro · work");
     }
 
@@ -447,7 +456,8 @@ mod tests {
             Render::default(),
         );
         assert_eq!(card.title, "claude needs you");
-        assert_eq!(card.body, "m1-pro · work");
+        assert_eq!(card.body, "");
+        assert_eq!(card.subtitle, "m1-pro · work");
     }
 
     #[test]
@@ -472,7 +482,8 @@ mod tests {
             ),
             Render::default(),
         );
-        assert_eq!(card.body, "Bash: rm -rf build — m1-pro");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "m1-pro");
         assert_eq!(
             location(&status("attention", None, None, Some(""), None), None),
             "m1-pro"

@@ -134,6 +134,7 @@ final class NotificationService: UNNotificationServiceExtension {
     /// push carried.
     static func fill(_ content: UNMutableNotificationContent, with card: [String: Any]) {
         content.title = card["title"] as? String ?? content.title
+        content.subtitle = card["subtitle"] as? String ?? content.subtitle
         content.body = card["body"] as? String ?? content.body
         content.sound = card["sound"] as? Bool == true ? .default : nil
         switch card["level"] as? String {

@@ -156,7 +156,8 @@ fn a_prompt_is_announced_after_the_grace_once_and_a_relaunch_does_not_announce_i
     let card = posts(&effects)[0];
     assert_eq!(card.id, format!("moshpit.attention.{CONN}"));
     assert_eq!(card.text.title, "claude needs you");
-    assert_eq!(card.text.body, "Bash: npm test — devbox · work");
+    assert_eq!(card.text.body, "Bash: npm test");
+    assert_eq!(card.text.subtitle, "devbox · work");
     assert!(card.text.sound);
     assert_eq!(card.text.level, InterruptionLevel::TimeSensitive);
     let saved = effects.iter().find_map(|e| if let Effect::SaveAnnounced(m) = e { Some(m.clone()) } else { None });
@@ -383,13 +384,17 @@ fn a_card_redrawn_from_a_pushed_entry_keeps_show_detail_off_and_says_where() {
     let off = Settings { show_detail: false, ..Settings::default() };
     let hidden = digest(&pushed, 1, off, false, "devbox · work", "devbox");
     assert!(!hidden.body.contains("id_ed25519"));
-    assert_eq!(hidden.body, "devbox · work");
+    assert_eq!(hidden.body, "");
+    assert_eq!(hidden.subtitle, "devbox · work");
     let shown = digest(&pushed, 2, Settings::default(), false, "devbox · work", "devbox");
-    assert_eq!(shown.body, "Bash: cat ~/.ssh/id_ed25519 — devbox · work");
+    assert_eq!(shown.body, "Bash: cat ~/.ssh/id_ed25519");
+    assert_eq!(shown.subtitle, "devbox · work");
     assert_eq!(shown.title, "claude +1 needs you");
     let mut placed = pushed.clone();
     placed.location = Some("m1-pro · api".into());
-    assert_eq!(digest(&placed, 1, off, false, "devbox · work", "devbox").body, "m1-pro · api");
+    let placed = digest(&placed, 1, off, false, "devbox · work", "devbox");
+    assert_eq!(placed.body, "");
+    assert_eq!(placed.subtitle, "m1-pro · api");
 }
 
 // MARK: - Sending only what changed (B304)
@@ -1177,7 +1182,8 @@ fn a_bell_is_attention_at_once_through_the_grace() {
     let effects = bench.monitor.take_effects();
     let card = posts(&effects)[0];
     assert_eq!(card.text.title, "aider needs you");
-    assert_eq!(card.text.body, "devbox");
+    assert_eq!(card.text.body, "");
+    assert_eq!(card.text.subtitle, "devbox");
 }
 
 /// B663: a bell in a plain shell raised "zsh needs you" (a tab completion
@@ -1294,7 +1300,8 @@ fn a_card_for_a_pane_no_poll_named_says_where_from_the_tree() {
     let effects = bench.poll("%1", "working", T0 + 50.0, T0 + 51.0);
     let card = posts(&effects)[0];
     assert_eq!(card.pane_id, "%2");
-    assert_eq!(card.text.body, "Bash: npm test — devbox · work");
+    assert_eq!(card.text.body, "Bash: npm test");
+    assert_eq!(card.text.subtitle, "devbox · work");
 }
 
 // MARK: - A pane that is gone (r43)

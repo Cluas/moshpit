@@ -604,7 +604,8 @@ mod tests {
             &dir,
         ));
         assert_eq!(card.title, "claude needs you");
-        assert_eq!(card.body, "Bash: rm -rf build — m1-pro · work");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "m1-pro · work");
         assert_eq!(card.connection_id, CONN);
         assert_eq!(card.pane_id, "%3");
     }
@@ -628,7 +629,8 @@ mod tests {
             &[pairing(SECRET, "mac-mini")],
             &dir,
         ));
-        assert_eq!(card.body, "Bash: rm -rf build — mac-mini · work");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "mac-mini · work");
     }
 
     #[test]

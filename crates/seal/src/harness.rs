@@ -283,9 +283,19 @@ pub fn run(line: &str, scratch: &Path) -> Option<String> {
                     done_rings: true,
                 },
             );
+            // The words on one line as the Swift renderer the harness runs
+            // laid them out ("what — where", or "where"): since B639 the
+            // place is the card's subtitle, and joined back here the
+            // recorded results still compare. The split is pinned by
+            // copy.rs's and notification.rs's own tests.
+            let laid_out = if card.body.is_empty() {
+                card.subtitle.clone()
+            } else {
+                format!("{} — {}", card.body, card.subtitle)
+            };
             [
                 out(&card.title),
-                out(&card.body),
+                out(&laid_out),
                 if card.sound { "1" } else { "0" }.to_owned(),
                 level(card.level).to_owned(),
                 out(&card.connection_id),
