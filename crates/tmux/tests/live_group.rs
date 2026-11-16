@@ -1024,3 +1024,73 @@ fn the_sweep_never_ends_another_phones_group() {
     assert!(moved, "the second phone still works");
     drop(again);
 }
+
+/// B773, B812: a sidecar rebuilt (its SSH leg back, mosh never gone) finds
+/// the renderer on an old group, one an older build made with
+/// `destroy-unattached on`. The renderer comes out — into our group from
+/// 3.8 on, onto the session itself before — and the old group ends; mosh's
+/// renderer keeps running, and the server too.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn a_rebuilt_sidecar_takes_the_renderer_out_of_an_old_group() {
+    let server = Server::start("oldgroup");
+    server.keep();
+    let server_pid = server.pid();
+    let main = server.tmux(&["display-message", "-p", "-t", "=main:", "#{session_id}"]);
+    let old = "main~mp-iPhone-0-old";
+    let exact = format!("={old}:");
+    server.tmux(&["new-session", "-d", "-t", "=main", "-s", old]);
+    server.tmux(&["set-option", "-t", &exact, "@moshpit_group_of", &main]);
+    let mut renderer = server.renderer(&format!("={old}"));
+    // As that build left it; only with a client on it, or tmux reaps it at
+    // the next client's exit.
+    server.tmux(&["set-option", "-t", &exact, "destroy-unattached", "on"]);
+    let pid = server.renderer_pid().unwrap();
+    let mut sidecar = server.sidecar("main", pid);
+    let renderer_on = |server: &Server| -> String {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid} #{session_name}"])
+            .lines()
+            .find_map(|line| {
+                let (p, name) = line.split_once(' ')?;
+                (p == pid.to_string()).then(|| name.to_owned())
+            })
+            .unwrap_or_default()
+    };
+    let grouped = server.groups();
+    let out = sidecar.pump_until(10, |_| {
+        let on = renderer_on(&server);
+        if grouped {
+            on.contains("~mp-") && on != old
+        } else {
+            on == "main"
+        }
+    });
+    sidecar.pump(500);
+    assert!(
+        out,
+        "the renderer out of the old group: {:?}\n{}",
+        renderer_on(&server),
+        server.clients()
+    );
+    assert!(
+        eventually(5, || !server
+            .tmux(&["ls", "-F", "#{session_name}"])
+            .lines()
+            .any(|name| name == old)),
+        "the old group ended: {}",
+        server.tmux(&["ls", "-F", "#{session_name}"])
+    );
+    assert!(
+        renderer.try_wait().unwrap().is_none(),
+        "mosh's renderer still runs"
+    );
+    assert!(server.alive(&server_pid), "the server crashed");
+    assert_eq!(
+        sidecar.controller.snapshot().active_session_id.as_deref(),
+        Some(main.as_str()),
+        "the phone shows the session"
+    );
+    let _ = renderer.kill();
+    let _ = renderer.wait();
+}
