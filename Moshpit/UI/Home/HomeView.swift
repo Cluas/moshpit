@@ -411,29 +411,40 @@ struct HomeView: View {
                 // transport chip and a user@host, and at 320pt the host wraps.
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 480)
         } detail: {
-            // A host deleted from the sidebar takes its page with it, as a
-            // terminal's does: the placeholder shows.
-            if case .sessions(let id)? = path.last, store.connections.contains(where: { $0.id == id }) {
-                sessionsPage(id)
-            } else if case .terminal(let id)? = path.last,
-               let connection = store.connections.first(where: { $0.id == id }) {
-                TerminalScreen(connection: connection, hub: hub,
-                               onLeave: { leaveTerminal() },
-                               onToggleSidebar: { toggleSidebar() })
-                    // A different host is a different screen: without this the
-                    // struct is reused and keeps the first host's state.
-                    .id(id)
-            } else {
-                ContentUnavailableView {
-                    Label("No Terminal Open", systemImage: "terminal")
-                } description: {
-                    Text("Pick a host from the sidebar, or add one with ⌘N.")
-                }
-                .background { HomeStage() }
-            }
+            detailColumn
+                // Beside the sidebar, not under it (B843): iOS 26's sidebar
+                // floats over this column as a leading safe-area inset, and
+                // the pages NSH draws ignored it.
+                .environment(\.nshKeepsSideInsets, true)
         }
         .onGeometryChange(for: Bool.self) { $0.size.width < $0.size.height } action: {
             splitIsPortrait = $0
+        }
+    }
+
+    /// The split view's detail: a host's sessions, its terminal, or the
+    /// placeholder.
+    @ViewBuilder
+    private var detailColumn: some View {
+        // A host deleted from the sidebar takes its page with it, as a
+        // terminal's does: the placeholder shows.
+        if case .sessions(let id)? = path.last, store.connections.contains(where: { $0.id == id }) {
+            sessionsPage(id)
+        } else if case .terminal(let id)? = path.last,
+           let connection = store.connections.first(where: { $0.id == id }) {
+            TerminalScreen(connection: connection, hub: hub,
+                           onLeave: { leaveTerminal() },
+                           onToggleSidebar: { toggleSidebar() })
+                // A different host is a different screen: without this the
+                // struct is reused and keeps the first host's state.
+                .id(id)
+        } else {
+            ContentUnavailableView {
+                Label("No Terminal Open", systemImage: "terminal")
+            } description: {
+                Text("Pick a host from the sidebar, or add one with ⌘N.")
+            }
+            .background { HomeStage() }
         }
     }
 

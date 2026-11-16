@@ -448,6 +448,12 @@ final class ShotsUITest: XCTestCase {
                 // The sidebar back beside it, if opening hid it.
                 if !app.nsh("home-needs-you").exists { app.nsh("terminal-sidebar").tap() }
                 settle(1.5)
+                // B843: the terminal's page beside the sidebar, not under it
+                // (it was the window's whole width, its crumb and text behind
+                // the sidebar, the pane black).
+                let crumb = app.nsh("terminal-crumb-window").frame, sidebar = app.nsh("home-needs-you").frame
+                XCTAssertGreaterThan(crumb.minX, sidebar.maxX,
+                                     "\(locale.name): the terminal's crumb \(crumb) is under the sidebar \(sidebar)")
                 keep(locale, "home-terminal")
             }
             app.terminate()
