@@ -24,6 +24,27 @@ fn probed_path() -> String {
     format!("PATH=\"$PATH:{EXTRA_PATH_DIRS}\"")
 }
 
+/// Every exec channel's command that runs tmux (B850): `script` under
+/// `sh -c`, with tmux found as the control client finds it — the probed
+/// PATH, exported so a script run inside it finds it too. On the bare PATH
+/// a host's non-interactive shell has (a Mac's, over SSH: no Homebrew)
+/// tmux wasn't found: the first session wasn't made (B788), and the
+/// teardown that hands the windows back did nothing, leaving the phone's
+/// pins, leases and zoom marks on the server. A custom tmux is an absolute
+/// path, which the PATH doesn't change.
+pub fn exec(script: &str) -> String {
+    format!(
+        "sh -c {}",
+        quote(&format!("{}; export PATH; {script}", probed_path()))
+    )
+}
+
+/// The start of every [`exec`] command: what a test checks a command that
+/// runs tmux over exec begins with (B850).
+pub fn exec_prefix() -> String {
+    "sh -c 'PATH=\"$PATH:".to_owned()
+}
+
 /// The SSH terminal channel's program: control mode on the most recent
 /// session, then `then` — the channel's own shell (`exec "$SHELL" -l`) —
 /// once tmux's client is gone (no session to attach, a detach, the server
@@ -171,6 +192,23 @@ mod tests {
     use super::*;
 
     const CONN: &str = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEFFFF0000";
+
+    /// B850: a script run over exec finds tmux on the probed PATH, and so
+    /// does one run inside it (`export`).
+    #[test]
+    fn an_exec_finds_tmux_on_the_probed_path() {
+        let command = exec("tmux ls");
+        assert!(command.starts_with(&exec_prefix()), "{command}");
+        assert_eq!(
+            command,
+            format!(
+                "sh -c {}",
+                quote(&format!(
+                    "PATH=\"$PATH:{EXTRA_PATH_DIRS}\"; export PATH; tmux ls"
+                ))
+            )
+        );
+    }
 
     // TmuxRendererHygieneTests
     #[test]

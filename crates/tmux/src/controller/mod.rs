@@ -3125,6 +3125,13 @@ impl Controller {
         self.send_command(command, Reply::SurfaceError { verb });
     }
 
+    /// A command run for the person beside the control channel (the first
+    /// session's exec) failed: said as tmux's own errors are, in the
+    /// notice (B788).
+    pub fn surface_failure(&mut self, message: String) {
+        self.flash_notice(message);
+    }
+
     fn flash_notice(&mut self, message: String) {
         self.notice = Some(message);
         self.dirty = true;

@@ -430,11 +430,7 @@ impl Attempt {
     /// probe format), read on the bootstrap connection before mosh-server
     /// starts the renderer; `None` when the host didn't answer in time.
     async fn tmux_layouts(&self, ssh: &Ssh) -> Option<String> {
-        let command = format!(
-            "{} list-windows -a -F '{}' 2>/dev/null",
-            self.spec.tmux_command(),
-            moshpit_tmux::controller::SIZE_PROBE_FORMAT
-        );
+        let command = layouts_command(self.spec.tmux_command());
         let output = tokio::time::timeout(self.timing.channel_timeout, ssh.run(&command))
             .await
             .ok()?
@@ -965,6 +961,22 @@ pub(crate) async fn pay_pin_debt(
     run_on_host(services, spec, timing, commands, "hand tmux windows back").await;
 }
 
+/// The phone's mosh renderer, mosh-server `server`'s tmux client, out of
+/// its session over exec (B270; B850: tmux on the probed PATH).
+pub(crate) fn renderer_out_command(tmux: &str, server: i64) -> String {
+    moshpit_tmux::boot::exec(&moshpit_tmux::boot::renderer_detach_by_server_command(
+        tmux, server,
+    ))
+}
+
+/// Every window's layout, read over exec (B850: tmux on the probed PATH).
+pub(crate) fn layouts_command(tmux: &str) -> String {
+    moshpit_tmux::boot::exec(&format!(
+        "{tmux} list-windows -a -F '{}' 2>/dev/null",
+        moshpit_tmux::controller::SIZE_PROBE_FORMAT
+    ))
+}
+
 /// What paying `ledger` runs, in order: the phone's mosh renderer out of
 /// the session first — mosh-server `renderer_server`'s tmux client, and the
 /// client the ledger knows for it (B270: still attached, it was the client
@@ -1002,7 +1014,11 @@ pub(crate) fn pin_debt_commands(
     if let Some(session) = ledger.hidden_status.as_deref().filter(|s| is_valid_id(s)) {
         commands.extend(moshpit_tmux::boot::status_restore_commands(tmux, session));
     }
+    // Over exec, tmux on the probed PATH (B850).
     commands
+        .iter()
+        .map(|command| moshpit_tmux::boot::exec(command))
+        .collect()
 }
 
 /// Runs `commands` over a connection of their own, to a host already
@@ -1256,6 +1272,7 @@ mod tests {
                 "tmux set-option -t '$4' -u status".to_owned(),
                 "tmux set-option -t '$4' -u @moshpit_status_hidden".to_owned(),
             ]
+            .map(|command| moshpit_tmux::boot::exec(&command))
         );
         // Nothing but ids reaches the command line.
         let mut odd = PinLedger::with_pins(["@1;reboot".to_owned()].into());
@@ -1303,7 +1320,10 @@ mod tests {
         ];
         assert_eq!(
             commands,
-            [format!("sh -c {}", quote(&steps.join("; ")))],
+            [moshpit_tmux::boot::exec(&format!(
+                "sh -c {}",
+                quote(&steps.join("; "))
+            ))],
             "the renderer out, the pin unset, the layout back at its size"
         );
     }
@@ -1339,6 +1359,65 @@ mod tests {
             ),
             "true".to_owned(),
         ];
-        assert_eq!(commands, [format!("sh -c {}", quote(&steps.join("; ")))]);
+        assert_eq!(
+            commands,
+            [moshpit_tmux::boot::exec(&format!(
+                "sh -c {}",
+                quote(&steps.join("; "))
+            ))]
+        );
+    }
+
+    /// B850: every command that runs tmux over an exec channel finds it on
+    /// the probed PATH — never bare `tmux` on the PATH a host's
+    /// non-interactive shell has (a Mac's: no Homebrew), where the first
+    /// session wasn't made (B788) and the teardown left the phone's pins,
+    /// leases and zoom marks on the server.
+    #[test]
+    fn no_exec_runs_tmux_on_the_bare_path() {
+        let spec = spec(Multiplexer::Tmux);
+        let tmux = spec.tmux_command();
+        let split = "bf8c,200x60,0,0[200x30,0,0,0,200x29,0,31{100x29,0,31,1,99x29,101,31,2}]";
+        let mut ledger = PinLedger::with_pins(["@0".to_owned(), "@1".to_owned()].into());
+        ledger.hidden_status = Some("$4".into());
+        ledger.pristine_layouts.insert(
+            "@0".to_owned(),
+            moshpit_tmux::controller::PristineLayout {
+                layout: split.to_owned(),
+                zoomed_pane: None,
+                pane_count: 3,
+                ours: Vec::new(),
+            },
+        );
+        ledger.renderer = Some(moshpit_tmux::clients::ClientIdentity {
+            pid: 4481,
+            name: "/dev/ttys023".to_owned(),
+        });
+        let mut controller =
+            moshpit_tmux::controller::Controller::new(moshpit_tmux::controller::Config {
+                renders_output: false,
+                ..Default::default()
+            });
+        controller.inherit_pin_ledger(ledger.clone());
+        let mut commands = vec![
+            layouts_command(tmux),
+            renderer_out_command(tmux, 4242),
+            crate::tmux_leg::first_session_command(tmux, Some("x")),
+            crate::tmux_leg::has_session_command(tmux),
+        ];
+        commands.extend(pin_debt_commands(&spec, &ledger, Some(4242)));
+        commands.extend(crate::tmux_leg::courtesy_commands(
+            &mut controller,
+            tmux,
+            vec!["set-option -wu -t @0 @moshpit_size_owner".to_owned()],
+        ));
+        assert!(commands.len() > 6, "{commands:#?}");
+        let prefix = moshpit_tmux::boot::exec_prefix();
+        for command in &commands {
+            assert!(
+                command.starts_with(&prefix),
+                "runs tmux on the bare PATH: {command}"
+            );
+        }
     }
 }

@@ -3169,10 +3169,7 @@ impl Actor {
             return;
         };
         if courtesy && let Some(server) = renderer_server {
-            let command = moshpit_tmux::boot::renderer_detach_by_server_command(
-                self.spec.tmux_command(),
-                server,
-            );
+            let command = crate::attempt::renderer_out_command(self.spec.tmux_command(), server);
             let detached = match control.ssh.as_ref().filter(|ssh| !ssh.is_closed()) {
                 Some(ssh) => matches!(
                     tokio::time::timeout(Duration::from_secs(3), ssh.run(&command)).await,
