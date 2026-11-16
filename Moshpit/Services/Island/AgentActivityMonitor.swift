@@ -107,7 +107,9 @@ final class AgentActivityMonitor {
         }
         // Read sealed (a prewarm before the first unlock), the record is
         // nothing: it is read again once it can be believed (B348).
-        let trusted = defaultsReadable
+        let trusted = storeDefaultsReadable(
+            host: RustPreferencesHost(defaults: settings.store, available: protectedData),
+            mode: .system)
         recordTrusted = trusted
         let record = trusted ? Self.storedRecord(settings.store) : [:]
         machine = AgentMachine(settings: Self.value(of: settings),

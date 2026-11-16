@@ -592,6 +592,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_link(uint64_t ptr, RustBuff
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_output(uint64_t ptr, RustBuffer conn, RustBuffer pane, RustBuffer place, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
+RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_resumed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(uint64_t ptr, RustBuffer settings, RustCallStatus *_Nonnull out_status
@@ -2312,7 +2317,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_image_insert_text(RustBuffer paths, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
-RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, uint64_t size, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CHILD
@@ -2635,6 +2640,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_paste_bytes(RustBuffer text, int8_t bracke
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
 RustBuffer uniffi_moshpit_ffi_fn_func_scroll_rows(double carry, double pixels, double cell_height, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
+RustBuffer uniffi_moshpit_ffi_fn_func_session_hop(RustBuffer connection, RustBuffer saved, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
@@ -3497,6 +3507,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_scroll_rows(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
+uint16_t uniffi_moshpit_ffi_checksum_func_session_hop(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ACCENT_THEME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ACCENT_THEME
 uint16_t uniffi_moshpit_ffi_checksum_func_store_accent_theme(void
@@ -3686,6 +3702,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_link(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_output(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
+uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_resumed(void
     
 );
 #endif
