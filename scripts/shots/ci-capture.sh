@@ -141,10 +141,15 @@ sizes_wrong=0
 # 30 s (a wait for idle that doesn't end, a UI query that hangs) or a UI
 # query that timed out takes a 10 s sample of the app (a simulator app is a
 # macOS process here) into <out>/samples/; twelve at most, one per 30 s.
+# sample needs the right to read another process: as root (the runner's
+# sudo needs no password), else as ourselves. samples/sampler.log says
+# what each try found, so an empty folder is never a mystery (dry run 7's
+# was).
 sample_stalls() {  # <test log> <dir>
-    local log="$1" dir="$2" last="" since taken=0 now line pid
+    local log="$1" dir="$2" last="" since taken=0 now line pid file
     since=$(date +%s)
     mkdir -p "$dir"
+    echo "$(date +%T) watching $log" >> "$dir/sampler.log"
     while sleep 5; do
         [ -f "$log" ] || continue
         line="$(tail -n 1 "$log")"
@@ -155,9 +160,19 @@ sample_stalls() {  # <test log> <dir>
         fi
         [ $((now - since)) -ge 30 ] || grep -q 'Timed out while evaluating UI query' <<<"$line" || continue
         [ "$taken" -lt 12 ] || continue
-        pid="$(pgrep -f 'Moshpit.app/Moshpit' | head -1)"
-        [ -n "$pid" ] || continue
-        sample "$pid" 10 -file "$dir/sample-$(date +%H%M%S)-$pid.txt" >/dev/null 2>&1 || true
+        pid="$(pgrep -f '/Moshpit\.app/Moshpit( |$)' | head -1)"
+        if [ -z "$pid" ]; then
+            echo "$(date +%T) stalled $((now - since)) s; no app process" >> "$dir/sampler.log"
+            since=$now
+            continue
+        fi
+        file="$dir/sample-$(date +%H%M%S)-$pid.txt"
+        if sudo -n sample "$pid" 10 -file "$file" >/dev/null 2>>"$dir/sampler.log" ||
+            sample "$pid" 10 -file "$file" >/dev/null 2>>"$dir/sampler.log"; then
+            echo "$(date +%T) stalled $((now - since)) s; sampled $pid: $(basename "$file")" >> "$dir/sampler.log"
+        else
+            echo "$(date +%T) stalled $((now - since)) s; sample of $pid failed" >> "$dir/sampler.log"
+        fi
         taken=$((taken + 1))
         since=$(date +%s)
     done
@@ -167,18 +182,26 @@ sample_stalls() {  # <test log> <dir>
 # test waits on each page's id, keeps the screen as an attachment named
 # shot~<locale>~<shot>, and the attachments come out of the result bundle
 # as <locale>/<shot>.png.
-if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
-    log "$device · ShotsUITest (the store set)"
-    specs=""
-    for locale in "${locales[@]}"; do specs="$specs $locale=$(language "$locale")=$(region "$locale")"; done
+#
+# One pass, then one more for whatever is missing (dry run 7: a UI query
+# that times out ends its test, so one stalled launch on the iPad cost
+# test10 six locales and test05 one). The second pass runs each test that
+# missed a shot again, in only the locales it missed.
+shots_pass() {  # <tag> <test…> -- <locale…>: ShotsUITest's tests (none: all) in these locales
+    local tag="$1" only=() specs="" locale result exported args_json quiet_json restamper sampler
+    shift
+    while [ "$1" != -- ]; do only+=("-only-testing:MoshpitUITests/ShotsUITest/$1"); shift; done
+    shift
+    [ "${#only[@]}" -gt 0 ] || only=(-only-testing:MoshpitUITests/ShotsUITest)
+    for locale in "$@"; do specs="$specs $locale=$(language "$locale")=$(region "$locale")"; done
     args_json="$(python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${common[@]}")"
     quiet_json="$(python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "${quiet[@]}")"
-    result="$work/shots-$device.xcresult"
+    result="$work/shots-$device$tag.xcresult"
     # The agents' timers read minutes all through the run: their states
     # dated from now again every 45 s while the test shoots.
     ( while sleep 45; do "$root/scripts/shots/stage-host.sh" restamp "$work/host" 2>/dev/null; done ) &
     restamper=$!
-    sample_stalls "$out/shots-ui-$device.log" "$out/samples" &
+    sample_stalls "$out/shots-ui-$device$tag.log" "$out/samples" &
     sampler=$!
     env TEST_RUNNER_SHOTS_LOCALES="${specs# }" TEST_RUNNER_SHOTS_ARGS_JSON="$args_json" \
         TEST_RUNNER_SHOTS_QUIET_JSON="$quiet_json" \
@@ -188,10 +211,11 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
         TEST_RUNNER_MOSHPIT_SEED_TRUST_FP="$fingerprint" TEST_RUNNER_MOSHPIT_SEED_NAME=devbox \
         TEST_RUNNER_MOSHPIT_SEED_MUX=tmux TEST_RUNNER_MOSHPIT_SEED_TMUX_BIN="$stage_tmux" \
         xcodebuild test-without-building -xctestrun "$SHOTS_XCTESTRUN" -destination "id=$udid" \
-        -only-testing:MoshpitUITests/ShotsUITest -resultBundlePath "$result" \
-        > "$out/shots-ui-$device.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device.log" >&2
+        "${only[@]}" -resultBundlePath "$result" \
+        > "$out/shots-ui-$device$tag.log" 2>&1 || echo "✘ ShotsUITest failed: $out/shots-ui-$device$tag.log" >&2
     kill "$restamper" "$sampler" 2>/dev/null || true
-    exported="$work/attachments-$device"
+    wait "$restamper" "$sampler" 2>/dev/null || true
+    exported="$work/attachments-$device$tag"
     xcrun xcresulttool export attachments --path "$result" --output-path "$exported" >/dev/null 2>&1 || true
     python3 -I - "$exported" "$out" "$px" <<'PY' || sizes_wrong=1
 import json, os, shutil, struct, sys
@@ -227,6 +251,40 @@ for test in manifest:
             print(f"  ✓ {locale}/{shot}.png {size}")
 sys.exit(bad)
 PY
+}
+
+# "<test> <locale>" for each shot the captions want that neither the
+# capture nor SHOTS_EXTERNAL has (compose's own lookup).
+missing_shots() {
+    python3 -I - "$root/scripts/shots/captions" "$device" "$out" "${SHOTS_EXTERNAL:-}" "${locales[@]}" <<'PY'
+import json, os, sys
+captions, device, out, external = sys.argv[1:5]
+TESTS = {"02-pane": "test02Pane", "03-home": "test03Home", "05-overview": "test05Overview",
+         "06-preview": "test06Preview", "07-pet": "test07Pet", "08-keyboard": "test08Keyboard",
+         "04-island": "test90Island", "01-lock": "test91Lock",
+         "panes": "test05Overview", "home-terminal": "test10HomeAndTerminal"}
+for locale in sys.argv[5:]:
+    for caption in json.load(open(os.path.join(captions, f"{locale}.json")))[device]:
+        shot = caption["shot"]
+        places = [os.path.join(out, locale, f"{shot}.png")]
+        if external:
+            places += [os.path.join(external, locale, f"{shot}.png"), os.path.join(external, f"{shot}.png"),
+                       os.path.join(external, "en-US", f"{shot}.png")]
+        if not any(os.path.isfile(p) for p in places) and shot in TESTS:
+            print(TESTS[shot], locale)
+PY
+}
+
+if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
+    log "$device · ShotsUITest (the store set)"
+    shots_pass "" -- "${locales[@]}"
+    gaps="$(missing_shots)"
+    for test in $(cut -d' ' -f1 <<<"$gaps" | sort -u); do
+        # shellcheck disable=SC2207 # one locale per word
+        missed=($(awk -v t="$test" '$1 == t { print $2 }' <<<"$gaps"))
+        log "$device · $test again, for what it missed: ${missed[*]}"
+        shots_pass "-$test" "$test" -- "${missed[@]}"
+    done
 fi
 
 # What the app said, for a shot that came out wrong.

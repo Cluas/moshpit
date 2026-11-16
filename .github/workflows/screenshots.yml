@@ -41,7 +41,7 @@ jobs:
   shots:
     name: Screenshots (${{ inputs.devices || 'both' }}, ${{ inputs.locales || 'all' }})
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 150
     outputs:
       complete: ${{ steps.set.outputs.complete }}
 
