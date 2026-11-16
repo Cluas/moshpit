@@ -6,11 +6,14 @@ name: Screenshots
 # and iPad 13" simulators, and the PNGs kept as the run's artifact.
 # scripts/shots/ci-capture.sh does the staging and the shots; the lock
 # screen and the Dynamic Island come from scripts/shots/external/, taken on
-# a phone. A run takes about an hour and a half, so it runs nightly, on
-# each version tag and by hand, never on a push.
+# a phone. Each device shoots on a runner of its own, in parallel (one
+# simulator per machine: the shots stall less, and a failed device can be
+# rerun alone). A run takes about an hour, so it runs nightly, on each
+# version tag and by hand, never on a push.
 #
-# A complete set from main or a version tag (every slot, every locale, the
-# store's sizes: scripts/shots/pages.py) is published to GitHub Pages at
+# A complete set from main or a version tag (both devices, every slot,
+# every locale, the store's sizes: scripts/shots/pages.py) is published to
+# GitHub Pages at
 # /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link.
 # Anything less publishes nothing, and the last good set stays up.
 on:
@@ -39,18 +42,21 @@ concurrency:
 
 jobs:
   shots:
-    name: Screenshots (${{ inputs.devices || 'both' }}, ${{ inputs.locales || 'all' }})
+    name: Screenshots (${{ matrix.device }}, ${{ inputs.locales || 'all' }})
     runs-on: xcode-27
-    timeout-minutes: 150
-    outputs:
-      complete: ${{ steps.set.outputs.complete }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # The devices asked for (a scheduled or tag run asks for both).
+        device: ${{ fromJSON(inputs.devices == 'iphone' && '["iphone"]' || inputs.devices == 'ipad' && '["ipad"]' || '["iphone","ipad"]') }}
 
     env:
       SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
       # Every locale the app ships, shot for every simulator shot. Trim here.
       LOCALES_ALL: en-US zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
-      # A scheduled or tag run has no inputs: both devices, every locale.
-      DEVICES: ${{ inputs.devices || 'both' }}
+      DEVICE: ${{ matrix.device }}
+      # A scheduled or tag run has no inputs: every locale.
       LOCALES: ${{ inputs.locales || 'all' }}
       # The lock screen and the Dynamic Island, taken on a phone.
       SHOTS_EXTERNAL: ${{ github.workspace }}/scripts/shots/external
@@ -109,8 +115,8 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-
 
-      # Debug: the DEBUG seeds the shots are made with. One build for both
-      # simulators (the app is universal); arm64 only. For testing too: the
+      # Debug: the DEBUG seeds the shots are made with. The same build for
+      # either simulator (the app is universal); arm64 only. For testing too: the
       # shots a page has to be waited for are ShotsUITest's.
       - name: Build the app
         run: |
@@ -125,44 +131,36 @@ jobs:
           ls -d build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app
           echo "SHOTS_XCTESTRUN=$(ls build/dd/Build/Products/*.xctestrun | head -1)" >> "$GITHUB_ENV"
 
-      - name: iPhone 6.9"
-        if: env.DEVICES != 'ipad'
+      - name: The shots
         run: |
           [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
+          case "$DEVICE" in iphone) out=shots/iphone-6.9 ;; ipad) out=shots/ipad-13 ;; esac
           # shellcheck disable=SC2086 # one locale per word
           scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
-            shots/iphone-6.9 iphone $LOCALES
-
-      # Run even when the iPhone's step failed: a missing shot there is no
-      # reason to lose the iPad's.
-      - name: iPad 13"
-        if: ${{ !cancelled() && env.DEVICES != 'iphone' }}
-        run: |
-          [ "$LOCALES" = all ] && LOCALES="$LOCALES_ALL"
-          # shellcheck disable=SC2086 # one locale per word
-          scripts/shots/ci-capture.sh build/dd/Build/Products/Debug-iphonesimulator/Moshpit.app \
-            shots/ipad-13 ipad $LOCALES
+            "$out" "$DEVICE" $LOCALES
 
       - name: Keep the shots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: shots-${{ github.run_number }}
+          name: shots-${{ github.run_number }}-${{ matrix.device }}
           path: shots
           if-no-files-found: warn
 
-      # The whole set or nothing: every slot of both devices in every locale,
-      # at the store's sizes. Only then may the publish job run.
+      # This device's whole set or nothing: every slot in every locale, at
+      # the store's sizes. The publish job needs both devices' to pass.
       - name: Check the set
-        id: set
-        run: |
-          python3 -I scripts/shots/pages.py check shots
-          echo "complete=true" >> "$GITHUB_OUTPUT"
+        run: python3 -I scripts/shots/pages.py check shots --device "$DEVICE"
 
+  # After both devices passed their check, for the whole set only (a run by
+  # hand for one device or some locales publishes nothing), from main or a
+  # version tag.
   publish:
     name: Publish to GitHub Pages
     needs: shots
-    if: needs.shots.outputs.complete == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: >-
+      (inputs.devices || 'both') == 'both' && (inputs.locales || 'all') == 'all' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -179,10 +177,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Fetch the shots
+      - name: Fetch both devices' shots
         uses: actions/download-artifact@v8
         with:
-          name: shots-${{ github.run_number }}
+          pattern: shots-${{ github.run_number }}-*
+          merge-multiple: true
           path: shots
 
       - name: Lay out the site

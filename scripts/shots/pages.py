@@ -2,7 +2,7 @@
 """The store screenshots on GitHub Pages: check that a Screenshots run made
 the whole set, and lay it out as a site.
 
-    python3 -I scripts/shots/pages.py check <shots>
+    python3 -I scripts/shots/pages.py check <shots> [--device iphone|ipad]
     python3 -I scripts/shots/pages.py site <shots> <site>
 
 <shots> is the run's output (the workflow's `shots` artifact): the composed
@@ -10,7 +10,8 @@ store images in <shots>/iphone-6.9/store/<locale>/<nn>-<shot>.png and
 <shots>/ipad-13/store/<locale>/…, as scripts/shots/ci-capture.sh leaves them.
 
 check: every locale with captions (scripts/shots/captions/), every slot of
-both devices, at the store's size: 1320 × 2868 for the iPhone; 2064 × 2752
+both devices (or the one --device names: each device's job checks its
+own), at the store's size: 1320 × 2868 for the iPhone; 2064 × 2752
 for the iPad, or 2752 × 2064 for a landscape shot. Exit 0 only when all are
 there; otherwise every gap is listed and the exit is 1. The publish job runs
 only after a complete set, so a partial run leaves the last good set live.
@@ -64,10 +65,12 @@ def png_size(path):
     return struct.unpack(">II", head[16:24])
 
 
-def check(shots):
+def check(shots, devices=tuple(DEVICES)):
     gaps = []
     for locale, (_, slots) in captions().items():
         for device, folder in DEVICES.items():
+            if device not in devices:
+                continue
             for name, _ in slots[device]:
                 path = os.path.join(shots, folder, "store", locale, name)
                 if not os.path.isfile(path):
@@ -143,21 +146,26 @@ def site(shots, out):
 
 
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] not in ("check", "site") or (sys.argv[1] == "site") != (len(sys.argv) == 4):
+    args = sys.argv[1:]
+    devices = tuple(DEVICES)
+    if len(args) == 4 and args[0] == "check" and args[2] == "--device" and args[3] in DEVICES:
+        devices, args = (args[3],), args[:2]
+    if not args or len(args) != {"check": 2, "site": 3}.get(args[0]):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 64
-    shots = sys.argv[2]
-    gaps = check(shots)
+    shots = args[1]
+    gaps = check(shots, devices)
     if gaps:
         print(f"pages: the set isn't complete ({len(gaps)} gap(s)); nothing is published:", file=sys.stderr)
         for gap in gaps[:80]:
             print("  " + gap, file=sys.stderr)
         return 1
-    total = sum(len(slots[d]) for _, slots in captions().values() for d in DEVICES)
-    print(f"pages: the set is complete: {total} images, {len(captions())} locales, both devices")
-    if sys.argv[1] == "site":
-        site(shots, sys.argv[3])
-        print(f"pages: laid out in {sys.argv[3]}/shots/")
+    total = sum(len(slots[d]) for _, slots in captions().values() for d in devices)
+    which = "both devices" if len(devices) == 2 else f"the {devices[0]}"
+    print(f"pages: the set is complete: {total} images, {len(captions())} locales, {which}")
+    if args[0] == "site":
+        site(shots, args[2])
+        print(f"pages: laid out in {args[2]}/shots/")
     return 0
 
 

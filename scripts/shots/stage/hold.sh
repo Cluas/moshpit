@@ -11,7 +11,14 @@
 # agent gone (crates/agents' reclassify): its stamp would read as done on
 # Home, in the island and in the overview.
 [ -z "${2:-}" ] || { printf '\033[H\033[2J\033[3J'; cat "$2"; }
+#
+# Several panes start at once under one name (the staged claudes): the copy
+# lands under its name in one rename, so a pane never runs one another pane
+# is still writing (the split run's iPad leg: a half-copied claude died at
+# once, its window renumbered, and the layout's next split found no pane 1).
 bin="${TMPDIR:-/tmp}/moshpit-shots-bin-$(id -u)"
 mkdir -p "$bin"
-[ -x "$bin/$1" ] || cp "$(command -v sleep)" "$bin/$1"
+if [ ! -x "$bin/$1" ]; then
+    cp "$(command -v sleep)" "$bin/.$1.$$" && mv -f "$bin/.$1.$$" "$bin/$1"
+fi
 exec "$bin/$1" 2147483647
