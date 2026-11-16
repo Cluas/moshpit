@@ -364,7 +364,8 @@ fn signalled(signal: &str) -> (Vec<String>, Vec<String>) {
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let mut child = Command::new("sh")
+    let mut command = Command::new("sh");
+    command
         .arg(&script)
         .args(["attention", "claude", "may I?"])
         .env_clear()
@@ -373,9 +374,28 @@ fn signalled(signal: &str) -> (Vec<String>, Vec<String>) {
         .env("HOME", &run.dir)
         .env("TMPDIR", &tmp)
         .env("MOSHPIT_CAPTURE", &capture)
-        .env("MOSHPIT_PUSH_HOST", "m1-pro")
-        .spawn()
-        .expect("sh runs");
+        .env("MOSHPIT_PUSH_HOST", "m1-pro");
+    // The script starts with the signals this sends at their default,
+    // whatever the test runner was started with. A runner put in the
+    // background by a non-interactive shell (`cargo test … &`) ignores
+    // SIGINT; an ignored signal survives exec, and a shell can't trap one
+    // it started out ignoring, so the script never saw the INT, went on to
+    // the next phone, and this failed for how it was launched rather than
+    // for anything the script does.
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: signal(2) is async-signal-safe, and it is all that runs
+        // between fork and exec.
+        unsafe {
+            command.pre_exec(|| {
+                for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                    libc::signal(signal, libc::SIG_DFL);
+                }
+                Ok(())
+            });
+        }
+    }
+    let mut child = command.spawn().expect("sh runs");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while !capture.join("held").exists() {
         assert!(
