@@ -150,6 +150,30 @@ struct BorrowedHostTests {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    /// B815: without SFTP the download reads no more than the size the stat
+    /// said, and a file that comes back shorter changed under the read:
+    /// neither version is handed out (B814).
+    @Test("without SFTP, a file that changed under the read isn't handed out")
+    func noSFTPChangedUnderTheRead() async throws {
+        let ssh = FakeLentSSH()
+        ssh.sftpAvailable = false
+        let path = "/work/chart.png"
+        ssh.commands = { command in
+            switch command {
+            case RemoteFileCommands.stat(path): return .init(stdout: Data("f 8\n".utf8))
+            case RemoteFileCommands.cat(path, size: 8): return .init(stdout: Data((Data("PNG!".utf8).base64EncodedString() + "\n").utf8))
+            default: return .init(status: 1)
+            }
+        }
+        let host = BorrowedHost(ssh)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("changed-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        await #expect(throws: HostConnectionError.changedWhileFetching) {
+            try await host.downloadRemoteFile(path, to: destination, progress: nil)
+        }
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+
     @Test("a host with SFTP turned off: the Swift path's exec forms, through the one quoter")
     func noSFTP() async throws {
         let ssh = FakeLentSSH()
@@ -159,7 +183,7 @@ struct BorrowedHostTests {
         ssh.commands = { command in
             switch command {
             case RemoteFileCommands.stat(path): return .init(stdout: Data("f        4\n".utf8))
-            case RemoteFileCommands.cat(path): return .init(stdout: Data((image.base64EncodedString() + "\n").utf8))
+            case RemoteFileCommands.cat(path, size: 4): return .init(stdout: Data((image.base64EncodedString() + "\n").utf8))
             case RemoteFileCommands.list("/work"): return .init(stdout: Data("d 1700000002 sub\u{0}f 1700000001 it's \u{301}' here.png\u{0}".utf8))
             case "pwd": return .init(stdout: Data("/home/dev \n".utf8))
             default: return .init(status: 1)
@@ -319,7 +343,7 @@ struct BorrowedHostTests {
         plain.commands = { command in
             switch command {
             case RemoteFileCommands.stat("/work/small.mp4"): return .init(stdout: Data("f 4\n".utf8))
-            case RemoteFileCommands.cat("/work/small.mp4"): return .init(stdout: Data("TINY".utf8).base64EncodedData() + Data("\n".utf8))
+            case RemoteFileCommands.cat("/work/small.mp4", size: 4): return .init(stdout: Data("TINY".utf8).base64EncodedData() + Data("\n".utf8))
             case RemoteFileCommands.stat("/work/big.mp4"): return .init(stdout: Data("f \(big)\n".utf8))
             default: return .init(status: 1)
             }

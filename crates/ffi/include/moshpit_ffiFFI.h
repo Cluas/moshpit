@@ -2312,7 +2312,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_image_insert_text(RustBuffer paths, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
-RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, uint64_t size, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CHILD

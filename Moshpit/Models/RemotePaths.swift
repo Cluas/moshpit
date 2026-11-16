@@ -165,7 +165,8 @@ enum RemoteFileCommands {
         remoteFileParseList(output: output, folder: folder).map(RemoteFileEntry.init)
     }
 
-    static func cat(_ path: String) -> String { remoteFileCatCommand(path: path) }
+    /// No more than `size` bytes, the size the stat said (B815).
+    static func cat(_ path: String, size: UInt64) -> String { remoteFileCatCommand(path: path, size: size) }
 }
 
 // MARK: - Pulling a file down

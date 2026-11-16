@@ -39,7 +39,10 @@ struct ShellQuoteCallSiteTests {
         let list = RemoteFileCommands.list(path)
         #expect(list.hasPrefix("sh -c "))
         #expect(list.hasSuffix(" moshpit-edit \(quoted)"))
-        #expect(RemoteFileCommands.cat(path) == "base64 < \(quoted)")
+        // B815: the read takes the path as "$1" too, and stops at the size.
+        let cat = RemoteFileCommands.cat(path, size: 4)
+        #expect(cat.hasPrefix("sh -c "))
+        #expect(cat.contains(" moshpit-edit \(quoted) "))
         #expect(RemoteFileEdits.makeDirectory(path).hasSuffix("moshpit-edit \(quoted)"))
         #expect(RemoteFileEdits.remove(path, isDirectory: false)?.hasSuffix("moshpit-edit \(quoted)") == true)
         let probe = PathProbe.command(cwd: path, candidates: [

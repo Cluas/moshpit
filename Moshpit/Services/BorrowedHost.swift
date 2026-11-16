@@ -111,13 +111,17 @@ final class BorrowedHost: HostConnection {
         // No SFTP: the whole file as one base64 reply, up to the limit.
         let entry = try await remoteStat(path)
         guard !entry.isDirectory else { throw HostConnectionError.notFound }
-        guard (entry.size ?? 0) <= RemoteFileCommands.execDownloadLimit else {
+        guard let size = entry.size else { throw HostConnectionError.notFound }
+        guard size <= RemoteFileCommands.execDownloadLimit else {
             throw HostConnectionError.tooLargeWithoutSFTP
         }
-        let output = try await executeCommand(RemoteFileCommands.cat(path))
+        // No more than the stat said (B815); less, and it changed under the
+        // read: neither version is handed out (B814).
+        let output = try await executeCommand(RemoteFileCommands.cat(path, size: size))
         guard let data = Data(base64Encoded: output, options: .ignoreUnknownCharacters) else {
             throw HostConnectionError.notFound
         }
+        guard UInt64(data.count) == size else { throw HostConnectionError.changedWhileFetching }
         try data.write(to: destination)
         progress?(1)
     }
