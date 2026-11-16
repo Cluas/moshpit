@@ -75,10 +75,10 @@ enum Qwen3ASR {
     /// Offered on phones with 6 GB of memory or more. A short dictation peaks
     /// well under a gigabyte, but a minute-long one reaches 1.6 GB (the
     /// build's own measurement on an iPhone 14 Pro), which a 4 GB phone
-    /// cannot spare beside a terminal.
-    static var isSupportedDevice: Bool {
-        ProcessInfo.processInfo.physicalMemory >= 5_500_000_000
-    }
+    /// cannot spare beside a terminal (`WhisperModelStore.sherpaOrder`).
+    /// 5.5 GB: what a 6 GB phone reports, with room to spare; a 4 GB one is
+    /// far below.
+    static let minimumMemory: UInt64 = 5_500_000_000
 
     /// Hotwords go into the prompt the decoder reads before the audio, so
     /// each one costs prefill time: the pane's best forty.
@@ -311,6 +311,8 @@ enum ModelFileDownloader {
     enum Failure: Error, LocalizedError, Equatable {
         case status(Int)
         case checksum(String)
+        /// No source lists the file (``ModelSources``).
+        case noSource(String)
 
         var errorDescription: String? {
             switch self {
@@ -318,6 +320,8 @@ enum ModelFileDownloader {
                 return String(localized: "The server answered \(code).")
             case .checksum(let file):
                 return String(localized: "\(file) arrived damaged. Try again.")
+            case .noSource(let file):
+                return String(localized: "\(file) can't be downloaded from anywhere.")
             }
         }
     }
@@ -325,6 +329,15 @@ enum ModelFileDownloader {
     /// Download every file not yet in place. `onProgress` gets 0…1 over the
     /// whole list's bytes, counting what earlier runs left on disk.
     static func fetch(_ files: [Qwen3ASR.RemoteFile], into folder: URL, url: (Qwen3ASR.RemoteFile) -> URL,
+                      onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await fetch(files, into: folder, urls: { [url($0)] }, onProgress: onProgress)
+    }
+
+    /// The same, each file tried at every source that has it, in order
+    /// (``ModelSources``, B765). The hash is the same wherever the bytes come
+    /// from, so a part fetched from one source is carried on from the next,
+    /// and damage from one is thrown away before trying the next.
+    static func fetch(_ files: [Qwen3ASR.RemoteFile], into folder: URL, urls: (Qwen3ASR.RemoteFile) -> [URL],
                       onProgress: @escaping @Sendable (Double) -> Void) async throws {
         let total = Double(max(1, files.reduce(0) { $0 + $1.bytes }))
         var done: Int64 = 0
@@ -338,21 +351,32 @@ enum ModelFileDownloader {
                 at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             let part = destination.appendingPathExtension("part")
             let base = done
-            try Task.checkCancellation()
-            do {
-                try await download(url(file), to: part, expected: file.bytes) { written in
-                    onProgress(Double(base + written) / total)
+            let sources = urls(file)
+            guard !sources.isEmpty else { throw Failure.noSource(file.path) }
+            var arrived = false
+            for (index, source) in sources.enumerated() {
+                try Task.checkCancellation()
+                let last = index == sources.count - 1
+                do {
+                    try await download(source, to: part, expected: file.bytes) { written in
+                        onProgress(Double(base + written) / total)
+                    }
+                } catch {
+                    // A paused download ends as URLSession's "cancelled": say
+                    // so as a cancellation, not a failure to show.
+                    if Task.isCancelled { throw CancellationError() }
+                    if last { throw error }
+                    continue
                 }
-            } catch {
-                // A paused download ends as URLSession's "cancelled": say so
-                // as a cancellation, not a failure to show.
-                if Task.isCancelled { throw CancellationError() }
-                throw error
+                guard try sha256(of: part) == file.sha256 else {
+                    try? FileManager.default.removeItem(at: part)
+                    if last { throw Failure.checksum(file.path) }
+                    continue
+                }
+                arrived = true
+                break
             }
-            guard try sha256(of: part) == file.sha256 else {
-                try? FileManager.default.removeItem(at: part)
-                throw Failure.checksum(file.path)
-            }
+            guard arrived else { throw Failure.checksum(file.path) }
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: part, to: destination)
             done += file.bytes

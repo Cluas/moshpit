@@ -198,7 +198,11 @@ add("Local model", "本机模型", "ローカルモデル")
 add("Best for Chinese with English terms in it. Listens for the file names and branches on screen.",
     "中英混着说最准，还会留意屏幕上的文件名和分支名。",
     "中国語に英語の用語が混ざる話し方に最適。画面に出ているファイル名やブランチ名も手がかりにします。")
+add("Words appear as you speak, and it’s light enough for any iPhone. Hears fewer technical terms than Qwen3-ASR; with both downloaded, Qwen3-ASR writes the final text.",
+    "边说边出字，也够轻，哪台 iPhone 都跑得动。技术词听得不如 Qwen3-ASR 准；两个都下载了，最终的文字交给 Qwen3-ASR。",
+    "話しているそばから文字が出て、どの iPhone でも動く軽さです。技術用語の聞き取りは Qwen3-ASR に及びません。両方をダウンロードすると、最終的な文字は Qwen3-ASR が書きます。")
 add("The server answered %lld.", "服务器返回了 %lld。", "サーバーの応答は %lld でした。")
+add("%@ can't be downloaded from anywhere.", "%@ 哪里都下载不到。", "%@ をダウンロードできる場所がありません。")
 add("%@ arrived damaged. Try again.", "%@ 下载下来是坏的，再试一次。", "%@ が壊れた状態で届きました。もう一度お試しください。")
 add("No download. One language per session.", "无需下载。每次会话只识别一种语言。", "ダウンロード不要。1 セッションに 1 言語。")
 add("Downloads a model. Around 100 languages, and copes with a sentence that mixes two.",

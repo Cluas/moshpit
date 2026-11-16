@@ -51,6 +51,18 @@ under the same license. As with Whisper, nothing is uploaded: the words the
 model is told to expect (file names and branches on the pane's screen) stay on
 the device.
 
+When you download X-ASR 0.16B, the streaming model, its files are fetched at
+runtime from Hugging Face, pinned to one revision and checked file by file
+against SHA-256 hashes before they are used: the model from
+[`lorneluo/sherpa-onnx-x-asr-480ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05`](https://huggingface.co/lorneluo/sherpa-onnx-x-asr-480ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05)
+and its sentencepiece vocabulary from
+[`csukuangfj2/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03`](https://huggingface.co/csukuangfj2/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03).
+Both hold the same bytes as the int8 build the k2-fsa project publishes for
+sherpa-onnx (release `asr-models`), converted from
+[X-ASR](https://github.com/Gilgamesh-J/X-ASR) (X-ASR-zh-en), released by its
+authors under the Apache License 2.0. Nothing is uploaded; the words it is
+told to expect stay on the device.
+
 Apple's own speech models (the default engine) are part of iOS and are managed
 by the system, not by Moshpit.
 
