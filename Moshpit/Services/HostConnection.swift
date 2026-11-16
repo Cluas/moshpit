@@ -65,6 +65,9 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
     /// still counted it as up.
     case notAnswering
     case notFound
+    /// The file changed while it was being fetched (B814): what came down
+    /// is neither version.
+    case changedWhileFetching
     /// The host won't let this account read it.
     case readDenied
     /// The host won't let this account change it.
@@ -94,6 +97,8 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
             return String(localized: "The host isn't answering on this session's connection. Try again in a moment.")
         case .notFound:
             return String(localized: "This file is no longer on the host.")
+        case .changedWhileFetching:
+            return String(localized: "This file changed while it was being fetched. Try again.")
         case .readDenied:
             return String(localized: "The host doesn't let this account read it.")
         case .writeDenied:
@@ -116,6 +121,7 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
         case .notConnected: return "the session is not connected"
         case .notAnswering: return "the session's connection isn't answering"
         case .notFound: return "not found"
+        case .changedWhileFetching: return "changed while it was fetched"
         case .readDenied: return "read permission denied"
         case .writeDenied: return "write permission denied"
         case .nameTaken: return "name taken"

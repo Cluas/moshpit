@@ -398,16 +398,18 @@ impl Sftp {
         destination: &Path,
         progress: &mut (dyn FnMut(f64) -> bool + Send),
     ) -> Result<u64, SftpError> {
-        let size = self
+        // The size the host said, and none when it said none (B813: a 0
+        // was taken for "unknown" and read to an EOF a device never has).
+        let before = self
             .unless_cancelled(async {
                 self.raw.fstat(handle).await.map_err(|e| self.fail(e, path))
             })
             .await?
-            .attrs
-            .size
-            .unwrap_or(0);
+            .attrs;
+        let said = before.size;
+        let size = said.unwrap_or(0);
         let file = std::fs::File::create(destination)?;
-        let mut window = ReadWindow::new(size, READ_CHUNK);
+        let mut window = ReadWindow::new(said, READ_CHUNK);
         let mut reads = JoinSet::new();
         let mut received = 0u64;
         loop {
@@ -446,7 +448,27 @@ impl Sftp {
                 }
             }
         }
-        Ok(window.length(received))
+        let length = window.length(received);
+        // Fix (B814): a file the agent wrote again while it was read came
+        // down as neither version — the start of one and the rest of the
+        // other, or the old one's bytes past the new one's end — and was
+        // handed out, cached under the old one's size and time. Its size
+        // and time are asked again: changed, or ended short of the size
+        // said, it fails, and the next try reads it whole.
+        let after = self
+            .unless_cancelled(async {
+                self.raw.fstat(handle).await.map_err(|e| self.fail(e, path))
+            })
+            .await?
+            .attrs;
+        if after.size != before.size
+            || after.mtime != before.mtime
+            || said.is_some_and(|said| length < said)
+        {
+            return Err(SftpError::Changed(path.to_owned()));
+        }
+        file.set_len(length)?;
+        Ok(length)
     }
 
     /// Streams `local` to `remote`, which must not exist yet (SFTP's
@@ -1102,6 +1124,13 @@ impl Drop for RemoteFile {
 /// The ranges a windowed download asks for (`WindowedRead.pull`): fixed
 /// chunks up to the known size, short answers' remainders asked again, and
 /// a file of unknown size read one range at a time so EOF is never raced.
+///
+/// Fix (B813): "unknown" was a size of 0, so a file that said it was empty
+/// was read to its EOF — and a device has none: a link named like an image
+/// to `/dev/zero` was read until the phone was full. A size the host said,
+/// 0 too, is where the download ends; only a size it didn't say reads to
+/// EOF. Nothing past the size said is asked for, so a file that grows while
+/// it is read ends where it was.
 struct ReadWindow {
     next: u64,
     end: Option<u64>,
@@ -1111,10 +1140,11 @@ struct ReadWindow {
 }
 
 impl ReadWindow {
-    fn new(size: u64, chunk: u32) -> Self {
+    /// `size`: what the host said, none when it said none.
+    fn new(size: Option<u64>, chunk: u32) -> Self {
         Self {
             next: 0,
-            end: (size > 0).then_some(size),
+            end: size,
             chunk,
             gaps: Vec::new(),
             eof: false,
@@ -1279,8 +1309,9 @@ mod tests {
     }
 
     /// Runs a window against a file of `actual` bytes whose server answers
-    /// at most `cap` bytes per read, in reverse order of asking.
-    fn pull(announced: u64, actual: u64, cap: usize) -> (u64, Vec<(u64, usize)>) {
+    /// at most `cap` bytes per read, in reverse order of asking; `announced`
+    /// is the size its `fstat` said, none when it said none.
+    fn pull(announced: Option<u64>, actual: u64, cap: usize) -> (u64, Vec<(u64, usize)>) {
         let mut window = ReadWindow::new(announced, 10);
         let mut pieces = Vec::new();
         let mut received = 0;
@@ -1322,14 +1353,14 @@ mod tests {
 
     #[test]
     fn a_known_size_is_read_whole_in_any_order() {
-        let (length, pieces) = pull(95, 95, 10);
+        let (length, pieces) = pull(Some(95), 95, 10);
         assert_eq!(length, 95);
         assert!(covered(&pieces).iter().all(|b| *b));
     }
 
     #[test]
     fn short_answers_are_asked_again() {
-        let (length, pieces) = pull(95, 95, 4);
+        let (length, pieces) = pull(Some(95), 95, 4);
         assert_eq!(length, 95);
         let seen = covered(&pieces);
         assert_eq!(seen.len(), 95);
@@ -1338,15 +1369,36 @@ mod tests {
 
     #[test]
     fn a_file_that_shrank_ends_at_its_eof() {
-        let (length, pieces) = pull(95, 42, 10);
+        let (length, pieces) = pull(Some(95), 42, 10);
         assert_eq!(length, 42);
         assert_eq!(covered(&pieces).len(), 42);
     }
 
     #[test]
     fn an_unknown_size_reads_one_range_at_a_time_to_eof() {
-        let (length, pieces) = pull(0, 37, 10);
+        let (length, pieces) = pull(None, 37, 10);
         assert_eq!(length, 37);
         assert!(covered(&pieces).iter().all(|b| *b));
+    }
+
+    /// B813: a size of 0 was read as "unknown" and the file read to its EOF
+    /// — which a device never reaches: a link named like an image to
+    /// `/dev/zero` (or anything else that says it is empty and answers
+    /// forever) filled the phone, and the folder sheet fetches its images'
+    /// thumbnails without a tap. A file that says it is empty is read as
+    /// empty; what it holds past the size it said is never asked for.
+    #[test]
+    fn a_file_that_says_it_is_empty_is_read_as_empty() {
+        let (length, pieces) = pull(Some(0), u64::MAX, 10);
+        assert_eq!(length, 0);
+        assert!(pieces.is_empty(), "{pieces:?}");
+    }
+
+    /// Nor past the size it said when it grows while being read.
+    #[test]
+    fn a_file_that_grew_ends_at_the_size_it_said() {
+        let (length, pieces) = pull(Some(42), 95, 10);
+        assert_eq!(length, 42);
+        assert_eq!(covered(&pieces).len(), 42);
     }
 }

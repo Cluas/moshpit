@@ -683,6 +683,7 @@
   "This file is %@. Download it to preview?": "이 파일은 %@입니다. 다운로드해서 미리 볼까요?",
   "This file is no longer on the host.": "이 파일은 더 이상 호스트에 없습니다.",
   "Moshpit won't delete your home folder, or a folder it's in.": "Moshpit은 홈 폴더와 홈 폴더가 들어 있는 상위 폴더를 삭제하지 않습니다.",
+  "This file changed while it was being fetched. Try again.": "이 파일이 받는 도중에 변경되었습니다. 다시 시도하세요.",
   "This host has SFTP turned off, and the file is too large to send without it.": "이 호스트는 SFTP가 꺼져 있고, SFTP 없이 보내기에는 파일이 너무 큽니다.",
   "Couldn't reach the host. Check the connection and try again.": "호스트에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요.",
   "Only images, video, audio, PDFs and documents are shown here.": "여기에는 이미지, 비디오, 오디오, PDF, 문서만 표시됩니다.",

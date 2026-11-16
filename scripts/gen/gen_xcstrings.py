@@ -1314,6 +1314,9 @@ add("This file is no longer on the host.", "这个文件已经不在主机上了
 add("Moshpit won't delete your home folder, or a folder it's in.",
     "主目录和它所在的上级文件夹，Moshpit 都不会删除。",
     "ホームフォルダと、それを含むフォルダは Moshpit では削除しません。")
+add("This file changed while it was being fetched. Try again.",
+    "这个文件在下载时被改动了，再试一次。",
+    "このファイルはダウンロード中に変更されました。もう一度お試しください。")
 add("This host has SFTP turned off, and the file is too large to send without it.",
     "这台主机关了 SFTP，文件又太大，没法用别的办法传过来。",
     "このホストは SFTP がオフで、SFTP なしで送るにはファイルが大きすぎます。")

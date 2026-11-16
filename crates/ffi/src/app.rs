@@ -853,8 +853,8 @@ pub fn remote_file_parse_list(output: String, folder: String) -> Vec<RemoteFileR
 }
 
 #[uniffi::export]
-pub fn remote_file_cat_command(path: String) -> String {
-    remote_paths::cat_command(&path)
+pub fn remote_file_cat_command(path: String, size: u64) -> String {
+    remote_paths::cat_command(&path, size)
 }
 
 /// The exec download's limit, in bytes.

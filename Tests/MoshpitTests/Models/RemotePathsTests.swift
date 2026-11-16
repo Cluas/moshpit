@@ -225,7 +225,7 @@ struct RemotePathsTests {
         #expect(RemoteFileCommands.parseStat(try sh(RemoteFileCommands.stat(root)), path: root)?.isDirectory == true)
         #expect(Set(RemoteFileCommands.parseList(try sh(RemoteFileCommands.list(root)), in: root).map(\.name))
                 == ["a.png", "sub"])
-        let bytes = Data(base64Encoded: try sh(RemoteFileCommands.cat(root + "/a.png")),
+        let bytes = Data(base64Encoded: try sh(RemoteFileCommands.cat(root + "/a.png", size: 5)),
                          options: .ignoreUnknownCharacters)
         #expect(bytes == Data([1, 2, 3, 4, 5]))
     }

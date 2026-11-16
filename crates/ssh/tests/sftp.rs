@@ -248,6 +248,73 @@ async fn a_download_arrives_whole_with_progress() {
     assert_eq!(host.seen().open_handles, 0);
 }
 
+/// B813: a download of a file that says it is empty never ended — a link
+/// named like an image to `/dev/zero` (or a FIFO, or a device) was read until
+/// the phone was full, and opening its folder fetched it for a thumbnail
+/// without a tap. It is read as what it says it is: empty.
+#[tokio::test]
+async fn a_file_that_says_it_is_empty_downloads_as_empty() {
+    let host = Host::start(Bench::default()).await;
+    std::os::unix::fs::symlink("/dev/zero", host.home.join("endless.png")).unwrap();
+    let sftp = connect(&host).await.sftp().await.unwrap();
+    let local = Scratch::new("endless");
+    let destination = local.join("endless.png");
+    let copied = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        sftp.download("endless.png", &destination, &mut |_| true),
+    )
+    .await
+    .expect("the download of an empty-sized file never ended")
+    .unwrap();
+    assert_eq!(copied, 0);
+    assert_eq!(std::fs::metadata(&destination).unwrap().len(), 0);
+    assert_eq!(host.seen().open_handles, 0);
+}
+
+/// B814: a file rewritten while it was being read came down as neither
+/// version — the start of one and the rest of the other, or the old one's
+/// bytes past the new one's end left in the copy — and was handed out as
+/// the picture, cached under the old one's size and time. A file that
+/// changes size while it is read fails the download: nothing half-made is
+/// handed out, and a second try reads it whole.
+#[tokio::test]
+async fn a_file_that_changes_while_it_is_read_is_not_handed_out() {
+    let host = Host::start(Bench::default()).await;
+    for (case, rewritten) in [
+        ("shrank", noise(100, 9)),
+        ("grew", noise(4 * 1024 * 1024, 10)),
+    ] {
+        let at = host.home.join(&format!("{case}.png"));
+        std::fs::write(&at, noise(3 * 1024 * 1024, 8)).unwrap();
+        let sftp = connect(&host).await.sftp().await.unwrap();
+        let local = Scratch::new(case);
+        let destination = local.join("copy.png");
+        let mut rewrote = false;
+        let result = sftp
+            .download(&format!("{case}.png"), &destination, &mut |_| {
+                if !rewrote {
+                    rewrote = true;
+                    // The agent writes it again (truncated, then filled).
+                    std::fs::write(&at, &rewritten).unwrap();
+                }
+                true
+            })
+            .await;
+        assert!(
+            matches!(result, Err(SftpError::Changed(_))),
+            "{case}: {result:?}"
+        );
+        assert_eq!(host.seen().open_handles, 0, "{case}");
+        // Read again, it comes down whole.
+        let copied = sftp
+            .download(&format!("{case}.png"), &destination, &mut |_| true)
+            .await
+            .unwrap();
+        assert_eq!(copied, rewritten.len() as u64, "{case}");
+        assert!(std::fs::read(&destination).unwrap() == rewritten, "{case}");
+    }
+}
+
 /// B463: sshd starts the SFTP server through the account's shell, and an
 /// rc file that prints for every shell (bash reads `~/.bashrc` for sshd's
 /// `-c`) puts its text in front of the server's greeting. That text read as

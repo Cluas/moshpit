@@ -25018,6 +25018,10 @@ public enum SftpWhyValue: Equatable, Hashable {
      * The phone's side of a transfer.
      */
     case local
+    /**
+     * The file changed while it was read (B814).
+     */
+    case changed
 
 
 
@@ -25053,6 +25057,8 @@ public struct FfiConverterTypeSftpWhyValue: FfiConverterRustBuffer {
         
         case 7: return .local
         
+        case 8: return .changed
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -25087,6 +25093,10 @@ public struct FfiConverterTypeSftpWhyValue: FfiConverterRustBuffer {
         
         case .local:
             writeInt(&buf, Int32(7))
+        
+        
+        case .changed:
+            writeInt(&buf, Int32(8))
         
         }
     }
@@ -30439,10 +30449,11 @@ public func imageInsertText(paths: [String], style: ImagePasteStyle) -> String  
     )
 })
 }
-public func remoteFileCatCommand(path: String) -> String  {
+public func remoteFileCatCommand(path: String, size: UInt64) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_remote_file_cat_command(
-        FfiConverterString.lower(path),$0
+        FfiConverterString.lower(path),
+        FfiConverterUInt64.lower(size),$0
     )
 })
 }
@@ -31350,7 +31361,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_image_insert_text() != 29727) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_remote_file_cat_command() != 40906) {
+    if (uniffi_moshpit_ffi_checksum_func_remote_file_cat_command() != 55954) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_remote_file_child() != 5211) {

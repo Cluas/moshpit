@@ -370,8 +370,36 @@ fn the_fallback_commands_run_against_a_real_folder() {
         names,
         BTreeSet::from(["a.png".to_owned(), "sub".to_owned()])
     );
-    let encoded = shell(zsh, &cat_command(&file), &base);
+    let encoded = shell(zsh, &cat_command(&file, 5), &base);
     assert_eq!(encoded.trim(), "AQIDBAU=");
+    std::fs::remove_dir_all(&base).ok();
+}
+
+/// B815: the exec download read the whole file — `base64 <` it — whatever
+/// size the stat had said and the 32 MB limit had been checked against: a
+/// file still being written was read on past both, into one reply held in
+/// memory twice. It reads no more than the size the stat said, and a file
+/// that isn't there (or can't be read) gives nothing, never an empty copy.
+#[test]
+fn the_exec_read_stops_at_the_size_the_stat_said() {
+    let base = scratch("exec-read");
+    let file = base.join("growing.log");
+    std::fs::write(&file, [1, 2, 3, 4, 5]).unwrap();
+    let file = file.to_str().unwrap().to_owned();
+    for sh in shells() {
+        assert_eq!(
+            shell(sh, &cat_command(&file, 3), &base).trim(),
+            "AQID",
+            "{sh}"
+        );
+        assert_eq!(
+            shell(sh, &cat_command(&file, 5), &base).trim(),
+            "AQIDBAU=",
+            "{sh}"
+        );
+        let gone = format!("{file}.gone");
+        assert_eq!(shell(sh, &cat_command(&gone, 5), &base).trim(), "", "{sh}");
+    }
     std::fs::remove_dir_all(&base).ok();
 }
 

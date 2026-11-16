@@ -546,9 +546,18 @@ pub fn parse_list(output: &str, folder: &str) -> Vec<Entry> {
     entries
 }
 
-/// The file as base64, for the exec download.
-pub fn cat_command(path: &str) -> String {
-    format!("base64 < {}", quote(path))
+/// The file as base64, for the exec download: no more than `size` bytes,
+/// the size its stat said.
+///
+/// Fix (B815): the whole file was read (`base64 <` it), whatever the stat
+/// had said and the [`EXEC_DOWNLOAD_LIMIT`] had been checked against, so a
+/// file still being written was read on past both into one reply. The
+/// caller checks what came against the size: short, the file changed.
+pub fn cat_command(path: &str, size: u64) -> String {
+    sh(
+        "[ -r \"$1\" ] || exit 1; head -c \"$2\" < \"$1\" | base64",
+        &[path, &size.to_string()],
+    )
 }
 
 // MARK: - Changing files on the host
