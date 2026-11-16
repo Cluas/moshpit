@@ -546,8 +546,9 @@ async fn tmux_attaches_and_a_pane_echoes() {
     assert!(size.is_empty() || size == "latest", "{size:?}");
 }
 
-/// A server without sessions: the attach never confirms, the session
-/// stays up and says the attach stalled — and no session is created.
+/// A server without sessions: the session stays up on the empty state
+/// (B228: no stalled attach, the person's first session to make) — and no
+/// session is created.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_never_creates_a_session() {
@@ -559,11 +560,24 @@ async fn tmux_never_creates_a_session() {
     // The terminal is on screen: its windows are ours to size.
     bench.sessions.set_visible(Some(id));
     bench.connected(id).await;
-    bench
-        .until(id, 15, |kind| {
-            (*kind == EventKind::AttachStalled).then_some(())
-        })
-        .await;
+    while !bench
+        .sessions
+        .tmux_view(id)
+        .is_some_and(|view| view.no_session)
+    {
+        let stalled = bench
+            .until(id, 15, |kind| match kind {
+                EventKind::AttachStalled => Some(true),
+                EventKind::TreeChanged => Some(false),
+                _ => None,
+            })
+            .await;
+        assert!(
+            !stalled,
+            "a server with no session read as a stalled attach"
+        );
+    }
+    assert!(!bench.sessions.view(id).unwrap().attach_stalled);
     assert!(tmux.sessions().is_empty(), "{:?}", tmux.sessions());
     assert_eq!(
         bench.sessions.view(id).unwrap().state,
