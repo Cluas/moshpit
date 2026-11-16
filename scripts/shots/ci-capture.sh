@@ -333,9 +333,11 @@ fi
 # the island, on a phone), in place of the simulator's.
 log "$device · the store images (scripts/shots/compose.swift)"
 composed=0
+# (An empty array under set -u is an error in macOS's bash 3.2: hence the
+# ${a[@]+…} form, which is nothing when it's empty.)
 only_args=(); [ "$asked_slots" = all ] || only_args=(--only "$asked_slots")
 xcrun swift "$root/scripts/shots/compose.swift" "$device" "$out" "$out/store" \
-    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} "${only_args[@]}" "${locales[@]}" || composed=1
+    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} ${only_args[@]+"${only_args[@]}"} "${locales[@]}" || composed=1
 
 [ "$sizes_wrong" -eq 0 ] || fail "some shots are not $px"
 [ "$composed" -eq 0 ] || fail "some store images are missing (above)"
