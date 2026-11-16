@@ -88,7 +88,8 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "Home (crates/app/harness/home)",
         build: r#"crates/app/harness/home/build-swift.sh "$OUT/home-swift""#,
-        pins: &["95f649ab"],
+        // Its Swift is kept in harness/home/swift/frozen: no commit to read.
+        pins: &[],
     },
     Harness {
         // verify-app-language.sh's build, its one-line stub written the same.

@@ -1,0 +1,3 @@
+        var awaitingFirstSession: Bool {
+            moshServerHadNoSession && moshControl?.snapshot.everAttached != true
+        }
