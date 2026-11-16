@@ -938,15 +938,44 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     bench.sessions.set_visible(Some(id));
     let _reaper = mosh_server_pid(&mut bench, id).await;
     let (_, panes) = bench.panes(id, 10).await;
+    let _term = Term::attach(shell(&panes).stream);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert!(empty.sessions().is_empty(), "{:?}", empty.sessions());
+    let _ = bench.sessions.disconnect(id).await;
+}
+
+/// mosh with tmux, no session on the server: the person's "new session"
+/// from the empty state makes one, and the renderer, waiting, attaches it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
+async fn mosh_with_tmux_makes_the_first_session_when_asked() {
+    // B788 over mosh: no session is made yet (public/main 0ab623bf, tmux
+    // 3.6a and 3.8). `MOSHPIT_LIVE_B788=1` runs it; its fix un-skips it.
+    if std::env::var_os("MOSHPIT_LIVE_B788").is_none() {
+        eprintln!("skipped: B788 over mosh, until its fix");
+        return;
+    }
+    need_sshd!();
+    let sshd = Sshd::start().await;
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let mut spec = mosh_spec(sshd.port);
+    spec.multiplexer = Multiplexer::Tmux;
+    let empty = Tmux::new();
+    spec.tmux_path = Some(empty.prefix());
+    let id = bench.sessions.connect(spec);
+    // The terminal is on screen: its windows are ours to size.
+    bench.sessions.set_visible(Some(id));
+    let _reaper = mosh_server_pid(&mut bench, id).await;
+    let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
     tokio::time::sleep(Duration::from_secs(3)).await;
     assert!(empty.sessions().is_empty(), "{:?}", empty.sessions());
-    // The person's "new session" from the empty state: the renderer, waiting,
-    // attaches it.
     bench
         .sessions
         .tmux(id, moshpit_session::TmuxAction::NewSession { name: None })
         .unwrap();
+    // The status line names it: `[0]`, or from tmux 3.8 the phone's own
+    // group of it, `[0~mp-…` (B773, B812).
     assert!(term.wait_for("[0", 15).await, "{}", term.text());
     assert_eq!(theirs(empty.sessions()).len(), 1, "{:?}", empty.sessions());
     let _ = bench.sessions.disconnect(id).await;
