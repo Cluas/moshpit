@@ -45,11 +45,11 @@ final class AppSettings {
 
     @ObservationIgnored private let backing: AppSettingsBacking
 
-    /// The Rust store over `defaults`, readable as `readiness` says, with no
+    /// The Rust store over `defaults`, readable as `protectedData` says (the core's readiness rule), with no
     /// notification-service mirror (tests and scratch suites; the app's is
     /// ``shared``).
-    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+    convenience init(defaults: UserDefaults = .standard, protectedData: @escaping () -> Bool = { true }) {
+        let host = RustPreferencesHost(defaults: defaults, available: protectedData)
         #if DEBUG
         let debugBuild = true
         #else

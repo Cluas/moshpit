@@ -24,7 +24,7 @@ struct SessionMemoryTests {
                 return ConnectionStore(backing: RustConnectionStore(preferences: Prefs(self), mode: .system),
                                        defaults: defaults)
             }
-            return ConnectionStore(defaults: defaults, readiness: DefaultsReadiness { [unowned self] in unlocked })
+            return ConnectionStore(defaults: defaults, protectedData: { [unowned self] in unlocked })
         }
 
         /// The key the Rust core keeps `id`'s tmux selection under.

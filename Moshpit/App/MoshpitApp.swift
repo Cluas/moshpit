@@ -259,7 +259,7 @@ struct MoshpitApp: App {
             }
             // The stores loaded in init(), which may have run before the first
             // unlock after a reboot (prewarming, a push, a Live Activity intent
-            // — see DefaultsReadiness). Read again the moment the file can be
+            // — the core's readiness rule, crates/store readiness.rs). Read again the moment the file can be
             // trusted, and again whenever the app comes forward.
             .onReceive(NotificationCenter.default.publisher(
                 for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in

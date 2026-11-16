@@ -22,8 +22,8 @@ final class RustPreferencesHost: PreferencesHost, @unchecked Sendable {
         available = { protectedData.isAvailable }
     }
 
-    /// Readable as `available` says (a ``DefaultsReadiness``'s word: tests
-    /// and scratch suites, a store simulating a sealed launch).
+    /// Readable as `available` says: tests and scratch suites, a store
+    /// simulating a sealed launch.
     init(defaults: UserDefaults, available: @escaping () -> Bool) {
         self.defaults = defaults
         self.available = available
@@ -100,7 +100,7 @@ extension ProtectedDataFlag {
     /// launch, on the main thread, where `MoshpitApp.init` asks first — so
     /// a read off the main thread later never waits on it. Made from off
     /// the main thread (a test with no app) it waits for the main queue
-    /// once, as ``DefaultsReadiness/system`` does.
+    /// once.
     static let app: ProtectedDataFlag = {
         if Thread.isMainThread {
             return MainActor.assumeIsolated { ProtectedDataFlag() }

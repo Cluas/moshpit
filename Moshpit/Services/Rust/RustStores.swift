@@ -10,7 +10,7 @@ import MoshpitKit
 // (``RustPreferencesHost`` on `UserDefaults.standard` — the same keys and
 // formats, nothing migrates, docs/nsh/DESIGN.md §3.5); the key store only
 // ever names a keychain item. Whether protected data is
-// available (the sealed-launch rule, ``DefaultsReadiness``) is the
+// available (the sealed-launch rule, crates/store readiness.rs) is the
 // preferences host's to say: a Rust store made before the first unlock
 // reads, shows, never writes, and reads again when asked to reload.
 //

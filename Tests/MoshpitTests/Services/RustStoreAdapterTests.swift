@@ -165,7 +165,7 @@ struct RustStoreAdapterTests {
         settings.reloadIfNeeded()
         #expect(connections.isAuthoritative)
         #expect(ConnectionStore(defaults: suite.defaults).connections.map(\.id) == [Self.ids[3]])
-        #expect(suite.defaults.bool(forKey: DefaultsReadiness.sentinelKey))
+        #expect(suite.defaults.bool(forKey: storeDefaultsSentinelKey()))
         #expect(mirror.defaults.object(forKey: "moshpit.push.showDetail") as? Bool == true)
     }
 
@@ -175,7 +175,7 @@ struct RustStoreAdapterTests {
         defer { suite.drop() }
         ConnectionStore(defaults: suite.defaults).add(ServerConnection(id: Self.ids[0], name: "pi", host: "pi"))
         ShortcutStore(defaults: suite.defaults).add(TerminalShortcut(id: Self.ids[1], kind: .text, payload: "x"))
-        suite.defaults.removeObject(forKey: DefaultsReadiness.sentinelKey)
+        suite.defaults.removeObject(forKey: storeDefaultsSentinelKey())
         let before = Self.canonical(suite.contents)
         let prefs = Prefs(suite.defaults, available: false)
         let connections = ConnectionStore(backing: RustConnectionStore(preferences: prefs, mode: .system))

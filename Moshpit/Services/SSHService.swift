@@ -139,7 +139,7 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
     /// or one behind Face ID asked for where no prompt can show), or any
     /// failure while protected data is unavailable, when the keychain
     /// refuses or reads empty and an untrusted read is never taken for the
-    /// truth (the sealed-launch rule, ``DefaultsReadiness``). With the
+    /// truth (the sealed-launch rule, the core's readiness). With the
     /// device unlocked, Face ID cancelled or failed is ``credentialCancelled``
     /// (B392); anything else is the item's own — gone, unreadable — and
     /// ``credentialUnavailable``.

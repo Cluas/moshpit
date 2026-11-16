@@ -2658,6 +2658,12 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_blend_hex(RustBuffer hex, RustBuffer
 int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuffer mode, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+RustBuffer uniffi_moshpit_ffi_fn_func_store_defaults_sentinel_key(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
 int8_t uniffi_moshpit_ffi_fn_func_store_hold_release(uint64_t preferences, RustBuffer mode, RustBuffer account, RustCallStatus *_Nonnull out_status
@@ -3507,6 +3513,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_blend_hex(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_READABLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_READABLE
 uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_readable(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_sentinel_key(void
     
 );
 #endif

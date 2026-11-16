@@ -31470,6 +31470,16 @@ public func storeDefaultsReadable(host: PreferencesHost, mode: ReadinessMode) ->
 })
 }
 /**
+ * The key of the sentinel the stores write after their first trusted
+ * read (tests: a sealed launch is one without it).
+ */
+public func storeDefaultsSentinelKey() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_store_defaults_sentinel_key($0
+    )
+})
+}
+/**
  * Put `account` on the list of items a connection let go of and can't drop
  * yet — its session still signs in with it (B325), or the drop couldn't
  * happen now — so it goes later, never offered back as a recovered key
@@ -31954,6 +31964,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_defaults_readable() != 56737) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_store_defaults_sentinel_key() != 35365) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_hold_release() != 60402) {

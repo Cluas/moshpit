@@ -104,9 +104,9 @@ struct KeychainItemsTests {
     private static func stores(readable: Bool = true) -> Stores {
         let suite = "test.keychainrefs.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        let readiness = DefaultsReadiness { readable }
-        return Stores(connections: ConnectionStore(defaults: defaults, readiness: readiness),
-                      keys: SSHKeyStore(defaults: defaults, readiness: readiness),
+        let readiness = { readable }
+        return Stores(connections: ConnectionStore(defaults: defaults, protectedData: readiness),
+                      keys: SSHKeyStore(defaults: defaults, protectedData: readiness),
                       defaults: defaults, suite: suite)
     }
 

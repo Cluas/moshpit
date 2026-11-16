@@ -332,6 +332,13 @@ pub fn store_mark_defaults_readable(host: Arc<dyn PreferencesHost>) {
     Readiness::Always.mark_readable(&HostDefaults(host));
 }
 
+/// The key of the sentinel the stores write after their first trusted
+/// read (tests: a sealed launch is one without it).
+#[uniffi::export]
+pub fn store_defaults_sentinel_key() -> String {
+    moshpit_store::readiness::SENTINEL_KEY.to_owned()
+}
+
 /// A fresh keychain account for a connection's password or key:
 /// `moshpit.secret.<lower-case UUID>`.
 #[uniffi::export]
