@@ -269,7 +269,7 @@ extension CoreTerminalView: UIGestureRecognizerDelegate, UIEditMenuInteractionDe
             if let p = tap.link {
                 let link = String(cString: p)
                 mp_string_free(p)
-                Log.input.info("core term: link tap")
+                Log.input.notice("core term: link tap")
                 surfaceDelegate?.surface(self, openLink: link)
             }
         default:
