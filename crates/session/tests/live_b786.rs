@@ -1,5 +1,6 @@
-//! B786: the tmux server dies under a live SSH session — `kill-server`, or
-//! `kill -9` of the server (the "abnormal" exit). What the session says and
+//! B786: the tmux server dies under a live SSH session — `kill-server`,
+//! `kill -9` of the server (the "abnormal" exit), or a crash (SIGSEGV); and
+//! B787, under a mosh session whose phone was away. What the session says and
 //! what its view still holds of the dead server: its sessions, the agent
 //! stamps Home draws as rows, the panes a tap would open.
 //!
@@ -180,6 +181,26 @@ async fn a_tmux_server_that_crashed_is_forgotten() {
     let _ = bench.sessions.disconnect(id).await;
 }
 
+/// B786 follow-up (B812's crash, Canary 148): tmux 3.6a died by SIGSEGV
+/// on the test Mac. A crash is not a kill: the server doesn't get to say
+/// goodbye, and the control client reads only the socket closing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd and tmux; see the module docs"]
+async fn a_tmux_server_that_segfaulted_is_forgotten() {
+    need_sshd!();
+    let tmux = Tmux::named("moshpit-b786d");
+    let (_sshd, mut bench, id) = attached(&tmux).await;
+    let pid = tmux.run(&["display-message", "-p", "#{pid}"]);
+    assert!(!pid.is_empty());
+    let killed = std::process::Command::new("kill")
+        .args(["-SEGV", &pid])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    forgets_the_server(&mut bench, id, 10).await;
+    let _ = bench.sessions.disconnect(id).await;
+}
+
 /// B786: the control client detached while the server keeps its sessions
 /// (`detach-client` from another terminal) is attached again — its tree,
 /// stamps and pane back — not left showing a tree it no longer gets news
@@ -228,5 +249,66 @@ async fn a_detached_control_client_attaches_again() {
         view.state,
         view.attach,
         bench.sessions.tmux_snapshot(id).map(|t| t.is_attached)
+    );
+}
+
+/// B787 (B786's follow-up; B812's crash on Canary 148): mosh + tmux, the
+/// server dies by SIGSEGV while the phone is away, so mosh-server's goodbye
+/// (its program, tmux's client, exited with the server) never reaches it,
+/// and mosh-server gives up and exits. A network that drops ICMP never
+/// says its port refuses either (B402). The session stayed connected on a
+/// transport with no server: the last frame frozen, typing going nowhere,
+/// the "isn't receiving data" banner. The sidecar knows the server has no
+/// session, so the renderer is gone: the session ends, saying tmux on the
+/// host stopped (`EndReason::TmuxGone`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
+async fn mosh_with_a_tmux_that_crashed_while_away_ends() {
+    need_sshd!();
+    let tmux = Tmux::named("moshpit-b787a");
+    let sshd = Sshd::start().await;
+    stamped(&tmux);
+    let udp = ProxiedUdp::new();
+    let mut bench = Bench::new(Bench::services(&udp, sshd.addr()), quick());
+    let mut spec = tmux_spec(sshd.port, &tmux);
+    spec.protocol = moshpit_session::Protocol::Mosh;
+    let id = bench.sessions.connect(spec);
+    bench.sessions.set_visible(Some(id));
+    bench.connected(id).await;
+    for _ in 0..40 {
+        while bench.next(0).await.is_some() {}
+        if bench
+            .sessions
+            .tmux_view(id)
+            .is_some_and(|t| t.snapshot.is_attached)
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    // The phone away: nothing passes either way when tmux crashes.
+    udp.faults.blackhole(true);
+    let pid = tmux.run(&["display-message", "-p", "#{pid}"]);
+    assert!(!pid.is_empty());
+    let killed = std::process::Command::new("kill")
+        .args(["-SEGV", &pid])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    for _ in 0..80 {
+        while bench.next(0).await.is_some() {}
+        if bench.sessions.view(id).unwrap().state
+            == SessionState::Ended(moshpit_session::EndReason::TmuxGone)
+        {
+            udp.faults.blackhole(false);
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let view = bench.sessions.view(id).unwrap();
+    panic!(
+        "still {:?} on a mosh-server that is gone, no_session {:?}",
+        view.state,
+        bench.sessions.tmux_view(id).map(|t| t.no_session)
     );
 }

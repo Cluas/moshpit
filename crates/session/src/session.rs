@@ -528,6 +528,9 @@ struct Control {
     /// The sidecar can take commands: attached, or its server answered that
     /// it has no session (the first one is made over exec, B228).
     ready: bool,
+    /// A sidecar of this leg was attached: the server had a session, and the
+    /// renderer — mosh-server's program, tmux's client — was on it (B787).
+    rendered: bool,
     /// A check that the connection still answers is out (B401).
     checking: bool,
     /// The person's commands wait for that check: it was asked for on the
@@ -2650,6 +2653,7 @@ impl Actor {
             grid,
             layouts_before_renderer,
             ready: false,
+            rendered: false,
             checking: false,
             holding: false,
             held: Vec::new(),
@@ -2805,6 +2809,16 @@ impl Actor {
                     control.failures = 0;
                 }
                 let ready = tmux.snapshot.is_attached || tmux.no_session;
+                // The server has no session after this leg's renderer had
+                // one (B787): the renderer, that server's client, is gone,
+                // and mosh-server with it — its program exited. Its goodbye
+                // ends the session; one that never reached the phone (away
+                // when tmux crashed) left it connected to no server, the
+                // last frame frozen. The sidecar's word ends it, saying why.
+                let renderer_gone = self.control.as_mut().and_then(|control| {
+                    control.rendered |= tmux.snapshot.is_attached;
+                    (control.rendered && tmux.no_session).then_some(control.generation)
+                });
                 self.update(|view| {
                     view.tmux = Some(tmux.snapshot.clone());
                     view.tmux_view = Some(*tmux);
@@ -2816,6 +2830,14 @@ impl Actor {
                     control.ready = ready;
                 }
                 self.release_control_held();
+                if let Some(generation) = renderer_gone {
+                    log::info!(
+                        "session {}: tmux has no session left for mosh's renderer; the session ends",
+                        self.id
+                    );
+                    let now = self.now();
+                    self.life.ended(generation, EndReason::TmuxGone, now);
+                }
             }
             TmuxNote::Activity(pane) => self.emit(EventKind::PaneActivity { pane }),
             TmuxNote::Bell(pane) => self.emit(EventKind::PaneBell { pane }),
@@ -6106,6 +6128,7 @@ mod tests {
             grid: (80, 24),
             layouts_before_renderer: None,
             ready: true,
+            rendered: false,
             checking: false,
             holding: false,
             held: Vec::new(),
@@ -6181,6 +6204,7 @@ mod tests {
             grid: (80, 24),
             layouts_before_renderer: None,
             ready: true,
+            rendered: false,
             checking: false,
             holding: false,
             held: Vec::new(),
@@ -6217,6 +6241,76 @@ mod tests {
         assert_eq!(told(&mut sent), Vec::<bool>::new(), "only a change");
         actor.sidecar_note(1, tree(false));
         assert_eq!(told(&mut sent), [false]);
+    }
+
+    /// B787: mosh + tmux, the sidecar's server has no session after this
+    /// leg's renderer had one: the renderer, that server's client and
+    /// mosh-server's program, is gone, and the session ends saying tmux on
+    /// the host stopped — mosh-server's goodbye that never reached the phone
+    /// left it connected to no server, the last frame frozen. A server with no
+    /// session from the start is the first session's wait (B228): nothing
+    /// ends.
+    #[tokio::test]
+    async fn mosh_tmux_ends_once_the_renderers_server_has_no_session() {
+        let (mut actor, _events) = live_actor(false);
+        actor.spec.multiplexer = Multiplexer::Tmux;
+        let (commands, _sent) = mpsc::unbounded_channel();
+        actor.leg = Some(Leg::Mosh {
+            generation: actor.life.generation(),
+            mosh: MoshLoop {
+                commands,
+                task: tokio::spawn(async {}),
+            },
+            server_pid: None,
+            first_contact: true,
+            return_path_reported: false,
+            reaped: false,
+        });
+        let (to_sidecar, _sidecar) = mpsc::unbounded_channel();
+        actor.control = Some(Control {
+            generation: actor.life.generation(),
+            epoch: 1,
+            ssh: None,
+            sidecar: Some(TmuxLeg::for_tests(to_sidecar)),
+            dialling: false,
+            failures: 0,
+            preferred: None,
+            handoff: Handoff::default(),
+            renderer_pid: None,
+            grid: (80, 24),
+            layouts_before_renderer: None,
+            ready: true,
+            rendered: false,
+            checking: false,
+            holding: false,
+            held: Vec::new(),
+            hold: 0,
+            dropped: false,
+        });
+        let tree = |is_attached: bool, no_session: bool| {
+            TmuxNote::Tree(Box::new(TmuxView {
+                snapshot: Snapshot {
+                    is_attached,
+                    ..Snapshot::default()
+                },
+                notice: None,
+                refreshing: false,
+                size_follow: None,
+                pane_follow: None,
+                agent_hooks: BTreeMap::new(),
+                agent_hooks_loaded: false,
+                input: Default::default(),
+                no_session,
+            }))
+        };
+        // No session from the start: the renderer waits for the first.
+        actor.sidecar_note(1, tree(false, true));
+        assert_eq!(actor.life.state(), SessionState::Connected);
+        // Made, attached, then gone with its server.
+        actor.sidecar_note(1, tree(true, false));
+        assert_eq!(actor.life.state(), SessionState::Connected);
+        actor.sidecar_note(1, tree(false, true));
+        assert_eq!(actor.life.state(), SessionState::Ended(EndReason::TmuxGone));
     }
 
     /// B524: a reply for a pane asked for in the background, on a live SSH
@@ -6845,6 +6939,7 @@ mod tests {
             grid: (80, 24),
             layouts_before_renderer: None,
             ready: true,
+            rendered: false,
             checking: false,
             holding: false,
             held: Vec::new(),
@@ -6992,6 +7087,7 @@ mod tests {
                 grid: (80, 24),
                 layouts_before_renderer: None,
                 ready: true,
+                rendered: false,
                 checking: false,
                 holding: false,
                 held: Vec::new(),

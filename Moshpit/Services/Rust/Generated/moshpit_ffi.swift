@@ -18345,6 +18345,10 @@ public enum EndValue: Equatable, Hashable {
     case shellExited(status: UInt32?
     )
     case moshServerEnded
+    /**
+     * mosh + tmux: tmux on the host went away under mosh's screen (B787).
+     */
+    case tmuxGone
     case disconnected
 
 
@@ -18372,7 +18376,9 @@ public struct FfiConverterTypeEndValue: FfiConverterRustBuffer {
         
         case 2: return .moshServerEnded
         
-        case 3: return .disconnected
+        case 3: return .tmuxGone
+        
+        case 4: return .disconnected
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -18391,8 +18397,12 @@ public struct FfiConverterTypeEndValue: FfiConverterRustBuffer {
             writeInt(&buf, Int32(2))
         
         
-        case .disconnected:
+        case .tmuxGone:
             writeInt(&buf, Int32(3))
+        
+        
+        case .disconnected:
+            writeInt(&buf, Int32(4))
         
         }
     }

@@ -232,6 +232,7 @@
   "Connecting…": "연결 중…",
   "Creating…": "생성 중…",
   "The session ended: the remote shell exited or mosh-server was stopped.": "세션이 종료되었습니다. 원격 셸이 종료되었거나 mosh-server가 중지되었습니다.",
+  "Session ended: tmux on the host stopped.": "세션이 종료되었습니다. 호스트의 tmux가 멈췄습니다.",
   "The session ended: the remote shell exited.": "원격 셸이 종료되어 세션이 끝났습니다.",
   "Windows": "창",
   "Sessions": "세션",

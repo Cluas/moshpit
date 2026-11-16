@@ -232,6 +232,7 @@
   "Connecting…": "正在連線…",
   "Creating…": "建立中…",
   "The session ended: the remote shell exited or mosh-server was stopped.": "工作階段已經結束：遠端主機上的 shell 結束了，或是 mosh-server 被停止了。",
+  "Session ended: tmux on the host stopped.": "工作階段已經結束：主機上的 tmux 停止了。",
   "The session ended: the remote shell exited.": "工作階段已經結束：遠端主機上的 shell 結束了。",
   "Windows": "視窗",
   "Sessions": "工作階段",

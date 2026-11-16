@@ -45,6 +45,11 @@ pub enum EndReason {
     ShellExited { status: Option<u32> },
     /// mosh-server ended the session: its shell exited, or it was stopped.
     MoshServerEnded,
+    /// mosh + tmux: tmux on the host went away under mosh's screen, tmux's
+    /// own client — its server died, or its last session closed — and the
+    /// sidecar said so (B787). mosh-server's own goodbye, when it reaches
+    /// the phone first, is [`EndReason::MoshServerEnded`].
+    TmuxGone,
     /// The person disconnected.
     Disconnected,
 }

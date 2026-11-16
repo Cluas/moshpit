@@ -418,17 +418,11 @@ final class RustSessionDriver: RustSessionListener {
             settle()
         case .ended(let reason):
             endFirstFrameWait()
-            switch reason {
-            case .disconnected:
+            if let message = RustCopy.ended(reason) {
+                viewModel.adoptRustStatus(.ended(message), automatic: false, error: message)
+                session.endedSink?()
+            } else {
                 viewModel.adoptRustStatus(.disconnected, automatic: false)
-            case .shellExited:
-                let message = String(localized: "The session ended: the remote shell exited.")
-                viewModel.adoptRustStatus(.ended(message), automatic: false, error: message)
-                session.endedSink?()
-            case .moshServerEnded:
-                let message = String(localized: "The session ended: the remote shell exited or mosh-server was stopped.")
-                viewModel.adoptRustStatus(.ended(message), automatic: false, error: message)
-                session.endedSink?()
             }
             settle()
         case .failed(let kind, let cause, let log, let retryable):

@@ -549,6 +549,10 @@ add("Creating…", "创建中…", "作成中…")
 add("The session ended: the remote shell exited or mosh-server was stopped.",
     "会话已经结束：远程主机上的 shell 退出了，或者 mosh-server 被停掉了。",
     "セッションは終了しました。リモートのシェルが終了したか、mosh-server が停止されました。")
+# mosh + tmux: tmux on the host went away under mosh's screen (B787)
+add("Session ended: tmux on the host stopped.",
+    "会话已结束：主机上的 tmux 已经退出。",
+    "セッションは終了しました。ホストの tmux が止まりました。")
 add("The session ended: the remote shell exited.",
     "会话已经结束：远程主机上的 shell 退出了。",
     "リモートのシェルが終了したため、セッションは終了しました。")

@@ -40709,6 +40709,58 @@
         }
       }
     },
+    "Session ended: tmux on the host stopped.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Sitzung ist beendet: tmux auf dem Host wurde beendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sesión terminó: tmux se detuvo en el servidor."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La session est terminée : tmux s’est arrêté sur l’hôte."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションは終了しました。ホストの tmux が止まりました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 종료되었습니다. 호스트의 tmux가 멈췄습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sessão terminou: o tmux parou no host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话已结束：主机上的 tmux 已经退出。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作階段已經結束：主機上的 tmux 停止了。"
+          }
+        }
+      }
+    },
     "Sessions": {
       "localizations": {
         "de": {
