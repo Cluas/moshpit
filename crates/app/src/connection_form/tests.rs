@@ -1309,3 +1309,87 @@ fn f1_what_the_form_offers_to_go_through() {
     assert!(via_users(&saved, Some(nas.id)).is_empty());
     assert!(via_users(&saved, None).is_empty());
 }
+
+// MARK: - A jump host made from the form that needs it, and kept off Home
+
+/// "New connection…" under Connect via asks the host for a second form;
+/// "Edit …" asks for the one picked. Neither touches the draft.
+#[test]
+fn the_picker_asks_the_host_for_a_second_form() {
+    let mut draft = Draft::new(true);
+    draft.fields.name = "hpc".into();
+    let before = draft.clone();
+    assert_eq!(
+        draft.handle(&serde_json::json!({"ev": "new-jump"})),
+        Some(Intent::NewJumpHost)
+    );
+    assert_eq!(
+        draft.handle(&serde_json::json!({"ev": "edit-jump", "id": "B1"})),
+        Some(Intent::EditJumpHost("B1".into()))
+    );
+    assert_eq!(draft, before, "the outer draft is exactly as it was");
+}
+
+/// The New Jump Host form starts as jump host only, nested (no JUMP HOST
+/// section of its own); an ordinary new connection and a connection saved
+/// before the flag are off. The flag is saved and read back.
+#[test]
+fn the_new_jump_host_draft_is_jump_only_and_nested() {
+    let jump = Draft::new_jump_host(true);
+    assert!(jump.fields.jump_only && jump.fields.nested);
+    assert!(!jump.fields.editing);
+    let plain = Draft::new(true);
+    assert!(!plain.fields.jump_only && !plain.fields.nested);
+    assert!(!Draft::of(&blank()).fields.jump_only);
+
+    let saved = jump.applied(&blank(), (60000, 61000));
+    assert!(saved.jump_host_only);
+    let reopened = Draft::of_jump_host(&saved);
+    assert!(reopened.fields.jump_only && reopened.fields.nested && reopened.fields.editing);
+    let mut off = reopened;
+    off.fields.jump_only = false;
+    assert!(!off.applied(&saved, (60000, 61000)).jump_host_only);
+}
+
+/// What the new jump host saved is picked in the outer draft, which keeps
+/// everything else it held; mosh goes off as picking any jump host does.
+#[test]
+fn the_saved_jump_host_is_picked_and_the_rest_of_the_draft_kept() {
+    let mut outer = Draft::new(true);
+    outer.fields.name = "hpc".into();
+    outer.fields.host = "node01.example.com".into();
+    outer.fields.username = "dev".into();
+    let mut expected = outer.clone();
+    let id = Uuid::new_v4();
+    outer.go_through(id);
+    assert_eq!(outer.fields.via, id.to_string());
+    assert!(!outer.fields.mosh);
+    expected.fields.via = id.to_string();
+    expected.fields.mosh = false;
+    assert_eq!(outer, expected);
+}
+
+/// A jump-host-only connection is still offered by every picker, and the
+/// nested form posts its flags.
+#[test]
+fn a_jump_host_only_connection_is_in_the_picker() {
+    let mut bastion = studio();
+    bastion.name = "bastion".to_owned();
+    bastion.jump_host_only = true;
+    let mut nas = blank();
+    nas.name = "nas".to_owned();
+    let saved = vec![bastion.clone(), nas];
+    let names: Vec<String> = via_choices(&saved, None).into_iter().map(|c| c.name).collect();
+    assert_eq!(names, ["bastion", "nas"]);
+    assert_eq!(
+        moshpit_store::connections::listed_on_home(&saved)
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        ["nas"]
+    );
+    let message = Draft::new_jump_host(false).message(&[], (60000, 61000));
+    let v: serde_json::Value = serde_json::from_str(&message).unwrap();
+    assert_eq!(v["jumpOnly"], true);
+    assert_eq!(v["nested"], true);
+}

@@ -42,7 +42,13 @@
 //! connection to reach this host through (`ssh -J`): with one picked,
 //! mosh is off and says why (its UDP can't take the way) and PROXY goes
 //! (the jump host's own proxy applies to its leg). A connection others go
-//! through can't pick one (one hop): its row is off and names them. The identifiers UI tests know stay (`save-connection`,
+//! through can't pick one (one hop): its row is off and names them. The
+//! picker's last option, "New connection…", asks the host for a second
+//! form on top (`{"ev": "new-jump"}`; [`FormState::nested`]: no JUMP HOST
+//! section, no Delete, "Jump host only" on) that the host answers by
+//! picking what it saved; with one picked, "Edit …" asks for the same form
+//! on it (`{"ev": "edit-jump", "id": …}`). "Jump host only" keeps a
+//! connection off Home and in the pickers. The identifiers UI tests know stay (`save-connection`,
 //! `toggle-use-mosh`, `key-picker-row`, `private-key-editor`,
 //! `multiplexer-picker`, `connection-form-password`); a field is
 //! `connection-form-<name>`, its control `-input`, its label `-label`, its
@@ -187,7 +193,24 @@ pub struct FormState {
     /// host goes straight to its own host, so this one can't pick one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub via_users: Vec<String>,
+    /// Made only to be gone through: Home doesn't list it, the "Connect
+    /// via" pickers do.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub jump_only: bool,
+    /// This form is the "New Jump Host" one, opened on top of another
+    /// form: it has no JUMP HOST section (one hop is the limit) and no
+    /// Delete.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub nested: bool,
 }
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// The picker's last option: a jump host made on the spot. Picking it tells
+/// the host (`{"ev": "new-jump"}`) and changes nothing in the draft.
+pub const NEW_VIA: &str = "+new";
 
 /// The secret a connection names that this device doesn't hold (B782): a
 /// phone restored from a backup, or set up from another, has every
@@ -630,6 +653,8 @@ pub enum Field {
     Emoji(String),
     /// The connection to go through (its id; empty: none).
     Via(String),
+    /// Made only to be gone through.
+    JumpOnly(bool),
 }
 
 impl Field {
@@ -652,6 +677,7 @@ impl Field {
             Field::HerdrPath(v) => ("herdrPath", json!(v)),
             Field::Emoji(v) => ("emoji", json!(v)),
             Field::Via(v) => ("via", json!(v)),
+            Field::JumpOnly(v) => ("jumpOnly", json!(v)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -675,6 +701,7 @@ impl Field {
             Field::HerdrPath(v) => s.herdr_path = v,
             Field::Emoji(v) => s.emoji = v,
             Field::Via(v) => go_through(s, v),
+            Field::JumpOnly(v) => s.jump_only = v,
         }
     }
 }
@@ -1046,11 +1073,12 @@ fn sections(bar: BarMetrics, scrolled: nav_bar::ScrollEdge, draft: Draft) -> Scr
         duplicate_banner(&draft),
         sign_in(&draft),
         jump_host(&draft),
+        jump_only(&draft),
         mosh(&draft),
         proxy(&draft),
         advanced(&draft),
     ];
-    if editing {
+    if editing && !draft.read(|s| s.nested) {
         sections.push(delete(&draft));
     }
     page::page(bar, scrolled, "connection-form-list", sections)
@@ -1421,22 +1449,38 @@ fn expanding(
 // --- JUMP HOST ---------------------------------------------------------------------
 
 /// The connection to go through (F1): straight to the host, or another
-/// saved connection reached directly. Shown once there is one to pick,
-/// one picked, or connections that go through this one (then it is off
-/// and names them: a jump host goes straight to its own host).
+/// saved connection reached directly, or a new one made on the spot. Not
+/// in the form that makes one (one hop); with connections that go through
+/// this one it is off and names them: a jump host goes straight to its own
+/// host.
 fn jump_host(draft: &Draft) -> AnyElement {
     let state = draft.state;
     let shown = computed(move || {
-        state.with(|s| {
-            s.as_ref().is_some_and(|s| {
-                !s.via_choices.is_empty() || goes_through(s) || !s.via_users.is_empty()
-            })
-        })
+        state.with(|s| s.as_ref().is_some_and(|s| !s.nested))
     });
     let draft = draft.clone();
     view()
         .w_full()
-        .child(when(move || shown.get(), move || jump_host_section(&draft)))
+        .child(when(move || shown.get(), move || {
+            // The choices change under the form (a jump host just made):
+            // the section is made again from them.
+            let state = draft.state;
+            let key = move || {
+                state.with(|s| {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    if let Some(s) = s {
+                        (&s.via, &s.via_users).hash(&mut h);
+                        for c in &s.via_choices {
+                            (&c.id, &c.name, &c.detail).hash(&mut h);
+                        }
+                    }
+                    h.finish()
+                })
+            };
+            let draft = draft.clone();
+            remount(key, move || jump_host_section(&draft))
+        }))
         .into_element()
 }
 
@@ -1476,10 +1520,18 @@ fn jump_host_section(draft: &Draft) -> AnyElement {
     // Saved through one no longer there (deleted, or not one hop any
     // more): said as such until another is picked; never a direct dial.
     if !via.is_empty() && !choices.iter().any(|c| c.id == via) {
-        options.push(option(via, t!("Deleted connection")));
+        options.push(option(via.clone(), t!("Deleted connection")));
     }
+    options.push(option(NEW_VIA, t!("New connection…")));
     let pick = draft.setter(Field::Via);
-    section
+    let tell = draft.tell.clone();
+    let edit = choices.iter().find(|c| c.id == via).map(|c| {
+        let (id, tell) = (c.id.clone(), draft.tell.clone());
+        row(t!("Edit “%@”", arg1 = c.name.as_str()))
+            .on_press(move || tell(json!({"ev": "edit-jump", "id": id})))
+            .test_id("connection-form-edit-jump")
+    });
+    let section = section
         .item(
             select(
                 t!("Connect via"),
@@ -1487,14 +1539,51 @@ fn jump_host_section(draft: &Draft) -> AnyElement {
                 move || {
                     state.with(|s| s.as_ref().map(|s| s.via.clone()).unwrap_or_default().into())
                 },
-                move |id| pick(id.to_string()),
+                move |id| {
+                    if id.as_ref() == NEW_VIA {
+                        tell(json!({"ev": "new-jump"}));
+                    } else {
+                        pick(id.to_string());
+                    }
+                },
             )
             .test_id("connection-form-via"),
             Inset::Content,
-        )
+        );
+    let section = match edit {
+        Some(edit) => section.row(edit),
+        None => section,
+    };
+    section
         .footer(t!(
             "Signs in to it first with its own key or password, then reaches this host from there."
         ))
+        .into_element()
+}
+
+/// "Jump host only": off Home, in the "Connect via" pickers. Not for a
+/// connection that goes through another (it can't be gone through).
+fn jump_only(draft: &Draft) -> AnyElement {
+    let state = draft.state;
+    let on = computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.jump_only)));
+    let shown = computed(move || state.with(|s| s.as_ref().is_some_and(|s| !goes_through(s))));
+    let set = Rc::new(draft.setter(Field::JumpOnly));
+    view()
+        .w_full()
+        .child(when(move || shown.get(), move || {
+            let set = set.clone();
+            section()
+                .row(
+                    row(t!("Jump host only")).trailing(
+                        switch(move || on.get(), move |v| set(v))
+                            .label(t!("Jump host only"))
+                            .test_id("toggle-jump-only"),
+                    ),
+                )
+                .footer(t!("Not listed on Home; pick it under Connect via."))
+                .test_id("connection-form-jump-only")
+                .into_element()
+        }))
         .into_element()
 }
 

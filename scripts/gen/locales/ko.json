@@ -1095,5 +1095,11 @@
   "The jump host “%@” couldn't reach %@ on port %@.": "점프 호스트 ‘%@’가 %@의 %@번 포트에 연결하지 못했습니다.",
   "The connection this one goes through was deleted. Pick another in Edit.": "경유하던 연결이 삭제되었습니다. 편집에서 다른 연결을 고르세요.",
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "경유하는 연결이 또 다른 연결을 경유합니다. 편집에서 직접 연결하는 것을 고르세요.",
-  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "이 연결은 다른 연결을 경유하지만 어느 것인지 알 수 없습니다. 편집에서 다시 고르세요."
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "이 연결은 다른 연결을 경유하지만 어느 것인지 알 수 없습니다. 편집에서 다시 고르세요.",
+  "New connection…": "새 연결…",
+  "Edit “%@”": "“%@” 편집",
+  "Jump host only": "점프 호스트 전용",
+  "Not listed on Home; pick it under Connect via.": "홈에는 표시되지 않습니다. ‘경유’에서 고르세요.",
+  "New Jump Host": "새 점프 호스트",
+  "Edit Jump Host": "점프 호스트 편집"
 }

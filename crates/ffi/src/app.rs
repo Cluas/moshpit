@@ -87,6 +87,13 @@ pub struct ConnectionDraft {
     /// straight to its host.
     #[uniffi(default = "")]
     pub via: String,
+    /// Made only to be gone through: off Home, in the Connect via pickers.
+    #[uniffi(default = false)]
+    pub jump_only: bool,
+    /// The form opened on top of another (New Jump Host): no JUMP HOST
+    /// section, no Delete.
+    #[uniffi(default = false)]
+    pub nested: bool,
     pub stored: StoredCredential,
     /// The connection's own secret this device doesn't hold (B782,
     /// [`connection_draft_secret_missing`]).
@@ -111,11 +118,17 @@ pub struct SecretsGiven {
 }
 
 /// What the screen asked of the host beyond an edit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum ConnectionFormIntent {
     PickKey,
     Save,
     Cancel,
+    /// "New connection…" under Connect via: open the New Jump Host form on
+    /// top ([`connection_draft_new_jump_host`]).
+    NewJumpHost,
+    /// "Edit …" under Connect via: open saved connection `id` on top
+    /// ([`connection_draft_of_jump_host`]).
+    EditJumpHost { id: String },
     /// Delete the connection edited, once the person confirms.
     Delete,
 }
@@ -220,6 +233,8 @@ impl From<&Draft> for ConnectionDraft {
             socks_proxy_port: f.socks_port.clone(),
             emoji: f.emoji.clone(),
             via: f.via.clone(),
+            jump_only: f.jump_only,
+            nested: f.nested,
             stored: match d.stored {
                 Stored::None => StoredCredential::None,
                 Stored::Password => StoredCredential::Password,
@@ -271,6 +286,8 @@ fn draft(d: &ConnectionDraft, given: SecretsGiven) -> Draft {
         },
     });
     f.via = d.via.clone();
+    f.jump_only = d.jump_only;
+    f.nested = d.nested;
     draft.key = d.selected_key.as_deref().and_then(Uuid::parse);
     draft.stored = match &d.stored {
         StoredCredential::None => Stored::None,
@@ -305,6 +322,39 @@ fn connection(record: ConnectionRecord) -> Result<ServerConnection, StoreError> 
 #[uniffi::export]
 pub fn connection_draft_new(mosh_by_default: bool) -> ConnectionDraft {
     (&Draft::new(mosh_by_default)).into()
+}
+
+/// The New Jump Host form's draft, opened on top of another form: a new
+/// connection that is jump host only, with no JUMP HOST section.
+#[uniffi::export]
+pub fn connection_draft_new_jump_host(mosh_by_default: bool) -> ConnectionDraft {
+    (&Draft::new_jump_host(mosh_by_default)).into()
+}
+
+/// The draft of saved connection `connection` opened on top of another
+/// form (Edit under Connect via).
+#[uniffi::export]
+pub fn connection_draft_of_jump_host(
+    connection: ConnectionRecord,
+) -> Result<ConnectionDraft, StoreError> {
+    Ok((&Draft::of_jump_host(&self::connection(connection)?)).into())
+}
+
+/// `draft` going through the saved connection `id` (the jump host just
+/// made); an id that is not a UUID changes nothing.
+#[uniffi::export]
+pub fn connection_draft_go_through(draft: ConnectionDraft, id: String) -> ConnectionDraft {
+    let mut model = self::draft(
+        &draft,
+        SecretsGiven {
+            password: false,
+            key: false,
+        },
+    );
+    if let Some(id) = Uuid::parse(&id) {
+        model.go_through(id);
+    }
+    (&model).into()
 }
 
 /// The draft of saved connection `connection`, as the editor opens it.
@@ -352,6 +402,8 @@ pub fn connection_draft_handle(
         Intent::Save => ConnectionFormIntent::Save,
         Intent::Cancel => ConnectionFormIntent::Cancel,
         Intent::Delete => ConnectionFormIntent::Delete,
+        Intent::NewJumpHost => ConnectionFormIntent::NewJumpHost,
+        Intent::EditJumpHost(id) => ConnectionFormIntent::EditJumpHost { id },
     });
     ConnectionFormHandled {
         draft: (&model).into(),

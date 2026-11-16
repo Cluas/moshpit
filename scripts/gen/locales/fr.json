@@ -1095,5 +1095,11 @@
   "The jump host “%@” couldn't reach %@ on port %@.": "L’hôte de rebond « %@ » n’a pas pu joindre %@ sur le port %@.",
   "The connection this one goes through was deleted. Pick another in Edit.": "La connexion par laquelle passe celle-ci a été supprimée. Choisis-en une autre dans Modifier.",
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "La connexion par laquelle passe celle-ci passe elle-même par une autre. Choisis dans Modifier une connexion directe.",
-  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Cette connexion passe par une autre, mais impossible de savoir laquelle. Choisis-la à nouveau dans Modifier."
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Cette connexion passe par une autre, mais impossible de savoir laquelle. Choisis-la à nouveau dans Modifier.",
+  "New connection…": "Nouvelle connexion…",
+  "Edit “%@”": "Modifier « %@ »",
+  "Jump host only": "Hôte de rebond uniquement",
+  "Not listed on Home; pick it under Connect via.": "N’apparaît pas dans l’accueil ; choisissez-la sous « Se connecter via ».",
+  "New Jump Host": "Nouvel hôte de rebond",
+  "Edit Jump Host": "Modifier l’hôte de rebond"
 }

@@ -153,6 +153,10 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// `ssh -J`; F1), picked in the NSH form. Optional: `nil` goes straight
     /// to the host. The legacy `jumpHost` string is another key, unread.
     var viaConnectionId: UUID?
+    /// Made only to be gone through: Home doesn't list it, and every
+    /// "Connect via" picker does. Optional so connections saved before it
+    /// existed keep decoding: `nil` is off.
+    var jumpHostOnly: Bool?
 
     /// Whether a connect to this goes to another box than one to `before`:
     /// another host (case aside, as DNS compares names), port or SSH port

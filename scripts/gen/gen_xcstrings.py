@@ -158,6 +158,13 @@ add("Predict Mode", "预测模式", "予測モード")
 add("ADVANCED", "高级", "詳細設定")
 add("Add Connection", "添加连接", "接続を追加")
 add("Edit Connection", "编辑连接", "接続を編集")
+# Jump host made from the form that needs it, and kept off Home.
+add("New connection…", "新建连接…", "新しい接続…")
+add("Edit “%@”", "编辑“%@”", "「%@」を編集")
+add("Jump host only", "仅作跳板主机", "踏み台専用")
+add("Not listed on Home; pick it under Connect via.", "不在首页显示，在“经由”里选它。", "ホームには表示されません。「経由」で選びます。")
+add("New Jump Host", "新建跳板主机", "踏み台を追加")
+add("Edit Jump Host", "编辑跳板主机", "踏み台を編集")
 add("Could not save", "无法保存", "保存できませんでした")
 # Saving a connection whose sign-in method changed with no new secret: its
 # own item holds the old method's (ConnectionCredential.Refusal).

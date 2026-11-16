@@ -1095,5 +1095,11 @@
   "The jump host “%@” couldn't reach %@ on port %@.": "跳板主機「%@」連不上 %@ 的 %@ 連接埠。",
   "The connection this one goes through was deleted. Pick another in Edit.": "經由的連線已被刪除，請在編輯裡重新選擇。",
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "經由的連線自己也經由別的連線。請在編輯裡換一條直接連線的。",
-  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "這條連線要經由別的連線，但沒能確定是哪一條。請在編輯裡重新選擇。"
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "這條連線要經由別的連線，但沒能確定是哪一條。請在編輯裡重新選擇。",
+  "New connection…": "新增連線…",
+  "Edit “%@”": "編輯「%@」",
+  "Jump host only": "僅作跳板主機",
+  "Not listed on Home; pick it under Connect via.": "不會顯示在首頁，在「經由」裡選它。",
+  "New Jump Host": "新增跳板主機",
+  "Edit Jump Host": "編輯跳板主機"
 }

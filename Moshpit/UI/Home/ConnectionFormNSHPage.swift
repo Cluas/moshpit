@@ -26,7 +26,19 @@ struct ConnectionFormNSHPage: View {
     /// Drops a keychain item the saved connection left (B325), as Home
     /// decides (not while its session runs).
     var releaseSecret: (UUID, String) async -> Void = { _, _ in }
+    /// This is the form opened on top of another, from its Connect via:
+    /// New Jump Host (or Edit on the one picked). No JUMP HOST section, no
+    /// Delete; what it saved is told to `onSaved`.
+    var nested = false
+    var onSaved: ((UUID) -> Void)?
 
+    /// A second form on top of this one.
+    private struct JumpSheet: Identifiable {
+        let id = UUID()
+        let editing: ServerConnection?
+    }
+
+    @State private var jumpSheet: JumpSheet?
     @State private var model: ConnectionFormModel
     @State private var failed = false
     @State private var showKeyPicker = false
@@ -39,8 +51,12 @@ struct ConnectionFormNSHPage: View {
     /// and takes the keyboard, and Save waits for a new one.
     init(store: ConnectionStore, keychain: KeychainService, existing: ServerConnection? = nil,
          secretMissing: Bool = false,
+         nested: Bool = false,
+         onSaved: ((UUID) -> Void)? = nil,
          onDelete: ((ServerConnection) -> Void)? = nil,
          releaseSecret: @escaping (UUID, String) async -> Void = { _, _ in }) {
+        self.nested = nested
+        self.onSaved = onSaved
         self.store = store
         self.keychain = keychain
         self.existing = existing
@@ -48,8 +64,14 @@ struct ConnectionFormNSHPage: View {
         self.releaseSecret = releaseSecret
         // A new connection starts from the settings (B256): the app's one
         // settings object, the environment's too — an init can't read that.
-        let draft = existing.map { ConnectionDraft($0, secretMissing: secretMissing) }
-            ?? ConnectionDraft(newWith: .shared)
+        let draft: ConnectionDraft
+        if nested {
+            draft = existing.map { ConnectionDraft(jumpHost: $0) }
+                ?? ConnectionDraft(newJumpHostWith: .shared)
+        } else {
+            draft = existing.map { ConnectionDraft($0, secretMissing: secretMissing) }
+                ?? ConnectionDraft(newWith: .shared)
+        }
         _model = State(initialValue: ConnectionFormModel(
             draft: draft, saved: store.connections, editing: existing?.id))
         _selectedKeyId = State(initialValue: draft.selectedKeyId)
@@ -59,6 +81,15 @@ struct ConnectionFormNSHPage: View {
     /// private half lives on the token).
     private var connectableKeys: [SSHKeyRecord] {
         keyStore.keys.filter { $0.algorithm != .ecdsaSK }
+    }
+
+    private var title: LocalizedStringKey {
+        switch (nested, existing == nil) {
+        case (true, true): "New Jump Host"
+        case (true, false): "Edit Jump Host"
+        case (false, true): "Add Connection"
+        case (false, false): "Edit Connection"
+        }
     }
 
     var body: some View {
@@ -78,9 +109,21 @@ struct ConnectionFormNSHPage: View {
                     onMessage: handle,
                     onFailure: { failed = true })
                     .nshPage()
-                    .navigationTitle(existing == nil ? "Add Connection" : "Edit Connection")
+                    .navigationTitle(title)
                     .appSheet(isPresented: $showKeyPicker) {
                         KeyPickerNSHPage(keys: connectableKeys, selectedKeyId: $selectedKeyId)
+                    }
+                    .appSheet(item: $jumpSheet) { sheet in
+                        ConnectionFormNSHPage(
+                            store: store, keychain: keychain, existing: sheet.editing, nested: true,
+                            onSaved: { id in
+                                model.goThrough(id, saved: store.connections, settings: settings,
+                                                keys: keyStore.keys)
+                            },
+                            releaseSecret: releaseSecret)
+                    }
+                    .onChange(of: store.connections) { _, saved in
+                        model.savedChanged(saved, settings: settings, keys: keyStore.keys)
                     }
                     .onChange(of: selectedKeyId) { _, id in
                         model.pickKey(id, settings: settings, keys: keyStore.keys)
@@ -112,6 +155,12 @@ struct ConnectionFormNSHPage: View {
             showKeyPicker = true
         case .cancel?:
             dismiss()
+        case .newJumpHost?:
+            jumpSheet = JumpSheet(editing: nil)
+        case .editJumpHost(let id)?:
+            if let jump = UUID(uuidString: id).flatMap({ store.saved($0) }) {
+                jumpSheet = JumpSheet(editing: jump)
+            }
         case .delete?:
             if existing != nil, onDelete != nil { confirmingDelete = true }
         case .save?:
@@ -121,10 +170,11 @@ struct ConnectionFormNSHPage: View {
                 defer { saving = false }
                 do {
                     let id = existing?.id
-                    try await model.draft.save(existing: existing, store: store, keychain: keychain,
+                    let savedId = try await model.draft.save(existing: existing, store: store, keychain: keychain,
                                                settings: settings, keys: keyStore.keys,
                                                secrets: model.secrets,
                                                release: { ref in if let id { await releaseSecret(id, ref) } })
+                    onSaved?(savedId)
                     dismiss()
                 } catch {
                     // The form keeps what it holds and says why under its
@@ -157,7 +207,7 @@ final class ConnectionFormModel {
 
     /// The saved connections and the one edited: for the warning of a
     /// duplicate (B532).
-    private let saved: [ServerConnection]
+    private var saved: [ServerConnection]
     private let editing: UUID?
 
     init(draft: ConnectionDraft, saved: [ServerConnection] = [], editing: UUID? = nil) {
@@ -193,6 +243,22 @@ final class ConnectionFormModel {
     /// The pasted private key, as its editor holds it now.
     func pemChanged(_ text: String) {
         secrets.privateKeyPEM = text
+    }
+
+    /// The saved connections changed under the form (a jump host just made
+    /// on top of it): the picker offers them.
+    func savedChanged(_ saved: [ServerConnection], settings: AppSettings, keys: [SSHKeyRecord]) {
+        guard saved != self.saved else { return }
+        self.saved = saved
+        post(settings: settings, keys: keys)
+    }
+
+    /// The jump host `id` was just saved on top of the form: the draft goes
+    /// through it, and nothing else in the draft changes.
+    func goThrough(_ id: UUID, saved: [ServerConnection], settings: AppSettings, keys: [SSHKeyRecord]) {
+        self.saved = saved
+        draft = connectionDraftGoThrough(draft: draft, id: id.uuidString)
+        post(settings: settings, keys: keys)
     }
 
     /// `surface` shows the form from now on, starting from the draft.

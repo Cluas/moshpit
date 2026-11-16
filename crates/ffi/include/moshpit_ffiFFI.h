@@ -2260,6 +2260,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_applied(RustBuffer draft,
 int8_t uniffi_moshpit_ffi_fn_func_connection_draft_can_save(RustBuffer draft, RustBuffer given, RustBuffer keys, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_GO_THROUGH
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_GO_THROUGH
+RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_go_through(RustBuffer draft, RustBuffer id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_HANDLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_HANDLE
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_handle(RustBuffer draft, RustBuffer message_json, RustCallStatus *_Nonnull out_status
@@ -2270,9 +2275,19 @@ RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_handle(RustBuffer draft, 
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_new(int8_t mosh_by_default, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_NEW_JUMP_HOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_NEW_JUMP_HOST
+RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_new_jump_host(int8_t mosh_by_default, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_OF
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_OF
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_of(RustBuffer connection, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_OF_JUMP_HOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_OF_JUMP_HOST
+RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_of_jump_host(RustBuffer connection, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_PICK_KEY
@@ -3056,6 +3071,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_can_save(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_GO_THROUGH
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_GO_THROUGH
+uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_go_through(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_HANDLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_HANDLE
 uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_handle(void
@@ -3068,9 +3089,21 @@ uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_new(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_NEW_JUMP_HOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_NEW_JUMP_HOST
+uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_new_jump_host(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_OF
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_OF
 uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_of(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_OF_JUMP_HOST
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_OF_JUMP_HOST
+uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_of_jump_host(void
     
 );
 #endif

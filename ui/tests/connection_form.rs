@@ -1654,6 +1654,7 @@ fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
         Some(json!([
             {"id": "", "title": "Direct", "checked": true},
             {"id": "B1", "title": "bastion", "detail": "dev@bastion.example.com"},
+            {"id": "+new", "title": "New connection…"},
         ]))
     );
     let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
@@ -1690,14 +1691,122 @@ fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
     channel.close();
 }
 
-/// No other saved connection: nothing to go through, no JUMP HOST.
+/// No other saved connection: JUMP HOST still offers Direct and, last, a
+/// new one to make on the spot.
 #[test]
-fn f1_without_another_connection_there_is_no_jump_host() {
-    let (mut app, channel, _natives) = start_tall(Params::default());
+fn f1_without_another_connection_the_picker_offers_a_new_one() {
+    let (mut app, channel, natives) = start_tall(Params::default());
     show(&mut app, &channel, draft());
-    find(&mut app, "id:connection-form-name");
-    assert!(!app.screen().shows("JUMP HOST"));
-    assert!(!app.screen().matches("id:connection-form-via").unwrap());
+    find(&mut app, "text:JUMP HOST");
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    assert_eq!(
+        natives.prop(menu, "items"),
+        Some(json!([
+            {"id": "", "title": "Direct", "checked": true},
+            {"id": "+new", "title": "New connection…"},
+        ]))
+    );
+    channel.close();
+}
+
+/// "New connection…" asks the host for the second form and changes nothing
+/// in this one: the picker still says Direct, and what was typed stays.
+#[test]
+fn choosing_new_connection_opens_the_nested_form_and_keeps_the_draft() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = draft();
+    state.name = "hpc".into();
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    find(&mut app, "text:Connect via");
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(
+        items.as_array().unwrap().last(),
+        Some(&json!({"id": "+new", "title": "New connection…"}))
+    );
+    emit(&mut app, menu, "select", json!("+new"));
+    assert_eq!(next(&heard), json!({"ev": "new-jump"}));
+    quiet(&heard);
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(
+        items.as_array().unwrap().first(),
+        Some(&json!({"id": "", "title": "Direct", "checked": true})),
+        "cancelling the second form leaves the picker as it was"
+    );
+    channel.close();
+}
+
+/// The host answers a saved jump host by posting the draft going through
+/// it: the picker shows it chosen, with Edit under it.
+#[test]
+fn a_saved_jump_host_comes_back_selected_with_edit_under_it() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = draft();
+    state.name = "hpc".into();
+    show(&mut app, &channel, state.clone());
+    find(&mut app, "text:Connect via");
+    state.via_choices = vec![bastion()];
+    state.via = "B1".into();
+    show(&mut app, &channel, state);
+    find(&mut app, "text:Edit “bastion”");
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(
+        items.as_array().unwrap()[1],
+        json!({"id": "B1", "title": "bastion", "detail": "dev@bastion.example.com", "checked": true})
+    );
+    find(&mut app, "id:connection-form-edit-jump");
+    app.press("id:connection-form-edit-jump").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "edit-jump", "id": "B1"}));
+    channel.close();
+}
+
+/// The nested form has no JUMP HOST section (one hop) and no Delete, and
+/// shows "Jump host only", on.
+#[test]
+fn the_nested_form_has_no_jump_host_section() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let mut state = draft();
+    state.nested = true;
+    state.jump_only = true;
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state.clone());
+    find(&mut app, "text:Jump host only");
+    assert!(!app.screen().shows("JUMP HOST"), "{:?}", app.screen().texts());
+    assert!(!app.screen().shows("Connect via"));
+    assert!(natives.find("moshpit/menu", "connection-form-via").is_none());
+    let on = natives.find("moshpit/switch", "toggle-jump-only").unwrap();
+    assert_eq!(natives.prop(on, "on"), Some(json!(true)));
+    // Editing one: still no Delete here.
+    state.editing = true;
+    show(&mut app, &channel, state);
+    find(&mut app, "text:Jump host only");
+    assert!(!app.screen().shows("Delete connection…"));
+    channel.close();
+}
+
+/// "Jump host only" is off in an ordinary form, says what it does, and
+/// tells the host as it is flipped.
+#[test]
+fn jump_host_only_is_off_by_default_and_tells_the_host() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, draft());
+    find(&mut app, "text:Jump host only");
+    assert!(app.screen().shows("Not listed on Home; pick it under Connect via."));
+    let toggle = natives.find("moshpit/switch", "toggle-jump-only").unwrap();
+    assert_eq!(natives.prop(toggle, "on"), Some(json!(false)));
+    emit(&mut app, toggle, "change", json!(true));
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "set", "key": "jumpOnly", "value": true})
+    );
+    let toggle = natives.find("moshpit/switch", "toggle-jump-only").unwrap();
+    assert_eq!(natives.prop(toggle, "on"), Some(json!(true)));
     channel.close();
 }
 
@@ -1740,7 +1849,7 @@ fn f1_a_deleted_jump_host_shows_as_such() {
     let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
     let items = natives.prop(menu, "items").unwrap();
     assert_eq!(
-        items.as_array().unwrap().last(),
+        items.as_array().unwrap().iter().rev().nth(1),
         Some(&json!({"id": "GONE", "title": "Deleted connection", "checked": true}))
     );
     channel.close();
@@ -1759,6 +1868,8 @@ fn f1_the_jump_host_in_chinese() {
         "经由",
         "直接连接",
         "先用那条连接自己的密钥或密码登录，再从那里连到这台主机。",
+        "仅作跳板主机",
+        "不在首页显示，在“经由”里选它。",
     ] {
         assert!(
             app.screen().shows(text),

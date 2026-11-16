@@ -48,7 +48,8 @@ struct HomeNSHPage: View {
 
     var body: some View {
         let record = HomeRecord.now(
-            core: .shared, connections: store.connections, session: { hub.session(for: $0)?.rust?.id },
+            core: .shared, connections: store.connections.filter { $0.jumpHostOnly != true },
+            session: { hub.session(for: $0)?.rust?.id },
             agents: monitor.machine, disconnecting: disconnecting, sidebar: sidebar)
         let cards = tree.rows(of: record)
         NSHPage(

@@ -10842,6 +10842,15 @@ public struct ConnectionDraft: Equatable, Hashable {
      * straight to its host.
      */
     public var via: String
+    /**
+     * Made only to be gone through: off Home, in the Connect via pickers.
+     */
+    public var jumpOnly: Bool
+    /**
+     * The form opened on top of another (New Jump Host): no JUMP HOST
+     * section, no Delete.
+     */
+    public var nested: Bool
     public var stored: StoredCredential
     /**
      * The connection's own secret this device doesn't hold (B782,
@@ -10867,7 +10876,14 @@ public struct ConnectionDraft: Equatable, Hashable {
         /**
          * The saved connection this one goes through (a UUID; F1); empty:
          * straight to its host.
-         */via: String = "", stored: StoredCredential, 
+         */via: String = "", 
+        /**
+         * Made only to be gone through: off Home, in the Connect via pickers.
+         */jumpOnly: Bool = false, 
+        /**
+         * The form opened on top of another (New Jump Host): no JUMP HOST
+         * section, no Delete.
+         */nested: Bool = false, stored: StoredCredential, 
         /**
          * The connection's own secret this device doesn't hold (B782,
          * [`connection_draft_secret_missing`]).
@@ -10890,6 +10906,8 @@ public struct ConnectionDraft: Equatable, Hashable {
         self.socksProxyPort = socksProxyPort
         self.emoji = emoji
         self.via = via
+        self.jumpOnly = jumpOnly
+        self.nested = nested
         self.stored = stored
         self.missing = missing
     }
@@ -10928,6 +10946,8 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
                 socksProxyPort: FfiConverterString.read(from: &buf), 
                 emoji: FfiConverterString.read(from: &buf), 
                 via: FfiConverterString.read(from: &buf), 
+                jumpOnly: FfiConverterBool.read(from: &buf), 
+                nested: FfiConverterBool.read(from: &buf), 
                 stored: FfiConverterTypeStoredCredential.read(from: &buf), 
                 missing: FfiConverterOptionTypeMissingSecret.read(from: &buf)
         )
@@ -10952,6 +10972,8 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
         FfiConverterString.write(value.socksProxyPort, into: &buf)
         FfiConverterString.write(value.emoji, into: &buf)
         FfiConverterString.write(value.via, into: &buf)
+        FfiConverterBool.write(value.jumpOnly, into: &buf)
+        FfiConverterBool.write(value.nested, into: &buf)
         FfiConverterTypeStoredCredential.write(value.stored, into: &buf)
         FfiConverterOptionTypeMissingSecret.write(value.missing, into: &buf)
     }
@@ -11134,6 +11156,10 @@ public struct ConnectionRecord: Equatable, Hashable {
      * The saved connection it goes through (a UUID; F1).
      */
     public var viaConnectionId: String?
+    /**
+     * Made only to be gone through: Home doesn't list it.
+     */
+    public var jumpHostOnly: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -11146,7 +11172,10 @@ public struct ConnectionRecord: Equatable, Hashable {
          */emoji: String?, 
         /**
          * The saved connection it goes through (a UUID; F1).
-         */viaConnectionId: String? = nil) {
+         */viaConnectionId: String? = nil, 
+        /**
+         * Made only to be gone through: Home doesn't list it.
+         */jumpHostOnly: Bool = false) {
         self.id = id
         self.name = name
         self.host = host
@@ -11174,6 +11203,7 @@ public struct ConnectionRecord: Equatable, Hashable {
         self.socksProxyPort = socksProxyPort
         self.emoji = emoji
         self.viaConnectionId = viaConnectionId
+        self.jumpHostOnly = jumpHostOnly
     }
 
     
@@ -11218,7 +11248,8 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
                 socksProxyHost: FfiConverterOptionString.read(from: &buf), 
                 socksProxyPort: FfiConverterOptionInt64.read(from: &buf), 
                 emoji: FfiConverterOptionString.read(from: &buf), 
-                viaConnectionId: FfiConverterOptionString.read(from: &buf)
+                viaConnectionId: FfiConverterOptionString.read(from: &buf), 
+                jumpHostOnly: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -11250,6 +11281,7 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
         FfiConverterOptionInt64.write(value.socksProxyPort, into: &buf)
         FfiConverterOptionString.write(value.emoji, into: &buf)
         FfiConverterOptionString.write(value.viaConnectionId, into: &buf)
+        FfiConverterBool.write(value.jumpHostOnly, into: &buf)
     }
 }
 
@@ -17920,6 +17952,17 @@ public enum ConnectionFormIntent: Equatable, Hashable {
     case save
     case cancel
     /**
+     * "New connection…" under Connect via: open the New Jump Host form on
+     * top ([`connection_draft_new_jump_host`]).
+     */
+    case newJumpHost
+    /**
+     * "Edit …" under Connect via: open saved connection `id` on top
+     * ([`connection_draft_of_jump_host`]).
+     */
+    case editJumpHost(id: String
+    )
+    /**
      * Delete the connection edited, once the person confirms.
      */
     case delete
@@ -17950,7 +17993,12 @@ public struct FfiConverterTypeConnectionFormIntent: FfiConverterRustBuffer {
         
         case 3: return .cancel
         
-        case 4: return .delete
+        case 4: return .newJumpHost
+        
+        case 5: return .editJumpHost(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .delete
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -17972,8 +18020,17 @@ public struct FfiConverterTypeConnectionFormIntent: FfiConverterRustBuffer {
             writeInt(&buf, Int32(3))
         
         
-        case .delete:
+        case .newJumpHost:
             writeInt(&buf, Int32(4))
+        
+        
+        case let .editJumpHost(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .delete:
+            writeInt(&buf, Int32(6))
         
         }
     }
@@ -31057,6 +31114,18 @@ public func connectionDraftCanSave(draft: ConnectionDraft, given: SecretsGiven, 
 })
 }
 /**
+ * `draft` going through the saved connection `id` (the jump host just
+ * made); an id that is not a UUID changes nothing.
+ */
+public func connectionDraftGoThrough(draft: ConnectionDraft, id: String) -> ConnectionDraft  {
+    return try!  FfiConverterTypeConnectionDraft_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_connection_draft_go_through(
+        FfiConverterTypeConnectionDraft_lower(draft),
+        FfiConverterString.lower(id),$0
+    )
+})
+}
+/**
  * What the screen told (`{"ev": …}`, as JSON): the draft after an edit,
  * or the intent. An edit the draft does not know changes nothing — the
  * password and the private key among them.
@@ -31081,11 +31150,33 @@ public func connectionDraftNew(moshByDefault: Bool) -> ConnectionDraft  {
 })
 }
 /**
+ * The New Jump Host form's draft, opened on top of another form: a new
+ * connection that is jump host only, with no JUMP HOST section.
+ */
+public func connectionDraftNewJumpHost(moshByDefault: Bool) -> ConnectionDraft  {
+    return try!  FfiConverterTypeConnectionDraft_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_connection_draft_new_jump_host(
+        FfiConverterBool.lower(moshByDefault),$0
+    )
+})
+}
+/**
  * The draft of saved connection `connection`, as the editor opens it.
  */
 public func connectionDraftOf(connection: ConnectionRecord)throws  -> ConnectionDraft  {
     return try  FfiConverterTypeConnectionDraft_lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
     uniffi_moshpit_ffi_fn_func_connection_draft_of(
+        FfiConverterTypeConnectionRecord_lower(connection),$0
+    )
+})
+}
+/**
+ * The draft of saved connection `connection` opened on top of another
+ * form (Edit under Connect via).
+ */
+public func connectionDraftOfJumpHost(connection: ConnectionRecord)throws  -> ConnectionDraft  {
+    return try  FfiConverterTypeConnectionDraft_lift(try rustCallWithError(FfiConverterTypeStoreError_lift) {
+    uniffi_moshpit_ffi_fn_func_connection_draft_of_jump_host(
         FfiConverterTypeConnectionRecord_lower(connection),$0
     )
 })
@@ -32221,13 +32312,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_can_save() != 56793) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_connection_draft_go_through() != 58970) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_handle() != 11981) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_new() != 57513) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_connection_draft_new_jump_host() != 17968) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_of() != 4928) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_connection_draft_of_jump_host() != 34807) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_pick_key() != 47688) {

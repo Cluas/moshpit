@@ -1095,5 +1095,11 @@
   "The jump host “%@” couldn't reach %@ on port %@.": "El host de salto «%@» no pudo llegar a %@ en el puerto %@.",
   "The connection this one goes through was deleted. Pick another in Edit.": "Se eliminó la conexión por la que pasa esta. Elige otra en Editar.",
   "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": "La conexión por la que pasa esta pasa a su vez por otra. Elige en Editar una que se conecte directamente.",
-  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Esta conexión pasa por otra, pero no se pudo saber cuál. Vuelve a elegirla en Editar."
+  "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": "Esta conexión pasa por otra, pero no se pudo saber cuál. Vuelve a elegirla en Editar.",
+  "New connection…": "Nueva conexión…",
+  "Edit “%@”": "Editar «%@»",
+  "Jump host only": "Solo host de salto",
+  "Not listed on Home; pick it under Connect via.": "No aparece en Inicio; elígela en «Conectar a través de».",
+  "New Jump Host": "Nuevo host de salto",
+  "Edit Jump Host": "Editar host de salto"
 }

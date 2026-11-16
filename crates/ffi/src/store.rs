@@ -400,6 +400,9 @@ pub struct ConnectionRecord {
     /// The saved connection it goes through (a UUID; F1).
     #[uniffi(default = None)]
     pub via_connection_id: Option<String>,
+    /// Made only to be gone through: Home doesn't list it.
+    #[uniffi(default = false)]
+    pub jump_host_only: bool,
 }
 
 impl From<&ServerConnection> for ConnectionRecord {
@@ -438,6 +441,7 @@ impl From<&ServerConnection> for ConnectionRecord {
             socks_proxy_port: c.socks_proxy_port,
             emoji: c.emoji.clone(),
             via_connection_id: c.via_connection_id.map(|id| id.to_string()),
+            jump_host_only: c.jump_host_only,
         }
     }
 }
@@ -477,6 +481,7 @@ impl TryFrom<ConnectionRecord> for ServerConnection {
         connection.socks_proxy_host = c.socks_proxy_host;
         connection.socks_proxy_port = c.socks_proxy_port;
         connection.emoji = c.emoji;
+        connection.jump_host_only = c.jump_host_only;
         connection.via_connection_id = match c.via_connection_id.as_deref() {
             None | Some("") => None,
             Some(id) => Some(uuid(id)?),
