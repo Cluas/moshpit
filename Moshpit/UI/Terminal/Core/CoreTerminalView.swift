@@ -69,6 +69,16 @@ final class CoreTerminalView: UIView {
     /// The last frame's fate, looked for ``CoreTermPresentation/fateTimeout``
     /// after it was drawn.
     private var fateWatch: DispatchWorkItem?
+    /// When to ask the layer for a drawable (B754).
+    private var drawablePacing = CoreTermDrawablePacing()
+    /// The paced ask still to come, and when.
+    private var drawableRetry: DispatchWorkItem?
+    private var drawableRetryAt: CFTimeInterval = .infinity
+    /// Set while asks come back with nothing: a frame of ours completing
+    /// then tells the main thread (a drawable came back).
+    private let drawableStall = CoreTermCounter()
+    /// New canvases made during the stall on (its line says them).
+    private var canvasesInStall = 0
 
     // The cursor's blink.
     private var blinkTimer: Timer?
@@ -242,8 +252,10 @@ final class CoreTerminalView: UIView {
             blinkTimer = nil
             pacer?.invalidate()
             pacer = nil
+            endDrawableStall(how: "the view left its window")
         } else {
             restartBlink()
+            drawablePacing.noteReason()
             if let why = layerSuspect, canvas is CoreTermMetalCanvas,
                !CoreTermMemory.inBackground, UIApplication.shared.applicationState == .active {
                 // B469: a layer with a reason not to show what it is given
@@ -547,7 +559,10 @@ final class CoreTerminalView: UIView {
         1.0 / Double(max(window?.screen.maximumFramesPerSecond ?? 60, 30))
     }
 
-    private func render() {
+    /// Draws; `paced`: asks the layer for a drawable only when
+    /// ``CoreTermDrawablePacing`` says (B754), else the frame stays due.
+    private func render(paced: Bool = true) {
+        if paced, let metal = canvas as? CoreTermMetalCanvas, !mayAskForDrawable(metal) { return }
         renderDue = false
         lastRenderAt = CACurrentMediaTime()
         defer { frameCosts.note(render: CACurrentMediaTime() - lastRenderAt) }
@@ -563,19 +578,29 @@ final class CoreTerminalView: UIView {
                 }
             }
             let frame = presentation.issue()
-            let presentation = self.presentation, box = presentBox
+            let presentation = self.presentation, box = presentBox, stall = drawableStall
             let drawn = metal.render(rows: rows, completion: { shown in
                 counter.add(-1)
+                if stall.value > 0 {
+                    // A drawable came back while asks were getting none.
+                    DispatchQueue.main.async { MainActor.assumeIsolated { box.view?.drawableCameBack() } }
+                }
                 if shown { return presentation.shown(frame) }
                 DispatchQueue.main.async { MainActor.assumeIsolated { box.view?.frameNeverShown(frame) } }
             })
             if !drawn {
                 counter.add(-1)
+                if metal.foundNoDrawable {
+                    drawablePacing.failed(at: CACurrentMediaTime())
+                    drawableStall.reset()
+                    drawableStall.add(1)
+                }
                 cannotPresent(metal)
                 renderDue = true
                 resumePacer()
                 return
             }
+            let stallLine = drawableCame()
             fateWatch?.cancel()
             let watch = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
@@ -586,7 +611,9 @@ final class CoreTerminalView: UIView {
             fateWatch = watch
             DispatchQueue.main.asyncAfter(deadline: .now() + CoreTermPresentation.fateTimeout, execute: watch)
             if failedRenders > 0 {
-                Log.ui.notice("core term: presents again after \(self.failedRenders, privacy: .public) frames it could not")
+                if !stallLine {
+                    Log.ui.notice("core term: presents again after \(self.failedRenders, privacy: .public) frames it could not")
+                }
                 failedRenders = 0
             }
         } else {
@@ -632,7 +659,8 @@ final class CoreTerminalView: UIView {
     /// them (B386).
     private func cannotPresent(_ metal: CoreTermMetalCanvas) {
         failedRenders += 1
-        if failedRenders == 1 || failedRenders.isMultiple(of: 120) {
+        // No drawable free: the stall's one line, as it ends (B754).
+        if !metal.foundNoDrawable, failedRenders == 1 || failedRenders.isMultiple(of: 120) {
             NSHDiagnostics.error("core term: can't present (\(metal.lastFailure ?? "?"), try \(failedRenders), app \(Self.appState), \(drawableSummary))")
         }
         // A layer whose drawables never come back: a new one.
@@ -687,9 +715,16 @@ final class CoreTerminalView: UIView {
         fresh.fitDrawables()
         failedRenders = 0
         inFlight.reset()
+        // A new layer's drawables are free (B754); during a stall the
+        // stall's line counts it instead of a line of its own.
+        let quiet = drawablePacing.stalled
+        if quiet { canvasesInStall += 1 }
+        drawablePacing.noteReason()
         render()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { old.removeFromSuperview() }
-        Log.ui.notice("core term: a new canvas (\(why, privacy: .public)), \(self.drawableSummary, privacy: .public)")
+        if !quiet {
+            Log.ui.notice("core term: a new canvas (\(why, privacy: .public)), \(self.drawableSummary, privacy: .public)")
+        }
     }
 
     /// The app's state, for the log.
@@ -726,6 +761,7 @@ final class CoreTerminalView: UIView {
     /// costs power and risks a flash for nothing.
     func cameToForeground() {
         guard window != nil, let metal = canvas as? CoreTermMetalCanvas else { return }
+        drawablePacing.noteReason()
         if let refused = metal.takeGPUFailure() { layerSuspect = "the GPU refused a frame: \(refused)" }
         if failedRenders > 0 { layerSuspect = "\(failedRenders) frames it could not present" }
         guard let why = layerSuspect else {
@@ -753,8 +789,96 @@ final class CoreTerminalView: UIView {
     /// Draws now, past the pacer (tests).
     func renderNowForTesting() {
         inFlight.reset()
-        render()
+        render(paced: false)
     }
+
+    // MARK: Asking for drawables (B754)
+
+    /// Whether to ask the layer for a drawable now. If not, the frame stays
+    /// due: the next refresh asks again (every drawable ours and on its
+    /// way), or the paced ask does (asks that got nothing), with no event
+    /// needed, so a frame owed is drawn in the end (B445).
+    private func mayAskForDrawable(_ metal: CoreTermMetalCanvas) -> Bool {
+        let now = CACurrentMediaTime()
+        let held = metal.drawablesHeld(now: now, within: CoreTermDrawablePacing.heldFor)
+        switch drawablePacing.decide(now: now, held: held, drawables: metal.drawableCount,
+                                     lastAcquiredAt: metal.lastAcquiredAt) {
+        case .attempt:
+            return true
+        case .skip:
+            renderDue = true
+            resumePacer()
+            return false
+        case .wait(let until):
+            renderDue = true
+            // No refresh to wait for meanwhile, unless bytes are.
+            if !frameDue { pacer?.isPaused = true }
+            askForDrawable(at: until)
+            return false
+        }
+    }
+
+    /// The paced ask, at `time` (`CACurrentMediaTime`'s clock): one at a
+    /// time, the earliest kept.
+    private func askForDrawable(at time: CFTimeInterval) {
+        if drawableRetry != nil, drawableRetryAt <= time { return }
+        drawableRetry?.cancel()
+        let ask = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.drawableRetry = nil
+                self.drawableRetryAt = .infinity
+                if self.renderDue { self.requestRender() }
+            }
+        }
+        drawableRetry = ask
+        drawableRetryAt = time
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, time - CACurrentMediaTime()), execute: ask)
+    }
+
+    /// A frame of ours completed while asks were getting nothing: a
+    /// drawable came back, so ask at once.
+    fileprivate func drawableCameBack() {
+        guard drawablePacing.stalled else { return }
+        drawablePacing.noteReason()
+        if renderDue { requestRender() }
+    }
+
+    /// A drawable came. A stall it ends says its one line; whether it did.
+    private func drawableCame() -> Bool {
+        guard let stall = drawablePacing.acquired(at: CACurrentMediaTime()) else { return false }
+        say(stall, ending: "then one came")
+        return true
+    }
+
+    /// The stall on, if one is, given up (`how`), said in its one line.
+    private func endDrawableStall(how: String) {
+        guard let stall = drawablePacing.abandon(at: CACurrentMediaTime()) else { return }
+        say(stall, ending: how)
+    }
+
+    /// A stall's one line: when it began and ended, the asks, and the
+    /// layer then (B754: what a device's log or a CI sample confirms).
+    private func say(_ stall: CoreTermDrawablePacing.Stall, ending: String) {
+        drawableStall.reset()
+        drawableRetry?.cancel()
+        drawableRetry = nil
+        drawableRetryAt = .infinity
+        let now = CACurrentMediaTime(), wall = Date()
+        let clock = { (t: CFTimeInterval) in Self.stallClock.string(from: wall.addingTimeInterval(t - now)) }
+        let canvases = canvasesInStall == 0 ? "" : ", \(canvasesInStall) new canvas\(canvasesInStall == 1 ? "" : "es")"
+        canvasesInStall = 0
+        NSHDiagnostics.error("core term: no drawable from \(clock(stall.start)) to \(clock(stall.end)) "
+            + "(\(String(format: "%.1f", stall.end - stall.start)) s), \(stall.attempts) asks\(canvases), \(ending); "
+            + "app \(Self.appState), \(drawableSummary)")
+    }
+
+    private static let stallClock: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
 
     private func resumePacer() {
         if pacer == nil {
@@ -897,6 +1021,7 @@ final class CoreTerminalView: UIView {
             // full frame came before the first layout, and an idle pane
             // sends no other).
             laidOutSize = bounds.size
+            drawablePacing.noteReason()
             redrawAll()
         } else {
             requestRender()
