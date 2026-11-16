@@ -5,7 +5,7 @@
 //! - every view that takes a press itself has a role a screen reader
 //!   announces as something to press, and a name (its label, else the
 //!   texts in it);
-//! - it is at least 44 × 44 pt;
+//! - it is at least 44 × 44 pt to touch, its `hit_slop` counted;
 //! - no view around it, or around a text, is of no size (B659: VoiceOver
 //!   never reaches what is inside one);
 //! - nothing that isn't in a sideways scroll goes past the screen's edges;
@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 
 use nsh_core::{AttributedText, Bounds, EllipsizeMode, NodeId, Points, TextEngine, ViewKind};
 use nsh_testing::{Headless, LayoutNode};
+
+use super::Natives;
 
 /// The roles a screen reader announces as something to press.
 pub const PRESS_ROLES: &[&str] = &[
@@ -63,11 +65,51 @@ fn describe(node: &LayoutNode) -> String {
     format!("view:{}", node.id)
 }
 
+/// The size a touch on `node` lands in: its bounds grown by its
+/// `hit_slop` (which iOS's hit test honours: `nsh-platform-ios`'s
+/// `inside`, and the core's overflow reaches over it), cut to every view
+/// around it that clips (`clipsToBounds` stops the hit test there).
+/// `around` is the views around `node`, nearest first.
+pub fn touch_size(node: &LayoutNode, around: &[&LayoutNode], natives: &Natives) -> (f32, f32) {
+    let slop = natives.hit_slop(node.id);
+    let b = node.bounds;
+    let (mut x0, mut y0) = (b.origin.x.0 - slop.left.0, b.origin.y.0 - slop.top.0);
+    let mut x1 = b.origin.x.0 + b.size.width.0 + slop.right.0;
+    let mut y1 = b.origin.y.0 + b.size.height.0 + slop.bottom.0;
+    for clip in around.iter().filter(|a| a.clips) {
+        let c = clip.bounds;
+        x0 = x0.max(c.origin.x.0);
+        y0 = y0.max(c.origin.y.0);
+        x1 = x1.min(c.origin.x.0 + c.size.width.0);
+        y1 = y1.min(c.origin.y.0 + c.size.height.0);
+    }
+    ((x1 - x0).max(0.0), (y1 - y0).max(0.0))
+}
+
+/// The size a touch on the shown view with test id `id` lands in
+/// ([`touch_size`]); panics when there is none.
+pub fn touch_size_of(app: &Headless, natives: &Natives, id: &str) -> (f32, f32) {
+    let nodes = app.screen().layout_nodes();
+    let by_id: HashMap<NodeId, &LayoutNode> = nodes.iter().map(|n| (n.id, n)).collect();
+    let node = nodes
+        .iter()
+        .find(|n| n.test_id.as_deref() == Some(id) && !n.hidden)
+        .unwrap_or_else(|| panic!("no view {id}"));
+    let mut around = Vec::new();
+    let mut at = node.parent;
+    while let Some(view) = by_id.get(&at) {
+        around.push(*view);
+        at = view.parent;
+    }
+    touch_size(node, &around, natives)
+}
+
 /// What is wrong on `app`'s screen now, one line each, for a viewport
 /// `width` wide. `skip` names test ids (and the views inside them) the
 /// audit leaves alone: a native view drawing its own (the terminal's
-/// grid), or what another bug already covers.
-pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
+/// grid), or what another bug already covers. A target's size counts its
+/// `hit_slop`, as `natives` (the screen's observer) saw it.
+pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Vec<String> {
     let screen = app.screen();
     let nodes = screen.layout_nodes();
     let by_id: HashMap<NodeId, &LayoutNode> = nodes.iter().map(|n| (n.id, n)).collect();
@@ -114,6 +156,37 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
     };
     let right = |b: &Bounds<Points>| b.origin.x.0 + b.size.width.0;
 
+    // What no one sees: a view at no opacity (it, or a view around it: a
+    // measuring copy), or one a later layer as wide as the screen, with a
+    // background nothing shows through, covers whole (a screen drawn over
+    // another: the pane overview over the terminal). The views are in tree
+    // order, which is the order they are drawn in, so a covering view
+    // comes after what it covers. A smaller view drawn over a text still
+    // counts as hiding it: that is for the audit to find.
+    let opacity = |node: &LayoutNode| {
+        ancestors(node)
+            .iter()
+            .fold(natives.opacity(node.id), |o, a| o * natives.opacity(a.id))
+    };
+    let index: HashMap<NodeId, usize> = nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
+    let contains = |outer: &Bounds<Points>, inner: &Bounds<Points>| {
+        outer.origin.x.0 <= inner.origin.x.0 + 0.5
+            && outer.origin.y.0 <= inner.origin.y.0 + 0.5
+            && right(outer) + 0.5 >= right(inner)
+            && outer.origin.y.0 + outer.size.height.0 + 0.5
+                >= inner.origin.y.0 + inner.size.height.0
+    };
+    let unseen = |node: &LayoutNode| {
+        opacity(node) <= 0.01
+            || nodes[index[&node.id] + 1..].iter().any(|over| {
+                !over.hidden
+                    && over.bounds.size.width.0 >= width - 0.5
+                    && natives.opaque_background(over.id)
+                    && opacity(over) >= 0.99
+                    && contains(&over.bounds, &node.bounds)
+            })
+    };
+
     for node in nodes.iter().filter(|n| shown(n) && !skipped(n)) {
         let what = describe(node);
         let presses = screen.press_target(&format!("view:{}", node.id)) == Ok(Some(node.id));
@@ -133,14 +206,14 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
             }
         }
         if presses {
-            let size = node.bounds.size;
-            if size.width.0 < TARGET - 0.5 || size.height.0 < TARGET - 0.5 {
+            let (w, h) = touch_size(node, &ancestors(node), natives);
+            if w < TARGET - 0.5 || h < TARGET - 0.5 {
                 found.push(format!(
-                    "{what}: a target {:.0} × {:.0} pt, under {TARGET}",
-                    size.width.0, size.height.0
+                    "{what}: a target {w:.0} × {h:.0} pt, under {TARGET}"
                 ));
             }
         }
+        let seen = !unseen(node);
         if presses || node.text.is_some() {
             if let Some(around) = empty_around(node) {
                 found.push(format!(
@@ -148,7 +221,8 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
                     describe(around)
                 ));
             }
-            if !sideways(node)
+            if seen
+                && !sideways(node)
                 && (node.bounds.origin.x.0 < -0.5 || right(&node.bounds) > width + 0.5)
             {
                 found.push(format!(
@@ -158,7 +232,9 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
                 ));
             }
         }
-        let Some(text) = &node.text else { continue };
+        let Some(text) = node.text.as_ref().filter(|_| seen) else {
+            continue;
+        };
         let attributed = &text.text;
         if attributed.text.trim().is_empty() {
             continue;
@@ -219,6 +295,7 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
         .filter(|n| {
             shown(n)
                 && !skipped(n)
+                && !unseen(n)
                 && n.text
                     .as_ref()
                     .is_some_and(|t| !t.text.text.trim().is_empty())

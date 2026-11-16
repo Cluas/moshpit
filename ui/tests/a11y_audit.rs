@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{App, a11y, home_fixture, post, settings_fixture, start_observing_with};
+use common::{App, Natives, a11y, home_fixture, post, settings_fixture, start_observing_with};
 use moshpit_ui::{
     channel::Channel,
     connection_form::{FormState, Message as FormMessage, Mux},
@@ -25,7 +25,7 @@ const HEIGHT: f32 = 874.0;
 
 /// The languages: the longest, and the ones whose lines break between
 /// characters.
-const LOCALES: [&str; 5] = ["en", "de", "fr", "ja", "ko"];
+const LOCALES: [&str; 6] = ["en", "de", "fr", "ja", "ko", "zh-Hans"];
 
 fn params(locale: &str, page: Option<&str>) -> Params {
     Params {
@@ -42,8 +42,8 @@ fn phone(
     params: Params,
     root: &str,
     height: f32,
-) -> (App, std::sync::Arc<Channel>) {
-    let (app, channel, _) = start_observing_with(screen, params, root, |config| {
+) -> (App, std::sync::Arc<Channel>, Natives) {
+    let (app, channel, natives) = start_observing_with(screen, params, root, |config| {
         config.viewport = Size::new(Points(WIDTH), Points(height));
         config.clock = nsh_core::time::Clock::manual(
             std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000),
@@ -56,7 +56,7 @@ fn phone(
             right: Points(0.0),
         };
     });
-    (app, channel)
+    (app, channel, natives)
 }
 
 /// One thing the audit found: on which screen, in which language, at
@@ -77,8 +77,14 @@ impl std::fmt::Display for Finding {
 }
 
 /// What the audit finds on `app` now, and again at AX5.
-fn both_sizes(app: &mut App, screen: &str, locale: &'static str, skip: &[&str]) -> Vec<Finding> {
-    let mut found: Vec<Finding> = a11y::audit(app, WIDTH, skip)
+fn both_sizes(
+    app: &mut App,
+    natives: &Natives,
+    screen: &str,
+    locale: &'static str,
+    skip: &[&str],
+) -> Vec<Finding> {
+    let mut found: Vec<Finding> = a11y::audit(app, natives, WIDTH, skip)
         .into_iter()
         .map(|what| Finding {
             screen: screen.to_owned(),
@@ -90,7 +96,7 @@ fn both_sizes(app: &mut App, screen: &str, locale: &'static str, skip: &[&str]) 
     app.set_environment("AX5", |env| env.font_scale = 53.0 / 17.0)
         .unwrap();
     found.extend(
-        a11y::audit(app, WIDTH, skip)
+        a11y::audit(app, natives, WIDTH, skip)
             .into_iter()
             .map(|what| Finding {
                 screen: screen.to_owned(),
@@ -149,11 +155,18 @@ fn home_screens() -> Vec<Finding> {
     let mut found = Vec::new();
     for locale in LOCALES {
         for (what, connections) in [("empty", Vec::new()), ("fixture", fixture())] {
-            let (mut app, channel) = phone(Screen::Home, params(locale, None), "home", HEIGHT);
+            let (mut app, channel, natives) =
+                phone(Screen::Home, params(locale, None), "home", HEIGHT);
             post(&mut app, &channel, &home(connections));
             post(&mut app, &channel, &egg());
             app.wait_for("id:home-pet").unwrap();
-            found.extend(both_sizes(&mut app, &format!("home {what}"), locale, &[]));
+            found.extend(both_sizes(
+                &mut app,
+                &natives,
+                &format!("home {what}"),
+                locale,
+                &[],
+            ));
             channel.close();
         }
     }
@@ -172,7 +185,7 @@ fn settings_screens() -> Vec<Finding> {
             Some("voice"),
             Some("companion"),
         ] {
-            let (mut app, channel) =
+            let (mut app, channel, natives) =
                 phone(Screen::Settings, params(locale, page), "settings", HEIGHT);
             post(
                 &mut app,
@@ -182,6 +195,7 @@ fn settings_screens() -> Vec<Finding> {
             app.wait_for("id:settings-list").unwrap();
             found.extend(both_sizes(
                 &mut app,
+                &natives,
                 &format!("settings {}", page.unwrap_or("hub")),
                 locale,
                 // The terminal's preview is a terminal: its lines run off its edge.
@@ -196,7 +210,7 @@ fn settings_screens() -> Vec<Finding> {
 fn form_screens() -> Vec<Finding> {
     let mut found = Vec::new();
     for locale in LOCALES {
-        let (mut app, channel) = phone(
+        let (mut app, channel, natives) = phone(
             Screen::ConnectionForm,
             params(locale, None),
             "connection-form",
@@ -216,7 +230,7 @@ fn form_screens() -> Vec<Finding> {
             &FormMessage::Form(Box::new(draft)).to_json(),
         );
         app.wait_for("id:connection-form-name").unwrap();
-        found.extend(both_sizes(&mut app, "form", locale, &[]));
+        found.extend(both_sizes(&mut app, &natives, "form", locale, &[]));
         channel.close();
     }
     found
@@ -225,7 +239,8 @@ fn form_screens() -> Vec<Finding> {
 fn host_key_screens() -> Vec<Finding> {
     let mut found = Vec::new();
     for locale in LOCALES {
-        let (mut app, channel) = phone(Screen::HostKey, params(locale, None), "host-key", HEIGHT);
+        let (mut app, channel, natives) =
+            phone(Screen::HostKey, params(locale, None), "host-key", HEIGHT);
         post(
             &mut app,
             &channel,
@@ -236,7 +251,7 @@ fn host_key_screens() -> Vec<Finding> {
             .to_string(),
         );
         app.wait_for("id:host-key-fingerprint").unwrap();
-        found.extend(both_sizes(&mut app, "host key", locale, &[]));
+        found.extend(both_sizes(&mut app, &natives, "host key", locale, &[]));
         channel.close();
     }
     found
@@ -278,7 +293,7 @@ fn terminal_screens() -> Vec<Finding> {
     let mut found = Vec::new();
     for locale in LOCALES {
         for overview in [false, true] {
-            let (mut app, channel) = phone(
+            let (mut app, channel, natives) = phone(
                 Screen::Terminal,
                 params(locale, None),
                 "terminal-screen",
@@ -312,7 +327,7 @@ fn terminal_screens() -> Vec<Finding> {
                 app.wait_for("id:overview-new-window").unwrap();
             }
             let what = if overview { "overview" } else { "terminal" };
-            found.extend(both_sizes(&mut app, what, locale, &[]));
+            found.extend(both_sizes(&mut app, &natives, what, locale, &[]));
             channel.close();
         }
     }
@@ -322,7 +337,7 @@ fn terminal_screens() -> Vec<Finding> {
 fn folder_screens() -> Vec<Finding> {
     let mut found = Vec::new();
     for locale in LOCALES {
-        let (mut app, channel) = phone(
+        let (mut app, channel, natives) = phone(
             Screen::RemoteFolder,
             params(locale, None),
             "remote-folder-sheet",
@@ -342,7 +357,7 @@ fn folder_screens() -> Vec<Finding> {
             ]
         }).to_string());
         app.wait_for("text:notes.md").unwrap();
-        found.extend(both_sizes(&mut app, "folder", locale, &[]));
+        found.extend(both_sizes(&mut app, &natives, "folder", locale, &[]));
         channel.close();
     }
     found
@@ -440,6 +455,111 @@ fn settings_and_the_form_are_read_in_full_at_the_default_size() {
                     && (f.screen.starts_with("settings") || f.screen == "form")
                     && f.what.contains("cut short")
             })
+            .collect(),
+    );
+}
+
+/// Every control is at least 44 × 44 pt to touch, in every language, at
+/// every size: its bounds and its hit slop, cut to what clips it. The
+/// audit read the bounds alone, and called the terminal bar's keyboard
+/// toggle and transport switch (36 pt tall, 4 pt of slop each way),
+/// Settings' font steppers (32 pt, 6 pt each side) and a short bar button
+/// (French "OK", 35 pt wide, 22 pt each side) too small to hit: iOS hits
+/// them over their slop.
+#[test]
+fn every_control_is_44_pt_to_touch() {
+    none(
+        "targets under 44 pt",
+        findings()
+            .iter()
+            .filter(|f| f.what.contains("a target "))
+            .collect(),
+    );
+}
+
+/// B833: a short bar button is 44 pt wide to touch though it is drawn
+/// narrower. Settings' "OK" in French is some 35 pt wide; a labeled
+/// button's slop reaches 22 pt past each side (button.rs
+/// `slop(height, 0.0)`), the screen's edge cutting what lies past it.
+/// German's "Fertig" alongside, as a wider one.
+#[test]
+fn a_short_bar_button_is_44_pt_wide_to_touch() {
+    for locale in ["fr", "de"] {
+        let (mut app, channel, natives) =
+            phone(Screen::Settings, params(locale, None), "settings", HEIGHT);
+        post(
+            &mut app,
+            &channel,
+            &SettingsMessage::Settings(Box::new(settings_fixture::state())).to_json(),
+        );
+        app.wait_for("id:settings-list").unwrap();
+        let drawn = app
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .find(|n| n.test_id.as_deref() == Some("settings-done"))
+            .expect("Settings has its Done")
+            .bounds
+            .size;
+        let (w, h) = a11y::touch_size_of(&app, &natives, "settings-done");
+        println!(
+            "{locale} settings-done: drawn {:.0} × {:.0} pt, touched {w:.0} × {h:.0} pt",
+            drawn.width.0, drawn.height.0
+        );
+        assert!(
+            w >= a11y::TARGET && h >= a11y::TARGET,
+            "{locale}: Done is {w:.0} × {h:.0} pt to touch (drawn {:.0} × {:.0})",
+            drawn.width.0,
+            drawn.height.0
+        );
+        channel.close();
+    }
+}
+
+/// B835, B836: no text is drawn over another, in every language, at every
+/// size. The audit took what no one sees for what is drawn: the terminal
+/// bar's breadcrumb measures itself with a copy at no opacity (it read as
+/// "trainer" over "claude", "›" over "trainer"), and the pane overview,
+/// opaque and as wide as the screen, is drawn over the terminal (the
+/// backstage's "3 / 4" read as over the overview's "New window").
+#[test]
+fn no_text_is_drawn_over_another() {
+    none(
+        "texts over one another",
+        findings()
+            .iter()
+            .filter(|f| f.what.contains(" overlaps "))
+            .collect(),
+    );
+}
+
+/// B834: at the default text size, in every language, the pane overview's
+/// words are read in full. A window card's state line ("Needs you · 2
+/// panes") and a pane's state ("Needs you") were one line each, in a card
+/// 127 pt wide and a pane 72 pt wide: Japanese, Korean, German and French
+/// lost their ends.
+#[test]
+fn the_overview_is_read_in_full_at_the_default_size() {
+    none(
+        "cut short on the overview",
+        findings()
+            .iter()
+            .filter(|f| !f.ax5 && f.screen == "overview" && f.what.contains("cut short"))
+            .collect(),
+    );
+}
+
+/// B836: the pane overview stays on the screen at the largest text size.
+/// Its count's badge ("1 waiting") follows the user's text size past the
+/// chrome's extra large, and beside the windows' and panes' count it ran
+/// off the screen's side in French, Japanese and Korean.
+#[test]
+fn the_overview_stays_on_the_screen_at_ax5() {
+    none(
+        "past the screen's edge on the overview",
+        findings()
+            .iter()
+            .filter(|f| f.screen == "overview" && f.what.contains("past the screen's edge"))
             .collect(),
     );
 }
