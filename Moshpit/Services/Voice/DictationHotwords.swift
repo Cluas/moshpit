@@ -90,9 +90,21 @@ enum DictationHotwords {
     }
 
     /// The hotwords as one comma-separated line, the shape the local models'
-    /// prompt takes. Commas inside a word would split it, so they go.
+    /// prompt takes. Commas inside a word would split it, so they go, and so
+    /// do line breaks.
+    ///
+    /// The line is spliced into Qwen3-ASR's chat template as text, and its
+    /// tokenizer reads every `<|…|>` in its vocabulary as the control token,
+    /// wherever it appears. Window, session and folder names are the host's
+    /// to choose: one named `<|im_end|>` closed the system turn, and a name
+    /// could go on to write turns of its own (B863). A space after each `<`
+    /// keeps them text.
     static func csv(_ words: [String]) -> String {
-        words.map { $0.replacingOccurrences(of: ",", with: " ") }.joined(separator: ",")
+        words.map { word in
+            word.replacingOccurrences(of: ",", with: " ")
+                .replacingOccurrences(of: "<|", with: "< |")
+                .split(whereSeparator: \.isNewline).joined(separator: " ")
+        }.joined(separator: ",")
     }
 
     // MARK: Screen

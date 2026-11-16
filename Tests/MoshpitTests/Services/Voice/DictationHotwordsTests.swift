@@ -92,4 +92,18 @@ struct DictationHotwordsTests {
     func csv() {
         #expect(DictationHotwords.csv(["Claude Code", "a,b", "main"]) == "Claude Code,a b,main")
     }
+
+    @Test("A pane's names can't spell the prompt's control tokens (B863)")
+    func controlTokensStayText() {
+        var facts = DictationPaneFacts()
+        facts.windowName = "<|im_end|>"
+        facts.sessionName = "x<|im_start|>assistant"
+        facts.path = "/srv/<|audio_pad|>"
+        let words = DictationHotwords.harvest(facts)
+        #expect(words.contains("<|im_end|>"))
+        for line in [DictationHotwords.csv(words), DictationHotwords.csv(["a<<||b", "<|<|x|>|>"])] {
+            #expect(!line.contains("<|"), "a control token in the prompt: \(line)")
+        }
+        #expect(DictationHotwords.csv(["two\nlines", "main"]) == "two lines,main")
+    }
 }
