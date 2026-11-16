@@ -334,6 +334,10 @@ pub struct Monitor {
     /// Connections whose link is down, since when (B662).
     down: BTreeMap<String, f64>,
     posted_attention: BTreeSet<Key>,
+    /// Questions announced that the waiting set couldn't hold (B821), with
+    /// when: no set (no shared container) or a write that failed. Their
+    /// card is drawn from here, as it would be from the set.
+    unkept: BTreeMap<Key, f64>,
     /// Connections a poll has come in for since they were tracked: what
     /// stands there can be told.
     polled: BTreeSet<String>,
@@ -350,10 +354,10 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    /// `announced` is the record as stored; what is a day old, or from the
-    /// future, is dropped. `standing` and `finishes` are the files shared
-    /// with the notification service; none (no shared container) means
-    /// nothing can be standing (every prompt an edge) and every long finish
+    /// `announced` is the record as stored; what is a day old is dropped.
+    /// `standing` and `finishes` are the files shared with the notification
+    /// service; none (no shared container) means every prompt is an edge,
+    /// carded from what this app announced (B821), and every long finish
     /// rings.
     pub fn new(
         tunables: Tunables,
@@ -382,6 +386,7 @@ impl Monitor {
             pending: BTreeMap::new(),
             down: BTreeMap::new(),
             posted_attention: BTreeSet::new(),
+            unkept: BTreeMap::new(),
             polled: BTreeSet::new(),
             unjudged: BTreeSet::new(),
             headline_offset: 0,
@@ -399,7 +404,7 @@ impl Monitor {
     /// stored one: every question still standing announced again after a
     /// reboot, its earlier card never withdrawn. The stored episodes join the
     /// ones this process recorded — its own win, being newer — what is a
-    /// day old or from the future is dropped, and the record is saved. A
+    /// day old is dropped, and the record is saved. A
     /// question standing now that the stored record names is the one
     /// announced before: its announcement is called off, and its card is
     /// ours to withdraw once it is answered.
@@ -1245,22 +1250,39 @@ impl Monitor {
         if !self.settings.notifications {
             return;
         }
-        let edge = match &self.standing {
-            Some(standing) => standing.note_standing(
-                &key.0,
-                Entry {
-                    pane: key.1.clone(),
-                    agent: Some(display_command(command).to_owned()),
-                    title: detail,
-                    location: Some(self.place(key)),
-                    since: episode as i64,
-                    recorded_at: Date::from_unix(now),
-                    lifetime: Some(LIFETIME_SECONDS),
-                },
-                Date::from_unix(now),
-            ),
-            None => true,
+        let at = Date::from_unix(now);
+        let (edge, kept) = match &self.standing {
+            Some(standing) => {
+                let edge = standing.note_standing(
+                    &key.0,
+                    Entry {
+                        pane: key.1.clone(),
+                        agent: Some(display_command(command).to_owned()),
+                        title: detail,
+                        location: Some(self.place(key)),
+                        since: episode as i64,
+                        recorded_at: at,
+                        lifetime: Some(LIFETIME_SECONDS),
+                    },
+                    at,
+                );
+                let kept = standing
+                    .standing(&key.0, at)
+                    .iter()
+                    .any(|entry| entry.pane == key.1 && entry.since == episode as i64);
+                (edge, kept)
+            }
+            None => (true, false),
         };
+        if kept {
+            self.unkept.remove(key);
+        } else {
+            self.effects.push(Effect::Note(format!(
+                "waiting set can't hold pane {} — carded from what this app announced",
+                key.1
+            )));
+            self.unkept.insert(key.clone(), now);
+        }
         self.posted_attention.insert(key.clone());
         self.render_digest(&key.0, edge, now);
     }
@@ -1269,11 +1291,7 @@ impl Monitor {
     /// share, from the newest standing entry.
     fn render_digest(&mut self, conn: &str, edge: bool, now: f64) {
         let id = format!("{ATTENTION_CARD}{conn}");
-        let standing = self
-            .standing
-            .as_ref()
-            .map(|file| file.standing(conn, Date::from_unix(now)))
-            .unwrap_or_default();
+        let standing = self.waiting(conn, now);
         let Some(newest) = standing.first() else {
             self.effects.push(Effect::Withdraw(id));
             return;
@@ -1287,6 +1305,43 @@ impl Monitor {
             connection_id: conn.to_owned(),
             pane_id: newest.pane.clone(),
         }));
+    }
+
+    /// What waits on `conn`, newest first: the waiting set's entries, and
+    /// the questions this app announced that the set couldn't hold (B821).
+    /// The card was drawn from the set alone, so with no set — no shared
+    /// container — or a write that failed, an announced question withdrew
+    /// the card it should have posted.
+    fn waiting(&mut self, conn: &str, now: f64) -> Vec<Entry> {
+        let mut entries = self
+            .standing
+            .as_ref()
+            .map(|file| file.standing(conn, Date::from_unix(now)))
+            .unwrap_or_default();
+        let posted = &self.posted_attention;
+        self.unkept.retain(|key, _| posted.contains(key));
+        let unkept: Vec<Entry> = self
+            .unkept
+            .iter()
+            .filter(|(key, _)| key.0 == conn && !entries.iter().any(|entry| entry.pane == key.1))
+            .filter_map(|(key, at)| {
+                let p = self.panes.get(key)?;
+                Some(Entry {
+                    pane: key.1.clone(),
+                    agent: Some(display_command(&p.command).to_owned()),
+                    title: p.detail.clone(),
+                    location: Some(self.place(key)),
+                    since: p.since as i64,
+                    recorded_at: Date::from_unix(*at),
+                    lifetime: Some(LIFETIME_SECONDS),
+                })
+            })
+            .collect();
+        if !unkept.is_empty() {
+            entries.extend(unkept);
+            entries.sort_by(|a, b| b.recorded_at.partial_cmp(&a.recorded_at).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        entries
     }
 
     /// The finish card: a long turn rings once between this card and the
@@ -1767,10 +1822,13 @@ pub fn needs_sending(state: &IslandState, last: Option<&(IslandState, f64)>, now
 }
 
 /// The announced-episode record as stored, without what is older than
-/// `ttl` or more than a minute in the future.
+/// `ttl`. An episode is dated by the host's clock (its `@moshpit_since`),
+/// so the phone's can't say one is "from the future" (B823): a host ahead
+/// of the phone by more than a minute had every entry dropped as such at
+/// launch, and each question still waiting was announced, and rang, again.
 pub fn decode_announced(raw: &BTreeMap<String, f64>, now: f64, ttl: f64) -> BTreeMap<String, f64> {
     raw.iter()
-        .filter(|(_, at)| **at <= now + 60.0 && now - **at <= ttl)
+        .filter(|(_, at)| now - **at <= ttl)
         .map(|(key, at)| (key.clone(), *at))
         .collect()
 }

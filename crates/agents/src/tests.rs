@@ -132,16 +132,17 @@ fn a_new_prompt_is_announced_even_on_the_same_pane_and_only_attention_announces(
 }
 
 #[test]
-fn the_record_drops_what_is_a_day_old_or_from_the_future() {
+fn the_record_drops_what_is_a_day_old_and_keeps_a_host_ahead_of_the_phone() {
     let raw: BTreeMap<String, f64> = [
         ("a|%1".to_owned(), T0 - 3600.0),
         ("a|%2".to_owned(), T0 - 2.0 * 86_400.0),
+        // Dated by a host an hour ahead of the phone (B823).
         ("a|%3".to_owned(), T0 + 3600.0),
     ]
     .into_iter()
     .collect();
     let kept = decode_announced(&raw, T0, 86_400.0);
-    assert_eq!(kept.keys().collect::<Vec<_>>(), ["a|%1"]);
+    assert_eq!(kept.keys().collect::<Vec<_>>(), ["a|%1", "a|%3"]);
 }
 
 #[test]
@@ -178,6 +179,73 @@ fn a_prompt_answered_inside_the_grace_is_never_announced() {
     bench.poll("%1", "working", T0 + 10.0, T0 + 11.0);
     bench.monitor.sweep(None, T0 + 40.0);
     assert!(posts(&bench.monitor.take_effects()).is_empty());
+}
+
+/// B821: a question the waiting set can't hold is still carded. The card is
+/// drawn from the set's newest entry, and with no set (no shared container:
+/// an unsigned build, a simulator without the entitlement) or a write that
+/// failed, there was none: the announcement withdrew the card instead of
+/// posting it, and no question ever reached the phone.
+#[test]
+fn a_question_is_carded_when_the_waiting_set_cannot_hold_it() {
+    let dir = Scratch::new();
+    // A set whose folder is a file: every write fails.
+    let blocker = dir.0.join("not-a-folder");
+    std::fs::write(&blocker, b"x").unwrap();
+    for standing in [None, Some(PushStandingFile::new(blocker.join("standing-attention.json")))] {
+        let unwritable = standing.is_some();
+        let mut monitor = Monitor::new(Tunables::default(), Settings::default(), standing, None, &BTreeMap::new(), T0);
+        monitor.track(CONN, "devbox");
+        monitor.hooks(CONN, vec![hook("%1", "attention", T0)], T0 + 1.0, TMUX);
+        monitor.hooks(CONN, vec![hook("%1", "attention", T0)], T0 + 31.0, TMUX);
+        monitor.sweep(None, T0 + 31.5);
+        let effects = monitor.take_effects();
+        let cards = posts(&effects);
+        assert_eq!(cards.len(), 1, "unwritable {unwritable}: {effects:?}");
+        assert_eq!(cards[0].id, format!("moshpit.attention.{CONN}"));
+        assert_eq!(cards[0].text.title, "claude needs you");
+        assert!(cards[0].text.sound, "the first question rings");
+        assert!(withdrawn(&effects).is_empty(), "unwritable {unwritable}: {effects:?}");
+
+        // A second pane asks: the card counts both.
+        monitor.hooks(CONN, vec![hook("%1", "attention", T0), hook("%2", "attention", T0 + 40.0)], T0 + 41.0, TMUX);
+        monitor.hooks(CONN, vec![hook("%1", "attention", T0), hook("%2", "attention", T0 + 40.0)], T0 + 72.0, TMUX);
+        monitor.sweep(None, T0 + 72.5);
+        let effects = monitor.take_effects();
+        let cards = posts(&effects);
+        assert_eq!(cards.len(), 1, "unwritable {unwritable}: {effects:?}");
+        assert_eq!(cards[0].text.title, "claude +1 needs you", "unwritable {unwritable}");
+
+        // Both answered: the card goes.
+        monitor.hooks(CONN, vec![hook("%1", "working", T0 + 80.0), hook("%2", "working", T0 + 80.0)], T0 + 81.0, TMUX);
+        let effects = monitor.take_effects();
+        assert_eq!(withdrawn(&effects), [format!("moshpit.attention.{CONN}")], "unwritable {unwritable}");
+        assert!(posts(&effects).is_empty(), "unwritable {unwritable}: {effects:?}");
+    }
+}
+
+/// B823: the record names episodes by the host's clock, and a host ahead
+/// of the phone by more than a minute had every one of its entries read as
+/// "from the future" and dropped at launch: each question still waiting
+/// was announced again, and rang again, after a relaunch.
+#[test]
+fn a_host_ahead_of_the_phone_keeps_its_record_across_a_relaunch() {
+    let ahead = T0 + 300.0;
+    let mut relaunched = Bench::new(Settings::default(), &[("%1", ahead)]);
+    relaunched.poll("%1", "attention", ahead, T0 + 1.0);
+    relaunched.poll("%1", "attention", ahead, T0 + 31.0);
+    relaunched.monitor.sweep(None, T0 + 31.5);
+    let effects = relaunched.monitor.take_effects();
+    assert!(posts(&effects).is_empty(), "announced again: {effects:?}");
+    // The same through the record read once the preferences can be believed.
+    let mut sealed = Bench::new(Settings::default(), &[]);
+    let record: BTreeMap<String, f64> = [(format!("{CONN}|%1"), ahead)].into_iter().collect();
+    sealed.poll("%1", "attention", ahead, T0 + 1.0);
+    sealed.monitor.adopt_announced(&record, T0 + 2.0);
+    sealed.poll("%1", "attention", ahead, T0 + 31.0);
+    sealed.monitor.sweep(None, T0 + 31.5);
+    let effects = sealed.monitor.take_effects();
+    assert!(posts(&effects).is_empty(), "announced again: {effects:?}");
 }
 
 // MARK: - Reclassifying (AgentActivityMonitorTests)
