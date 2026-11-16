@@ -24,10 +24,10 @@ final class AppThemeStore {
 
     @ObservationIgnored private let backing: AppThemeStoreBacking
 
-    /// The Rust store over `defaults`, readable as `readiness` says (tests
+    /// The Rust store over `defaults`, readable as `protectedData` says (the core's readiness rule) (tests
     /// and scratch suites; the app's is ``shared``).
-    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+    convenience init(defaults: UserDefaults = .standard, protectedData: @escaping () -> Bool = { true }) {
+        let host = RustPreferencesHost(defaults: defaults, available: protectedData)
         self.init(backing: RustAppThemeStore(preferences: host, mode: .system,
                                              untitled: String(localized: "Untitled")))
     }

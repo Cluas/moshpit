@@ -152,8 +152,8 @@ struct ConnectionStoreTests {
     /// mid-test. What its sealed file reads as is simply an empty suite.
     private final class Phone { var unlocked = false }
 
-    private static func readiness(_ phone: Phone) -> DefaultsReadiness {
-        DefaultsReadiness { phone.unlocked }
+    private static func readiness(_ phone: Phone) -> () -> Bool {
+        { phone.unlocked }
     }
 
     /// Put `connections` on disk the way a previous, trusted run would have —
@@ -173,10 +173,10 @@ struct ConnectionStoreTests {
         defer { defaults.removePersistentDomain(forName: name) }
         let phone = Phone()
 
-        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(phone))
+        let store = ConnectionStore(defaults: defaults, protectedData: Self.readiness(phone))
         #expect(store.connections.isEmpty)
         #expect(!store.isAuthoritative)
-        #expect(defaults.object(forKey: DefaultsReadiness.sentinelKey) == nil,
+        #expect(defaults.object(forKey: storeDefaultsSentinelKey()) == nil,
                 "an untrusted read must not claim the file was there")
 
         // The user unlocks; the file is readable; the app comes forward.
@@ -185,7 +185,7 @@ struct ConnectionStoreTests {
         store.reloadIfNeeded()
         #expect(store.connections.map(\.name) == ["alpha", "bravo"])
         #expect(store.isAuthoritative)
-        #expect(defaults.bool(forKey: DefaultsReadiness.sentinelKey))
+        #expect(defaults.bool(forKey: storeDefaultsSentinelKey()))
     }
 
     @Test("adding from a first-run card that should not be there keeps what was on disk")
@@ -193,7 +193,7 @@ struct ConnectionStoreTests {
         let (defaults, name) = Self.makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
         let phone = Phone()
-        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(phone))
+        let store = ConnectionStore(defaults: defaults, protectedData: Self.readiness(phone))
 
         // Unlocked, but no foreground hop has reloaded the store yet: the tap
         // on "+" is the first thing that happens.
@@ -210,7 +210,7 @@ struct ConnectionStoreTests {
     func noWriteWhileSealed() {
         let (defaults, name) = Self.makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
-        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(Phone()))
+        let store = ConnectionStore(defaults: defaults, protectedData: Self.readiness(Phone()))
 
         store.add(Self.sample(name: "charlie"))
         #expect(store.connections.count == 1)
@@ -223,10 +223,10 @@ struct ConnectionStoreTests {
         let (defaults, name) = Self.makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
         Self.writePayload([Self.sample(name: "alpha")], into: defaults)
-        defaults.set(true, forKey: DefaultsReadiness.sentinelKey)
+        defaults.set(true, forKey: storeDefaultsSentinelKey())
 
         // Locked (after first unlock, say — a push arrived): the file reads.
-        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(Phone()))
+        let store = ConnectionStore(defaults: defaults, protectedData: Self.readiness(Phone()))
         #expect(store.connections.map(\.name) == ["alpha"])
         #expect(store.isAuthoritative)
     }
@@ -361,7 +361,7 @@ struct ConnectionStoreTests {
         defaults.set(original, forKey: Self.storageKey)
         let phone = Phone()
 
-        let store = ConnectionStore(defaults: defaults, readiness: Self.readiness(phone))
+        let store = ConnectionStore(defaults: defaults, protectedData: Self.readiness(phone))
         #expect(store.connections.map(\.name) == ["alpha", "bravo"])
         #expect(!store.isAuthoritative)
         store.add(Self.sample(name: "charlie"))

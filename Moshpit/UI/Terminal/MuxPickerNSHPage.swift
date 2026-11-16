@@ -128,7 +128,7 @@ struct MuxPickerState: Equatable {
         /// active window's): the page names a window tmux named after its
         /// program by its folder, as Home does.
         var path: String?
-        var signal: AgentSignal?
+        var signal: AgentSignalValue?
         var attached = false
         var windows: Int?
         var window: String?
@@ -156,13 +156,14 @@ struct MuxPickerState: Equatable {
         let hooks = controller.agentHooks
         self.kind = kind
         mux = controller.multiplexer
+        let herdr = controller.multiplexer == .herdr
         switch kind {
         case .windows:
             active = snapshot.activeWindowId
             rows = snapshot.sortedWindows.map { window in
                 let panes = snapshot.panes.values.filter { $0.windowId == window.id }
                 let shown = panes.first { $0.isActive } ?? panes.min { $0.index < $1.index }
-                let signal = AgentSignal.aggregate(panes.map { AgentSignal(hooks[$0.id]?.state) })
+                let signal = agentSignalsAggregate(signals: panes.map { hooks[$0.id]?.dot(herdr: herdr) })
                 var row = Row(id: window.id, index: window.index, name: window.name, panes: window.paneCount,
                               command: shown?.command ?? "", signal: signal)
                 row.path = shown?.path
@@ -191,7 +192,7 @@ struct MuxPickerState: Equatable {
             rows = snapshot.activePanes.sorted { $0.index < $1.index }.map { pane in
                 let hook = hooks[pane.id]
                 return Row(id: pane.id, index: pane.index, command: pane.command, agent: hook?.agent,
-                           signal: AgentSignal(hook?.state))
+                           signal: hook?.dot(herdr: herdr))
             }
         }
     }
@@ -259,7 +260,7 @@ final class MuxPickerModel {
     static func menus(for state: MuxPickerState,
                       perform: @escaping (MuxPickerAction, String) -> Void) -> [String: () -> [UIMenuElement]] {
         guard state.kind != .panes else { return [:] }
-        let vocab = state.mux.vocabulary
+        let vocab = state.mux.words
         let noun = state.kind == .sessions ? vocab.session : vocab.window
         var menus: [String: () -> [UIMenuElement]] = [:]
         for row in state.rows {
@@ -269,7 +270,7 @@ final class MuxPickerModel {
                     UIAction(title: String(localized: "Rename"), image: UIImage(systemName: "pencil")) { _ in
                         perform(.rename, id)
                     },
-                    UIAction(title: String(localized: "\(vocab.killVerb) \(noun)"),
+                    UIAction(title: String(localized: "\(vocab.kill) \(noun)"),
                              image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
                         perform(.kill, id)
                     },

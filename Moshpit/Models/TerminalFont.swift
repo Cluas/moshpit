@@ -74,23 +74,3 @@ enum TerminalFont {
         return UIFont(descriptor: descriptor, size: size)
     }
 }
-
-/// Validation for Settings' UDP port range (``SettingsModel``) — pure so it
-/// can be unit-tested on its own.
-enum UDPPortRange {
-    enum ValidationError: Error, Equatable { case nonNumeric, outOfBounds, inverted }
-
-    /// Parse + validate a `(from, to)` pair. Ports must be 1…65535 and
-    /// from ≤ to.
-    static func validate(from: String, to: String) -> Result<(Int, Int), ValidationError> {
-        guard let s = Int(from.trimmingCharacters(in: .whitespaces)),
-              let e = Int(to.trimmingCharacters(in: .whitespaces)) else {
-            return .failure(.nonNumeric)
-        }
-        guard (1...65535).contains(s), (1...65535).contains(e) else {
-            return .failure(.outOfBounds)
-        }
-        guard s <= e else { return .failure(.inverted) }
-        return .success((s, e))
-    }
-}

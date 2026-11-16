@@ -37,7 +37,7 @@ enum HomeNSHMenus {
             let id = card.id
             menus["home-head-\(id.uuidString)"] = { head(card, perform: perform) }
             guard let control = card.tree, card.link == .live else { continue }
-            let vocab = (control.mux == .herdr ? Multiplexer.herdr : .tmux).vocabulary
+            let vocab = (control.mux == .herdr ? Multiplexer.herdr : .tmux).words
             for session in control.snapshot.sessions.values {
                 menus["home-session-\(id.uuidString)-\(session.id)"] = {
                     var items: [UIMenuElement] = [
@@ -50,7 +50,7 @@ enum HomeNSHMenus {
                         items.append(action(String(localized: "Remove Worktree"), "trash.slash",
                                             destructive: true) { perform(.removeWorktree(id, session.id)) })
                     }
-                    items.append(action(String(localized: "\(vocab.killVerb) \(vocab.session)"), "xmark.circle",
+                    items.append(action(String(localized: "\(vocab.kill) \(vocab.session)"), "xmark.circle",
                                         destructive: true) { perform(.killSession(id, session.id)) })
                     return items
                 }
@@ -62,7 +62,7 @@ enum HomeNSHMenus {
                         action(String(localized: "New Pane"), "rectangle.split.2x1") {
                             perform(.newPane(id, window.id))
                         },
-                        action(String(localized: "\(vocab.killVerb) \(vocab.window)"), "xmark.circle", destructive: true) {
+                        action(String(localized: "\(vocab.kill) \(vocab.window)"), "xmark.circle", destructive: true) {
                             perform(.killWindow(id, window.id))
                         },
                     ]
@@ -70,7 +70,7 @@ enum HomeNSHMenus {
                     // killed from here without expanding the window.
                     if let pane = activePane(of: window.id, in: control.snapshot) {
                         items.append(UIMenu(options: .displayInline, children: [
-                            action(String(localized: "\(vocab.killVerb) \(String(localized: "Pane"))"), "rectangle.split.2x1",
+                            action(String(localized: "\(vocab.kill) \(String(localized: "Pane"))"), "rectangle.split.2x1",
                                    destructive: true) { perform(.killPane(id, pane.id)) },
                         ]))
                     }
@@ -79,7 +79,7 @@ enum HomeNSHMenus {
             }
             for pane in control.snapshot.panes.values {
                 menus["home-pane-\(id.uuidString)-\(pane.id)"] = {
-                    [action(String(localized: "\(vocab.killVerb) \(String(localized: "Pane"))"), "rectangle.split.2x1",
+                    [action(String(localized: "\(vocab.kill) \(String(localized: "Pane"))"), "rectangle.split.2x1",
                             destructive: true) { perform(.killPane(id, pane.id)) }]
                 }
             }

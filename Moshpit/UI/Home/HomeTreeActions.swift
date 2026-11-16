@@ -61,7 +61,7 @@ struct HomeTreeActions {
         case .newSession(let id):
             guard let control = control(id) else { return true }
             Haptics.tap()
-            actions.present(HomeNSHActions.create(noun: control.multiplexer.vocabulary.session) {
+            actions.present(HomeNSHActions.create(noun: control.multiplexer.words.session) {
                 control.newSession(named: $0)
             })
         case .newAgentTask(let id):
@@ -78,19 +78,19 @@ struct HomeTreeActions {
             guard let control = control(id),
                   let info = control.snapshot.sessions[session] else { return true }
             actions.present(HomeNSHActions.rename(
-                title: String(localized: "Rename \(control.multiplexer.vocabulary.session)"),
+                title: String(localized: "Rename \(control.multiplexer.words.session)"),
                 currentName: info.name) { control.renameSession(session, to: $0) })
         case .killSession(let id, let session):
             guard let control = control(id),
                   let info = control.snapshot.sessions[session] else { return true }
-            let vocab = control.multiplexer.vocabulary
+            let vocab = control.multiplexer.words
             confirmKill(HomeKillTarget(
-                label: String(localized: "\(vocab.killVerb) \(vocab.session)"),
-                confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.sessionLower) \"\(control.snapshot.sessionDisplayName(info))\"?")
+                label: String(localized: "\(vocab.kill) \(vocab.session)"),
+                confirmTitle: String(localized: "\(vocab.kill) \(vocab.sessionLower) \"\(control.snapshot.sessionDisplayName(info))\"?")
             ) { control.killSession(session) })
         case .newWindow(let id, let session):
             guard let control = control(id) else { return true }
-            actions.present(HomeNSHActions.create(noun: control.multiplexer.vocabulary.window) {
+            actions.present(HomeNSHActions.create(noun: control.multiplexer.words.window) {
                 control.newWindow(inSession: session, named: $0)
             })
         case .removeWorktree(let id, let session):
@@ -103,14 +103,14 @@ struct HomeTreeActions {
         case .renameWindow(let id, let window):
             guard let control = control(id), let info = control.snapshot.windows[window] else { return true }
             actions.present(HomeNSHActions.rename(
-                title: String(localized: "Rename \(control.multiplexer.vocabulary.window)"),
+                title: String(localized: "Rename \(control.multiplexer.words.window)"),
                 currentName: info.name) { control.renameWindow(window, to: $0) })
         case .killWindow(let id, let window):
             guard let control = control(id), let info = control.snapshot.windows[window] else { return true }
-            let vocab = control.multiplexer.vocabulary
+            let vocab = control.multiplexer.words
             confirmKill(HomeKillTarget(
-                label: String(localized: "\(vocab.killVerb) \(vocab.window)"),
-                confirmTitle: String(localized: "\(vocab.killVerb) \(vocab.windowLower) \"\(info.displayTitle(vocab))\"?")
+                label: String(localized: "\(vocab.kill) \(vocab.window)"),
+                confirmTitle: String(localized: "\(vocab.kill) \(vocab.windowLower) \"\(info.displayTitle(vocab))\"?")
             ) { control.killWindow(window) })
         case .newPane(let id, let window):
             guard let control = control(id) else { return true }
@@ -118,10 +118,10 @@ struct HomeTreeActions {
             control.newPane(inWindow: window)
         case .killPane(let id, let pane):
             guard let control = control(id), let info = control.snapshot.panes[pane] else { return true }
-            let vocab = control.multiplexer.vocabulary
+            let vocab = control.multiplexer.words
             confirmKill(HomeKillTarget(
-                label: String(localized: "\(vocab.killVerb) \(String(localized: "Pane"))"),
-                confirmTitle: String(localized: "\(vocab.killVerb) pane \(info.index)?")
+                label: String(localized: "\(vocab.kill) \(String(localized: "Pane"))"),
+                confirmTitle: String(localized: "\(vocab.kill) pane \(info.index)?")
             ) { control.killPane(pane) })
         default:
             return false

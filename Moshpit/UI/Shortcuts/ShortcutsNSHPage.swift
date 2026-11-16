@@ -116,12 +116,10 @@ final class ShortcutsModel {
 
     /// The screen's message, as the shared model makes it: the bar, the
     /// user's own, and every shortcut off the bar as shown (B233), each
-    /// built-in called by its name in the app's language (B234, this
-    /// host's words).
+    /// built-in called by its name in the app's language (B234).
     nonisolated static func message(_ snapshot: ShortcutsSnapshot) -> String {
-        let names = Dictionary(snapshot.shortcuts.map { ($0.id.uuidString, $0.displaySummary) },
-                               uniquingKeysWith: { first, _ in first })
-        return shortcutsPageMessage(shortcuts: snapshot.shortcuts.map(ShortcutRecord.init), names: names)
+        shortcutsPageMessage(shortcuts: snapshot.shortcuts.map(ShortcutRecord.init),
+                             locale: NSHScreenParams.locale)
     }
 
     /// What `event` asks, checked against the store by the shared model:

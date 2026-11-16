@@ -96,7 +96,7 @@ struct TmuxSnapshot: Equatable {
 protocol MultiplexerControlling: AnyObject, Observable {
     /// Which multiplexer is behind this surface. The sheets are generic over
     /// the controller, so this is how they know whose words and keys to print
-    /// (see ``MultiplexerVocabulary``).
+    /// (``Multiplexer/words``).
     var multiplexer: Multiplexer { get }
 
     var snapshot: TmuxSnapshot { get }

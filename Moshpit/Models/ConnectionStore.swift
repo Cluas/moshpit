@@ -44,10 +44,10 @@ final class ConnectionStore {
     /// (``SSHKeyStore``'s recovery and delete).
     @ObservationIgnored let backing: ConnectionStoreBacking
 
-    /// The Rust store over `defaults`, readable as `readiness` says (tests
+    /// The Rust store over `defaults`, readable as `protectedData` says (the core's readiness rule) (tests
     /// and scratch suites; the app's is ``AppStores/connections()``).
-    convenience init(defaults: UserDefaults = .standard, readiness: DefaultsReadiness = .always) {
-        let host = RustPreferencesHost(defaults: defaults, available: readiness.protectedDataAvailable)
+    convenience init(defaults: UserDefaults = .standard, protectedData: @escaping () -> Bool = { true }) {
+        let host = RustPreferencesHost(defaults: defaults, available: protectedData)
         self.init(backing: RustConnectionStore(preferences: host, mode: .system), defaults: defaults)
     }
 
@@ -292,10 +292,10 @@ protocol ConnectionStoreBacking: AnyObject {
 /// What a session remembers about a connection between attempts and app
 /// launches, in `UserDefaults` under the connection's id: where the person
 /// was in tmux (`moshpit.tmux.lastSelection.<id>`, the Rust core's
-/// `session_memory`) and what the host could run (``HostCapabilityCache``).
-/// Both go with their connection (B199).
+/// `session_memory`) and what the host could run (the core's
+/// `hostcaps.<id>`). Both go with their connection (B199).
 enum SessionMemory {
-    /// The tmux selection's (the core's) and ``HostCapabilityCache``'s.
+    /// The tmux selection's and the host capabilities' (both the core's).
     static let prefixes = ["moshpit.tmux.lastSelection.", "hostcaps."]
 
     /// Every key remembering something about connection `id`.

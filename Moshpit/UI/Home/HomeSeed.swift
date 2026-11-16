@@ -5,7 +5,7 @@ import Foundation
 /// this launch only, on a device (`-MOSHPIT_SEED_HOME_FIXTURE <base64
 /// JSON>`). Nothing here
 /// outlives the launch: the connections live in a store that can never
-/// write (it never trusts what it read: ``DefaultsReadiness``), the key in
+/// write (it never trusts what it read: the core's readiness rule), the key in
 /// the connect path's in-memory cache, the hosts' keys in ``LaunchTrust``.
 /// The app's own store, keychain and settings are not touched; the seeded
 /// Home shows instead of the saved one.

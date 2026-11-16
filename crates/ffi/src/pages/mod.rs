@@ -248,6 +248,20 @@ pub fn page_event(screen: String, json: String) -> Option<PageEvent> {
 
 #[cfg(test)]
 mod tests {
+    /// What the Settings host saves a UDP range by (E7c: Swift's
+    /// UDPPortRange was a copy of this rule).
+    #[test]
+    fn a_udp_range_is_saved_by_the_pages_rule() {
+        use super::settings::{PortRange, settings_udp_ports};
+        let ports = |a: &str, b: &str| settings_udp_ports(a.into(), b.into());
+        assert_eq!(ports(" 60000 ", "61000"), Some(PortRange { start: 60000, end: 61000 }));
+        assert_eq!(ports("5000", "5000"), Some(PortRange { start: 5000, end: 5000 }));
+        assert_eq!(ports("abc", "61000"), None);
+        assert_eq!(ports("0", "61000"), None);
+        assert_eq!(ports("1", "70000"), None);
+        assert_eq!(ports("61000", "60000"), None);
+    }
+
     use moshpit_ui::feedback::FeedbackSwitch;
     use moshpit_ui::settings::{self as screen, Setting};
     use serde_json::{Value, json};

@@ -39,7 +39,7 @@ struct BreadcrumbPlan: Equatable {
     var paneTitle: String?
     /// The dot inside the pane crumb — the same signal the Agents section and
     /// the island show, in the same colours. nil = plain pane, no dot.
-    var paneSignal: AgentSignal?
+    var paneSignal: AgentSignalValue?
     /// False while the tree is still filling in after an attach (no active
     /// window or pane yet) or the agent stamps have not been read once.
     var isComplete = true
@@ -69,7 +69,7 @@ struct BreadcrumbPlan: Equatable {
         let pane = snapshot.activePaneId.flatMap { snapshot.panes[$0] }
         let hook = snapshot.activePaneId.flatMap { hooks[$0] }
         let agentName = hook?.agent.flatMap { $0.isEmpty ? nil : $0 }
-        let signal = hook.flatMap { AgentSignal($0.state) }
+        let signal = hook.flatMap { $0.dot(herdr: mux == "herdr") }
 
         // Agent name beats the foreground command (`claude` is written on the
         // pane either way, but the hook's spelling is the authoritative one),

@@ -224,9 +224,10 @@ final class RustHerdrController: MultiplexerControlling {
     enum RestartOutcome: Equatable {
         case restarted
         case failed
-        /// Refused: the `herdr` we would restart with is older than the
-        /// running server. The remedy is upgrading the host's herdr.
-        case wouldDowngrade(HerdrVersionReport)
+        /// Refused: the `herdr` we would restart with (`client`) is older
+        /// than the running server, by the core's reading of `herdr
+        /// status`. The remedy is upgrading the host's herdr.
+        case wouldDowngrade(client: String, server: String)
         /// Nothing done: the server already runs the host's herdr (B408).
         case unneeded
     }

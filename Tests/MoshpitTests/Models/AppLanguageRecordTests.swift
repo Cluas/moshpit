@@ -6,7 +6,7 @@ import MoshpitKit
 /// The app records the language it shows in the App Group at launch
 /// (AppLanguage). That is a write into preferences sealed until the first
 /// unlock, and the sealed-launch rule holds: nothing is written while the
-/// defaults can't be trusted (DefaultsReadiness).
+/// defaults can't be trusted (the core's readiness rule).
 @Suite("The app's language is recorded once the defaults can be trusted")
 @MainActor
 struct AppLanguageRecordTests {
@@ -23,14 +23,14 @@ struct AppLanguageRecordTests {
         }
         // Sealed: protected data unavailable, and no trusted load has left
         // its sentinel in the app's defaults.
-        let sealed = DefaultsReadiness { false }
-        #expect(!AppLanguage.recordIfTrusted(readiness: sealed, defaults: app, language: "en", suiteName: suite))
+        let sealed = { false }
+        #expect(!AppLanguage.recordIfTrusted(protectedData: sealed, defaults: app, language: "en", suiteName: suite))
         #expect(group.object(forKey: AppLanguage.key) == nil,
                 "written into the App Group while its file could still be sealed")
 
         // The device unlocked (or a trusted load's sentinel is there).
-        let open = DefaultsReadiness { true }
-        #expect(AppLanguage.recordIfTrusted(readiness: open, defaults: app, language: "en", suiteName: suite))
+        let open = { true }
+        #expect(AppLanguage.recordIfTrusted(protectedData: open, defaults: app, language: "en", suiteName: suite))
         #expect(AppLanguage.stored(suiteName: suite) == "en")
     }
 }

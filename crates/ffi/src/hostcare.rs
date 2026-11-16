@@ -536,6 +536,22 @@ pub fn host_capabilities_parse(output: String) -> HostCapabilitiesValue {
     HostCapabilities::parse(&output).into()
 }
 
+/// What the core saved about connection `connection_id`'s host the last
+/// time a connect probed it (`hostcaps.<id>` in the app's defaults,
+/// written by the core's connect alone; E7c dropped the app's second
+/// writer). `None` until a connect has probed it.
+#[uniffi::export]
+pub fn store_host_capabilities(
+    host: std::sync::Arc<dyn crate::store::PreferencesHost>,
+    connection_id: String,
+) -> Option<HostCapabilitiesValue> {
+    moshpit_store::session_memory::read::<HostCapabilities>(
+        &crate::store::HostDefaults(host),
+        &moshpit_store::session_memory::host_capabilities_key(&connection_id),
+    )
+    .map(Into::into)
+}
+
 /// What Install Assist offers for a notice's `packages` on a connection
 /// whose multiplexer is tmux (`tmux`) or not.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -756,9 +772,13 @@ mod tests {
 
     #[test]
     fn the_capability_probe_is_the_cores_and_its_answer_keeps_swifts_raw_ids() {
-        assert_eq!(host_capabilities_probe_command(), moshpit_install::capabilities::probe_command());
+        assert_eq!(
+            host_capabilities_probe_command(),
+            moshpit_install::capabilities::probe_command()
+        );
         let found = host_capabilities_parse(
-            "/usr/bin/tmux\n/opt/homebrew/bin/mosh-server\n::Darwin::/opt/homebrew/bin/brew\n".into(),
+            "/usr/bin/tmux\n/opt/homebrew/bin/mosh-server\n::Darwin::/opt/homebrew/bin/brew\n"
+                .into(),
         );
         assert_eq!(
             found,
@@ -773,7 +793,10 @@ mod tests {
         );
         let apt = host_capabilities_parse("::Linux::/usr/bin/apt-get\n".into());
         assert_eq!(apt.package_manager.as_deref(), Some("aptGet"));
-        assert_eq!(host_capabilities_parse("::Linux::\n".into()).package_manager, None);
+        assert_eq!(
+            host_capabilities_parse("::Linux::\n".into()).package_manager,
+            None
+        );
     }
     use std::collections::HashSet;
     use std::sync::Mutex;

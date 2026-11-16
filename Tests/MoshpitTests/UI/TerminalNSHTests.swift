@@ -90,7 +90,7 @@ struct TerminalNSHTests {
     @Test("the breadcrumb says what VoiceOver reads for the pane, and only a live plan is pressable")
     func crumbsCarryTheirLabels() {
         let json = TerminalNSHChrome.json(Self.chrome().crumbs!)
-        #expect(json["paneLabel"] as? String == "claude, \(AgentSignal.attention.label)")
+        #expect(json["paneLabel"] as? String == "claude, \(agentSignalWords(signal: .attention, locale: NSHScreenParams.locale))")
         #expect(json["signal"] as? String == "attention")
         #expect(json["live"] as? Bool == true)
     }

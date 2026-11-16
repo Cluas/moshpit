@@ -134,7 +134,7 @@ struct AgentStandingTests {
                                            notifier: cards.notifier,
                                            // An unlocked phone, whatever the
                                            // test host says (B603).
-                                           readiness: .always)
+                                           protectedData: { true })
         let mux = FakeMux()
         monitor.track(connection: connection, controller: mux)
         return Bench(monitor: monitor, mux: mux, file: file, finishes: finishes,

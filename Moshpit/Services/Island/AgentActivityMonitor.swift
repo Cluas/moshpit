@@ -93,9 +93,9 @@ final class AgentActivityMonitor {
     init(settings: AppSettings, standing: URL? = DeviceLocalFiles.url("standing-attention.json"),
          writeWidget: ((AgentWidgetState) -> Void)? = nil, island: AgentIsland? = nil,
          finishes: URL? = DeviceLocalFiles.url("rung-finishes.json"), notifier: Notifier = .system,
-         clock: (() -> Date)? = nil, readiness: DefaultsReadiness = .system) {
+         clock: (() -> Date)? = nil, protectedData: @escaping () -> Bool = { ProtectedDataFlag.app.isAvailable }) {
         self.settings = settings
-        self.readiness = readiness
+        self.protectedData = protectedData
         self.island = island ?? ActivityKitIsland(settings: settings)
         self.notifier = notifier
         self.clock = clock
@@ -107,7 +107,7 @@ final class AgentActivityMonitor {
         }
         // Read sealed (a prewarm before the first unlock), the record is
         // nothing: it is read again once it can be believed (B348).
-        let trusted = readiness.isReadable(settings.store)
+        let trusted = defaultsReadable
         recordTrusted = trusted
         let record = trusted ? Self.storedRecord(settings.store) : [:]
         machine = AgentMachine(settings: Self.value(of: settings),
@@ -127,7 +127,15 @@ final class AgentActivityMonitor {
 
     private var now: Double { (clock?() ?? Date()).timeIntervalSince1970 }
 
-    @ObservationIgnored private let readiness: DefaultsReadiness
+    /// The system's word on protected data (the app's flag; a test's own).
+    @ObservationIgnored private let protectedData: () -> Bool
+
+    /// Whether what the settings' defaults say can be believed now: the
+    /// core's readiness rule (the sentinel, or protected data available).
+    private var defaultsReadable: Bool {
+        storeDefaultsReadable(host: RustPreferencesHost(defaults: settings.store, available: protectedData),
+                              mode: .system)
+    }
     /// Whether the announced record read so far can be believed. Until it
     /// can, nothing is written over the stored one: a launch before the
     /// first unlock read it as empty, and its first save wrote that over
@@ -149,7 +157,7 @@ final class AgentActivityMonitor {
     /// out (B603).
     func reloadIfNeeded() {
         defer { writeHeldWidget() }
-        guard !recordTrusted, readiness.isReadable(settings.store) else { return }
+        guard !recordTrusted, defaultsReadable else { return }
         recordTrusted = true
         let stored = Self.storedRecord(settings.store)
         let now = self.now
@@ -211,7 +219,7 @@ final class AgentActivityMonitor {
     /// Not with no agents listed: nothing there to go stale.
     func leftForeground() {
         guard let snapshot = Self.widgetRefreshedAtLeaving(lastWidget, at: Date()),
-              readiness.isReadable(settings.store)
+              defaultsReadable
         else { return }
         lastWidget = snapshot
         writeWidget(snapshot)
@@ -402,7 +410,7 @@ final class AgentActivityMonitor {
     /// The snapshot held while the preferences couldn't be believed, now
     /// that they can (B603).
     private func writeHeldWidget() {
-        guard let held = heldWidget, readiness.isReadable(settings.store) else { return }
+        guard let held = heldWidget, defaultsReadable else { return }
         heldWidget = nil
         writeWidget(held)
     }
@@ -447,7 +455,7 @@ final class AgentActivityMonitor {
             // the recorded language gone with it (B603, as
             // `AppLanguage.recordIfTrusted`). Held until they can be
             // believed; the latest goes then.
-            guard readiness.isReadable(settings.store) else {
+            guard defaultsReadable else {
                 heldWidget = snapshot
                 return
             }
@@ -487,7 +495,7 @@ final class AgentActivityMonitor {
     /// session's and its window's names. Nothing for a pane the tree
     /// doesn't show (the line is then the host alone).
     private func place(connectionId: UUID, paneId: String) -> AgentPaneWhereValue {
-        let vocab = (conns[connectionId]?.connection.multiplexer ?? .tmux).vocabulary
+        let vocab = (conns[connectionId]?.connection.multiplexer ?? .tmux).words
         guard let snapshot = conns[connectionId]?.controller?.snapshot,
               let pane = snapshot.panes[paneId] else {
             return AgentPaneWhereValue(command: "", session: nil, window: nil)

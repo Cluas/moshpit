@@ -592,11 +592,6 @@ RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_link(uint64_t ptr, RustBuff
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_output(uint64_t ptr, RustBuffer conn, RustBuffer pane, RustBuffer place, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_RESUMED
-RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_resumed(uint64_t ptr, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_SET_SETTINGS
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_set_settings(uint64_t ptr, RustBuffer settings, RustCallStatus *_Nonnull out_status
@@ -2317,7 +2312,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_image_insert_text(RustBuffer paths, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CAT_COMMAND
-RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, uint64_t size, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_remote_file_cat_command(RustBuffer path, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_REMOTE_FILE_CHILD
@@ -2461,7 +2456,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_list_op(RustBuffer event, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_PAGE_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_PAGE_MESSAGE
-RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_page_message(RustBuffer shortcuts, RustBuffer names, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_page_message(RustBuffer shortcuts, RustBuffer locale, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_THEME_EDITOR_MESSAGE
@@ -2472,6 +2467,26 @@ RustBuffer uniffi_moshpit_ffi_fn_func_theme_editor_message(RustBuffer theme, int
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HERDR_STAMP_INTERVAL
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HERDR_STAMP_INTERVAL
 double uniffi_moshpit_ffi_fn_func_herdr_stamp_interval(int8_t push_active, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signal(RustBuffer state, RustBuffer title, RustBuffer command, int8_t herdr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL_WORDS
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signal_words(RustBuffer signal, RustBuffer locale, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNALS_AGGREGATE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNALS_AGGREGATE
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signals_aggregate(RustBuffer signals, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
+RustBuffer uniffi_moshpit_ffi_fn_func_multiplexer_words(int8_t herdr, RustBuffer locale, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_HOST_CAPABILITIES_PARSE
@@ -2520,6 +2535,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_plan(RustBuffer packages, i
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_RECHECK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_RECHECK
 RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_recheck(RustBuffer packages, int8_t tmux, RustBuffer package_manager, RustBuffer has_tmux, RustBuffer has_mosh_server, RustBuffer has_herdr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOST_CAPABILITIES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOST_CAPABILITIES
+RustBuffer uniffi_moshpit_ffi_fn_func_store_host_capabilities(uint64_t host, RustBuffer connection_id, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SSH_KEY_ASSESS
@@ -2597,14 +2617,24 @@ RustBuffer uniffi_moshpit_ffi_fn_func_page_event(RustBuffer screen, RustBuffer j
 RustBuffer uniffi_moshpit_ffi_fn_func_page_message(RustBuffer message, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SETTINGS_UDP_PORTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SETTINGS_UDP_PORTS
+RustBuffer uniffi_moshpit_ffi_fn_func_settings_udp_ports(RustBuffer from, RustBuffer to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 int8_t uniffi_moshpit_ffi_fn_func_local_network_may_be_why(RustBuffer host, RustBuffer why, RustCallStatus *_Nonnull out_status
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
-RustBuffer uniffi_moshpit_ffi_fn_func_session_hop(RustBuffer connection, RustBuffer saved, RustCallStatus *_Nonnull out_status
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PASTE_BYTES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PASTE_BYTES
+RustBuffer uniffi_moshpit_ffi_fn_func_paste_bytes(RustBuffer text, int8_t bracketed, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
+RustBuffer uniffi_moshpit_ffi_fn_func_scroll_rows(double carry, double pixels, double cell_height, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
@@ -2631,6 +2661,12 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_blend_hex(RustBuffer hex, RustBuffer
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_READABLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_READABLE
 int8_t uniffi_moshpit_ffi_fn_func_store_defaults_readable(uint64_t host, RustBuffer mode, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+RustBuffer uniffi_moshpit_ffi_fn_func_store_defaults_sentinel_key(RustCallStatus *_Nonnull out_status
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_HOLD_RELEASE
@@ -3263,6 +3299,30 @@ uint16_t uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signal(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL_WORDS
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signal_words(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNALS_AGGREGATE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNALS_AGGREGATE
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signals_aggregate(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_MULTIPLEXER_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_MULTIPLEXER_WORDS
+uint16_t uniffi_moshpit_ffi_checksum_func_multiplexer_words(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PARSE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_CAPABILITIES_PARSE
 uint16_t uniffi_moshpit_ffi_checksum_func_host_capabilities_parse(void
@@ -3314,6 +3374,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_plan(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_RECHECK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_RECHECK
 uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_recheck(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOST_CAPABILITIES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_HOST_CAPABILITIES
+uint16_t uniffi_moshpit_ffi_checksum_func_store_host_capabilities(void
     
 );
 #endif
@@ -3407,15 +3473,27 @@ uint16_t uniffi_moshpit_ffi_checksum_func_page_message(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SETTINGS_UDP_PORTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SETTINGS_UDP_PORTS
+uint16_t uniffi_moshpit_ffi_checksum_func_settings_udp_ports(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 uint16_t uniffi_moshpit_ffi_checksum_func_local_network_may_be_why(void
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
-uint16_t uniffi_moshpit_ffi_checksum_func_session_hop(void
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PASTE_BYTES
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PASTE_BYTES
+uint16_t uniffi_moshpit_ffi_checksum_func_paste_bytes(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SCROLL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SCROLL_ROWS
+uint16_t uniffi_moshpit_ffi_checksum_func_scroll_rows(void
     
 );
 #endif
@@ -3446,6 +3524,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_store_blend_hex(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_READABLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_READABLE
 uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_readable(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_DEFAULTS_SENTINEL_KEY
+uint16_t uniffi_moshpit_ffi_checksum_func_store_defaults_sentinel_key(void
     
 );
 #endif
@@ -3602,12 +3686,6 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_link(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_OUTPUT
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_output(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
-#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_RESUMED
-uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_resumed(void
     
 );
 #endif

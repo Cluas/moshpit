@@ -2,12 +2,14 @@ import Foundation
 import Testing
 @testable import Moshpit
 
-/// The gate every UserDefaults-backed store reads through. The truth table is
-/// small enough to pin whole; what each store does with the answer is in its
-/// own suite (ConnectionStoreTests, ShortcutStoreSealedLaunchTests) — and the
-/// stores without a suite of their own get their sealed launch here.
-@Suite("DefaultsReadiness")
-struct DefaultsReadinessTests {
+/// The gate every UserDefaults-backed store reads through: the core's
+/// readiness rule (crates/store readiness.rs, whose tests pin its table),
+/// read here through the app's preferences host, the way the stores and
+/// the agents monitor read it. What each store does with the answer is in
+/// its own suite (ConnectionStoreTests, ShortcutStoreSealedLaunchTests);
+/// the stores without a suite of their own get their sealed launch here.
+@Suite("Sealed launch")
+struct SealedLaunchTests {
 
     private static func makeDefaults() -> (UserDefaults, String) {
         let name = "test.readiness.\(UUID().uuidString)"
@@ -17,27 +19,29 @@ struct DefaultsReadinessTests {
 
     private final class Phone { var unlocked = false }
 
+    private static func readable(_ defaults: UserDefaults, _ protectedData: @escaping () -> Bool) -> Bool {
+        storeDefaultsReadable(host: RustPreferencesHost(defaults: defaults, available: protectedData), mode: .system)
+    }
+
     @Test("unlocked is readable; locked without the sentinel is not")
     func truthTable() {
         let (defaults, name) = Self.makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
         let phone = Phone()
-        let readiness = DefaultsReadiness { phone.unlocked }
 
-        #expect(!readiness.isReadable(defaults))
+        #expect(!Self.readable(defaults) { phone.unlocked })
         phone.unlocked = true
-        #expect(readiness.isReadable(defaults))
+        #expect(Self.readable(defaults) { phone.unlocked })
     }
 
     @Test("the sentinel outranks the lock: a file once read stays readable")
     func sentinelOutranksLock() {
         let (defaults, name) = Self.makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
-        let readiness = DefaultsReadiness { false }
 
         // What the store writes after its first trusted read (crates/store).
-        defaults.set(true, forKey: DefaultsReadiness.sentinelKey)
-        #expect(readiness.isReadable(defaults))
+        defaults.set(true, forKey: storeDefaultsSentinelKey())
+        #expect(Self.readable(defaults) { false })
     }
 
     // Each store below: sealed at launch (empty suite, phone locked), shown
@@ -54,7 +58,7 @@ struct DefaultsReadinessTests {
         let payload = try #require(scratch.data(forKey: key))
 
         let phone = Phone()
-        let store = SSHKeyStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
+        let store = SSHKeyStore(defaults: defaults, protectedData: { phone.unlocked })
         #expect(store.keys.isEmpty)
         #expect(!store.isAuthoritative)
         store.add(SSHKeyRecord(name: "phone", algorithm: .seP256, source: .secureEnclave))
@@ -79,7 +83,7 @@ struct DefaultsReadinessTests {
         let payload = try #require(scratch.data(forKey: key))
 
         let phone = Phone()
-        let store = ThemeStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
+        let store = ThemeStore(defaults: defaults, protectedData: { phone.unlocked })
         #expect(store.customThemes.isEmpty)
         store.save(store.makeDraft())
         #expect(defaults.data(forKey: key) == nil, "nothing is written over a sealed file")
@@ -102,7 +106,7 @@ struct DefaultsReadinessTests {
         let payload = try #require(scratch.data(forKey: key))
 
         let phone = Phone()
-        let store = AppThemeStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
+        let store = AppThemeStore(defaults: defaults, protectedData: { phone.unlocked })
         #expect(store.customThemes.isEmpty)
         store.save(AppTheme.custom(id: "app-2", name: "Other", accentHex: "FF3366"))
         #expect(defaults.data(forKey: key) == nil, "nothing is written over a sealed file")
@@ -120,11 +124,11 @@ struct DefaultsReadinessTests {
         defer { defaults.removePersistentDomain(forName: name) }
         let phone = Phone()
 
-        let settings = AppSettings(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
-        #expect(defaults.object(forKey: DefaultsReadiness.sentinelKey) == nil,
+        let settings = AppSettings(defaults: defaults, protectedData: { phone.unlocked })
+        #expect(defaults.object(forKey: storeDefaultsSentinelKey()) == nil,
                 "a sealed launch is not a trusted read")
         phone.unlocked = true
         settings.reloadIfNeeded()
-        #expect(defaults.bool(forKey: DefaultsReadiness.sentinelKey))
+        #expect(defaults.bool(forKey: storeDefaultsSentinelKey()))
     }
 }

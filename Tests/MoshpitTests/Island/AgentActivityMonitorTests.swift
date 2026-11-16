@@ -219,7 +219,7 @@ struct AgentActivityMonitorTests {
         settings.notificationsEnabled = false
         settings.liveActivityEnabled = true
         // A sealed file holds no sentinel either.
-        defaults.removeObject(forKey: DefaultsReadiness.sentinelKey)
+        defaults.removeObject(forKey: storeDefaultsSentinelKey())
         let connection = ServerConnection(name: "sealed", host: "192.0.2.1", port: 22,
                                           username: "tester", authMethod: .password)
         defaults.set(["\(connection.id.uuidString)|%9": 1_789_999_000.0],
@@ -229,7 +229,7 @@ struct AgentActivityMonitorTests {
             settings: settings, standing: nil, writeWidget: writeWidget,
             island: AgentStandingTests.CountingIsland(), finishes: nil,
             notifier: AgentStandingTests.Cards().notifier, clock: { device.now },
-            readiness: DefaultsReadiness { device.unlocked })
+            protectedData: { device.unlocked })
         let mux = AgentStandingTests.FakeMux()
         monitor.track(connection: connection, controller: mux)
         return (monitor, mux, connection, defaults, name, device)

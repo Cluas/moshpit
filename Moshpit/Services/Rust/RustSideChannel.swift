@@ -200,7 +200,7 @@ final class RustSideChannel {
         let custom = connection.tmuxPath?.trimmingCharacters(in: .whitespaces) ?? ""
         let tmux = custom.isEmpty ? "tmux" : custom
         // An exec channel's shell has no login PATH: tmux where the probe looks.
-        let command = "PATH=\"$PATH:\(HostCapabilities.extraPathDirs)\" \(tmux) display-message -p -t \(paneId) '#{pane_current_path}'"
+        let command = "PATH=\"$PATH:\(hostExtraPathDirs())\" \(tmux) display-message -p -t \(paneId) '#{pane_current_path}'"
         let host = immediate
         guard let output = try? await awaitingCore(timeout: (4, HostConnectionError.notAnswering), {
             try await host.executeCommand(command)

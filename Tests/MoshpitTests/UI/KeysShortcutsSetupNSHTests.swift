@@ -78,7 +78,7 @@ struct KeysShortcutsSetupNSHTests {
     @Test("a key's row lists the connections that sign in with it, not hosts picked at Add Key")
     func keyRowListsItsUsers() {
         let defaults = Self.scratch()
-        let keys = SSHKeyStore(defaults: defaults, readiness: .always)
+        let keys = SSHKeyStore(defaults: defaults, protectedData: { true })
         let connections = ConnectionStore(defaults: defaults)
         var laptop = Self.key("laptop")
         laptop.boundHosts = ["old-box"]
@@ -98,7 +98,7 @@ struct KeysShortcutsSetupNSHTests {
     @Test("the card asks about a key; Delete deletes it — record and private key — as the SwiftUI page does")
     func keysCard() async throws {
         let defaults = Self.scratch()
-        let store = SSHKeyStore(defaults: defaults, readiness: .always)
+        let store = SSHKeyStore(defaults: defaults, protectedData: { true })
         let connections = ConnectionStore(defaults: defaults)
         var laptop = Self.key("laptop")
         laptop.keychainRef = "moshpit.secret.laptop"
@@ -172,7 +172,7 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("Generate makes the key, its private half goes to the Keychain, its record to the store")
     func addKeyGenerates() async throws {
-        let store = SSHKeyStore(defaults: Self.scratch(), readiness: .always)
+        let store = SSHKeyStore(defaults: Self.scratch(), protectedData: { true })
         let keychain = KeychainService.inMemory()
         let model = AddKeyModel()
         #expect(model.apply(.name(text: "phone")))
@@ -216,7 +216,7 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("Import converts what is pasted, and says why it can't")
     func addKeyImports() async throws {
-        let store = SSHKeyStore(defaults: Self.scratch(), readiness: .always)
+        let store = SSHKeyStore(defaults: Self.scratch(), protectedData: { true })
         let keychain = KeychainService.inMemory()
         let generated = try SSHKeyFactory.generate(algorithm: .ed25519, comment: "pasted")
         let model = AddKeyModel(method: .importKey)
@@ -329,7 +329,7 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("the Shortcuts state is a message the Rust screen takes; AVAILABLE has every shortcut off the bar")
     func shortcutsMessages() throws {
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         var mine = TerminalShortcut()
         mine.kind = .text
         mine.payload = "ls"
@@ -351,7 +351,7 @@ struct KeysShortcutsSetupNSHTests {
     @Test("the page's changes go through the store, which keeps 1.0.8's format")
     func shortcutsApply() throws {
         let defaults = Self.scratch()
-        let store = ShortcutStore(defaults: defaults, readiness: .always)
+        let store = ShortcutStore(defaults: defaults, protectedData: { true })
         let first = try #require(store.toolbar.first)
         let second = try #require(store.toolbar.dropFirst().first)
         #expect(ShortcutsModel.apply(.move(from: 0, to: 2), to: store))
@@ -378,7 +378,7 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("the editor's draft is a message the Rust screen takes; Save saves as the SwiftUI page does")
     func shortcutEditor() throws {
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         let model = AddShortcutModel(existing: nil)
         #expect(NSHSurface.check(screen: NSHScreen.addShortcut.name, json: model.message))
         #expect(model.save(to: store) == .notSaved, "nothing to save yet")
@@ -415,7 +415,7 @@ struct KeysShortcutsSetupNSHTests {
     /// page goes); an edit of one already saved never does.
     @Test("Save with the toolbar full says the shortcut is under AVAILABLE")
     func shortcutEditorSaysAFullToolbar() throws {
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         while !store.toolbarIsFull {
             var filler = TerminalShortcut()
             filler.chipLabel = "f\(store.toolbarCount)"
@@ -439,7 +439,7 @@ struct KeysShortcutsSetupNSHTests {
     /// away) used to add a second copy under a fresh id.
     @Test("a new shortcut saved twice is one shortcut")
     func shortcutEditorSavesOnce() throws {
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         let count = store.shortcuts.count
         let model = AddShortcutModel(existing: nil)
         model.apply(draftJson: #"{"kind": "text", "payload": "git status", "chipLabel": "gs"}"#)
@@ -656,7 +656,7 @@ struct KeysShortcutsSetupNSHTests {
 
     @Test("Shortcuts and its editor on a real surface: − takes off, a handle reorders, UIKit's controls carry the state")
     func shortcutsSurface() async throws {
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         let (surface, heard, done) = try Self.surface(running: .shortcuts)
         defer { done() }
         #expect(surface.post(json: ShortcutsModel.message(ShortcutsSnapshot(store: store))))
@@ -746,7 +746,7 @@ struct KeysShortcutsSetupNSHTests {
         let laptop = Self.key("laptop")
         let old = Self.key("old box", algorithm: .rsa4096, publicKey: "ssh-rsa AAAAB3Nza old",
                            lastUsed: Date(timeIntervalSinceNow: -200 * 86_400))
-        let store = ShortcutStore(defaults: Self.scratch(), readiness: .always)
+        let store = ShortcutStore(defaults: Self.scratch(), protectedData: { true })
         for light in [false, true] {
             try await Self.picture(.sshKeys, light: light, ready: SSHKeysModel.rowID(laptop.id), name: "ssh-keys") {
                 $0.post(.sshKeys(state: SSHKeysModel.state(

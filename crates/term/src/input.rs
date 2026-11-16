@@ -470,6 +470,132 @@ mod tests {
         assert_eq!(paste(bare, false), b"ls\rtouch INJECTED\r");
     }
 
+    /// The Swift `BracketedPasteTests` cases, kept when the Swift copy went
+    /// (E7c): the app's every paste now goes through [`paste`]. One case
+    /// changed on purpose: an empty paste sends nothing, never two bare
+    /// markers.
+    #[test]
+    fn the_swift_suites_cases() {
+        let start = "\x1b[200~";
+        let end = "\x1b[201~";
+        let body = |text: &str| String::from_utf8(paste_body(text)).unwrap();
+        let wrapped = |body: &str| [PASTE_START, body.as_bytes(), PASTE_END].concat();
+        // Plain text passes through, wrapped once.
+        assert_eq!(body("first line\nsecond line"), "first line\nsecond line");
+        assert_eq!(paste("/tmp/shot.png", true), wrapped("/tmp/shot.png"));
+        assert_eq!(paste("", true), b"", "an empty paste sends nothing");
+        // Start and end markers come out.
+        assert_eq!(body(&format!("one{end}two")), "onetwo");
+        assert_eq!(body(&format!("one{start}two")), "onetwo");
+        assert_eq!(body(&format!("{start}{end}{end}")), "");
+        // A marker whose `~` carries a combining mark comes out; the mark stays.
+        for mark in ["\u{301}", "\u{FE0F}", "\u{1F3FB}", "\u{200D}", "\u{20E3}"] {
+            assert_eq!(body(&format!("a{end}{mark}b")), format!("a{mark}b"));
+            assert_eq!(body(&format!("a{start}{mark}b")), format!("a{mark}b"));
+        }
+        // A marker assembled by taking another out comes out too, across kinds.
+        assert_eq!(body(&format!("a\x1b[20{end}1~b")), "ab");
+        assert_eq!(body(&format!("\x1b[20\x1b[20{end}1~1~")), "");
+        assert_eq!(body(&format!("\x1b[20{end}0~x")), "x");
+        assert_eq!(body(&format!("\x1b{start}[201~")), "");
+        // Bytes that only look like a marker stay, but for the ESC.
+        for kept in [
+            "\x1b[201",
+            "\x1b[202~",
+            "[201~",
+            "\x1b[2O1~",
+            "\x1b\x1b",
+            "\x1b[200",
+            "~\x1b[20 1~",
+            "\x1b[201\u{301}~",
+        ] {
+            assert_eq!(body(kept), kept.replace('\x1b', ""), "{kept:?}");
+        }
+        // B738: no control but tab and line breaks; C1 and DEL go too.
+        assert_eq!(
+            body("a\x1b:!rm -rf ~\u{03}\u{04}\u{7F}\u{9B}2J\tx\r\ny中文🎉"),
+            "a:!rm -rf ~2J\tx\r\ny中文🎉"
+        );
+        assert_eq!(paste("x\x1b[A\u{03}\n", false), b"x[A\r");
+        assert_eq!(paste("a\tb\r\nc\nd", true), wrapped("a\tb\r\nc\nd"));
+        assert_eq!(paste("x\u{9B}201~y", true), wrapped("x201~y"));
+        // B574: unbracketed, line breaks are Return; bracketed, as they are.
+        assert_eq!(paste("a\r\nb\nc\rd", false), b"a\rb\rc\rd");
+        assert_eq!(paste("\r\n\r\n", false), b"\r\r");
+        assert_eq!(paste("中文 no breaks", false), "中文 no breaks".as_bytes());
+        assert_eq!(paste("a\r\nb\nc", true), wrapped("a\r\nb\nc"));
+    }
+
+    /// Removal the slow, obvious way (every marker, pass after pass, then
+    /// no ESC): what [`paste_body`] must agree with, on random pieces of
+    /// markers (the Swift suite's 5 000, its seed).
+    #[test]
+    fn random_pieces_come_out_as_repeated_removal_says() {
+        fn naive(text: &str) -> Vec<u8> {
+            let mut bytes = text.as_bytes().to_vec();
+            loop {
+                let mut out = Vec::with_capacity(bytes.len());
+                let mut i = 0;
+                let mut removed = false;
+                while i < bytes.len() {
+                    let rest = &bytes[i..];
+                    if rest.starts_with(PASTE_START) || rest.starts_with(PASTE_END) {
+                        i += PASTE_END.len();
+                        removed = true;
+                    } else {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
+                }
+                bytes = out;
+                if !removed {
+                    return bytes.into_iter().filter(|&b| b != 0x1b).collect();
+                }
+            }
+        }
+        let pieces = [
+            "\x1b[201~",
+            "\x1b[200~",
+            "\x1b[20",
+            "\x1b[201",
+            "\x1b[200",
+            "1~",
+            "0~",
+            "~",
+            "\x1b",
+            "[",
+            "2",
+            "0",
+            "1",
+            "x",
+            "\u{301}",
+            "\n",
+            "é",
+        ];
+        let mut state: u64 = 0x9A57_E019;
+        let mut next = |n: usize| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            ((state >> 33) as usize) % n
+        };
+        let count =
+            |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).filter(|w| *w == needle).count();
+        for _ in 0..5_000 {
+            let len = next(15);
+            let pasted: String = (0..len).map(|_| pieces[next(pieces.len())]).collect();
+            let body = paste_body(&pasted);
+            assert_eq!(body, naive(&pasted), "{pasted:?}");
+            assert_eq!(count(&body, PASTE_END), 0, "{pasted:?}");
+            assert_eq!(count(&body, PASTE_START), 0, "{pasted:?}");
+            let sent = paste(&pasted, true);
+            if !body.is_empty() {
+                assert_eq!(count(&sent, PASTE_END), 1, "{pasted:?}");
+                assert_eq!(count(&sent, PASTE_START), 1, "{pasted:?}");
+            }
+        }
+    }
+
     #[test]
     fn a_repeat_carries_event_type_two() {
         assert_eq!(mark_repeat("\x1b[97;1u"), "\x1b[97;1:2u");

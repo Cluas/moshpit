@@ -513,3 +513,29 @@ fn waiting_counts_what_needs_you_lists() {
     agree(&skewed, "a herdr over a version skew");
     assert_eq!(skewed[0].waiting(), 0);
 }
+
+/// The Swift `AgentSignal` suite's cases, kept when it went (E7c): a
+/// stamp's dot, and a window's or session's for its panes.
+#[test]
+fn a_stamps_dot_and_a_windows_dot() {
+    use moshpit_ui::home::model::Signal;
+    assert_eq!(Signal::of(Some("attention")), Some(Signal::Attention));
+    assert_eq!(Signal::of(Some("working")), Some(Signal::Working));
+    assert_eq!(Signal::of(Some("done")), Some(Signal::Done));
+    assert_eq!(Signal::of(Some("idle")), None);
+    assert_eq!(Signal::of(None), None);
+    assert_eq!(Signal::of(Some("something new")), None);
+    // Attention beats working; a finished agent lights no window.
+    assert_eq!(
+        Signal::aggregate([Some(Signal::Working), Some(Signal::Attention)]),
+        Some(Signal::Attention)
+    );
+    assert_eq!(
+        Signal::aggregate([Some(Signal::Working), None]),
+        Some(Signal::Working)
+    );
+    assert_eq!(Signal::aggregate([Some(Signal::Done)]), None);
+    assert_eq!(Signal::aggregate([None, None]), None);
+    assert_eq!(Signal::aggregate([]), None);
+    assert_eq!(Signal::Attention.words("en"), "needs you");
+}

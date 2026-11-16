@@ -84,7 +84,7 @@ struct TerminalNSHSheetsTests {
         let items = menus["mux-picker-row-@2"]?() ?? []
         let titles = items.compactMap { ($0 as? UIAction)?.title }
         #expect(titles == [String(localized: "Rename"),
-                           String(localized: "\(Multiplexer.herdr.vocabulary.killVerb) \(Multiplexer.herdr.vocabulary.window)")])
+                           String(localized: "\(Multiplexer.herdr.words.kill) \(Multiplexer.herdr.words.window)")])
         #expect((items.last as? UIAction)?.attributes.contains(.destructive) == true)
         let panes = MuxPickerState(kind: .panes, mux: .tmux, rows: Self.rows, active: "@1")
         #expect(MuxPickerModel.menus(for: panes) { _, _ in }.isEmpty)

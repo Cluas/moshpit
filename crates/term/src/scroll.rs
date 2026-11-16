@@ -315,6 +315,43 @@ impl Scroll {
 mod tests {
     use super::*;
 
+    /// The app's Swift suite (`ScrollRowCarry`, gone to the core, E7c).
+    #[test]
+    fn the_swift_suites_cases() {
+        // Sub-row travel carries over instead of being dropped.
+        let mut s = Scroll::default();
+        assert_eq!(s.take(7.0, 10.0), 0);
+        assert_eq!(s.take(7.0, 10.0), 1, "14: one row, 4 left");
+        assert_eq!(s.take(-9.0, 10.0), 0, "4 - 9 = -5");
+        assert_eq!(s.take(-6.0, 10.0), -1, "-11: one row back, -1 left");
+        assert_eq!(s.take(31.0, 10.0), 3, "30: three rows, nothing left");
+        assert_eq!(s.carry_px, 0.0);
+
+        // A slow drag adds up to the same rows as one fast one (3.25 is
+        // exact in binary: a hundred of them are 325).
+        let (mut slow, mut fast) = (Scroll::default(), Scroll::default());
+        let slow_rows: i64 = (0..100).map(|_| slow.take(3.25, 13.0)).sum();
+        assert_eq!(fast.take(325.0, 13.0), 25);
+        assert_eq!(slow_rows, 25);
+
+        // B149: absurd travel saturates instead of trapping, and the carry
+        // keeps working after it.
+        let mut s = Scroll::default();
+        assert_eq!(s.take(1e300, 1e-300), i64::MAX);
+        assert_eq!(s.carry_px, 0.0, "a carry past f64's range starts over");
+        assert_eq!(s.take(25.0, 10.0), 2, "and the next drag counts as ever");
+        let mut down = Scroll::default();
+        assert_eq!(down.take(-1e300, 1.0), i64::MIN);
+        assert_eq!(down.take(-1e300, f64::from_bits(1)), i64::MIN);
+        assert_eq!(down.take(-15.0, 10.0), -1);
+
+        // A zero cell height or a non-finite delta yields nothing.
+        let mut s = Scroll::default();
+        assert_eq!(s.take(100.0, 0.0), 0);
+        assert_eq!(s.take(f64::NAN, 10.0), 0);
+        assert_eq!(s.carry_px, 0.0);
+    }
+
     #[test]
     fn a_slow_drag_adds_up() {
         let mut s = Scroll::default();

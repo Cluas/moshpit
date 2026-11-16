@@ -174,6 +174,7 @@ pub struct Vocab {
     pub session: String,
     pub sessions: String,
     pub session_lower: String,
+    pub sessions_lower: String,
     pub window: String,
     pub windows: String,
     pub window_lower: String,
@@ -188,18 +189,27 @@ pub struct Vocab {
 }
 
 impl Vocab {
-    /// `mux`'s words, in the app's language.
+    /// `mux`'s words, in the language the surface shows.
     pub fn of(mux: Mux) -> Vocab {
+        Self::in_locale(mux, &crate::strings::shown_language())
+    }
+
+    /// `mux`'s words in `locale` (a BCP 47 tag the app ships, falling back
+    /// as the screens' text does), outside any surface too: the app's own
+    /// menus and prompts word the multiplexer with these (E7c, through the
+    /// ffi crate), so one list says it everywhere.
+    pub fn in_locale(mux: Mux, locale: &str) -> Vocab {
         match mux {
             Mux::Herdr => Vocab {
-                session: t!("Workspace"),
-                sessions: t!("Workspaces"),
-                session_lower: t!("workspace"),
-                window: t!("Tab"),
-                windows: t!("Tabs"),
-                window_lower: t!("tab"),
-                windows_lower: t!("tabs"),
-                kill: t!("Close"),
+                session: crate::tl!("Workspace", locale),
+                sessions: crate::tl!("Workspaces", locale),
+                session_lower: crate::tl!("workspace", locale),
+                sessions_lower: crate::tl!("workspaces", locale),
+                window: crate::tl!("Tab", locale),
+                windows: crate::tl!("Tabs", locale),
+                window_lower: crate::tl!("tab", locale),
+                windows_lower: crate::tl!("tabs", locale),
+                kill: crate::tl!("Close", locale),
                 session_keys: ["⌃", "b w"],
                 window_keys: ["⌃", "b n/p"],
                 pane_keys: ["⌃", "b v"],
@@ -209,14 +219,15 @@ impl Vocab {
             // Plain shells never show these; tmux's words are a harmless
             // default.
             Mux::Tmux | Mux::None => Vocab {
-                session: t!("Session"),
-                sessions: t!("Sessions"),
-                session_lower: t!("session"),
-                window: t!("Window"),
-                windows: t!("Windows"),
-                window_lower: t!("window"),
-                windows_lower: t!("windows"),
-                kill: t!("Kill"),
+                session: crate::tl!("Session", locale),
+                sessions: crate::tl!("Sessions", locale),
+                session_lower: crate::tl!("session", locale),
+                sessions_lower: crate::tl!("sessions", locale),
+                window: crate::tl!("Window", locale),
+                windows: crate::tl!("Windows", locale),
+                window_lower: crate::tl!("window", locale),
+                windows_lower: crate::tl!("windows", locale),
+                kill: crate::tl!("Kill", locale),
                 session_keys: ["⌃", "b s"],
                 window_keys: ["⌃", "1-9"],
                 pane_keys: ["⌃", "b q"],
@@ -850,6 +861,39 @@ mod tests {
     //! itself, are `ui/tests/mux_picker.rs`'s.
     use super::*;
 
+    /// The Swift `MultiplexerVocabulary` suite's cases, kept when it went
+    /// (E7c): each multiplexer names its levels and destroys things in its
+    /// own words and draws its own symbols; a plain shell falls back to
+    /// tmux's; any language the app ships, outside a surface.
+    #[test]
+    fn each_multiplexer_speaks_its_own_words_in_any_language() {
+        let tmux = Vocab::in_locale(Mux::Tmux, "en");
+        let herdr = Vocab::in_locale(Mux::Herdr, "en");
+        assert_eq!(
+            (tmux.session.as_str(), tmux.window.as_str()),
+            ("Session", "Window")
+        );
+        assert_eq!(
+            (herdr.session.as_str(), herdr.window.as_str()),
+            ("Workspace", "Tab")
+        );
+        assert_eq!(
+            (tmux.session_lower.as_str(), herdr.window_lower.as_str()),
+            ("session", "tab")
+        );
+        assert_eq!((tmux.kill.as_str(), herdr.kill.as_str()), ("Kill", "Close"));
+        assert_eq!(tmux.window_icon, "macwindow");
+        assert_ne!(herdr.window_icon, tmux.window_icon);
+        assert_ne!(herdr.session_icon, tmux.session_icon);
+        let none = Vocab::in_locale(Mux::None, "en");
+        assert_eq!(none.session, tmux.session, "a plain shell says tmux's");
+        let zh = Vocab::in_locale(Mux::Herdr, "zh-Hans");
+        assert_eq!(
+            (zh.session.as_str(), zh.window.as_str(), zh.kill.as_str()),
+            ("工作区", "标签页", "关闭")
+        );
+    }
+
     /// tmux's or herdr's words in English, without an engine.
     fn english(mux: Mux) -> Vocab {
         let herdr = mux == Mux::Herdr;
@@ -858,6 +902,7 @@ mod tests {
             session: w("Session", "Workspace"),
             sessions: w("Sessions", "Workspaces"),
             session_lower: w("session", "workspace"),
+            sessions_lower: w("sessions", "workspaces"),
             window: w("Window", "Tab"),
             windows: w("Windows", "Tabs"),
             window_lower: w("window", "tab"),

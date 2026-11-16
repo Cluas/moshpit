@@ -530,7 +530,7 @@ struct ShortcutStoreSealedLaunchTests {
         let payload = try #require(scratch.data(forKey: Self.storageKey))
 
         let phone = Phone()
-        let store = ShortcutStore(defaults: defaults, readiness: DefaultsReadiness { phone.unlocked })
+        let store = ShortcutStore(defaults: defaults, protectedData: { phone.unlocked })
         // Usable — the bar has its shipped chips — but nothing reached the disk.
         #expect(!store.toolbar.isEmpty)
         #expect(!store.isAuthoritative)

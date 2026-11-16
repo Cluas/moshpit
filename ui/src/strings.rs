@@ -119,11 +119,20 @@ pub fn plural_form(translations: &Translations, language: &str, key: &str, n: i6
 #[doc(hidden)]
 pub fn plural(key: &str, n: i64) -> String {
     let translations = nsh_core::element::global::<Translations>().get();
+    plural_form(&translations, &shown_language(), key, n)
+}
+
+/// The language the surface shows its text in (what [`t!`](nsh_core::t)
+/// picks): the first of the user's languages the app has, else the
+/// surface's locale.
+pub fn shown_language() -> String {
+    let translations = nsh_core::element::global::<Translations>().get();
     let languages = nsh_core::element::locale_settings().languages;
-    let shown = translations
+    translations
         .pick(languages.iter())
-        .unwrap_or_else(nsh_core::element::locale);
-    plural_form(&translations, shown.as_str(), key, n)
+        .unwrap_or_else(nsh_core::element::locale)
+        .as_str()
+        .to_owned()
 }
 
 /// The text of a key with plural forms for a count, in the language the

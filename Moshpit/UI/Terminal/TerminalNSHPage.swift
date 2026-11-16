@@ -719,14 +719,14 @@ struct TerminalNSHChrome: Equatable {
         if let ground { message["ground"] = ground }
         if let crumbs { message["crumbs"] = Self.json(crumbs) }
         if let empty {
-            let vocabulary = empty.mux.vocabulary
+            let words = empty.mux.words
             message["empty"] = [
                 "mux": empty.mux.rawValue,
                 "missing": empty.missing,
                 "settled": empty.settled,
-                "session": vocabulary.session,
-                "sessionLower": vocabulary.sessionLower,
-                "sessionsLower": vocabulary.sessionPluralLower,
+                "session": words.session,
+                "sessionLower": words.sessionLower,
+                "sessionsLower": words.sessionsLower,
             ] as [String: Any]
         }
         if let banner { message["banner"] = Self.json(banner) }
@@ -781,7 +781,9 @@ struct TerminalNSHChrome: Equatable {
         if let pane = plan.paneTitle {
             json["pane"] = pane
             // What VoiceOver reads: the title and what the dot means.
-            json["paneLabel"] = plan.paneSignal.map { "\(pane), \($0.label)" } ?? pane
+            json["paneLabel"] = plan.paneSignal.map {
+                "\(pane), \(agentSignalWords(signal: $0, locale: NSHScreenParams.locale))"
+            } ?? pane
         }
         if let signal = plan.paneSignal {
             json["signal"] = switch signal {

@@ -499,8 +499,7 @@ final class RustSessionDriver: RustSessionListener {
         }
     }
 
-    /// What the core's probe found about the host, on the session as the
-    /// Swift path publishes it (`probeCapabilities`): Install Assist's
+    /// What the core's probe found about the host, on the session: Install Assist's
     /// package manager and install command, the empty state's "not
     /// installed". The core saves its probe under the app's own
     /// `hostcaps.<UUID>` before it routes the connect, so it is there by the
@@ -508,7 +507,8 @@ final class RustSessionDriver: RustSessionListener {
     /// on this path, and Install Assist had no command until its Re-check
     /// (B336).
     private func publishCapabilities() {
-        guard let known = HostCapabilityCache.shared.reload(for: connection.id) else { return }
+        guard let known = storeHostCapabilities(host: AppStores.preferences,
+                                                connectionId: connection.id.uuidString) else { return }
         session.rustSetCapabilities(known)
     }
 
@@ -933,7 +933,7 @@ final class RustSessionDriver: RustSessionListener {
                                 text: text)
         } else {
             let bracketed = session.coordinator.modes?.bracketedPaste == true
-            let payload = BracketedPaste.payload(text, bracketed: bracketed)
+            let payload = pasteBytes(text: text, bracketed: bracketed)
             if !payload.isEmpty {
                 session.coordinator.dropPredictions()
                 shell?.write(payload)
@@ -953,7 +953,7 @@ final class RustSessionDriver: RustSessionListener {
         if !expectsTmux, !expectsSidecar, !expectsHerdrSurface {
             // A plain shell: the local terminal knows the program's paste mode.
             let bracketed = session.coordinator.modes?.bracketedPaste == true
-            return await deliver(BracketedPaste.payload(text, bracketed: bracketed),
+            return await deliver(pasteBytes(text: text, bracketed: bracketed),
                                  toPane: "shell", paste: false)
         }
         return await deliver(Data(text.utf8), toPane: pane, paste: true)
