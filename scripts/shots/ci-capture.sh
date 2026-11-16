@@ -321,6 +321,10 @@ xcrun simctl spawn "$udid" log show --last 90m --style compact \
     --predicate 'subsystem BEGINSWITH "com.cluas.moshpit"' > "$out/app-$device.log" 2>/dev/null || true
 # sshd (run by root) wrote its log as root.
 sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
+# Each SSH exec the app ran on the host, timed (stage-host.sh), on a runner.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    sudo cat /Users/dev/.moshpit-exec.log > "$out/exec-$device.log" 2>/dev/null || true
+fi
 
 # ── The store images ───────────────────────────────────────────────────
 

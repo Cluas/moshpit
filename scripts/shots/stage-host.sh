@@ -102,6 +102,23 @@ if [ "$user" != "$(id -un)" ] && ! id "$user" >/dev/null 2>&1; then
     as_user touch "/Users/$user/.zshrc"
 fi
 
+# What each SSH exec runs on the host, and when (B817: whether the app's
+# path probe reached the host before a tap): the session user's zsh reads
+# ~/.zshenv for every `zsh -c` sshd starts. Only that user's, made for the
+# shots, never the runner's or a person's own.
+if [ "$user" != "$(id -un)" ]; then
+    as_user sh -c 'cat > "$HOME/.zshenv"' <<'EOF'
+# Written by scripts/shots/stage-host.sh: what each SSH exec ran, and when.
+if [[ -n $ZSH_EXECUTION_STRING ]]; then
+    zmodload -F zsh/datetime p:EPOCHREALTIME b:strftime 2>/dev/null
+    strftime -s _moshpit_t '%H:%M:%S' ${EPOCHREALTIME%.*}
+    print -r -- "$_moshpit_t.${${EPOCHREALTIME#*.}[1,3]} ${ZSH_EXECUTION_STRING[1,200]}" >> ~/.moshpit-exec.log
+    unset _moshpit_t
+fi
+EOF
+    as_user sh -c ': > "$HOME/.moshpit-exec.log"'
+fi
+
 log "a throwaway key and an sshd of our own on 127.0.0.1:$port"
 ssh-keygen -q -t ed25519 -N '' -C shots -f "$work/id"
 cp "$work/id.pub" "$kit/authorized_keys"
