@@ -52,7 +52,7 @@
 //! control clients are Moshpit's: each Moshpit `-CC` client (a phone's, a
 //! mosh sidecar) keeps its name in the server option `@moshpit_cc`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::control::CommandResponse;
 use crate::format::is_valid_id;
@@ -147,6 +147,9 @@ pub(super) struct GroupState {
     /// Plain switches sent before the version was known (B812), whose
     /// `%session-changed` is still to come.
     pub unversioned_switches: u32,
+    /// Every phone's group at the last sweep, by id: the session each is
+    /// of (`@moshpit_group_of`).
+    pub marked: BTreeMap<String, String>,
     /// The check's answers, until the last one comes.
     pub check_self: Option<String>,
     pub check_rows: Option<Vec<(bool, String, String)>>,
@@ -638,6 +641,11 @@ impl Controller {
                     .to_owned();
                 Some((id.to_owned(), attached, of))
             })
+            .collect();
+        self.group.marked = rows
+            .iter()
+            .filter(|(_, _, of)| !of.is_empty())
+            .map(|(id, _, of)| (id.clone(), of.clone()))
             .collect();
         let ours = self.group.current.as_ref().and_then(|g| g.id.clone());
         let mut doomed = Vec::new();
