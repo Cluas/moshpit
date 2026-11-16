@@ -969,12 +969,10 @@ pub(crate) fn renderer_out_command(tmux: &str, server: i64) -> String {
     ))
 }
 
-/// Every window's layout, read over exec (B850: tmux on the probed PATH).
+/// Every window's layout, read over exec (B850: tmux on the probed PATH;
+/// B776: as a control client reads them).
 pub(crate) fn layouts_command(tmux: &str) -> String {
-    moshpit_tmux::boot::exec(&format!(
-        "{tmux} list-windows -a -F '{}' 2>/dev/null",
-        moshpit_tmux::controller::SIZE_PROBE_FORMAT
-    ))
+    moshpit_tmux::boot::exec(&moshpit_tmux::controller::layout_listing_command(tmux))
 }
 
 /// What paying `ledger` runs, in order: the phone's mosh renderer out of

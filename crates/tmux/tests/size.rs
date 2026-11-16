@@ -1699,6 +1699,48 @@ fn a_rearrangement_by_someone_else_is_not_a_layout_of_ours() {
     assert!(!script.contains(&format!("\"{REARRANGED}\"")), "{script}");
 }
 
+/// B776: the listing mosh's bootstrap takes before the renderer (B270),
+/// run by a shell against a stand-in tmux 3.8: a plain client gets JSON
+/// layouts, which no layout the sidecar reads is; every window read as
+/// squashed by the renderer, its record a JSON layout the hand-back never
+/// matched. Read as a control client, the rows are as the sidecar's own.
+#[test]
+fn the_bootstraps_layout_listing_reads_as_the_sidecar_does_on_tmux_3_8() {
+    const JSON: &str = r#"{"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"a":true,"i":0,"I":"%0"}}"#;
+    let row = |layout: &str| format!("@0 1 0 %0 {layout} latest ");
+    let dir = std::env::temp_dir().join(format!("moshpit-b776-listing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let fake = dir.join("tmux");
+    std::fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in\n\
+             \"-C list-windows\"*) printf '%%begin 1 1 0\\n%s\\n%%end 1 1 0\\n%%exit\\n' '{}';;\n\
+             list-windows*) printf '%s\\n' '{}';;\nesac\n",
+            row("b25d,80x24,0,0,0"),
+            row(JSON)
+        ),
+    )
+    .unwrap();
+    std::process::Command::new("chmod")
+        .args(["+x", &fake.display().to_string()])
+        .status()
+        .unwrap();
+    let command = moshpit_tmux::controller::layout_listing_command(&fake.display().to_string());
+    let out = std::process::Command::new("/bin/sh")
+        .args(["-c", &command])
+        .output()
+        .unwrap();
+    let listing = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(
+        listing.trim_end(),
+        row("b25d,80x24,0,0,0").trim_end(),
+        "{command}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The script, run by a shell against a stand-in tmux that answers the read
 /// with the window's layout and logs the rest: replayed over ours, left
 /// alone over the desktop's rearrangement. B776: tmux 3.8 writes a plain
