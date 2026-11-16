@@ -18,11 +18,12 @@ name: Screenshots
 # set takes most of an hour.
 #
 # From main or a version tag, the set is published to GitHub Pages at
-# /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png, where the READMEs link. A
-# run that shot part of it is laid over the set that is live; either way
-# the set that goes up must be whole (every slot of both devices in every
-# locale, at the store's sizes), or nothing goes up and the last good set
-# stays.
+# /shots/<iphone|ipad>/<locale>/<nn>-<shot>.png. A run that shot part of
+# it, or whose shoot jobs didn't all pass, is laid over the set that is
+# live: what each passing job checked replaces the live images, and a job
+# that failed leaves its part as it was. Either way the set that goes up
+# must be whole (every slot of both devices in every locale, at the store's
+# sizes), or nothing goes up and the last good set stays.
 on:
   schedule:
     - cron: "23 18 * * *" # 02:23 in Shanghai, 18:23 UTC: off-peak for the runners
@@ -95,18 +96,26 @@ jobs:
     name: Build
     runs-on: xcode-27
     timeout-minutes: 60
+    outputs:
+      xcode: ${{ steps.xcode.outputs.xcode }}
     env:
       SPM_CACHE_DIR: ${{ github.workspace }}/.spm-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # The same pick as CI's: the newest Xcode 27, a simulator to build for.
+      # The newest Xcode 27 that isn't a beta (a beta may come without its
+      # simulator runtime: 43822605849's iPhone 1 got 27.3 beta, whose
+      # xcodebuild found no iOS runtime), and a simulator to build for. The
+      # shoot jobs select the same Xcode.
       - name: Select Xcode
+        id: xcode
         run: |
-          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
-          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          XCODE=$(printf '%s\n' /Applications/Xcode_27*.app | grep -iv beta | sort -V | tail -1)
+          [ -d "$XCODE" ] || XCODE=/Applications/Xcode.app
+          sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
+          echo "xcode=$(basename "$XCODE")" >> "$GITHUB_OUTPUT"
           iphones=$(xcrun simctl list devices available |
             sed -nE 's/^ +(iPhone.*[^ ]) \([0-9A-F-]{36}\).*/\1/p')
           SIMULATOR="iPhone 18 Pro"
@@ -198,11 +207,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # The build's Xcode, for its simulators and test runner.
+      # The build's Xcode, for its simulators and test runner. A runner image
+      # without it gets its newest Xcode 27 that isn't a beta, and
+      # ci-capture.sh stops at once if that Xcode can't run the simulator.
       - name: Select Xcode
+        env:
+          BUILD_XCODE: ${{ needs.build.outputs.xcode }}
         run: |
-          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
-          sudo xcode-select -s "${XCODE:-/Applications/Xcode.app}/Contents/Developer"
+          XCODE="/Applications/$BUILD_XCODE"
+          if [ -z "$BUILD_XCODE" ] || [ ! -d "$XCODE" ]; then
+            XCODE=$(printf '%s\n' /Applications/Xcode_27*.app | grep -iv beta | sort -V | tail -1)
+            [ -d "$XCODE" ] || XCODE=/Applications/Xcode.app
+            echo "::warning::this runner has no ${BUILD_XCODE:-Xcode from the build}; using $(basename "$XCODE")"
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
 
       - name: Install tmux
@@ -238,13 +256,32 @@ jobs:
           python3 -I scripts/shots/pages.py check shots --device "$DEVICE" \
             --locales "$GROUP_LOCALES" --slots "$SHOTS_ONLY"
 
-  # After every shoot job passed its check, from main or a version tag: this
-  # run's shots, laid over the live set when the run shot only part of it,
-  # checked whole, and deployed.
+      # Only a job whose part checked whole gets here: its store images,
+      # which are all the publish job lays over the live set.
+      - name: Gather the checked part
+        run: |
+          for store in shots/*/store; do
+            mkdir -p "checked/${store#shots/}"
+            cp -R "$store/." "checked/${store#shots/}/"
+          done
+
+      - name: Keep the checked part
+        uses: actions/upload-artifact@v7
+        with:
+          name: checked-${{ github.run_number }}-${{ matrix.device }}-${{ matrix.group }}
+          path: checked
+          retention-days: 3
+          if-no-files-found: error
+
+  # After the shoot jobs, from main or a version tag, even when some failed:
+  # the parts that passed their check, laid over the live set when the run
+  # shot only part of it or a job failed, checked whole, and deployed.
   publish:
     name: Publish to GitHub Pages
     needs: [plan, shoot]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      !cancelled() && needs.plan.result == 'success' && needs.shoot.result != 'skipped' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -265,34 +302,46 @@ jobs:
         id: pages
         uses: actions/configure-pages@v6
 
+      # The parts that passed (none when every shoot job failed).
+      - name: Fetch this run's checked parts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: checked-${{ github.run_number }}-*
+          merge-multiple: true
+          path: run
+
+      - name: Anything to publish
+        id: any
+        run: |
+          n=$(find run -path '*/store/*' -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+          echo "images=$n" >> "$GITHUB_OUTPUT"
+          [ "$n" -gt 0 ] || echo "::warning::no shoot job passed its check; nothing is published"
+
       - name: Fetch the live set
-        if: needs.plan.outputs.full != 'true'
+        if: steps.any.outputs.images != '0' && (needs.plan.outputs.full != 'true' || needs.shoot.result != 'success')
         env:
           BASE: ${{ steps.pages.outputs.base_url }}
         run: python3 -I scripts/shots/pages.py fetch "$BASE" shots
 
-      - name: Fetch this run's shots
-        uses: actions/download-artifact@v8
-        with:
-          pattern: shots-${{ github.run_number }}-*
-          merge-multiple: true
-          path: run
-
       # This run's store images in place of the live ones.
       - name: Lay this run's shots over
+        if: steps.any.outputs.images != '0'
         run: |
           mkdir -p shots
           cp -R run/. shots/
           find run -path '*/store/*' -name '*.png' | sed 's|^run/||' | sort | sed 's/^/  from this run: /'
 
       - name: Lay out the site
+        if: steps.any.outputs.images != '0'
         run: python3 -I scripts/shots/pages.py site shots site
 
       - name: Upload the site
+        if: steps.any.outputs.images != '0'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
       - name: Deploy
         id: deploy
+        if: steps.any.outputs.images != '0'
         uses: actions/deploy-pages@v5
