@@ -38,6 +38,10 @@ struct WhisperDictationEngineTests {
 
         func setLatency(_ value: Duration) { latency = value }
 
+        /// Every `transcribe` throws this from now on.
+        private var transcribeError: Error?
+        func failTranscribing(with error: Error) { transcribeError = error }
+
         func warmUp(variant: String) async throws {
             warmUps.append(variant)
             events.append("warmUp")
@@ -64,6 +68,7 @@ struct WhisperDictationEngineTests {
             sampleCounts.append(samples.count)
             languages.append(language)
             if latency != .zero { try? await Task.sleep(for: latency) }
+            if let transcribeError { throw transcribeError }
             guard !answers.isEmpty else { return "" }
             let answer = answers[min(index, answers.count - 1)]
             index += 1
@@ -390,5 +395,94 @@ struct WhisperDictationEngineTests {
 
         engine = nil
         #expect(await eventually { await store.openSessions.isEmpty })
+    }
+
+    // MARK: X-ASR preview (B763)
+
+    /// A streaming model that says how much it heard, and a fixed final text.
+    final class CountingStream: StreamingRecognizing, @unchecked Sendable {
+        private let lock = NSLock()
+        private var heard = 0
+        private(set) var closed = false
+        func feed(_ samples: [Float]) { lock.withLock { heard += samples.count } }
+        func partialText() async -> String { lock.withLock { heard == 0 ? "" : "听到 \(heard)" } }
+        func finish() async -> String { "部署 staging" }
+        func close() { lock.withLock { closed = true } }
+        var isClosed: Bool { lock.withLock { closed } }
+    }
+
+    /// Everything the engine published until it finished.
+    private func collect(_ engine: DictationEngine) async -> [DictationUpdate] {
+        var updates: [DictationUpdate] = []
+        do { for try await update in engine.updates { updates.append(update) } } catch {}
+        return updates
+    }
+
+    @Test("With X-ASR on the device, its words are the preview and the model's final pass is the text")
+    func streamingPreviewHandsOffToTheFinalPass() async throws {
+        let store = ScriptedTranscriber(answers: ["部署 staging 分支。"])
+        let stream = CountingStream()
+        let engine = WhisperDictationEngine(store: store, variant: Qwen3ASR.variant, language: nil,
+                                            label: "Qwen3-ASR", streaming: { stream })
+        try await engine.prepare { _ in }
+        try await engine.start()
+        let updates = Task { await collect(engine) }
+        for _ in 0 ..< 2 { engine.append(try buffer(frames: 16_000)) }
+        try await Task.sleep(for: .milliseconds(400))
+        await engine.finishAudio()
+        let published = await updates.value
+
+        #expect(published.contains { $0.volatileText.hasPrefix("听到") && $0.finalizedText.isEmpty })
+        #expect(published.contains { $0.volatileText == "部署 staging" })
+        #expect(published.last == DictationUpdate(finalizedText: "部署 staging 分支。", volatileText: ""))
+        // Only the final pass reached the batch model: no re-decoding preview.
+        #expect(await store.sampleCounts == [32_000])
+        #expect(stream.isClosed)
+    }
+
+    @Test("When the final pass fails, what X-ASR heard is inserted")
+    func streamingPreviewCoversAFailedFinalPass() async throws {
+        struct Broke: Error {}
+        let store = ScriptedTranscriber(answers: ["never"])
+        await store.failTranscribing(with: Broke())
+        let stream = CountingStream()
+        let engine = WhisperDictationEngine(store: store, variant: Qwen3ASR.variant, language: nil,
+                                            label: "Qwen3-ASR", streaming: { stream })
+        try await engine.prepare { _ in }
+        try await engine.start()
+        let updates = Task { await collect(engine) }
+        engine.append(try buffer(frames: 16_000))
+        await engine.finishAudio()
+        #expect(await updates.value.last == DictationUpdate(finalizedText: "部署 staging", volatileText: ""))
+        #expect(stream.isClosed)
+    }
+
+    @Test("X-ASR alone: its words while listening, its text at the end, the model let go")
+    func streamingEngineAlone() async throws {
+        let stream = CountingStream()
+        let engine = XASRDictationEngine(load: { stream }, label: "X-ASR")
+        try await engine.start()
+        let updates = Task { await collect(engine) }
+        for _ in 0 ..< 2 { engine.append(try buffer(frames: 16_000)) }
+        try await Task.sleep(for: .milliseconds(400))
+        await engine.finishAudio()
+        let published = await updates.value
+        #expect(published.contains { $0.volatileText.hasPrefix("听到") })
+        #expect(published.last == DictationUpdate(finalizedText: "部署 staging", volatileText: ""))
+        #expect(stream.isClosed)
+    }
+
+    @Test("X-ASR alone, cancelled mid-utterance: nothing is inserted and the model is let go")
+    func streamingEngineCancelled() async throws {
+        let stream = CountingStream()
+        let engine = XASRDictationEngine(load: { stream }, label: "X-ASR")
+        try await engine.start()
+        let updates = Task { await collect(engine) }
+        engine.append(try buffer(frames: 16_000))
+        try await Task.sleep(for: .milliseconds(200))
+        engine.cancel()
+        let published = await updates.value
+        #expect(published.allSatisfy { $0.finalizedText.isEmpty })
+        #expect(stream.isClosed)
     }
 }

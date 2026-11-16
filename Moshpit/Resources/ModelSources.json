@@ -1,0 +1,13 @@
+{
+  "_about": "Where the pinned model files can be fetched from, tried in order (B765). Every file is checked against the SHA-256 in the app before it is used, so any source with the same bytes will do: to add a mirror, add an entry with its base URL (a revision-pinned folder) and the files it holds.",
+  "x-asr-zh-en-480ms-int8": [
+    {
+      "base": "https://huggingface.co/lorneluo/sherpa-onnx-x-asr-480ms-streaming-zipformer-transducer-zh-en-punct-int8-2026-06-05/resolve/4b86b17a5b96dcf6026a73e2239271faa9d6f5df/",
+      "files": ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"]
+    },
+    {
+      "base": "https://huggingface.co/csukuangfj2/sherpa-onnx-x-asr-zipformer-transducer-zh-en-punct-int8-2026-06-03/resolve/ce812cc05d858539a68dd42e86f4fd7a9ce1acf0/",
+      "files": ["bpe.model"]
+    }
+  ]
+}

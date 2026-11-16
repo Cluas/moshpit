@@ -417,6 +417,58 @@
         }
       }
     },
+    "%@ can't be downloaded from anywhere.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ lässt sich von nirgends laden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay ningún sitio desde donde descargar %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n’est téléchargeable nulle part."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をダウンロードできる場所がありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@을(를) 다운로드할 수 있는 곳이 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não há de onde baixar %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 哪里都下载不到。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 哪裡都下載不到。"
+          }
+        }
+      }
+    },
     "%@ didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.": {
       "localizations": {
         "de": {
@@ -52561,6 +52613,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "視窗"
+          }
+        }
+      }
+    },
+    "Words appear as you speak, and it’s light enough for any iPhone. Hears fewer technical terms than Qwen3-ASR; with both downloaded, Qwen3-ASR writes the final text.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Wörter erscheinen schon, während du sprichst, und es läuft auf jedem iPhone. Erkennt Fachbegriffe schlechter als Qwen3-ASR; hast du beide geladen, schreibt Qwen3-ASR den endgültigen Text."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las palabras aparecen mientras hablas y es tan ligero que funciona en cualquier iPhone. Reconoce peor los términos técnicos que Qwen3-ASR; si descargas los dos, Qwen3-ASR escribe el texto final."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les mots s’affichent pendant que vous parlez, et il est assez léger pour tous les iPhone. Reconnaît moins bien les termes techniques que Qwen3-ASR ; si les deux sont téléchargés, Qwen3-ASR écrit le texte final."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話しているそばから文字が出て、どの iPhone でも動く軽さです。技術用語の聞き取りは Qwen3-ASR に及びません。両方をダウンロードすると、最終的な文字は Qwen3-ASR が書きます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말하는 동안 바로 글자가 나오고, 어떤 iPhone에서도 돌아갈 만큼 가볍습니다. 기술 용어는 Qwen3-ASR보다 덜 정확하며, 둘 다 다운로드하면 최종 텍스트는 Qwen3-ASR이 씁니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As palavras aparecem enquanto você fala, e ele é leve o bastante para qualquer iPhone. Reconhece menos termos técnicos que o Qwen3-ASR; com os dois baixados, o Qwen3-ASR escreve o texto final."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "边说边出字，也够轻，哪台 iPhone 都跑得动。技术词听得不如 Qwen3-ASR 准；两个都下载了，最终的文字交给 Qwen3-ASR。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邊說邊出字，也夠輕巧，哪支 iPhone 都跑得動。技術詞聽得不如 Qwen3-ASR 準；兩個都下載了，最後的文字交給 Qwen3-ASR。"
           }
         }
       }

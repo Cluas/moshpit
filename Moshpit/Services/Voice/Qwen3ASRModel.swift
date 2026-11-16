@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MoshpitKit
 import SherpaOnnxC
 
 // MARK: - Catalog entry
@@ -74,10 +75,10 @@ enum Qwen3ASR {
     /// Offered on phones with 6 GB of memory or more. A short dictation peaks
     /// well under a gigabyte, but a minute-long one reaches 1.6 GB (the
     /// build's own measurement on an iPhone 14 Pro), which a 4 GB phone
-    /// cannot spare beside a terminal.
-    static var isSupportedDevice: Bool {
-        ProcessInfo.processInfo.physicalMemory >= 5_500_000_000
-    }
+    /// cannot spare beside a terminal (`WhisperModelStore.sherpaOrder`).
+    /// 5.5 GB: what a 6 GB phone reports, with room to spare; a 4 GB one is
+    /// far below.
+    static let minimumMemory: UInt64 = 5_500_000_000
 
     /// Hotwords go into the prompt the decoder reads before the audio, so
     /// each one costs prefill time: the pane's best forty.
@@ -117,22 +118,45 @@ final class Qwen3ASRModel: WhisperLoadedModel {
     /// between decodes and 1.50 GB at a decode's peak with it, against
     /// 0.53 GB and 0.98 GB without; a dictation's preview passes decode
     /// every second or so, so the model sat at its peak for the whole
-    /// dictation, beside the live terminals. Decoding is a little slower
-    /// without (allocations per run), within the noise of the measurement.
+    /// dictation, beside the live terminals. Without it every decode
+    /// faults in fresh pages (2.5 times the page faults): about 20% more
+    /// CPU per decode, 0.5 s more on a 10 s sentence's final pass (14
+    /// interleaved pairs, B760).
     static let sessionOptions = "EnableCpuMemArena=0\nEnableMemPattern=0\n"
 
-    /// The provider string carrying ``sessionOptions``: the options written
-    /// to a file under `directory`, or plain "cpu" when that fails —
-    /// sherpa-onnx exits the process if a named config file can't be
-    /// opened, so the file is written and checked right before use.
-    static func provider(writingOptionsTo directory: URL) -> String {
+    /// Devices with at least this much memory keep the arena (B760): 8 GB
+    /// phones (iPhone 15 Pro and later) report about 8 GB, 6 GB phones well
+    /// under 7. There the faster decode is worth the extra 0.4 GB, which
+    /// only lasts while dictating — the store releases the model 30 s after
+    /// its last use (B678). Below it, jetsam headroom beside the terminals
+    /// matters more than half a second.
+    static let arenaMemoryThreshold: UInt64 = 7_500_000_000
+
+    static func keepsArena(physicalMemory: UInt64) -> Bool {
+        physicalMemory >= arenaMemoryThreshold
+    }
+
+    /// The provider string for a device with `physicalMemory` bytes. At
+    /// ``arenaMemoryThreshold`` and above, plain "cpu": onnxruntime's
+    /// defaults, arena on. Below it, "cpu:<file>" with ``sessionOptions``
+    /// written to a file under `directory` — or, when that fails, plain
+    /// "cpu" again, logged: sherpa-onnx exits the process if a named config
+    /// file can't be opened, so the file is written and checked right
+    /// before use.
+    static func provider(physicalMemory: UInt64, writingOptionsTo directory: URL) -> String {
+        if keepsArena(physicalMemory: physicalMemory) { return "cpu" }
         let file = directory.appendingPathComponent("qwen3-asr-session.cfg")
         do {
             try Data(sessionOptions.utf8).write(to: file, options: .atomic)
         } catch {
+            Log.voice.error(
+                "voice arena: on, the arena-off options could not be written: \(error.localizedDescription, privacy: .public)")
             return "cpu"
         }
-        guard FileManager.default.isReadableFile(atPath: file.path) else { return "cpu" }
+        guard FileManager.default.isReadableFile(atPath: file.path) else {
+            Log.voice.error("voice arena: on, the arena-off options could not be read back")
+            return "cpu"
+        }
         return "cpu:" + file.path
     }
 
@@ -148,7 +172,12 @@ final class Qwen3ASRModel: WhisperLoadedModel {
         let decoderPath = folder.appendingPathComponent("decoder.int4.onnx").path
         let tokenizerPath = folder.appendingPathComponent("tokenizer").path
         let threads = Int32(max(1, min(4, ProcessInfo.processInfo.activeProcessorCount - 2)))
-        let providerString = provider(writingOptionsTo: FileManager.default.temporaryDirectory)
+        let memory = ProcessInfo.processInfo.physicalMemory
+        let providerString = provider(physicalMemory: memory, writingOptionsTo: FileManager.default.temporaryDirectory)
+        // B760: which arena mode the device got; numbers only.
+        let memoryGB = String(format: "%.1f", Double(memory) / 1e9)
+        Log.voice.info(
+            "voice arena: \(providerString == "cpu" ? "on" : "off", privacy: .public) memory_gb=\(memoryGB, privacy: .public)")
         let maxLength = maxTotalLen
         let recognizer: OpaquePointer? = await Task.detached(priority: .userInitiated) {
             // The strings only have to live through the call: sherpa-onnx
@@ -282,6 +311,8 @@ enum ModelFileDownloader {
     enum Failure: Error, LocalizedError, Equatable {
         case status(Int)
         case checksum(String)
+        /// No source lists the file (``ModelSources``).
+        case noSource(String)
 
         var errorDescription: String? {
             switch self {
@@ -289,6 +320,8 @@ enum ModelFileDownloader {
                 return String(localized: "The server answered \(code).")
             case .checksum(let file):
                 return String(localized: "\(file) arrived damaged. Try again.")
+            case .noSource(let file):
+                return String(localized: "\(file) can't be downloaded from anywhere.")
             }
         }
     }
@@ -296,6 +329,15 @@ enum ModelFileDownloader {
     /// Download every file not yet in place. `onProgress` gets 0…1 over the
     /// whole list's bytes, counting what earlier runs left on disk.
     static func fetch(_ files: [Qwen3ASR.RemoteFile], into folder: URL, url: (Qwen3ASR.RemoteFile) -> URL,
+                      onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await fetch(files, into: folder, urls: { [url($0)] }, onProgress: onProgress)
+    }
+
+    /// The same, each file tried at every source that has it, in order
+    /// (``ModelSources``, B765). The hash is the same wherever the bytes come
+    /// from, so a part fetched from one source is carried on from the next,
+    /// and damage from one is thrown away before trying the next.
+    static func fetch(_ files: [Qwen3ASR.RemoteFile], into folder: URL, urls: (Qwen3ASR.RemoteFile) -> [URL],
                       onProgress: @escaping @Sendable (Double) -> Void) async throws {
         let total = Double(max(1, files.reduce(0) { $0 + $1.bytes }))
         var done: Int64 = 0
@@ -309,21 +351,32 @@ enum ModelFileDownloader {
                 at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             let part = destination.appendingPathExtension("part")
             let base = done
-            try Task.checkCancellation()
-            do {
-                try await download(url(file), to: part, expected: file.bytes) { written in
-                    onProgress(Double(base + written) / total)
+            let sources = urls(file)
+            guard !sources.isEmpty else { throw Failure.noSource(file.path) }
+            var arrived = false
+            for (index, source) in sources.enumerated() {
+                try Task.checkCancellation()
+                let last = index == sources.count - 1
+                do {
+                    try await download(source, to: part, expected: file.bytes) { written in
+                        onProgress(Double(base + written) / total)
+                    }
+                } catch {
+                    // A paused download ends as URLSession's "cancelled": say
+                    // so as a cancellation, not a failure to show.
+                    if Task.isCancelled { throw CancellationError() }
+                    if last { throw error }
+                    continue
                 }
-            } catch {
-                // A paused download ends as URLSession's "cancelled": say so
-                // as a cancellation, not a failure to show.
-                if Task.isCancelled { throw CancellationError() }
-                throw error
+                guard try sha256(of: part) == file.sha256 else {
+                    try? FileManager.default.removeItem(at: part)
+                    if last { throw Failure.checksum(file.path) }
+                    continue
+                }
+                arrived = true
+                break
             }
-            guard try sha256(of: part) == file.sha256 else {
-                try? FileManager.default.removeItem(at: part)
-                throw Failure.checksum(file.path)
-            }
+            guard arrived else { throw Failure.checksum(file.path) }
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: part, to: destination)
             done += file.bytes

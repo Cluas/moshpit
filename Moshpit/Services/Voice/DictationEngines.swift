@@ -5,10 +5,31 @@ import MoshpitKit
 
 // MARK: - Engine selection
 
+/// What a dictation on a local model runs on (B763).
+enum LocalDictationPlan: Equatable, Sendable {
+    /// X-ASR alone: it streams the words and writes the text.
+    case streaming
+    /// Qwen3-ASR writes the text; X-ASR, also on the device, shows the words
+    /// while the person speaks.
+    case batchWithStreamingPreview
+    /// A model that doesn't stream, previewed by re-decoding the recording:
+    /// Whisper, or Qwen3-ASR without X-ASR.
+    case batch
+
+    static func plan(variant: String, streamingInstalled: Bool) -> LocalDictationPlan {
+        switch WhisperModelStore.family(of: variant) {
+        case .xasr: return .streaming
+        case .qwen3: return streamingInstalled ? .batchWithStreamingPreview : .batch
+        case .whisper: return .batch
+        }
+    }
+}
+
 /// Builds the ordered list of engines a session should try.
 ///
-/// With a local model selected (Qwen3-ASR or Whisper; the setting's value is
-/// still `.whisper`, from before there were two) it leads and Apple's engines stay
+/// With a local model selected (Qwen3-ASR, X-ASR or Whisper; the setting's
+/// value is still `.whisper`, from before there were others; which model and
+/// how it previews is ``LocalDictationPlan``) it leads and Apple's engines stay
 /// behind it as a fallback — a model that failed to load should cost accuracy,
 /// not the ability to dictate at all. With Apple selected, the preference is:
 ///
@@ -42,21 +63,33 @@ enum DictationEngineFactory {
         var engines: [DictationEngine] = []
         if request.engine == .whisper,
            let variant = WhisperModelStore.resolvedVariant(preferring: request.whisperModelId) {
-            // Qwen3-ASR decides the language per sentence and takes the
-            // pane's words; Whisper takes the language setting and no words.
-            let qwen = WhisperModelStore.family(of: variant) == .qwen3
-            let language = qwen ? nil : VoiceLanguageResolver.whisperCode(stored: request.whisperLanguage)
+            // Qwen3-ASR and X-ASR decide the language per sentence and take
+            // the pane's words; Whisper takes the language setting and no words.
+            let plan = LocalDictationPlan.plan(
+                variant: variant, streamingInstalled: WhisperModelStore.isInstalled(XASR.variant))
+            let picksLanguage = WhisperModelStore.family(of: variant) != .whisper
+            let language = picksLanguage ? nil : VoiceLanguageResolver.whisperCode(stored: request.whisperLanguage)
             // Chinese comes out in the user's own script; a pinned language
             // other than Chinese is left as the model writes it.
             let script = language == nil || language == "zh" || language == "yue"
                 ? VoiceLanguageResolver.chineseScript(for: spokenLanguages) : nil
-            engines.append(WhisperDictationEngine(
-                store: WhisperModelStore.shared,
-                variant: variant,
-                language: language,
-                label: whisperLabel(variant: variant, language: language),
-                hotwords: qwen ? Array(request.hotwords.prefix(Qwen3ASR.hotwordLimit)) : [],
-                script: script))
+            switch plan {
+            case .streaming:
+                engines.append(XASRDictationEngine(
+                    load: XASRDictationEngine.opener(hotwords: request.hotwords),
+                    label: whisperLabel(variant: variant, language: language),
+                    script: script))
+            case .batchWithStreamingPreview, .batch:
+                engines.append(WhisperDictationEngine(
+                    store: WhisperModelStore.shared,
+                    variant: variant,
+                    language: language,
+                    label: whisperLabel(variant: variant, language: language),
+                    hotwords: picksLanguage ? Array(request.hotwords.prefix(Qwen3ASR.hotwordLimit)) : [],
+                    script: script,
+                    // The preview needs no hotwords: Qwen3-ASR writes the text.
+                    streaming: plan == .batchWithStreamingPreview ? XASRDictationEngine.opener(hotwords: []) : nil))
+            }
         }
         let locale = await appleLocale(request: request, spokenLanguages: spokenLanguages)
         engines.append(contentsOf: await appleEngines(locale: locale, hotwords: request.hotwords))

@@ -40,7 +40,10 @@ extension WhisperModelStore: WhisperTranscribing {}
 ///
 /// The same engine runs Qwen3-ASR (sherpa-onnx, on the CPU), which does not
 /// stream either and also takes the pane's hotwords; the store picks the
-/// runtime by the variant.
+/// runtime by the variant. With X-ASR downloaded too, Qwen3-ASR's preview
+/// comes from X-ASR instead (`streaming`, B763): words while the person
+/// speaks at a fraction of the cost, and the final pass is still Qwen3-ASR's
+/// (``StreamingDictationCore``).
 ///
 /// Audio never leaves the device; the model was downloaded once by
 /// `WhisperModelStore`.
@@ -98,6 +101,13 @@ final class WhisperDictationEngine: DictationEngine {
     private var previewTask: Task<Void, Never>?
     private var cancelled = false
 
+    /// Opens the streaming model that previews this dictation, when there is
+    /// one (B763); nil re-decodes the recording for the preview instead.
+    private let streaming: StreamingDictationCore.Load?
+    /// The streaming preview and its hand-off to the final pass, once
+    /// `start()` made one. Under `lock`: the audio thread reads it.
+    private var core: StreamingDictationCore?
+
     /// This session's hold on the loaded model: taken in `prepare()` and
     /// given back exactly once — after the final pass, on cancel, or when the
     /// engine is let go without either. Locked because `cancel()` comes from
@@ -113,13 +123,15 @@ final class WhisperDictationEngine: DictationEngine {
     }
 
     init(store: any WhisperTranscribing, variant: String, language: String?, label: String,
-         hotwords: [String] = [], script: DictationTranscript.ChineseScript? = nil) {
+         hotwords: [String] = [], script: DictationTranscript.ChineseScript? = nil,
+         streaming: StreamingDictationCore.Load? = nil) {
         self.store = store
         self.variant = variant
         self.language = language
         self.hotwords = hotwords
         self.script = script
         self.label = label
+        self.streaming = streaming
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
@@ -172,7 +184,32 @@ final class WhisperDictationEngine: DictationEngine {
                 String(localized: "16 kHz mono audio is unavailable on this device."))
         }
         lock.withLock { samples.removeAll(keepingCapacity: true) }
-        previewTask = Task { [weak self] in await self?.runPreviewLoop() }
+        if let streaming {
+            let core = makeCore(streaming)
+            lock.withLock { self.core = core }
+            core.begin()
+        } else {
+            previewTask = Task { [weak self] in await self?.runPreviewLoop() }
+        }
+    }
+
+    /// The streaming preview, with this engine's final pass behind it.
+    private func makeCore(_ load: @escaping StreamingDictationCore.Load) -> StreamingDictationCore {
+        let store = self.store, variant = self.variant, language = self.language
+        let hotwords = self.hotwords, script = self.script
+        let continuation = updateContinuation
+        return StreamingDictationCore(
+            load: load,
+            finalPass: { samples in
+                DictationTranscript.converting(
+                    try await store.transcribe(samples: samples, language: language, hotwords: hotwords,
+                                               variant: variant),
+                    to: script)
+            },
+            onVolatile: { text in
+                continuation.yield(DictationUpdate(
+                    finalizedText: "", volatileText: DictationTranscript.converting(text, to: script)))
+            })
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -190,10 +227,13 @@ final class WhisperDictationEngine: DictationEngine {
         let frames = Int(converted.frameLength)
         guard frames > 0 else { return }
         lock.lock()
-        if samples.count < Self.maximumSamples {
+        let room = samples.count < Self.maximumSamples
+        if room {
             samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: frames))
         }
+        let core = room ? self.core : nil
         lock.unlock()
+        core?.append(Array(UnsafeBufferPointer(start: channel, count: frames)))
     }
 
     func finishAudio() async {
@@ -208,6 +248,10 @@ final class WhisperDictationEngine: DictationEngine {
         previewTask = nil
         guard !cancelled else {
             updateContinuation.finish()
+            return
+        }
+        if let core = lock.withLock({ core }) {
+            await streamedFinalPass(core)
             return
         }
         let final = lock.withLock { samples }
@@ -240,8 +284,27 @@ final class WhisperDictationEngine: DictationEngine {
         }
     }
 
+    /// The final pass behind a streaming preview: the core shows the
+    /// streaming model's text, lets that model go, then runs the final pass.
+    private func streamedFinalPass(_ core: StreamingDictationCore) async {
+        let started = ContinuousClock.now
+        let audio = String(format: "%.2f", Double(core.recording.count) / 16_000)
+        switch await core.finish() {
+        case .text(let text):
+            Log.voice.info(
+                "voice final: model=\(self.variant, privacy: .public) preview=\(XASR.variant, privacy: .public) audio=\(audio, privacy: .public)s wall=\(WhisperModelStore.seconds(ContinuousClock.now - started), privacy: .public)s chars=\(text.count, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
+            updateContinuation.yield(DictationUpdate(finalizedText: text, volatileText: ""))
+            updateContinuation.finish()
+        case .cancelled:
+            updateContinuation.finish()
+        case .failed(let reason):
+            updateContinuation.finish(throwing: DictationFailure.engine(reason))
+        }
+    }
+
     func cancel() {
         cancelled = true
+        lock.withLock { core }?.cancel()
         previewTask?.cancel()
         previewTask = nil
         updateContinuation.finish()

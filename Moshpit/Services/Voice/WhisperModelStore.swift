@@ -130,6 +130,10 @@ struct WhisperModelLoader: Sendable {
             switch WhisperModelStore.family(of: variant) {
             case .whisper: return try await WhisperKitModel.load(variant: variant)
             case .qwen3: return try await Qwen3ASRModel.load(folder: WhisperModelStore.folder(for: variant))
+            case .xasr:
+                // X-ASR streams, and each dictation opens and closes its own
+                // (``XASRStream``); the store never holds it.
+                throw WhisperModelFailure.incomplete(WhisperModelStore.displayName(for: variant))
             }
         })
 }
@@ -142,6 +146,12 @@ enum LocalModelFamily: Sendable, Equatable {
     case whisper
     /// Qwen3-ASR on sherpa-onnx (``Qwen3ASR``).
     case qwen3
+    /// X-ASR, the streaming model, on sherpa-onnx (``XASR``, B763).
+    case xasr
+
+    /// Downloaded as a pinned list of files into its own folder
+    /// (``ModelFileDownloader``), which is also its resume cache.
+    var isPinnedFiles: Bool { self != .whisper }
 }
 
 // MARK: - Store
@@ -204,6 +214,11 @@ actor WhisperModelStore {
         CuratedModel(id: Qwen3ASR.variant, name: "Qwen3-ASR 0.6B",
          summary: String(localized: "Best for Chinese with English terms in it. Listens for the file names and branches on screen."),
          bytes: Qwen3ASR.totalBytes, family: .qwen3),
+        // B763: the streaming model. Light enough for any phone; where Qwen3-ASR
+        // fits too, it shows the words while the person speaks.
+        CuratedModel(id: XASR.variant, name: "X-ASR 0.16B",
+         summary: String(localized: "Words appear as you speak, and it’s light enough for any iPhone. Hears fewer technical terms than Qwen3-ASR; with both downloaded, Qwen3-ASR writes the final text."),
+         bytes: XASR.totalBytes, family: .xasr),
         CuratedModel(id: "openai_whisper-large-v3_turbo_954MB", name: String(localized: "Large v3 Turbo"),
          summary: String(localized: "Most accurate, especially on mixed-language speech. Needs a recent chip."),
          bytes: 954 * 1_000_000),
@@ -282,25 +297,32 @@ actor WhisperModelStore {
                 .appendingPathComponent("models", isDirectory: true)
                 .appendingPathComponent(repo, isDirectory: true)
                 .appendingPathComponent(variant, isDirectory: true)
-        case .qwen3:
+        case .qwen3, .xasr:
             return downloadBase
                 .appendingPathComponent("sherpa", isDirectory: true)
                 .appendingPathComponent(variant, isDirectory: true)
         }
     }
 
-    /// Which runtime a catalog id belongs to. Anything not Qwen3-ASR's is a
-    /// WhisperKit variant, as every stored id was before Qwen3-ASR.
+    /// Which runtime a catalog id belongs to. Anything not Qwen3-ASR's or
+    /// X-ASR's is a WhisperKit variant, as every stored id was before them.
     nonisolated static func family(of variant: String) -> LocalModelFamily {
-        variant == Qwen3ASR.variant ? .qwen3 : .whisper
+        switch variant {
+        case Qwen3ASR.variant: return .qwen3
+        case XASR.variant: return .xasr
+        default: return .whisper
+        }
     }
 
     /// True only when every required CoreML bundle is on disk in full. For
     /// Qwen3-ASR: every pinned file in place at its size.
     nonisolated static func isInstalled(_ variant: String) -> Bool {
         let folder = folder(for: variant)
-        if family(of: variant) == .qwen3 { return Qwen3ASR.isComplete(folder) }
-        return isComplete(folder)
+        switch family(of: variant) {
+        case .qwen3: return Qwen3ASR.isComplete(folder)
+        case .xasr: return XASR.isComplete(folder)
+        case .whisper: return isComplete(folder)
+        }
     }
 
     /// Every required bundle in `folder` downloaded in full (B671).
@@ -348,11 +370,13 @@ actor WhisperModelStore {
         if offered.isEmpty {
             offered = curated.filter { $0.id == "openai_whisper-base" || $0.id == "openai_whisper-tiny" }
         }
-        // Qwen3-ASR by memory rather than WhisperKit's chip table; once on
-        // the device it stays listed, so it can always be removed.
-        if Qwen3ASR.isSupportedDevice || isInstalled(Qwen3ASR.variant) || partialBytes(for: Qwen3ASR.variant) > 0 {
-            offered.insert(contentsOf: curated.filter { $0.family == .qwen3 }, at: 0)
+        // The sherpa models by memory rather than WhisperKit's chip table
+        // (``sherpaOrder``); once on the device a model stays listed, so it
+        // can always be removed.
+        let sherpa = sherpaOrder(physicalMemory: ProcessInfo.processInfo.physicalMemory) { variant in
+            isInstalled(variant) || partialBytes(for: variant) > 0
         }
+        offered.insert(contentsOf: sherpa.compactMap { id in curated.first { $0.id == id } }, at: 0)
         return offered.map { entry in
             WhisperModelOption(
                 id: entry.id,
@@ -362,6 +386,21 @@ actor WhisperModelStore {
                 installedBytes: isInstalled(entry.id) ? directorySize(folder(for: entry.id)) : nil,
                 partialBytes: isInstalled(entry.id) ? 0 : partialBytes(for: entry.id))
         }
+    }
+
+    /// The sherpa-onnx models this device is offered, in order: the order
+    /// that makes the default (``resolvedVariant(preferring:)`` takes the
+    /// first one installed) follow the device's memory (B763).
+    ///
+    /// - 6 GB and more: Qwen3-ASR, then X-ASR. Qwen3-ASR writes the text and,
+    ///   when X-ASR is there too, X-ASR shows it while the person speaks.
+    /// - Less: X-ASR alone. Qwen3-ASR peaks near a gigabyte on a short
+    ///   sentence; X-ASR stays around a quarter of one.
+    ///
+    /// A model already on the device (`present`) stays listed either way.
+    nonisolated static func sherpaOrder(physicalMemory: UInt64, present: (String) -> Bool) -> [String] {
+        let qwen = physicalMemory >= Qwen3ASR.minimumMemory || present(Qwen3ASR.variant)
+        return (qwen ? [Qwen3ASR.variant] : []) + [XASR.variant]
     }
 
     /// The variant to actually use — the stored choice when it's installed,
@@ -383,9 +422,9 @@ actor WhisperModelStore {
     /// the time already spent — provided nothing deletes these files. Surfacing
     /// the number is what turns "it broke, start over" into "carry on".
     nonisolated static func partialBytes(for variant: String) -> Int64 {
-        // Qwen3-ASR keeps its partial file beside the finished ones
-        // (`<file>.part`): the folder is the whole story.
-        if family(of: variant) == .qwen3 {
+        // Qwen3-ASR and X-ASR keep their partial file beside the finished
+        // ones (`<file>.part`): the folder is the whole story.
+        if family(of: variant).isPinnedFiles {
             return logicalSize(of: folder(for: variant)) { _ in true }
         }
         // Both halves, because a repo is fetched file by file: the one in
@@ -418,7 +457,7 @@ actor WhisperModelStore {
     /// Where the Hub downloader keeps this variant's partial files + metadata.
     /// Qwen3-ASR's partial files sit in its own folder (``ModelFileDownloader``).
     nonisolated static func resumeCache(for variant: String) -> URL {
-        if family(of: variant) == .qwen3 { return folder(for: variant) }
+        if family(of: variant).isPinnedFiles { return folder(for: variant) }
         return downloadBase
             .appendingPathComponent("models", isDirectory: true)
             .appendingPathComponent(repo, isDirectory: true)
@@ -486,17 +525,31 @@ actor WhisperModelStore {
             }
         }
         onProgress(0.9)
-        _ = try await model(for: variant)
+        if Self.family(of: variant) == .xasr {
+            // Not kept: open a stream once, which also writes its hotword
+            // vocabulary, so the first dictation finds a model that loads.
+            try await XASRStream.open(folder: Self.folder(for: variant), hotwords: ["Moshpit"]).close()
+        } else {
+            _ = try await model(for: variant)
+        }
         onProgress(1)
     }
 
     private func downloadOnce(variant: String,
                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
-        if Self.family(of: variant) == .qwen3 {
+        switch Self.family(of: variant) {
+        case .qwen3:
             try await ModelFileDownloader.fetch(
                 Qwen3ASR.files, into: Self.folder(for: variant), url: Qwen3ASR.url(for:),
                 onProgress: { onProgress(min(0.9, $0 * 0.9)) })
             return
+        case .xasr:
+            try await ModelFileDownloader.fetch(
+                XASR.files, into: Self.folder(for: variant), urls: XASR.urls(for:),
+                onProgress: { onProgress(min(0.9, $0 * 0.9)) })
+            return
+        case .whisper:
+            break
         }
         _ = try await WhisperKit.download(
             variant: variant,
@@ -544,9 +597,9 @@ actor WhisperModelStore {
 
     /// Throw away a half-finished download without touching installed models.
     func discardPartial(variant: String) throws {
-        // Qwen3-ASR's resume cache is its folder: only a download that never
-        // finished may go.
-        if Self.family(of: variant) == .qwen3, loader.isInstalled(variant) { return }
+        // Qwen3-ASR's and X-ASR's resume cache is their folder: only a
+        // download that never finished may go.
+        if Self.family(of: variant).isPinnedFiles, loader.isInstalled(variant) { return }
         let cache = Self.resumeCache(for: variant)
         guard FileManager.default.fileExists(atPath: cache.path) else { return }
         try FileManager.default.removeItem(at: cache)
