@@ -654,8 +654,8 @@ impl Part {
     }
 }
 
-/// The version a version line names (`Moshpit 1.0.9 (1) · 4db8aeff` →
-/// `1.0.9 (1)`); the line whole when it is not one.
+/// The version a version line names (`Moshpit 1.1.0 (1) · 4db8aeff` →
+/// `1.1.0 (1)`); the line whole when it is not one.
 pub fn short_version(line: &str) -> String {
     let line = line.strip_prefix("Moshpit ").unwrap_or(line);
     line.split(" · ").next().unwrap_or(line).to_owned()

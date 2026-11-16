@@ -629,7 +629,7 @@ actor KeychainService {
     /// The trusted host keys given the class that moves with a backup, where
     /// they stand (B783): every item `storeItemMovesWithBackups` names —
     /// the map and the copies kept of it — retagged without a byte of it
-    /// rewritten. Items saved before 1.0.9 (and by 1.0.9 builds before this)
+    /// rewritten. Items saved before 1.1.0 (and by 1.1.0's Canary and TestFlight builds before this)
     /// were `ThisDeviceOnly`; a save moves the map too, this moves one no
     /// trust has rewritten yet. Throws while the device is locked (a
     /// `WhenUnlocked` item can't change then), for the next launch to try.

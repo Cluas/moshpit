@@ -329,7 +329,7 @@ struct SystemKeychainBackendSaveTests {
         #expect(keychain.protectionClass("moshpit.knownHosts.backup") == moves)
         #expect(keychain.protectionClass("moshpit.secret.nas") == thisDevice)
 
-        // A map 1.0.8 (or an earlier 1.0.9) saved.
+        // A map 1.0.8 (or an earlier 1.1.0 Canary or TestFlight build) saved.
         let earlier = FakeKeychain(items: [account: trusted], classes: [account: thisDevice])
         let upgraded = SystemKeychainBackend(service: "test", writes: earlier.writes)
         try upgraded.moveWithBackups(account: account)

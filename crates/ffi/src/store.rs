@@ -1155,7 +1155,7 @@ pub fn store_recover_orphaned_keys(
 /// Put right what each key 1.0.8 imported without its public half shows
 /// (B726): its algorithm, size, public key and fingerprint, off its own
 /// private key, read without asking (`secrets::learn_key_facts`), or the
-/// kind it is when 1.0.9 can't sign with it (B780). One
+/// kind it is when 1.1.0 can't sign with it (B780). One
 /// behind Face ID waits for its first sign-in
 /// ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
 /// runs it once a launch, beside the orphan recovery.
@@ -2808,7 +2808,7 @@ mod tests {
     ];
 
     /// B726: a key 1.0.8 imported without its public half shows as what it
-    /// is once 1.0.9 has read it — its algorithm, size, public key and
+    /// is once 1.1.0 has read it — its algorithm, size, public key and
     /// fingerprint off the key itself, kept — and nothing else about the
     /// record changes. Read without asking at launch; one behind Face ID at
     /// its first sign-in. A SEC1 EC key (1.0.8's ECDSA-sk, which 1.0.8 never
@@ -2929,7 +2929,7 @@ mod tests {
     }
 
     /// B780: a key 1.0.8 took (it kept any PEM saying PRIVATE KEY) of a kind
-    /// 1.0.9 can't sign with — a brainpool SEC1 key it labelled ECDSA-sk, a
+    /// 1.1.0 can't sign with — a brainpool SEC1 key it labelled ECDSA-sk, a
     /// DSA key it labelled ED25519 — says so once it has been read, so SSH
     /// Keys and the picker show why before a sign-in fails: read without
     /// asking at launch, or at its first sign-in behind Face ID. It keeps

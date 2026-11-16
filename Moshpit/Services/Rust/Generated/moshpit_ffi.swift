@@ -31111,7 +31111,7 @@ public func storeItemMovesWithBackups(account: String) -> Bool  {
  * Put right what each key 1.0.8 imported without its public half shows
  * (B726): its algorithm, size, public key and fingerprint, off its own
  * private key, read without asking (`secrets::learn_key_facts`), or the
- * kind it is when 1.0.9 can't sign with it (B780). One
+ * kind it is when 1.1.0 can't sign with it (B780). One
  * behind Face ID waits for its first sign-in
  * ([`KeyStoreHandle::learn_facts`]). Returns the records changed. The app
  * runs it once a launch, beside the orphan recovery.
@@ -31550,7 +31550,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_item_moves_with_backups() != 18266) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 5824) {
+    if (uniffi_moshpit_ffi_checksum_func_store_learn_key_facts() != 10223) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_mark_defaults_readable() != 15913) {

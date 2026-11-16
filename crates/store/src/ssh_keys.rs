@@ -147,7 +147,7 @@ pub struct SshKeyRecord {
     pub last_used_at: Option<Date>,
     /// The kind of key it is when no connect path signs in with it
     /// (`"ECDSA brainpoolP256r1"`, `"DSA"`), read off its private key
-    /// (B780): one 1.0.8 imported without its public half, of a kind 1.0.9
+    /// (B780): one 1.0.8 imported without its public half, of a kind 1.1.0
     /// can't sign with. `None`: it signs in, or it hasn't been read.
     pub refused: Option<String>,
 }

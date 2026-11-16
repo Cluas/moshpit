@@ -677,7 +677,7 @@ mod tests {
 
     /// B729: an upgrade from 1.0.8 keeps the stored `teal`, the store's
     /// default. 1.0.8 filled its swatch with the signal blue `7AA7FF` and
-    /// gave it no name, though its cursor drew `5FE3D8`. 1.0.9 ticks the
+    /// gave it no name, though its cursor drew `5FE3D8`. 1.1.0 ticks the
     /// swatch named Blue and draws that same blue, so the tick, the name
     /// and the cursor agree under every theme; where an accent like the
     /// blue hides Blue, the tick and the cursor are both Accent.
