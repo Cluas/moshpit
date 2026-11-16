@@ -461,6 +461,57 @@ struct VoiceDictationControllerTests {
         #expect(await waitUntil(controller.phase == .failed(.engine("asset gone"))))
         #expect(audio.stopped)
     }
+
+    @Test("A mic that fails to start is stopped again: the audio session isn't left on (B860)")
+    func failedMicStartStopsCapture() async {
+        let engine = FakeEngine()
+        let audio = FakeAudioSource()
+        let failure = DictationFailure.audioCapture("input busy")
+        audio.startError = failure
+        let controller = makeController(engine: engine, audio: audio)
+
+        await controller.start(DictationRequest())
+
+        #expect(controller.phase == .failed(.audioCapture(failure.localizedDescription)))
+        #expect(engine.cancelCalled)
+        #expect(audio.stopped, "the half-started capture was never stopped")
+    }
+
+    @Test("A dictation let go while listening stops the mic and the engine (B861)")
+    func droppedWhileListening() async {
+        let engine = FakeEngine()
+        let audio = FakeAudioSource()
+        weak var gone: VoiceDictationController?
+        do {
+            let controller = makeController(engine: engine, audio: audio)
+            gone = controller
+            await controller.start(DictationRequest())
+            #expect(controller.phase == .listening)
+        }
+        _ = await waitUntil(gone == nil)
+        #expect(gone == nil, "nothing should hold a dictation its screen let go")
+        #expect(audio.stopped, "the mic is still on, with nobody to show it")
+        #expect(engine.cancelCalled, "the engine is still listening, for nobody")
+    }
+
+    @Test("A dictation let go while its model loads doesn't leave the mic on (B861)")
+    func droppedWhilePreparing() async {
+        let engine = FakeEngine()
+        engine.holdPrepare = true
+        let audio = FakeAudioSource()
+        weak var gone: VoiceDictationController?
+        do {
+            let controller = makeController(engine: engine, audio: audio)
+            gone = controller
+            Task { await controller.start(DictationRequest()) }
+            _ = await waitUntil(controller.phase == .starting)
+        }
+        try? await Task.sleep(for: .milliseconds(30))
+        engine.holdPrepare = false
+        _ = await waitUntil(gone == nil)
+        #expect(gone == nil)
+        #expect(!audio.started || audio.stopped, "the mic opened after its screen was gone, and stayed on")
+    }
 }
 
 /// The CJK-aware transcript joiner — the reason "你好"+"世界" doesn't grow a
