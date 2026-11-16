@@ -371,6 +371,7 @@ fn home() -> (common::App, std::sync::Arc<moshpit_ui::channel::Channel>) {
         connections: home_fixture::fixture(),
         version: "v1.0.9 (1)".into(),
         sidebar: false,
+        jump_hosts: 0,
     };
     post(
         &mut app,

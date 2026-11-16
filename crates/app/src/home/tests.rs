@@ -30,6 +30,7 @@ fn saved(id: &str, name: &str) -> SavedConnection {
         udp_port: 60001,
         tmux: true,
         disconnecting: false,
+        via_gone: false,
         session: None,
     }
 }
@@ -195,6 +196,7 @@ fn build(
         version: "v1.0.9 (1)",
         sidebar: false,
         locale: "en",
+        jump_hosts: 0,
     })
 }
 
@@ -274,6 +276,7 @@ fn every_state_is_a_message_the_screen_takes() {
         version: "v1.0.9 (1)",
         sidebar: true,
         locale: "en",
+        jump_hosts: 0,
     };
     let json = message(&input);
     let Message::Home(parsed) = Message::parse(&json).expect("the screen takes it") else {
@@ -303,6 +306,7 @@ fn every_state_is_a_message_the_screen_takes() {
         version: "v",
         sidebar: false,
         locale: "en",
+        jump_hosts: 0,
     });
     assert!(Message::parse(&empty).is_ok());
 }
@@ -466,6 +470,7 @@ fn a_herdr_version_skew_is_said_in_the_apps_language_with_the_right_remedy() {
             version: "v",
             sidebar: false,
             locale,
+            jump_hosts: 0,
         })
     };
     let en = input(std::slice::from_ref(&box_), "en");
@@ -943,6 +948,7 @@ fn a_card_has_its_keys_face_its_emoji_or_neither() {
         version: "v1.0.9 (1)",
         sidebar: false,
         locale: "en",
+        jump_hosts: 0,
     });
     assert!(Message::parse(&json).is_ok());
 }

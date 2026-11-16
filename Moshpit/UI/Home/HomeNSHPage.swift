@@ -48,7 +48,8 @@ struct HomeNSHPage: View {
 
     var body: some View {
         let record = HomeRecord.now(
-            core: .shared, connections: store.connections, session: { hub.session(for: $0)?.rust?.id },
+            core: .shared, connections: store.connections,
+            session: { hub.session(for: $0)?.rust?.id },
             agents: monitor.machine, disconnecting: disconnecting, sidebar: sidebar)
         let cards = tree.rows(of: record)
         NSHPage(
@@ -156,6 +157,7 @@ struct HomeNSHPage: View {
         switch intent {
         case .settings: actions.settings()
         case .add: actions.add()
+        case .jumpHosts: actions.jumpHosts()
         case .toggleSidebar: actions.toggleSidebar()
         case .connect(let id): actions.connect(id)
         case .enter(let id):
@@ -225,6 +227,8 @@ struct HomeNSHActions {
     var settings: () -> Void
     var add: () -> Void
     var toggleSidebar: () -> Void
+    /// The "Jump hosts (N)" row: the jump-host-only connections' list.
+    var jumpHosts: () -> Void
     var connect: (UUID) -> Void
     var enter: (UUID) -> Void
     /// A host's sessions page (§6.2), pushed on Home's stack.
@@ -289,7 +293,7 @@ struct HomeAgentTaskTarget: Identifiable {
 /// What the NSH Home asks for (`ui/src/home/mod.rs`'s `Intent`), each
 /// naming its connection and, on a tree row, the session, window or pane.
 enum HomeIntent: Equatable {
-    case settings, add, toggleSidebar
+    case settings, add, toggleSidebar, jumpHosts
     case connect(UUID), enter(UUID), sessions(UUID), edit(UUID), delete(UUID), disconnect(UUID), retryAttach(UUID)
     case refresh(UUID), newSession(UUID), newAgentTask(UUID), restartServer(UUID)
     case window(UUID, String), pane(UUID, String)
@@ -307,6 +311,7 @@ enum HomeIntent: Equatable {
         case "settings": self = .settings; return
         case "add": self = .add; return
         case "toggle-sidebar": self = .toggleSidebar; return
+        case "jump-hosts": self = .jumpHosts; return
         default: break
         }
         guard let id = (message["connection"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
@@ -541,7 +546,10 @@ struct HomeRecord: Equatable {
                     disconnecting: Set<UUID>, sidebar: Bool,
                     udpPort: Int = AppSettings.shared.udpRangeStart) -> HomeRecord {
         _ = core.changes.batches
-        let connections = connections.map { connection in
+        // Jump-host-only connections are off the list; one row says how many.
+        let jumpHosts = connections.filter { $0.jumpHostOnly == true }.count
+        let known = Set(connections.map(\.id))
+        let connections = connections.filter { $0.jumpHostOnly != true }.map { connection in
             HomeConnection(
                 id: connection.id.uuidString, name: connection.displayName, user: connection.username,
                 host: connection.host, port: UInt16(clamping: connection.port), emoji: connection.emoji,
@@ -549,11 +557,12 @@ struct HomeRecord: Equatable {
                 udpPort: UInt32(clamping: udpPort),
                 tmux: connection.multiplexer == .tmux,
                 disconnecting: disconnecting.contains(connection.id),
+                viaGone: connection.viaConnectionId.map { !known.contains($0) } ?? false,
                 session: session(connection))
         }
         return HomeRecord(message: core.sessions.homeMessage(
             connections: connections, agents: agents, version: HomeFooter.line,
-            sidebar: sidebar, locale: NSHScreenParams.locale))
+            sidebar: sidebar, locale: NSHScreenParams.locale, jumpHosts: UInt32(jumpHosts)))
     }
 }
 

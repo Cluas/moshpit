@@ -28,6 +28,14 @@ pub struct HomeState {
     /// sidebar button UIKit puts there.
     #[serde(default)]
     pub sidebar: bool,
+    /// How many saved connections are jump hosts only (off this list): the
+    /// row at its end, "Jump hosts (N)", opens them.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub jump_hosts: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// A share the host held back instead of delivering it (B622): the pane
@@ -188,6 +196,14 @@ pub struct Connection {
     /// Why its session failed, when it did (a session that ended has none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<ConnectionFailure>,
+    /// The jump host it goes through was deleted (F1): its row says so and
+    /// a tap opens its form instead of dialling.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub via_gone: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Why a session failed: the reason the screen words, and the session's own

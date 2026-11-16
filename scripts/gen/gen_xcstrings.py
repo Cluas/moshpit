@@ -158,6 +158,17 @@ add("Predict Mode", "预测模式", "予測モード")
 add("ADVANCED", "高级", "詳細設定")
 add("Add Connection", "添加连接", "接続を追加")
 add("Edit Connection", "编辑连接", "接続を編集")
+# Jump host made from the form that needs it, and kept off Home.
+add("New connection…", "新建连接…", "新しい接続…")
+add("Jump host only", "仅作跳板主机", "踏み台専用")
+add("Not listed on Home; pick it under Connect via.", "不在首页显示，在“经由”里选它。", "ホームには表示されません。「経由」で選びます。")
+add("New Jump Host", "新建跳板主机", "踏み台を追加")
+add("Edit Jump Host", "编辑跳板主机", "踏み台を編集")
+add("Edit jump host…", "编辑跳板主机…", "踏み台を編集…")
+add("Jump hosts (%lld)", "跳板主机（%lld）", "踏み台（%lld）")
+add("Jump host deleted", "跳板主机已删除", "踏み台は削除されました")
+add("%@ connects through this host. It won't connect until you pick another way.", "%@ 经由这台主机连接。重新选一条路之前，它连不上。", "%@ はこの踏み台経由で接続します。別の経路を選ぶまで接続できません。")
+add("%@ connect through this host. They won't connect until you pick another way.", "%@ 经由这台主机连接。重新选一条路之前，它们连不上。", "%@ はこの踏み台経由で接続します。別の経路を選ぶまで接続できません。")
 add("Could not save", "无法保存", "保存できませんでした")
 # Saving a connection whose sign-in method changed with no new secret: its
 # own item holds the old method's (ConnectionCredential.Refusal).
@@ -763,9 +774,6 @@ add("mosh needs UDP straight to the host; through another connection it's SSH on
 add("This connection is the jump host for %@, so it connects directly.",
     "这条连接是 %@ 的跳板主机，所以它只能直接连接。",
     "この接続は %@ の踏み台なので、直接接続します。")
-add("Connections that go through it (%@) won't connect until another is picked in Edit.",
-    "经由它的连接（%@）在编辑里重新选择之前都连不上。",
-    "これを経由する接続（%@）は、編集で別の接続を選ぶまで接続できません。")
 # A connect through a jump host that failed (RustCopy, F1).
 add("The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).",
     "跳板主机「%@」不转发连接。请在它上面打开 TCP 转发（AllowTcpForwarding）。",

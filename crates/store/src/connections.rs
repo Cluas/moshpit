@@ -181,6 +181,15 @@ pub struct ServerConnection {
     /// and stays ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via_connection_id: Option<Uuid>,
+    /// Made only to be gone through: Home doesn't list it, and it stays in
+    /// every "Connect via" picker. Absent in data saved before it existed,
+    /// which loads as off.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub jump_host_only: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl ServerConnection {
@@ -215,6 +224,7 @@ impl ServerConnection {
             socks_proxy_port: None,
             emoji: None,
             via_connection_id: None,
+            jump_host_only: false,
         }
     }
 
@@ -413,6 +423,11 @@ pub fn jump_host_choices(
         .iter()
         .filter(|c| Some(c.id) != editing && c.via_connection_id.is_none())
         .collect()
+}
+
+/// The saved connections Home lists: all but the jump-host-only ones.
+pub fn listed_on_home(saved: &[ServerConnection]) -> Vec<&ServerConnection> {
+    saved.iter().filter(|c| !c.jump_host_only).collect()
 }
 
 /// The saved connections (`ConnectionStore`).
@@ -1158,6 +1173,72 @@ mod tests {
         let earlier: Vec<EarlierBuildConnection> = json::decode(&data).unwrap();
         assert_eq!(earlier[0].name, "studio");
         assert!(earlier[0].use_tmux);
+    }
+
+    /// Data saved before "Jump host only" has no such key: it loads as off,
+    /// is listed on Home, and writes nothing back for it; one with it on
+    /// round-trips and is still a jump host choice.
+    #[test]
+    fn jump_host_only_defaults_off_and_round_trips() {
+        let earlier = r#"[{
+          "id": "5D1A7E0C-3F42-4B8E-9C61-0A2B3C4D5E6F", "name": "old",
+          "host": "node01.example.com", "port": 22, "username": "dev",
+          "authMethod": "key", "connectionProtocol": "ssh", "sshPort": 22,
+          "moshPortRangeStart": 60001, "moshPortRangeEnd": 60999,
+          "createdAt": "2026-08-27T09:00:00Z", "useTmux": false
+        }]"#;
+        let defaults = defaults();
+        defaults.set(
+            ConnectionStore::STORAGE_KEY,
+            Some(Plist::Data(earlier.as_bytes().to_vec())),
+        );
+        let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        let mut saved = store.connections().to_vec();
+        assert!(!saved[0].jump_host_only);
+        assert_eq!(listed_on_home(&saved).len(), 1);
+        store.update(saved[0].clone());
+        for entry in stored_entries(&defaults) {
+            assert!(entry.as_object().unwrap().get("jumpHostOnly").is_none());
+        }
+        saved[0].jump_host_only = true;
+        store.update(saved[0].clone());
+        for entry in stored_entries(&defaults) {
+            assert_eq!(entry.as_object().unwrap().get("jumpHostOnly"), Some(&Value::Bool(true)));
+        }
+        let reread = ConnectionStore::new(defaults, Readiness::Always);
+        let saved = reread.connections().to_vec();
+        assert!(saved[0].jump_host_only);
+        assert!(listed_on_home(&saved).is_empty());
+        assert_eq!(jump_host_choices(&saved, None).len(), 1);
+    }
+
+    /// Deleting a jump host leaves the connections that went through it as
+    /// they were (never switched to Direct): their route reads as deleted,
+    /// until another is picked. Turning "Jump host only" off lists it again.
+    #[test]
+    fn deleting_a_jump_host_leaves_its_users_going_through_nothing() {
+        let mut bastion = ServerConnection::new(Uuid::new_v4(), Date(0.0));
+        bastion.name = "bastion".into();
+        bastion.jump_host_only = true;
+        let mut dev = ServerConnection::new(Uuid::new_v4(), Date(0.0));
+        dev.name = "dev-box".into();
+        dev.via_connection_id = Some(bastion.id);
+        let mut saved = vec![bastion.clone(), dev.clone()];
+        assert_eq!(
+            reached_through(&saved, bastion.id)
+                .iter()
+                .map(|c| c.display_name())
+                .collect::<Vec<_>>(),
+            ["dev-box"]
+        );
+        assert_eq!(dev.route(&saved), Route::Through(&saved[0]));
+        saved.retain(|c| c.id != bastion.id);
+        assert_eq!(saved[0].via_connection_id, Some(bastion.id));
+        assert_eq!(saved[0].route(&saved), Route::Deleted);
+        // Off again: listed on Home.
+        let mut back = bastion;
+        back.jump_host_only = false;
+        assert_eq!(listed_on_home(&[back]).len(), 1);
     }
 
     /// `jumpHost`, a string an earlier design stored and nothing read, is

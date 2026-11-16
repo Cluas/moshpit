@@ -113,6 +113,7 @@ fn home(connections: Vec<moshpit_ui::home::model::Connection>) -> String {
         connections,
         version: "v1.0.9 (1)".into(),
         sidebar: false,
+        jump_hosts: 0,
     }))
     .to_json()
 }

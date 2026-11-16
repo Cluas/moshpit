@@ -274,6 +274,30 @@ fn other_pane(other: OtherPane, connection: &str, user: &str, tray: Vec<Action>,
         .test_id(&id)
 }
 
+/// "Jump hosts (N)": one row at the end of the list, opening the
+/// connections that are jump hosts only.
+pub(crate) fn jump_hosts_card(count: Memo<u32>, ctx: &Ctx) -> AnyElement {
+    let ask: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(ctx.asking(Intent::JumpHosts));
+    dynamic(move || {
+        let n = count.get();
+        let ask = ask.clone();
+        untracked(move || {
+            section()
+                .item(
+                    row(t!("Jump hosts (%lld)", arg1 = n.to_string()))
+                        .leading(icon("arrow.triangle.branch").tone(Tone::Muted))
+                        .chevron()
+                        .on_press(move || ask())
+                        .test_id("home-jump-hosts")
+                        .into_element(),
+                    Inset::Lead,
+                )
+                .into_element()
+        })
+    })
+    .into_element()
+}
+
 /// SAVED's card: a row per host not connected (its mark, its name, `user@host`,
 /// a chevron), connecting it on a tap; Edit and Delete in its swipe tray
 /// and the host's long press (`home-head-<connection>`).
@@ -293,10 +317,20 @@ pub(crate) fn saved_card(hosts: Vec<Connection>, ctx: &Ctx) -> AnyElement {
                     .emoji(host.emoji.clone())
                     .size(MarkSize::Sm),
             )
-            .subtitle(format!("{}@{}", host.user, host.host))
+            .subtitle(if host.via_gone {
+                t!("Jump host deleted")
+            } else {
+                format!("{}@{}", host.user, host.host)
+            })
             .mono_subtitle()
             .chevron()
-            .on_press(ctx.asking(Intent::Connect(id.clone())))
+            .on_press(ctx.asking(if host.via_gone {
+                // Its jump host was deleted: the form, at JUMP HOST, not a
+                // dial that can only fail.
+                Intent::Edit(id.clone())
+            } else {
+                Intent::Connect(id.clone())
+            }))
             .test_id(&format!("connection-card-{}", host.name));
         let tray = vec![
             Action {

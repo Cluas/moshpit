@@ -105,6 +105,7 @@ fn the_devices_fixture_is_this_one() {
         connections: hosts_at(4000.0),
         version: "v1.0.9 (1)".into(),
         sidebar: false,
+        jump_hosts: 0,
     };
     let message: serde_json::Value =
         serde_json::from_str(&Message::Home(Box::new(state)).to_json()).unwrap();
@@ -127,6 +128,7 @@ fn show(app: &mut Headless, channel: &Channel, connections: Vec<Connection>) {
         connections,
         version: "v1.0.9 (1)".into(),
         sidebar: false,
+        jump_hosts: 0,
     };
     post(app, channel, &Message::Home(Box::new(state)).to_json());
 }
@@ -1741,5 +1743,82 @@ fn at_the_largest_text_size_the_title_wraps_clear_of_the_time() {
         "the title wraps: {shown:?}"
     );
     assert!(row.bounds.size.height.0 >= 44.0);
+    channel.close();
+}
+
+// MARK: - Jump hosts kept off the list
+
+fn saved_box(id: &str, name: &str) -> Connection {
+    Connection {
+        id: id.into(),
+        name: name.into(),
+        initial: "B".into(),
+        user: "me".into(),
+        host: "node01.example.com".into(),
+        ..Connection::default()
+    }
+}
+
+fn show_with_jump_hosts(
+    app: &mut Headless,
+    channel: &Channel,
+    connections: Vec<Connection>,
+    jump_hosts: u32,
+) {
+    let state = HomeState {
+        connections,
+        version: "v1.0.9 (1)".into(),
+        sidebar: false,
+        jump_hosts,
+    };
+    post(app, channel, &Message::Home(Box::new(state)).to_json());
+}
+
+/// With jump-host-only connections, one row ends the list, "Jump hosts
+/// (N)", and a tap asks the host for their list; the connections
+/// themselves are not cards (the host leaves them out).
+#[test]
+fn a_jump_hosts_row_ends_the_list_and_opens_them() {
+    let (mut app, channel, _) = phone(Params::default());
+    let heard = hear(&channel);
+    show_with_jump_hosts(&mut app, &channel, vec![saved_box("c-dev", "dev-box")], 2);
+    find(&mut app, "id:home-jump-hosts");
+    assert!(app.screen().shows("Jump hosts (2)"), "{:?}", app.screen().texts());
+    app.press("id:home-jump-hosts").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "jump-hosts"}));
+    // None: no row.
+    show_with_jump_hosts(&mut app, &channel, vec![saved_box("c-dev", "dev-box")], 0);
+    find(&mut app, "id:connection-card-dev-box");
+    assert!(!app.screen().matches("id:home-jump-hosts").unwrap());
+    channel.close();
+}
+
+/// Only jump hosts saved: Home is not the empty page, it has the row. And
+/// the row reads in Chinese as 跳板主机（N）.
+#[test]
+fn only_jump_hosts_still_leaves_the_row_and_reads_in_chinese() {
+    let (mut app, channel, _) = phone(zh_hans());
+    show_with_jump_hosts(&mut app, &channel, Vec::new(), 1);
+    find(&mut app, "id:home-jump-hosts");
+    assert!(app.screen().shows("跳板主机（1）"), "{:?}", app.screen().texts());
+    assert!(!app.screen().matches("id:home-add-empty").unwrap());
+    channel.close();
+}
+
+/// A connection whose jump host was deleted says so on its card, and a tap
+/// opens its form (Edit) instead of dialling.
+#[test]
+fn a_card_whose_jump_host_was_deleted_says_so_and_opens_its_form() {
+    let (mut app, channel, _) = phone(Params::default());
+    let heard = hear(&channel);
+    let mut gone = saved_box("c-dev", "dev-box");
+    gone.via_gone = true;
+    show(&mut app, &channel, vec![gone, saved_box("c-ok", "ok-box")]);
+    find(&mut app, "id:connection-card-dev-box");
+    assert!(app.screen().shows("Jump host deleted"), "{:?}", app.screen().texts());
+    app.press("id:connection-card-dev-box").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "edit", "connection": "c-dev"}));
+    app.press("id:connection-card-ok-box").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "connect", "connection": "c-ok"}));
     channel.close();
 }

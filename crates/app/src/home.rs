@@ -71,6 +71,8 @@ pub struct SavedConnection {
     pub tmux: bool,
     /// The host is disconnecting it (its card shows a spinner).
     pub disconnecting: bool,
+    /// The jump host it goes through was deleted (F1).
+    pub via_gone: bool,
     /// The registry's view of its session, when it has one.
     pub session: Option<SessionView>,
 }
@@ -89,6 +91,9 @@ pub struct HomeInput<'a> {
     pub sidebar: bool,
     /// The language the app shows (a BCP 47 tag).
     pub locale: &'a str,
+    /// How many saved connections are jump hosts only (not in
+    /// `connections`).
+    pub jump_hosts: u32,
 }
 
 /// What Home shows now.
@@ -101,6 +106,7 @@ pub fn state(input: &HomeInput) -> HomeState {
             .collect(),
         version: input.version.to_owned(),
         sidebar: input.sidebar,
+        jump_hosts: input.jump_hosts,
     }
 }
 
@@ -138,6 +144,7 @@ fn connection(saved: &SavedConnection, input: &HomeInput) -> Connection {
         roaming: view.is_some_and(|v| v.mosh_roaming),
         disconnecting: saved.disconnecting,
         control: view.and_then(|v| control(v, &(input.since)(&saved.id), input.locale)),
+        via_gone: saved.via_gone,
         lost_at: view.and_then(|v| v.lost_at),
         failure: view.and_then(|v| match &v.state {
             SessionState::Failed(failure) => Some(failure_of(failure)),

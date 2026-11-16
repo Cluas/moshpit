@@ -111,6 +111,8 @@ pub fn on_event(app: &mut App, core: &Core, surface: u64, _ev: &str, event: &Val
             }
         }
         Some(Intent::Cancel) => app.close(surface),
+        // A second form on top is iOS's (its host opens it).
+        Some(Intent::NewJumpHost | Intent::EditJumpHost(_)) => {}
         Some(Intent::Delete) => {
             if let Some(id) = editing {
                 app.close(surface);

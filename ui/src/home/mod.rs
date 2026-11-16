@@ -217,6 +217,8 @@ pub enum Intent {
     Edit(String),
     /// Delete the connection (the host asks first).
     Delete(String),
+    /// The "Jump hosts (N)" row: the list of jump-host-only connections.
+    JumpHosts,
     RenameSession {
         connection: String,
         session: String,
@@ -283,6 +285,7 @@ impl Intent {
             Intent::RestartServer(c) => on("restart-server", c),
             Intent::Edit(c) => on("edit", c),
             Intent::Delete(c) => on("delete", c),
+            Intent::JumpHosts => json!({"ev": "jump-hosts"}),
             Intent::RenameSession {
                 connection,
                 session,
@@ -528,7 +531,12 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     let pull = animated_value(0.0);
     let ready = computed(move || state.with(Option::is_some));
     let empty =
-        computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.connections.is_empty())));
+        computed(move || {
+        state.with(|s| {
+            s.as_ref()
+                .is_some_and(|s| s.connections.is_empty() && s.jump_hosts == 0)
+        })
+    });
     let list = {
         let ctx = ctx.clone();
         move || list(state, held, bar, ctx.clone(), offset, pull)
@@ -664,6 +672,7 @@ fn list(
     let top = computed(move || summary.get() != model::Summary::Nothing);
     let has_hosts = computed(move || hosts.with(|h| !h.is_empty()));
     let has_saved = computed(move || saved.with(|s| !s.is_empty()));
+    let jump_count = computed(move || state.with(|s| s.as_ref().map_or(0, |s| s.jump_hosts)));
     let gap = |above: bool| px(if above { GROUP_GAP } else { FIRST_GAP });
 
     let scroller = element_ref();
@@ -714,6 +723,17 @@ fn list(
                     .w_full()
                     .mt(move || gap(has_held.get() || top.get() || has_hosts.get()))
                     .child(saved_group(saved, ctx.clone()))
+            }
+        }))
+        .child(when(move || jump_count.get() > 0, {
+            let ctx = ctx.clone();
+            move || {
+                view()
+                    .w_full()
+                    .mt(move || {
+                        gap(has_held.get() || top.get() || has_hosts.get() || has_saved.get())
+                    })
+                    .child(rows::jump_hosts_card(jump_count, &ctx))
             }
         }))
         .child(view().h(move || px(BOTTOM + safe_area().bottom.0)));
@@ -1028,6 +1048,7 @@ fn saved_group(saved: Memo<Vec<model::Connection>>, ctx: Ctx) -> AnyElement {
                         c.emoji.clone(),
                         c.user.clone(),
                         c.host.clone(),
+                        c.via_gone,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1156,6 +1177,7 @@ mod tests {
             }],
             version: "v1.0.9 (1)".into(),
             sidebar: false,
+            jump_hosts: 0,
         }
     }
 

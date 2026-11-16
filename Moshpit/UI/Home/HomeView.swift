@@ -28,6 +28,8 @@ struct HomeView: View {
     #endif
     @State private var editingConnection: ServerConnection?
     @State private var deletingConnection: ServerConnection?
+    /// The "Jump hosts (N)" row's list.
+    @State private var showJumpHosts = false
     /// Cards whose disconnect teardown is in flight — drives the per-card
     /// spinner and guards against double-taps during the ~2s channel flush.
     @State private var disconnectingIds: Set<UUID> = []
@@ -208,17 +210,11 @@ struct HomeView: View {
         } message: { connection in
             // The connections that go through it fail until another is
             // picked (F1): never a direct dial instead.
-            let through = store.connections
-                .filter { $0.viaConnectionId == connection.id }
-                .map(\.displayName)
-            let removes = String(localized: "Removes the saved server and its stored credentials from this device.")
-            if through.isEmpty {
-                Text(verbatim: removes)
-            } else {
-                let names = ListFormatter.localizedString(byJoining: through)
-                let fail = String(localized: "Connections that go through it (\(names)) won't connect until another is picked in Edit.")
-                Text(verbatim: "\(removes) \(fail)")
-            }
+            Text(verbatim: ConnectionDeleteWords.message(for: connection, in: store.connections))
+        }
+        .appSheet(isPresented: $showJumpHosts) {
+            JumpHostsSheet(store: store, form: { connectionForm(existing: $0) },
+                           delete: { delete($0) })
         }
     }
 
@@ -500,6 +496,7 @@ struct HomeView: View {
             settings: { showSettings = true },
             add: { handleAdd() },
             toggleSidebar: { toggleSidebar() },
+            jumpHosts: { showJumpHosts = true },
             connect: { id in
                 guard let connection = find(id) else { return }
                 if needsSecret(connection) {

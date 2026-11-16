@@ -110,12 +110,19 @@ pub struct Draft {
 }
 
 /// What the screen asked of the host beyond an edit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Intent {
     /// Open the key picker.
     PickKey,
     Save,
     Cancel,
+    /// "New connection…" in Connect via: open a second form, a new jump host
+    /// ([`Draft::new_jump_host`]), on top; saving it picks it here
+    /// ([`Draft::go_through`]), cancelling leaves this draft as it is.
+    NewJumpHost,
+    /// "Edit …" under Connect via: open the saved connection `id` (the one
+    /// picked) in a second form, as a jump host ([`Draft::of_jump_host`]).
+    EditJumpHost(String),
     /// Delete the connection edited (Delete connection…): the host asks
     /// first, as Home's own Delete does.
     Delete,
@@ -212,6 +219,29 @@ impl Draft {
         }
     }
 
+    /// The draft of the "New Jump Host" form, opened on top of another one:
+    /// a new connection that starts as jump host only, with no JUMP HOST
+    /// section of its own (one hop).
+    pub fn new_jump_host(mosh_by_default: bool) -> Self {
+        let mut draft = Self::new(mosh_by_default);
+        draft.fields.nested = true;
+        draft.fields.jump_only = true;
+        draft
+    }
+
+    /// The draft of saved connection `c` opened on top of another form (its
+    /// "Edit …" under Connect via).
+    pub fn of_jump_host(c: &ServerConnection) -> Self {
+        let mut draft = Self::of(c);
+        draft.fields.nested = true;
+        draft
+    }
+
+    /// The draft goes through the saved connection `id` (the one just made).
+    pub fn go_through(&mut self, id: Uuid) {
+        screen::go_through(&mut self.fields, id.to_string());
+    }
+
     /// The draft of saved connection `c`, as the editor opens it.
     pub fn of(c: &ServerConnection) -> Self {
         Draft {
@@ -256,6 +286,8 @@ impl Draft {
                 // The host's, at message time (F1).
                 via_choices: Vec::new(),
                 via_users: Vec::new(),
+                jump_only: c.jump_host_only,
+                nested: false,
             },
             key: c.ssh_key_id,
             stored: Stored::of(c),
@@ -306,6 +338,7 @@ impl Draft {
             ("via", Some(t), _) => screen::go_through(s, t),
             ("mosh", _, Some(f)) => s.mosh = f,
             ("socks", _, Some(f)) => s.socks = f,
+            ("jumpOnly", _, Some(f)) => s.jump_only = f,
             ("auth", Some(t), _) => match t.as_str() {
                 "password" => s.auth = Auth::Password,
                 "key" => s.auth = Auth::Key,
@@ -339,6 +372,10 @@ impl Draft {
                 None
             }
             Some("pick-key") => Some(Intent::PickKey),
+            Some("new-jump") => Some(Intent::NewJumpHost),
+            Some("edit-jump") => message["id"]
+                .as_str()
+                .map(|id| Intent::EditJumpHost(id.to_owned())),
             Some("save") => Some(Intent::Save),
             Some("cancel") => Some(Intent::Cancel),
             Some("delete") => Some(Intent::Delete),
@@ -487,6 +524,7 @@ impl Draft {
         // (F1): the draft says so already, and a draft that doesn't is not
         // saved otherwise.
         c.via_connection_id = Uuid::parse(s.via.trim());
+        c.jump_host_only = s.jump_only;
         let through = c.via_connection_id.is_some();
         c.connection_protocol = if s.mosh && !through {
             ConnectionProtocol::Mosh

@@ -32,6 +32,18 @@ extension ConnectionDraft {
         }
     }
 
+    /// The draft of the New Jump Host form, opened on top of another form.
+    init(newJumpHostWith settings: AppSettings) {
+        self = connectionDraftNewJumpHost(moshByDefault: settings.moshByDefault)
+    }
+
+    /// The draft of saved connection `c` opened on top of another form
+    /// (Edit under Connect via).
+    init(jumpHost c: ServerConnection) {
+        self = (try? connectionDraftOfJumpHost(connection: ConnectionRecord(c)))
+            ?? connectionDraftNewJumpHost(moshByDefault: c.connectionProtocol == .mosh)
+    }
+
     /// The managed key picked from SSH Keys; nil: paste a PEM.
     var selectedKeyId: UUID? {
         get { selectedKey.flatMap(UUID.init(uuidString:)) }
@@ -70,10 +82,11 @@ extension ConnectionDraft {
     /// undone by deleting that item, and the record kept still signs in
     /// with its own.
     @MainActor
+    @discardableResult
     func save(existing: ServerConnection?, store: ConnectionStore, keychain: KeychainService,
               settings: AppSettings, keys: [SSHKeyRecord], secrets: ConnectionSecrets,
               release: (String) async -> Void = { _ in },
-              forgetPairing: ((UUID) throws -> Void)? = nil) async throws {
+              forgetPairing: ((UUID) throws -> Void)? = nil) async throws -> UUID {
         // The record as saved now, not as the form opened it: one deleted
         // meanwhile is refused (B536), where the update used to change
         // nothing and the form closed as saved.
@@ -131,6 +144,7 @@ extension ConnectionDraft {
         if let released = plan.released {
             await release(released)
         }
+        return connection.id
     }
 }
 
