@@ -30914,14 +30914,14 @@ public func shortcutsListOp(event: ShortcutsEvent, shortcuts: [ShortcutRecord]) 
 }
 /**
  * `{"op": "shortcuts", …}` for Settings › Shortcuts, as JSON: `shortcuts`
- * in the store's order, each called what `names` says (by id: a
- * built-in's name in the app's language, B234), else its summary.
+ * in the store's order, a built-in called by its name in `locale` (B234),
+ * the user's own by their own words.
  */
-public func shortcutsPageMessage(shortcuts: [ShortcutRecord], names: [String: String]) -> String  {
+public func shortcutsPageMessage(shortcuts: [ShortcutRecord], locale: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_shortcuts_page_message(
         FfiConverterSequenceTypeShortcutRecord.lower(shortcuts),
-        FfiConverterDictionaryStringString.lower(names),$0
+        FfiConverterString.lower(locale),$0
     )
 })
 }
@@ -31749,7 +31749,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_shortcuts_list_op() != 62756) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_shortcuts_page_message() != 25344) {
+    if (uniffi_moshpit_ffi_checksum_func_shortcuts_page_message() != 25144) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_theme_editor_message() != 31611) {

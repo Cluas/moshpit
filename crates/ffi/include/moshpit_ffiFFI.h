@@ -2456,7 +2456,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_list_op(RustBuffer event, RustBu
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_PAGE_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SHORTCUTS_PAGE_MESSAGE
-RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_page_message(RustBuffer shortcuts, RustBuffer names, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_shortcuts_page_message(RustBuffer shortcuts, RustBuffer locale, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_THEME_EDITOR_MESSAGE

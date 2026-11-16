@@ -154,39 +154,82 @@ impl Draft {
 
 /// A quick key's description (or a built-in shortcut's name) in the app's
 /// language; anything else as it is. B234: they were English in every
-/// language — on both pages (the app's `ShortcutCopy.describe`).
+/// language — on both pages.
 pub fn describe(english: &str) -> String {
+    describe_in(english, &crate::strings::shown_language())
+}
+
+/// [`describe`] in `locale`, for a host outside a surface (the Shortcuts
+/// page's names: a built-in's stored summary is its identity, so it stays
+/// English in storage and is put into words only here).
+pub fn describe_in(english: &str, locale: &str) -> String {
     match english {
-        "multiplexer prefix" => t!("multiplexer prefix"),
-        "Interrupt" => t!("Interrupt"),
-        "EOF" => t!("EOF"),
-        "Suspend" => t!("Suspend"),
-        "Quit" => t!("Quit"),
-        "Clear" => t!("Clear"),
-        "Line start" => t!("Line start"),
-        "Line end" => t!("Line end"),
-        "Search" => t!("Search"),
-        "Del word" => t!("Del word"),
-        "Del line" => t!("Del line"),
-        "Kill EOL" => t!("Kill EOL"),
-        "Yank" => t!("Yank"),
-        "Prev" => t!("Prev"),
-        "Next" => t!("Next"),
-        "Tab" => t!("Tab key"),
-        "Back-tab" => t!("Back-tab"),
-        "Return" => t!("Return"),
-        "Escape" => t!("Escape"),
-        "Forward delete" => t!("Forward delete"),
-        "Backspace" => t!("Backspace"),
-        "Left" => t!("Left"),
-        "Down" => t!("Down"),
-        "Up" => t!("Up"),
-        "Right" => t!("Right"),
-        "Home" => t!("Home"),
-        "End" => t!("End"),
-        "Page up" => t!("Page up"),
-        "Page down" => t!("Page down"),
+        "multiplexer prefix" => crate::tl!("multiplexer prefix", locale),
+        "Interrupt" => crate::tl!("Interrupt", locale),
+        "EOF" => crate::tl!("EOF", locale),
+        "Suspend" => crate::tl!("Suspend", locale),
+        "Quit" => crate::tl!("Quit", locale),
+        "Clear" => crate::tl!("Clear", locale),
+        "Line start" => crate::tl!("Line start", locale),
+        "Line end" => crate::tl!("Line end", locale),
+        "Search" => crate::tl!("Search", locale),
+        "Del word" => crate::tl!("Del word", locale),
+        "Del line" => crate::tl!("Del line", locale),
+        "Kill EOL" => crate::tl!("Kill EOL", locale),
+        "Yank" => crate::tl!("Yank", locale),
+        "Prev" => crate::tl!("Prev", locale),
+        "Next" => crate::tl!("Next", locale),
+        "Tab" => crate::tl!("Tab key", locale),
+        "Back-tab" => crate::tl!("Back-tab", locale),
+        "Return" => crate::tl!("Return", locale),
+        "Escape" => crate::tl!("Escape", locale),
+        "Forward delete" => crate::tl!("Forward delete", locale),
+        "Backspace" => crate::tl!("Backspace", locale),
+        "Left" => crate::tl!("Left", locale),
+        "Down" => crate::tl!("Down", locale),
+        "Up" => crate::tl!("Up", locale),
+        "Right" => crate::tl!("Right", locale),
+        "Home" => crate::tl!("Home", locale),
+        "End" => crate::tl!("End", locale),
+        "Page up" => crate::tl!("Page up", locale),
+        "Page down" => crate::tl!("Page down", locale),
+        // The built-ins' names (the store's `ShortcutStore::builtins`) the
+        // quick keys do not share.
+        "Interrupt (SIGINT)" => crate::tl!("Interrupt (SIGINT)", locale),
+        "Clear screen" => crate::tl!("Clear screen", locale),
+        "Paste clipboard" => crate::tl!("Paste clipboard", locale),
+        "Arrow keys" => crate::tl!("Arrow keys", locale),
+        "Tap arrows" => crate::tl!("Tap arrows", locale),
+        "Control" => crate::tl!("Control", locale),
+        "Scroll history" => crate::tl!("Scroll history", locale),
+        "Voice input" => crate::tl!("Voice input", locale),
+        "Attach image" => crate::tl!("Attach image", locale),
+        "Browse files" => crate::tl!("Browse files", locale),
+        "Accept suggestion and send" => crate::tl!("Accept suggestion and send", locale),
+        "End of file" => crate::tl!("End of file", locale),
+        "Reverse search" => crate::tl!("Reverse search", locale),
+        "Jump to end" => crate::tl!("Jump to end", locale),
+        "Back-tab / toggle mode" => crate::tl!("Back-tab / toggle mode", locale),
+        "History prev" => crate::tl!("History prev", locale),
+        "History next" => crate::tl!("History next", locale),
+        "Cursor left" => crate::tl!("Cursor left", locale),
+        "Cursor right" => crate::tl!("Cursor right", locale),
+        "Clear line before cursor" => crate::tl!("Clear line before cursor", locale),
+        "Clear line after cursor" => crate::tl!("Clear line after cursor", locale),
+        "Beginning of line" => crate::tl!("Beginning of line", locale),
+        "End of line" => crate::tl!("End of line", locale),
+        "Delete word" => crate::tl!("Delete word", locale),
         other => other.to_owned(),
+    }
+}
+
+/// What the Shortcuts page calls `shortcut`: a built-in's name in
+/// `locale`, the user's own words as they wrote them.
+pub fn shortcut_name(shortcut: &moshpit_store::shortcuts::TerminalShortcut, locale: &str) -> String {
+    if shortcut.is_builtin {
+        describe_in(&shortcut.summary, locale)
+    } else {
+        shortcut.summary.clone()
     }
 }
 
@@ -1058,6 +1101,63 @@ const GRID_SPACING: f32 = 8.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B234, from the app's Swift suite: every built-in shortcut's name is
+    /// in each language the app ships, read from the shared catalog.
+    #[test]
+    fn every_built_in_is_named_in_each_language() {
+        use moshpit_store::shortcuts::ShortcutStore;
+        // Proper names of keys a language may keep as they are.
+        let kept = ["Home", "End", "Escape", "Return"];
+        // Words a language spells exactly as English does, by its catalog
+        // entry (the key name Control in several).
+        let alike = |language: &str| -> &'static [&'static str] {
+            match language {
+                "de" | "es" | "ko" | "pt-BR" => &["Control"],
+                _ => &[],
+            }
+        };
+        let english: Vec<String> = ShortcutStore::builtins().into_iter().map(|s| s.summary).collect();
+        assert!(english.len() >= 30, "{english:?}");
+        for language in ["zh-Hans", "zh-Hant", "ja", "ko", "de", "es", "fr", "pt-BR"] {
+            for text in &english {
+                let shown = describe_in(text, language);
+                assert!(!shown.is_empty(), "{language}: {text}");
+                if !kept.contains(&text.as_str()) && !alike(language).contains(&text.as_str()) {
+                    assert_ne!(&shown, text, "{language}: {text:?} is still English");
+                }
+            }
+        }
+        // And in English, as stored.
+        for text in &english {
+            let shown = describe_in(text, "en");
+            assert!(shown == *text || text == "Tab", "{text} → {shown}");
+        }
+    }
+
+    #[test]
+    fn chinese_reads_as_chinese() {
+        assert_eq!(describe_in("Interrupt (SIGINT)", "zh-Hans"), "中断（SIGINT）");
+        assert_eq!(describe_in("Tab", "zh-Hans"), "Tab 键", "the key, not the multiplexer's tab");
+        assert_eq!(describe_in("Clear line before cursor", "zh-Hans"), "删掉光标前的内容");
+    }
+
+    /// A built-in is shown translated and stored as it was; the user's own
+    /// words are their own, even when they are a built-in's.
+    #[test]
+    fn only_a_built_in_is_put_into_words() {
+        use moshpit_store::shortcuts::ShortcutStore;
+        let builtin = ShortcutStore::builtins()
+            .into_iter()
+            .find(|s| s.summary == "Interrupt (SIGINT)")
+            .expect("a built-in ^C");
+        assert!(builtin.is_builtin);
+        assert_eq!(shortcut_name(&builtin, "zh-Hans"), "中断（SIGINT）");
+        assert_eq!(builtin.summary, "Interrupt (SIGINT)");
+        let mut mine = builtin.clone();
+        mine.is_builtin = false;
+        assert_eq!(shortcut_name(&mine, "zh-Hans"), "Interrupt (SIGINT)");
+    }
 
     fn draft() -> Draft {
         Draft {

@@ -575,18 +575,12 @@ fn shortcuts(records: Vec<ShortcutRecord>) -> Vec<TerminalShortcut> {
 }
 
 /// `{"op": "shortcuts", …}` for Settings › Shortcuts, as JSON: `shortcuts`
-/// in the store's order, each called what `names` says (by id: a
-/// built-in's name in the app's language, B234), else its summary.
+/// in the store's order, a built-in called by its name in `locale` (B234),
+/// the user's own by their own words.
 #[uniffi::export]
-pub fn shortcuts_page_message(
-    shortcuts: Vec<ShortcutRecord>,
-    names: HashMap<String, String>,
-) -> String {
+pub fn shortcuts_page_message(shortcuts: Vec<ShortcutRecord>, locale: String) -> String {
     shortcuts::page_message(&self::shortcuts(shortcuts), |s| {
-        names
-            .get(&s.id.to_string())
-            .cloned()
-            .unwrap_or_else(|| s.summary.clone())
+        moshpit_ui::add_shortcut::shortcut_name(s, &locale)
     })
 }
 
@@ -1377,6 +1371,32 @@ impl ThemeEditorHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// B234: Settings › Shortcuts names a built-in in the app's language,
+    /// the user's own by their own words (the app's Swift suite's case).
+    #[test]
+    fn the_shortcuts_page_names_a_built_in_in_the_apps_language() {
+        let builtins = moshpit_store::shortcuts::ShortcutStore::builtins();
+        let interrupt = builtins.iter().find(|s| s.summary == "Interrupt (SIGINT)").unwrap();
+        let mut mine = interrupt.clone();
+        mine.id = Uuid::new_v4();
+        mine.is_builtin = false;
+        mine.in_toolbar = false;
+        let json = shortcuts_page_message(
+            [interrupt, &mine].into_iter().map(ShortcutRecord::from).collect(),
+            "zh-Hans".into(),
+        );
+        let message: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let named = |id: Uuid| {
+            ["toolbar", "available"]
+                .iter()
+                .flat_map(|list| message[list].as_array().cloned().unwrap_or_default())
+                .find(|s| s["id"] == id.to_string())
+                .map(|s| s["summary"].as_str().unwrap_or_default().to_owned())
+        };
+        assert_eq!(named(interrupt.id).as_deref(), Some("中断（SIGINT）"), "{json}");
+        assert_eq!(named(mine.id).as_deref(), Some("Interrupt (SIGINT)"), "{json}");
+    }
 
     fn record() -> ConnectionDraft {
         connection_draft_new(true)
