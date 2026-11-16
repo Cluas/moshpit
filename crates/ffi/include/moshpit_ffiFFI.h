@@ -1419,6 +1419,11 @@ RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_island(uint64_t ptr, RustBuff
 RustBuffer uniffi_moshpit_ffi_fn_method_petmachine_message(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RELOAD_IF_NEEDED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RELOAD_IF_NEEDED
+void uniffi_moshpit_ffi_fn_method_petmachine_reload_if_needed(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RENAME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_RENAME
 void uniffi_moshpit_ffi_fn_method_petmachine_rename(uint64_t ptr, RustBuffer name, int64_t now, RustCallStatus *_Nonnull out_status
@@ -4300,6 +4305,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_island(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_MESSAGE
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_RELOAD_IF_NEEDED
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_RELOAD_IF_NEEDED
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_reload_if_needed(void
     
 );
 #endif

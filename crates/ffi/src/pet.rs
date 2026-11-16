@@ -61,6 +61,10 @@ struct State {
     icon: Option<(String, bool)>,
     /// The look whose icon Home last asked about.
     icon_asked: Option<String>,
+    /// Whether the preferences could be believed when they were read (B865):
+    /// a launch before the first unlock read them as empty, and they are
+    /// read again once they can be ([`PetMachine::reload_if_needed`]).
+    read_trusted: bool,
 }
 
 /// The pet, its egg and the person's choices.
@@ -71,6 +75,12 @@ pub struct PetMachine {
     cloud: Mutex<Option<Arc<dyn PetCloudHost>>>,
     listener: Mutex<Option<Arc<dyn PetListener>>>,
     state: Mutex<State>,
+}
+
+/// `egg` as read, with the taps this launch counted (they're never stored).
+fn egg_with_taps(mut egg: EggProgress, taps: u8) -> EggProgress {
+    egg.taps = taps;
+    egg
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -157,6 +167,7 @@ impl PetMachine {
     #[uniffi::constructor]
     pub fn new(preferences: Arc<dyn PreferencesHost>, device_id: String) -> Arc<Self> {
         let defaults = HostDefaults(preferences);
+        let read_trusted = Readiness::System.is_readable(&defaults);
         let state = State {
             stored: stored::read(&defaults),
             egg: stored::read_egg(&defaults),
@@ -169,6 +180,7 @@ impl PetMachine {
             thresholds: Thresholds::MEDIUM,
             icon: None,
             icon_asked: stored::read_icon_asked(&defaults),
+            read_trusted,
         };
         Arc::new(Self {
             defaults,
@@ -327,6 +339,15 @@ impl PetMachine {
         let Ok(seed) = Seed::try_from(seed.as_slice()) else {
             return false;
         };
+        // Never over a pet the preferences hold (B865), and never one that
+        // couldn't be kept: a machine made before the first unlock read them
+        // as empty and showed an egg, and three taps hatched a second pet,
+        // written over the person's own once the phone was unlocked. So
+        // nothing hatches while they're sealed, and they're read again first.
+        if !Readiness::System.is_readable(&self.defaults) {
+            return false;
+        }
+        self.reload_if_needed();
         let mut s = lock(&self.state);
         if !matches!(s.stored, Stored::NoPet)
             || !may_hatch(
@@ -430,6 +451,53 @@ impl PetMachine {
         }
         s.icon = Some((current, by_hand));
         drop(s);
+        self.notify();
+    }
+
+    /// The app came forward (B865): preferences read before the first
+    /// unlock, as empty, are read again once they can be believed. The pet
+    /// they hold is the one shown — merged with one adopted meanwhile — and
+    /// one only this launch has (adopted from iCloud while sealed) is kept
+    /// now; the egg keeps what it heard meanwhile. A no-op once read.
+    pub fn reload_if_needed(&self) {
+        let mut s = lock(&self.state);
+        if s.read_trusted || !Readiness::System.is_readable(&self.defaults) {
+            return;
+        }
+        s.read_trusted = true;
+        let found = stored::read(&self.defaults);
+        let keep = match (&s.stored, found) {
+            (_, Stored::Unreadable(e)) => {
+                s.stored = Stored::Unreadable(e);
+                None
+            }
+            (Stored::Pet(here), Stored::Pet(there)) => {
+                let merged = moshpit_pet::merge(here, &there);
+                s.stored = Stored::Pet(merged.clone());
+                (merged != there).then_some(merged)
+            }
+            (_, Stored::Pet(there)) => {
+                s.stored = Stored::Pet(there);
+                None
+            }
+            (Stored::Pet(here), Stored::NoPet) => Some(here.clone()),
+            (_, Stored::NoPet) => None,
+        };
+        let egg = stored::read_egg(&self.defaults);
+        let heard = s.egg;
+        s.egg.connections = egg.connections.max(heard.connections);
+        s.egg.agent_finished = egg.agent_finished || heard.agent_finished;
+        if s.egg != egg_with_taps(egg, s.egg.taps) {
+            stored::write_egg(&self.defaults, &Readiness::System, &s.egg);
+        }
+        s.style = stored::read_style(&self.defaults);
+        s.shown = stored::read_shown(&self.defaults);
+        s.talk = stored::read_talk(&self.defaults);
+        s.icon_asked = stored::read_icon_asked(&self.defaults);
+        drop(s);
+        if let Some(record) = keep {
+            self.keep(&record);
+        }
         self.notify();
     }
 
@@ -767,5 +835,74 @@ mod tests {
             ),
             (Some("Pip"), Some(1), Some(false), Some(false))
         );
+    }
+
+    /// Preferences that read as nothing, and keep nothing, while sealed:
+    /// the app launched before the phone's first unlock since a reboot.
+    #[derive(Default)]
+    struct Sealable {
+        prefs: Prefs,
+        sealed: std::sync::atomic::AtomicBool,
+    }
+
+    impl Sealable {
+        fn seal(&self, sealed: bool) {
+            self.sealed.store(sealed, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn is_sealed(&self) -> bool {
+            self.sealed.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl PreferencesHost for Sealable {
+        fn get(&self, key: String) -> Option<PlistValue> {
+            if self.is_sealed() { None } else { self.prefs.get(key) }
+        }
+        fn set(&self, key: String, value: Option<PlistValue>) {
+            if !self.is_sealed() {
+                self.prefs.set(key, value);
+            }
+        }
+        fn protected_data_available(&self) -> bool {
+            !self.is_sealed()
+        }
+    }
+
+    /// B865: a launch before the first unlock read the preferences as
+    /// empty, and the machine never read them again: Home showed an egg
+    /// where the pet was, and three taps on it hatched a second pet, which
+    /// the unlocked phone then wrote over the person's own.
+    #[test]
+    fn a_pet_read_before_the_first_unlock_is_never_hatched_over() {
+        let prefs = Arc::new(Sealable::default());
+        let first = PetMachine::new(prefs.clone(), "phone".into());
+        first.cloud_unavailable();
+        first.agent_finished();
+        assert!(first.hatch(vec![7; 16], 1_800_000_000, 9));
+        let seed = message(&first)["pet"]["seed"].clone();
+
+        // Rebooted; launched before the first unlock.
+        prefs.seal(true);
+        let m = PetMachine::new(prefs.clone(), "phone".into());
+        m.cloud_unavailable();
+        // Unlocked, the app comes forward.
+        prefs.seal(false);
+        m.reload_if_needed();
+        assert_eq!(message(&m)["pet"]["seed"], seed, "the pet, not an egg");
+
+        // And whatever the machine thought it had, a hatch never writes
+        // over a pet the preferences hold.
+        prefs.seal(true);
+        let stale = PetMachine::new(prefs.clone(), "phone".into());
+        stale.cloud_unavailable();
+        prefs.seal(false);
+        stale.agent_finished();
+        for _ in 0..3 {
+            stale.tap_egg();
+        }
+        assert!(!stale.hatch(vec![9; 16], 1_800_100_000, 10), "no second pet");
+        assert_eq!(message(&stale)["pet"]["seed"], seed, "it shows the pet it found");
+        let after = PetMachine::new(prefs.clone(), "phone".into());
+        assert_eq!(message(&after)["pet"]["seed"], seed, "the pet kept");
     }
 }

@@ -85,6 +85,10 @@ final class CompanionPet {
     /// Home shows the pet: it may grow.
     func seen() { _ = machine.seen(now: Self.now) }
 
+    /// The app came forward (B865): what a launch before the first unlock
+    /// read as nothing — the pet shown as an egg — is read again.
+    func reloadIfNeeded() { machine.reloadIfNeeded() }
+
     /// The egg's and the hatch's state, logged when it changes, so a device
     /// report can be read from the syslog (`pet: egg connections=… taps=…`).
     func logStatus() {
