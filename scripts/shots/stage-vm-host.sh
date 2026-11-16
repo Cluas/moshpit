@@ -78,6 +78,13 @@ start) ;;
 esac
 
 bind="${3:-}"; port="${4:-22622}"
+# tmux's socket is <TMUX_TMPDIR>/tmux-<uid>/<name> at its real path, and a
+# Unix socket path holds 103 bytes at most on macOS: a long work dir (under
+# $TMPDIR, say) fails every tmux call with "File name too long". Said here,
+# before anything is started.
+socket="$(cd "$work" && pwd -P)/tmux/tmux-$(id -u)/moshpit-vmshots-build"
+[ "${#socket}" -le 103 ] ||
+    fail "the work dir is too long for tmux's socket (${#socket} bytes, 103 at most): use a short one, like /tmp/vmshots"
 [ -n "$bind" ] || fail "start needs the address to listen on (the VM's bridge, e.g. 192.168.64.1)"
 ifconfig | grep -q "inet $bind " || fail "no interface on this Mac has $bind"
 [ ! -e "$work/sshd.pid.group" ] || fail "$work is staged already: stop it first"

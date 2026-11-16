@@ -165,9 +165,9 @@ final class ShotsUITest: XCTestCase {
     }
 
     /// The terminal live with nothing over it: the window segment answers
-    /// (a live, attached tree), and neither the connecting poster nor the
-    /// reconnect veil is there (the tree can be live a moment before the
-    /// first frame is painted).
+    /// (a live, attached tree), and the reconnect veil isn't there (the
+    /// tree can be live a moment before the first frame is painted). The
+    /// connecting poster is gone from the app, so there's no wait for it.
     @MainActor
     private func waitLive(_ app: XCUIApplication, _ locale: Locale) -> Bool {
         let window = app.nsh("terminal-crumb-window")
@@ -175,11 +175,9 @@ final class ShotsUITest: XCTestCase {
             XCTFail("\(locale.name): the seeded session never went live")
             return false
         }
-        for cover in ["terminal-connecting", "terminal-reconnect-veil"] {
-            if !app.nsh(cover).waitForNonExistence(timeout: 20) {
-                XCTFail("\(locale.name): \(cover) is still up")
-                return false
-            }
+        if !app.nsh("terminal-reconnect-veil").waitForNonExistence(timeout: 20) {
+            XCTFail("\(locale.name): terminal-reconnect-veil is still up")
+            return false
         }
         settle(0.8)
         return true
