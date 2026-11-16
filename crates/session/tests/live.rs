@@ -447,7 +447,25 @@ async fn ssh_a_size_given_during_the_redial_reaches_the_new_shell() {
     let _ = bench.sessions.disconnect(id).await;
 }
 
-/// Typed while the session isn't live: dropped and said so, never replayed.
+/// Typed into a plain shell while the session reconnects: dropped and said
+/// so (`Discarded::Reconnected`), never replayed into the new shell the
+/// redial opens. The rule for typing while the session isn't live (the
+/// session module's, B396, B476, B322):
+///
+/// - Under a reconnect, a plain shell's keys and pastes are not kept: the
+///   redial is a new shell, where a command typed blind would run on its
+///   own. Dropped at once, said as `Reconnected`.
+/// - Under a reconnect, a multiplexer pane's keys and pastes wait for that
+///   pane, which the redial brings back (tmux keeps it on the server), and
+///   go to it in order once it is attached again. Dropped and said
+///   `PaneGone` when the new attach doesn't have the pane, `SessionEnded`
+///   when the session ends or fails first. Nothing else bounds the wait.
+/// - A tap on the shortcut bar under the veil, and anything typed before
+///   the first connect or once the session failed or ended: dropped, said
+///   `NotLive`.
+///
+/// It said `NotLive` for the plain shell before B396 told the reconnect
+/// apart (B851: the expectation had stayed behind; nothing was replayed).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_input_while_not_live_is_dropped_not_replayed() {
@@ -474,7 +492,7 @@ async fn ssh_input_while_not_live_is_dropped_not_replayed() {
             _ => None,
         })
         .await;
-    assert_eq!(discarded, (Discarded::NotLive, 17));
+    assert_eq!(discarded, (Discarded::Reconnected, 17));
     relay.heal();
     bench.sessions.network_changed();
     bench.connected(id).await;
