@@ -1522,6 +1522,42 @@ fn a_herdr_question_the_push_rang_rings_once_and_its_answer_takes_the_card() {
     assert!(withdrawn(&effects).contains(&format!("{ATTENTION_CARD}{CONN}").as_str()), "{effects:?}");
 }
 
+/// B824: herdr's stamps carry no `since`, so a question the app saw first
+/// is dated by the phone; the host's push, sent after the host's own grace,
+/// arrives inside the app's and records the same question dated by the
+/// host. The app's announcement then counted as another question: it rang
+/// a second time for what the push had just rung. The push's date is the
+/// question's (B592), whichever came first.
+#[test]
+fn a_herdr_question_the_push_rang_inside_the_grace_rings_once() {
+    let mut bench = Bench::new(Settings::default(), &[]);
+    // The host asked at T0 - 5 (its clock); the app's poll saw it at T0 + 1.
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 1.0, HERDR_IDLE);
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 9.0, HERDR_IDLE);
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 17.0, HERDR_IDLE);
+    // The host's grace ran out: its push rang, and recorded the question.
+    assert!(bench.pushed("%1", (T0 - 5.0) as i64, T0 + 25.5), "the push rings");
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 25.0 + HERDR_IDLE, HERDR_IDLE);
+    bench.monitor.sweep(None, T0 + 33.5);
+    let effects = bench.monitor.take_effects();
+    let card = posts(&effects)
+        .into_iter()
+        .find(|c| c.id.starts_with(ATTENTION_CARD))
+        .unwrap_or_else(|| panic!("the app's card: {effects:?}"));
+    assert!(!card.text.sound, "the push rang this question already: {card:?}");
+    assert_eq!(card.text.title, "claude needs you", "one question, not two");
+    let saved = effects.iter().find_map(|e| if let Effect::SaveAnnounced(m) = e { Some(m.clone()) } else { None });
+    assert_eq!(saved.unwrap().get(&format!("{CONN}|%1")), Some(&(T0 - 5.0)), "dated by the host");
+
+    // A question the push hasn't recorded is the phone's to date, and rings.
+    let mut bench = Bench::new(Settings::default(), &[]);
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 1.0, HERDR_IDLE);
+    bench.monitor.hooks(CONN, vec![herdr("%1", "attention")], T0 + 31.0, HERDR_IDLE);
+    bench.monitor.sweep(None, T0 + 31.5);
+    let effects = bench.monitor.take_effects();
+    assert!(posts(&effects).iter().any(|c| c.id.starts_with(ATTENTION_CARD) && c.text.sound), "{effects:?}");
+}
+
 const HERDR_IDLE: f64 = 8.0;
 const HERDR_PUSHED: f64 = 45.0;
 

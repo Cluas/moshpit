@@ -914,6 +914,17 @@ impl Monitor {
             // The earliest start known: a stamp can date the turn before
             // what the phone saw of it (a bell's "needs you" first).
             let turn_since = in_turn(new_state).then(|| turn_began.map_or(since, |began| began.min(since)));
+            // A herdr question the app dated by the phone, not yet announced,
+            // that the push has since recorded (B824): the push's date is the
+            // question's (B592), whichever came first. The host's push comes
+            // after the host's grace, inside the app's, and the app's
+            // announcement then counted as another question and rang again.
+            let pushed = if hook.since.is_none() && new_state == AgentState::Attention {
+                self.pushed_since(&key, now)
+            } else {
+                None
+            };
+            let announced_episode = self.announced.get(&key).copied();
             match self.panes.get_mut(&key) {
                 Some(p) => {
                     // Taking a pane over is a new episode when the stamp
@@ -927,12 +938,27 @@ impl Monitor {
                         || (!p.hook_owned && hook.since.is_some())
                         || (new_state == AgentState::Attention
                             && hook.since.is_some_and(|stamped| stamped > p.since));
+                    let dated_by_push = pushed.filter(|pushed| {
+                        !state_changed
+                            && p.state == AgentState::Attention
+                            && *pushed != p.since
+                            && announced_episode != Some(p.since)
+                    });
                     p.command = command.clone();
                     p.place = hook.place.clone();
                     p.detail = title.clone();
                     p.state = new_state;
                     if state_changed {
                         p.since = since;
+                    } else if let Some(pushed) = dated_by_push {
+                        // Its grace runs on as it was: the question has
+                        // waited since the app first saw it.
+                        if let Some((episode, _)) = self.pending.get_mut(&key)
+                            && *episode == p.since
+                        {
+                            *episode = pushed;
+                        }
+                        p.since = pushed;
                     }
                     p.visible = true;
                     p.hook_owned = true;
