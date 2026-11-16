@@ -51,6 +51,12 @@ pub(super) struct SidecarState {
     /// last sidecar's, or one an older build made), ended once the renderer
     /// has left it.
     pub renderer_group: Option<String>,
+    /// B872, B871: ids of groups we left or ended. A listing written before
+    /// the renderer moved still names one as the renderer's session; taken
+    /// for the session the person went to, it got a group of a dead group,
+    /// and so on without end. Ids are never reused, so rows naming them are
+    /// stale for good.
+    pub dead_groups: BTreeSet<String>,
 }
 
 /// The session option that marks a session Moshpit made (B86): the mark
@@ -210,6 +216,10 @@ impl Controller {
             self.sidecar.renderer_session_id = None;
             return;
         };
+        // B872: listed on a group we left or ended: the renderer is on its way.
+        if self.sidecar.dead_groups.contains(&row.session_id) {
+            return;
+        }
         // Listed before a switch we started: that switch is moving it.
         if switches != self.sidecar.session_switches {
             return;
@@ -307,13 +317,12 @@ impl Controller {
             Some(id) => format!("'{id}'"),
             None => format!("'={}'", group.name),
         };
+        // B871: the move into the group is what sizes the session by the
+        // renderer, and it comes after the switch's own probe (the group
+        // lands first): read the layouts around this move too, else a window
+        // it squashed has no record to be handed back from.
+        self.probe_switch_layouts(&group.session);
         self.send(format!("switch-client -c {} -t {target}", renderer.name));
-        // B872: a locate written before this move lists the renderer on the
-        // group it has just left; taken for the session the person went to
-        // (the group is killed below, or soon), it got a group of it, the
-        // renderer moved there, and the next locate a group of that, without
-        // end. Everything listed before this switch is stale.
-        self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         // B812: the group both have now left, behind the move.
         if let Some(left) = self.sidecar.group_left.take() {
             self.send(format!("kill-session -t '{left}'"));
@@ -363,6 +372,7 @@ impl Controller {
             return;
         };
         self.group.marked.remove(&group);
+        self.sidecar.dead_groups.insert(group.clone());
         self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         self.send(format!(
             "if-shell -F -t '{group}' '#{{==:#{{session_attached}},0}}' \"kill-session -t '{group}'\""
