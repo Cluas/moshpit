@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="App-Symbol von Moshpit: ein Pixel-Ei, das über ein Terminal-Panel lugt">
@@ -121,7 +121,7 @@ Diktiert wird auf dem Gerät. **Qwen3-ASR** (0.6B, einmaliger Download) erkennt 
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/de-DE/02-home-terminal.png" width="300" alt="Start und Terminal nebeneinander.">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/de-DE/02-home-terminal.png" width="480" alt="Start und Terminal nebeneinander.">
 </p>
 
 Links die Hosts, rechts das Terminal. Mit Hardware-Tastatur zeigt <kbd>⌘K</kbd> alle Panels, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> wählt ein Fenster, und <kbd>⌘W</kbd> führt zurück zur Übersicht.

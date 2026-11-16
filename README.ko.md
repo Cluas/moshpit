@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 아이콘: 터미널 패널 너머로 고개를 내민 픽셀 알">
@@ -121,7 +121,7 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ko/02-home-terminal.png" width="300" alt="홈과 터미널을 나란히">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ko/02-home-terminal.png" width="480" alt="홈과 터미널을 나란히">
 </p>
 
 왼쪽에는 호스트, 오른쪽에는 터미널이 있습니다. 하드웨어 키보드에서는 <kbd>⌘K</kbd>로 모든 패널을 보고, <kbd>⌘1</kbd>–<kbd>⌘9</kbd>로 창을 고르고, <kbd>⌘W</kbd>로 홈에 돌아갑니다.

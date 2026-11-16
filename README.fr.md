@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="L’icône de Moshpit : un œuf en pixels qui dépasse d’un panneau de terminal">
@@ -121,7 +121,7 @@ La dictée se fait sur l’appareil. **Qwen3-ASR** (0.6B, téléchargé une seul
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/fr-FR/02-home-terminal.png" width="300" alt="Accueil et terminal, côte à côte.">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/fr-FR/02-home-terminal.png" width="480" alt="Accueil et terminal, côte à côte.">
 </p>
 
 Les hôtes à gauche, le terminal à droite. Avec un clavier physique, <kbd>⌘K</kbd> affiche tous les panneaux, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> choisit une fenêtre et <kbd>⌘W</kbd> ramène à l’accueil.

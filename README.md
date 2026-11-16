@@ -120,7 +120,7 @@ Dictation runs on the device. **Qwen3-ASR** (0.6B, a one-time download) hears Ch
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/en-US/02-home-terminal.png" width="300" alt="Home and terminal, side by side.">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/en-US/02-home-terminal.png" width="480" alt="Home and terminal, side by side.">
 </p>
 
 Hosts on the left, the terminal on the right. On a hardware keyboard, <kbd>⌘K</kbd> shows all panes, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> picks a window and <kbd>⌘W</kbd> goes back to Home.

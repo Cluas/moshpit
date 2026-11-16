@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit のアイコン：ターミナルのペインの向こうから顔を出すピクセルのたまご">
@@ -121,7 +121,7 @@ SSH で入れるマシン（ワークステーション、サーバー、クラ�
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ja/02-home-terminal.png" width="300" alt="ホームとターミナルを並べて">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ja/02-home-terminal.png" width="480" alt="ホームとターミナルを並べて">
 </p>
 
 左にホスト、右にターミナル。ハードウェアキーボードでは、<kbd>⌘K</kbd> ですべてのペインを表示、<kbd>⌘1</kbd>–<kbd>⌘9</kbd> でウィンドウを選択、<kbd>⌘W</kbd> でホームに戻ります。

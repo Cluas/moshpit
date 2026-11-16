@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 的图标：一颗像素蛋从终端窗格后面探出头">
@@ -121,7 +121,7 @@ App 通过 SSH 或 Mosh 连到你的主机，用控制模式驱动 tmux，用 he
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hans/02-home-terminal.png" width="300" alt="首页和终端并排">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hans/02-home-terminal.png" width="480" alt="首页和终端并排">
 </p>
 
 左边主机，右边终端。接外接键盘时 <kbd>⌘K</kbd> 显示全部窗格，<kbd>⌘1</kbd>–<kbd>⌘9</kbd> 切窗口，<kbd>⌘W</kbd> 回到首页。

@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Ícone do Moshpit: um ovo em pixels espiando por cima de um painel de terminal">
@@ -121,7 +121,7 @@ O ditado roda no aparelho. O **Qwen3-ASR** (0.6B, baixado uma única vez) entend
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/pt-BR/02-home-terminal.png" width="300" alt="Início e terminal, lado a lado.">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/pt-BR/02-home-terminal.png" width="480" alt="Início e terminal, lado a lado.">
 </p>
 
 Hosts à esquerda, terminal à direita. Com teclado físico, <kbd>⌘K</kbd> mostra todos os painéis, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> escolhe uma janela e <kbd>⌘W</kbd> volta para o Início.

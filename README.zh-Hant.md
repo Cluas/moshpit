@@ -1,4 +1,4 @@
-<!-- source: README.md 2d4fb4a3e4f6551abe6e997954516d14aadde7dd -->
+<!-- source: README.md 15a3988797c7d1c05e6d194c1a5cbbbe842130ca -->
 <div align="center">
 
 <img src="Moshpit/Resources/AlternateIcons/Previews/IconPreview-Moshpit@3x.png" width="112" alt="Moshpit 的 App 圖像：一顆像素蛋從終端機窗格後面探出頭">
@@ -121,7 +121,7 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 ### iPad
 
 <p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hant/02-home-terminal.png" width="300" alt="首頁和終端機並排">
+<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hant/02-home-terminal.png" width="480" alt="首頁和終端機並排">
 </p>
 
 左邊是主機，右邊是終端機。接上硬體鍵盤時，<kbd>⌘K</kbd> 顯示所有窗格，<kbd>⌘1</kbd>–<kbd>⌘9</kbd> 切換視窗，<kbd>⌘W</kbd> 回到首頁。
