@@ -574,3 +574,45 @@ fn the_switchs_off_track_is_muted() {
     assert!(off.is_string(), "an off track: {off}");
     assert_ne!(on, off, "not the on color");
 }
+
+/// How many lines the text saying `words` may take (0: as many as it
+/// needs).
+fn line_limit(app: &Headless, words: &str) -> u32 {
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .find_map(|n| {
+            n.text
+                .filter(|t| t.text.text.as_str() == words)
+                .map(|t| t.text.max_lines)
+        })
+        .unwrap_or_else(|| panic!("no text says {words:?}"))
+}
+
+/// B837: from AX1 a value under its title wraps as the title does (B753),
+/// not cut at its end: Settings' "Signal Room", "GitHub Dark",
+/// "ローカルモデル" lost theirs with the whole lane to themselves. Beside
+/// the title it keeps one line (B750, B752 at the default sizes). Below AX1
+/// a crowded row also puts its value under the title (B750), and there it
+/// keeps one line too: that is the design, not a miss.
+#[test]
+fn from_ax1_a_value_under_its_title_wraps() {
+    let app = start_rows(Some(2.0));
+    assert_eq!(line_limit(&app, "Automatic"), 0, "under the title at AX1");
+    assert_eq!(
+        line_limit(
+            &app,
+            "~/.local/share/mosh/bin/mosh-server-from-a-long-prefix"
+        ),
+        0,
+        "a mono value (a path) too"
+    );
+    let app = start_rows(None);
+    assert_eq!(line_limit(&app, "Adaptive"), 1, "beside the title");
+    assert!(under(&app, "Use the host's own mosh-server binary", "Off"));
+    assert_eq!(
+        line_limit(&app, "Off"),
+        1,
+        "under a crowded title below AX1"
+    );
+}

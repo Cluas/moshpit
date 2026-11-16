@@ -589,11 +589,15 @@ impl Row {
             let stacked = stacked.clone();
             move || !stacked() && !accessibility_size() && !crowded.get()
         };
-        // The value's text, made where it shows.
+        // The value's text, made where it shows: beside the title (its lane,
+        // or the title's line in a Mail row) on one line, shortened; under
+        // it as many lines as the title takes at the user's text size
+        // (B837): from AX1 it wraps as the title does (B753), and below
+        // AX1, where a crowded row also puts it there (B750), one line.
         let value_text = value.map(|value| {
-            move || {
+            move |under: bool| {
                 let value = value.clone();
-                let words = line(
+                let mut words = line(
                     if mono_value {
                         TextToken::MonoSubhead
                     } else {
@@ -604,6 +608,9 @@ impl Row {
                 )
                 .text_color(move || token(value_tone.token()))
                 .tabular_nums();
+                if under {
+                    words = words.number_of_lines(lines_at_text_size).min_w(px(0.0));
+                }
                 match value_dot {
                     // The dot beside the words, the pair at the lane's end.
                     Some(status) => view()
@@ -661,7 +668,7 @@ impl Row {
                         })
                         .justify_center()
                         .items_end()
-                        .child(make())
+                        .child(make(false))
                 }))
                 .into_element()
         } else {
@@ -762,10 +769,10 @@ impl Row {
         if let Some(make) = value_text.clone() {
             if mail {
                 let under = on_title_line.clone();
-                content = content.child(when(move || !under(), make));
+                content = content.child(when(move || !under(), move || make(true)));
             } else {
                 let side = side.clone();
-                content = content.child(when(move || !side(), make));
+                content = content.child(when(move || !side(), move || make(true)));
             }
         }
 
@@ -809,7 +816,7 @@ impl Row {
                         .min_w(move || px(if beside() { least.get() } else { 0.0 }))
                         .items_end()
                         .child(when(side, move || {
-                            view().max_w(relative(1.0)).items_end().child(make())
+                            view().max_w(relative(1.0)).items_end().child(make(false))
                         })),
                 );
             }
