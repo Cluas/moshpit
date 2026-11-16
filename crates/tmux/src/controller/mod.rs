@@ -64,7 +64,7 @@ pub use sidecar::{OWNED_OPTION, STATUS_HIDDEN_OPTION};
 use size::LeaseThen;
 pub use size::{
     PRISTINE_PROBE_FORMAT, PinLedger, PinReason, PristineLayout, SIZE_PROBE_FORMAT, SWEEP_FORMAT,
-    ZOOM_MARK_OPTION, zoom_command,
+    ZOOM_MARK_OPTION, layout_listing_command, zoom_command,
 };
 use timers::{Action, Slot, Timers};
 

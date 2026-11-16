@@ -1785,6 +1785,17 @@ impl Controller {
 /// layouts around our size request (B150).
 pub const SIZE_PROBE_FORMAT: &str = "#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}";
 
+/// The host's every window in [`SIZE_PROBE_FORMAT`], read over an exec
+/// channel with `tmux` (B270: before mosh's renderer squashes them), one
+/// row a line. As a control client reads them (B776): tmux 3.8 writes a
+/// plain client's layouts as JSON, the sidecar's as before; the rows come
+/// from inside the `%begin`/`%end` frame.
+pub fn layout_listing_command(tmux: &str) -> String {
+    format!(
+        "{tmux} -C list-windows -a -F '{SIZE_PROBE_FORMAT}' </dev/null 2>/dev/null | grep -v '^%'"
+    )
+}
+
 /// A size probe's rows (window id, then [`PRISTINE_PROBE_FORMAT`]'s fields),
 /// by window.
 fn size_rows<'a>(lines: impl Iterator<Item = &'a str>) -> BTreeMap<String, Vec<String>> {

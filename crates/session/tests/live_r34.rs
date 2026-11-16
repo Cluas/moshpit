@@ -39,15 +39,21 @@ async fn eventually(seconds: u64, mut check: impl FnMut() -> bool) -> bool {
     check()
 }
 
-/// The window's size and layout.
+/// The window's size and layout, as a control client reads it: tmux 3.8
+/// writes a plain client's layout as JSON, the active pane in it (B776).
 fn layout(tmux: &Tmux, window: &str) -> String {
     tmux.run(&[
+        "-C",
         "display-message",
         "-p",
         "-t",
         window,
         "#{window_width}x#{window_height} #{window_layout}",
     ])
+    .lines()
+    .find(|line| !line.starts_with('%'))
+    .unwrap_or_default()
+    .to_owned()
 }
 
 /// Whether the sidecar pinned the window (`resize-window` sets its
@@ -189,7 +195,8 @@ impl Drop for Desktop {
 }
 
 /// The non-control client tmux lists that isn't the desktop: the phone's
-/// renderer, `(pid, session name)`.
+/// renderer, `(pid, session name)` — the session it views, through the
+/// phone's own group of it from tmux 3.8 on (`a~mp-…`, B773, B812).
 fn renderer(tmux: &Tmux, desktop: Option<&Desktop>) -> Option<(i64, String)> {
     let rows = tmux.run(&[
         "list-clients",
@@ -200,7 +207,11 @@ fn renderer(tmux: &Tmux, desktop: Option<&Desktop>) -> Option<(i64, String)> {
         let mut words = row.splitn(3, ' ');
         let control = words.next()?;
         let pid: i64 = words.next()?.parse().ok()?;
-        let session = words.next()?.to_owned();
+        let session = words.next()?;
+        let session = session
+            .split(moshpit_tmux::controller::GROUP_MARK)
+            .next()?
+            .to_owned();
         (control == "0" && desktop.and_then(|d| d.pid) != Some(pid)).then_some((pid, session))
     })
 }
@@ -265,8 +276,18 @@ async fn sidecar_switch(with_desktop: bool) {
         eventually(15, || renderer(&tmux, desktop.as_ref())
             .is_some_and(|(_, session)| session == "a"))
         .await,
-        "the renderer isn't on a: {:?}",
-        renderer(&tmux, desktop.as_ref())
+        "the renderer isn't on a: {:?}\n{}\n{}",
+        renderer(&tmux, desktop.as_ref()),
+        tmux.run(&[
+            "list-clients",
+            "-F",
+            "#{client_control_mode} #{client_pid} #{client_session}"
+        ]),
+        tmux.run(&[
+            "list-sessions",
+            "-F",
+            "#{session_id} #{session_name} #{@moshpit_group_of}"
+        ])
     );
     assert!(
         eventually(15, || pinned(&tmux, "a:0")).await,
@@ -445,6 +466,18 @@ fn session_status(tmux: &Tmux, name: &str) -> String {
     tmux.run(&["show-options", "-t", &format!("{name}:"), "-v", "status"])
 }
 
+/// The status line on what the phone shows of `name`: the session's own,
+/// or from tmux 3.8 its group's (`name~mp-…`, B773), off when either is.
+fn viewed_status(tmux: &Tmux, name: &str) -> String {
+    let group = format!("{name}{}", moshpit_tmux::controller::GROUP_MARK);
+    tmux.run(&["list-sessions", "-F", "#{session_name}"])
+        .lines()
+        .filter(|session| session.starts_with(&group))
+        .map(|session| session_status(tmux, session))
+        .find(|status| status == "off")
+        .unwrap_or_else(|| session_status(tmux, name))
+}
+
 /// B86: the phone over mosh makes a session ("mine"); the sidecar turns its
 /// status line off while the phone is on it. The app is killed there: none
 /// of its code runs again (its runtime stopped, its connections cut, its
@@ -497,9 +530,9 @@ async fn a_killed_app_does_not_leave_its_sessions_status_line_off() {
     let (runtime, server) = first.join().unwrap();
     let _reaper = Reaper(server);
     assert!(
-        eventually(15, || session_status(&tmux, "mine") == "off").await,
+        eventually(15, || viewed_status(&tmux, "mine") == "off").await,
         "the first launch never turned mine's status line off: {:?}",
-        session_status(&tmux, "mine")
+        viewed_status(&tmux, "mine")
     );
     let marks = tmux.run(&[
         "list-sessions",

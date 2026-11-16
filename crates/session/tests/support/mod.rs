@@ -481,17 +481,20 @@ impl Tmux {
         Tmux::named("moshpit-w10")
     }
 
-    /// A private server whose socket (`-L`) starts with `label`.
+    /// A private server whose socket (`-L`) starts with `label`; its tmux
+    /// `MOSHPIT_TEST_TMUX` when set (B812: the phone's group needs 3.8).
     pub fn named(label: &str) -> Tmux {
-        let binary = [
-            "/opt/homebrew/bin/tmux",
-            "/usr/local/bin/tmux",
-            "/usr/bin/tmux",
-        ]
-        .into_iter()
-        .find(|p| Path::new(p).exists())
-        .expect("tmux")
-        .to_owned();
+        let binary = std::env::var("MOSHPIT_TEST_TMUX").unwrap_or_else(|_| {
+            [
+                "/opt/homebrew/bin/tmux",
+                "/usr/local/bin/tmux",
+                "/usr/bin/tmux",
+            ]
+            .into_iter()
+            .find(|p| Path::new(p).exists())
+            .expect("tmux")
+            .to_owned()
+        });
         let tmux = Tmux {
             socket: unique(label),
             binary,
