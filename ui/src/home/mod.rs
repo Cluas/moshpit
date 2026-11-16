@@ -829,13 +829,22 @@ fn top_group(
 /// beside it, on the cards' text line (32 pt in: the page's margin and the
 /// card's padding).
 fn group_header(title: String, badge: Option<Badge>) -> AnyElement {
+    // The badge goes under the title when the two don't fit, and the title
+    // wraps when it alone doesn't (B838): at AX5 German's "WARTET AUF
+    // DICH" pushed NEEDS YOU's count off the screen (to x 425 of 402).
     view()
         .flex_row()
+        .flex_wrap()
         .items_center()
         .gap(px(8.0))
         .ps(px(crate::ui::row::PADDING_X))
         .min_h(px(20.0))
-        .child(eyebrow(text(title)).role(AccessibilityRole::Header))
+        .child(
+            eyebrow(text(title))
+                .role(AccessibilityRole::Header)
+                .flex_shrink(1.0)
+                .min_w(px(0.0)),
+        )
         .children(badge)
         .into_element()
 }
@@ -1056,16 +1065,25 @@ fn empty_page(bar: BarMetrics, add: Rc<dyn Fn()>, ctx: Ctx) -> AnyElement {
         .inset_0()
         .child(stage())
         .child(
-            view()
+            // Centred under the bar while it fits, and from the top, to
+            // scroll, once it doesn't (B839): at AX5 the message reads in
+            // full, and centred it ran up under the large title and down
+            // past the screen's foot.
+            scroll()
                 .absolute()
                 .left(px(0.0))
                 .right(px(0.0))
                 .bottom(px(0.0))
                 .top(move || bar::space(bar))
-                .pb_safe_area()
-                .items_center()
-                .justify_center()
+                .test_id("home-empty-scroll")
                 .child(
+                    view()
+                        .w_full()
+                        .min_h(relative(1.0))
+                        .pb_safe_area()
+                        .items_center()
+                        .justify_center()
+                        .child(
                     view()
                         .w_full()
                         .max_w(px(number("content-max-width")))
@@ -1089,6 +1107,7 @@ fn empty_page(bar: BarMetrics, add: Rc<dyn Fn()>, ctx: Ctx) -> AnyElement {
                                 .accessibility_elements_hidden(true)
                                 .mt(px(8.0)),
                         ),
+                ),
                 ),
         )
         .into_element()

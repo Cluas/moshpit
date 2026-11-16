@@ -127,6 +127,8 @@ impl IntoElement for Badge {
             TextToken::Caption
         }
         .apply(text(words))
+        .flex_shrink(1.0)
+        .min_w(px(0.0))
         .text_color(move || token(ink));
         let mut badge = view()
             .flex_row()
@@ -134,6 +136,9 @@ impl IntoElement for Badge {
             .gap(px(4.0))
             .flex_shrink_0()
             .self_start()
+            // Never wider than what holds it: its words wrap inside it
+            // instead (B838: "1 件があなた待ち" at AX5 ran off the screen).
+            .max_w(relative(1.0))
             .min_h(px(height))
             .px(px(padding))
             .rounded(px(number(radius)))
