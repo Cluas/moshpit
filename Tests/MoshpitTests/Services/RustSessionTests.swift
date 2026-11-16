@@ -481,6 +481,27 @@ struct RustSessionTests {
         #expect(none == nil)
     }
 
+    @Test("SSH + tmux on a server the core found empty: the answer at once, no blank wait (B789)")
+    func sshTmuxNoSessionIsKnown() async {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.multiplexer = .tmux
+        let (driver, session, fake) = driver(connection)
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        #expect(session.tmuxController != nil)
+        // Not asked yet: the attach may be on its way.
+        let (waiting, unknown) = TerminalScreen.paneContent(of: session, isReconnect: false, connState: .live)
+        #expect(waiting == .empty)
+        #expect(unknown?.settled == false)
+        // The core asked the server: nothing on it.
+        fake.tmux = Self.emptyServer()
+        driver.handle(.treeChanged)
+        let (content, empty) = TerminalScreen.paneContent(of: session, isReconnect: false, connState: .live)
+        #expect(content == .empty)
+        #expect(empty == TerminalNSHChrome.Empty(mux: .tmux, missing: false, settled: true))
+    }
+
     @Test("the mosh diagnostics' Repaint reaches the core's mosh (B338)")
     func repaint() async {
         var connection = ServerConnection(host: "h", username: "u")

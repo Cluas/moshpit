@@ -561,8 +561,10 @@ fn empty_state(ctx: Ctx) -> AnyElement {
         .into_element()
 }
 
-/// The empty state's answer, once it has one: an inline empty state,
-/// centered in the pane.
+/// The empty state's answer, once it has one: the pane's own empty state,
+/// a centred column — the symbol over the words over New Session (B789).
+/// It was the inline one, a group's: the symbol before the words, the
+/// words and the button on the leading edge of a column the pane centred.
 fn answer(empty_state: &Empty, busy: bool, creating: Signal<bool>, ctx: Ctx) -> AnyElement {
     let mux = match empty_state.mux {
         Mux::Herdr => "herdr",
@@ -617,7 +619,7 @@ fn answer(empty_state: &Empty, busy: bool, creating: Signal<bool>, ctx: Ctx) -> 
                 .w_full()
                 .max_w(px(360.0))
                 .test_id("terminal-empty-answer")
-                .child(state.variant(EmptyVariant::Inline)),
+                .child(state.variant(EmptyVariant::Page)),
         )
         .into_element()
 }
