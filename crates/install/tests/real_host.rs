@@ -817,16 +817,21 @@ fn stamp(home: &Path, tmux: &Tmux, pane: &str, state: &str, grace: &str) {
     assert!(status.success());
 }
 
-/// Waits up to five seconds for `path`.
+/// Waits up to five seconds for `path` to hold a whole line. The sender
+/// stand-ins write with `>>`, and the shell creates the file before `echo`
+/// writes into it: read in between, it is there and empty (CI run
+/// 43799427045).
 fn appears(path: &Path) -> Option<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
         if let Ok(text) = std::fs::read_to_string(path) {
-            return Some(text);
+            if text.ends_with('\n') {
+                return Some(text);
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    None
+    std::fs::read_to_string(path).ok()
 }
 
 /// B358: the stamp script ran the sender only if `-x` said it could, and
