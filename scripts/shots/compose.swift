@@ -122,9 +122,23 @@ guard !locales.isEmpty else { fail("no captions in \(captionsDir.path)") }
 
 // MARK: Drawing
 
+/// The image as it reads. A capture of a landscape screen is the screen's
+/// portrait buffer with an EXIF orientation that turns it (XCTest's
+/// screenshot, B842), and a CGImage read straight from the file is the
+/// buffer as stored: the iPad's home-terminal went up sideways.
 func loadImage(_ url: URL) -> CGImage? {
-    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-    return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int,
+          let height = properties[kCGImagePropertyPixelHeight] as? Int
+    else { return nil }
+    let upright: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+        kCGImageSourceShouldCacheImmediately: true,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, upright as CFDictionary)
 }
 
 /// The headline set at `size`: its frame in `width`, and how many lines.

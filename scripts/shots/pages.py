@@ -13,7 +13,7 @@ store images in <shots>/iphone-6.9/store/<locale>/<nn>-<shot>.png and
 check: every locale with captions (scripts/shots/captions/), every slot of
 both devices (or the one --device names: each device's job checks its
 own), at the store's size: 1320 × 2868 for the iPhone; 2064 × 2752
-for the iPad, or 2752 × 2064 for a landscape shot. Exit 0 only when all are
+for the iPad, and 2752 × 2064 for its landscape shot (slots.LANDSCAPE). Exit 0 only when all are
 there; otherwise every gap is listed and the exit is 1. A shoot job checks
 its own part: --device, --locales (en-US,ko) and --slots (01,05) narrow it.
 
@@ -30,17 +30,22 @@ link) and write an index page for each.
 import concurrent.futures
 import html
 import json
-import urllib.error
-import urllib.request
 import os
 import shutil
 import struct
 import sys
+import urllib.error
+import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from slots import LANDSCAPE  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CAPTIONS = os.path.join(ROOT, "scripts", "shots", "captions")
 DEVICES = {"iphone": "iphone-6.9", "ipad": "ipad-13"}
-SIZES = {"iphone": {(1320, 2868)}, "ipad": {(2064, 2752), (2752, 2064)}}
+# The store's sizes; a landscape shot (slots.LANDSCAPE) is the iPad's frame
+# on its side, and only it is (B842: a sideways capture composed upright).
+PORTRAIT = {"iphone": (1320, 2868), "ipad": (2064, 2752)}
 NAMES = {
     "en-US": "English", "zh-Hans": "简体中文", "zh-Hant": "繁體中文", "ja": "日本語",
     "de-DE": "Deutsch", "es-ES": "Español", "fr-FR": "Français", "ko": "한국어",
@@ -90,8 +95,11 @@ def check(shots, devices=tuple(DEVICES), locales=None, numbers=None):
                     gaps.append(f"{device}/{locale}/{name}: missing")
                     continue
                 size = png_size(path)
-                if size not in SIZES[device]:
-                    gaps.append(f"{device}/{locale}/{name}: {size[0]}×{size[1]}" if size
+                want = PORTRAIT[device]
+                if name.split("-", 1)[1][:-4] in LANDSCAPE:
+                    want = (want[1], want[0])
+                if size != want:
+                    gaps.append(f"{device}/{locale}/{name}: {size[0]}×{size[1]}, not {want[0]}×{want[1]}" if size
                                 else f"{device}/{locale}/{name}: not a PNG")
     return gaps
 

@@ -25,6 +25,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CAPTIONS = os.path.join(ROOT, "scripts", "shots", "captions")
+# The shots taken in landscape (the iPad's Home beside a terminal): their
+# capture reads landscape and their store frame is landscape (B842).
+LANDSCAPE = {"home-terminal"}
 TESTS = {
     "01-lock": "test91Lock", "02-pane": "test02Pane", "03-home": "test03Home",
     "04-island": "test90Island", "05-overview": "test05Overview",
