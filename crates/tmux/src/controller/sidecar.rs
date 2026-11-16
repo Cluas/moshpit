@@ -308,6 +308,12 @@ impl Controller {
             None => format!("'={}'", group.name),
         };
         self.send(format!("switch-client -c {} -t {target}", renderer.name));
+        // B872: a locate written before this move lists the renderer on the
+        // group it has just left; taken for the session the person went to
+        // (the group is killed below, or soon), it got a group of it, the
+        // renderer moved there, and the next locate a group of that, without
+        // end. Everything listed before this switch is stale.
+        self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         // B812: the group both have now left, behind the move.
         if let Some(left) = self.sidecar.group_left.take() {
             self.send(format!("kill-session -t '{left}'"));
