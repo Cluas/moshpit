@@ -257,6 +257,12 @@ pub enum FailureReason {
     Timeout,
     /// The SOCKS5 proxy wouldn't carry the connection.
     Proxy,
+    /// The connection it goes through was deleted (F1): pick another.
+    ViaDeleted,
+    /// The connection it goes through goes through another itself (F1).
+    ViaChained,
+    /// It goes through another, but the connect wasn't told which (F1).
+    ViaUnresolved,
     /// Anything else (a locked keychain, a channel, mosh's bootstrap, …).
     Other,
 }

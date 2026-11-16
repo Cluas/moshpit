@@ -626,6 +626,84 @@ fn a_dead_connection_says_when_it_was_lost_and_why_it_failed() {
     );
 }
 
+/// F1: a failure on the jump host's leg carries its name to the card (its
+/// credentials, its key), one on the host's own doesn't; the jump host's
+/// answer that it couldn't reach the host behind it is said as that host
+/// not answering, never with the Local Network hint (it is on the jump
+/// host's network, not the device's); a way through that can't be taken
+/// is said as such.
+#[test]
+fn f1_the_card_says_which_leg_and_never_the_local_network_behind_a_jump() {
+    use moshpit_session::{HopBroken, TunnelWhy};
+    use moshpit_ui::home::model::{Unreachable, UnreachableReason as Why};
+    let card = |failure: Failure| {
+        let mut dead = saved(STUDIO, "studio");
+        dead.session = Some(view(SessionState::Failed(failure)));
+        build(&[dead], &no_monitor).connections[0]
+            .failure
+            .clone()
+            .unwrap()
+    };
+    let rejected = Failure {
+        kind: FailureKind::Credentials,
+        cause: Cause::Plain,
+        log: "said".into(),
+        retryable: false,
+        leg: Some("bastion".into()),
+    };
+    let jump = card(rejected.clone());
+    assert_eq!(jump.reason, FailureReason::Auth);
+    assert_eq!(jump.leg.as_deref(), Some("bastion"));
+    let own = card(Failure {
+        leg: None,
+        ..rejected
+    });
+    assert_eq!(own.leg, None);
+
+    for (why, said) in [
+        (TunnelWhy::ConnectFailed, Why::Other),
+        (TunnelWhy::TimedOut, Why::TimedOut),
+        (TunnelWhy::Prohibited, Why::Other),
+    ] {
+        let behind = card(Failure {
+            kind: FailureKind::Unreachable,
+            cause: Cause::Tunnel {
+                host: "10.0.0.5".into(),
+                port: 22,
+                why,
+            },
+            log: "said".into(),
+            retryable: true,
+            leg: Some("bastion".into()),
+        });
+        assert_eq!(
+            behind.unreachable,
+            Some(Unreachable {
+                host: "10.0.0.5".into(),
+                port: 22,
+                why: said,
+                local_network: false,
+            }),
+            "{why:?}"
+        );
+        assert_eq!(behind.leg.as_deref(), Some("bastion"));
+    }
+
+    for (broken, reason) in [
+        (HopBroken::Deleted, FailureReason::ViaDeleted),
+        (HopBroken::Chained, FailureReason::ViaChained),
+        (HopBroken::Unresolved, FailureReason::ViaUnresolved),
+    ] {
+        let route = card(Failure::permanent(
+            FailureKind::Route,
+            Cause::Route(broken),
+            "said",
+        ));
+        assert_eq!(route.reason, reason);
+        assert_eq!(route.unreachable, None);
+    }
+}
+
 /// B801: a host that didn't answer carries what and why to the card —
 /// the host and port typed, the reason, and whether the Local Network
 /// permission may be the cause (a local-looking host that didn't answer,

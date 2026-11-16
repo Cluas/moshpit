@@ -36,8 +36,8 @@
 use std::collections::BTreeMap;
 
 use moshpit_session::{
-    Cause, Degrade, Failure, FailureKind, HerdrView, SessionState, SessionView, TmuxView,
-    UnreachableWhy,
+    Cause, Degrade, Failure, FailureKind, HerdrView, HopBroken, SessionState, SessionView,
+    TmuxView, TunnelWhy, UnreachableWhy,
 };
 use moshpit_ui::home::model::{
     Connection, ConnectionFailure, Control, FailureReason, HomeState, Hook, Link, Mismatch, Mux,
@@ -275,6 +275,10 @@ pub fn failure_of(failure: &Failure) -> ConnectionFailure {
             },
         ) => FailureReason::Timeout,
         (FailureKind::Proxy, _) => FailureReason::Proxy,
+        // The way through another connection can't be taken (F1).
+        (_, Cause::Route(HopBroken::Deleted)) => FailureReason::ViaDeleted,
+        (_, Cause::Route(HopBroken::Chained)) => FailureReason::ViaChained,
+        (_, Cause::Route(HopBroken::Unresolved)) => FailureReason::ViaUnresolved,
         _ => FailureReason::Other,
     };
     // What didn't answer and why, for the card to say in full (B801).
@@ -291,18 +295,25 @@ pub fn failure_of(failure: &Failure) -> ConnectionFailure {
             },
             local_network: crate::local_network::may_be_why(host, *why),
         }),
+        // The jump host couldn't reach the host behind it (F1): a host on
+        // its network, never the device's, so never the Local Network hint.
+        Cause::Tunnel { host, port, why } => Some(Unreachable {
+            host: host.clone(),
+            port: *port,
+            why: match why {
+                TunnelWhy::TimedOut => UnreachableReason::TimedOut,
+                _ => UnreachableReason::Other,
+            },
+            local_network: false,
+        }),
         _ => None,
     };
     ConnectionFailure {
         reason,
         detail: failure.log.clone(),
         unreachable,
-        // The jump-host feature (F1b) adds `Failure.leg` (the jump host's saved name on a
-        // failure of its leg): copied here once it lands. Its
-        // `Cause::Tunnel` (the jump host couldn't reach the target) maps to
-        // `unreachable: {why: other, local_network: false}` — never the
-        // Local Network hint for a host behind a jump.
-        leg: None,
+        // On the jump host's leg (F1), its name first.
+        leg: failure.leg.clone(),
     }
 }
 
