@@ -18,7 +18,7 @@ and a Live Activity for who is waiting, who is working, and for how long.
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/01-lock.png" width="250" alt="Who needs you and why, right on the Lock Screen."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/03-home.png" width="250" alt="See who's working and who's waiting."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/02-pane.png" width="250" alt="Tap in, land on the pane that asked.">
+<a href="#gallery"><img src="docs/readme/en-US/hero.png" width="900" alt="Who needs you and why, right on the Lock Screen. · See who's working and who's waiting. · Tap in, land on the pane that asked."></a>
 
 </div>
 
@@ -75,10 +75,6 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 
 ### A terminal first
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/05-overview.png" width="220" alt="Every tmux and herdr pane at a glance."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/08-keyboard.png" width="220" alt="A keyboard made for the terminal.">
-</p>
-
 | Feature | What it means |
 | :-- | :-- |
 | **SSH and Mosh** | Mosh with its predictive echo. Sessions survive Wi-Fi/5G handoffs, sleep and bad hotel networks, and a connection that lived through the app being in the background is picked up again without a reconnect |
@@ -93,10 +89,6 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 
 ### Built for agent work
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/04-island.png" width="220" alt="Progress right on the Dynamic Island.">
-</p>
-
 | Feature | What it means |
 | :-- | :-- |
 | **"Needs you" first** | Home lists every agent waiting on you, across all your hosts. Below it, who is working, for how long, and who is idle |
@@ -107,10 +99,6 @@ The app reaches your host over SSH or Mosh, and drives tmux through its control 
 
 ### Files an agent mentions
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/06-preview.png" width="220" alt="Open the file your agent just touched.">
-</p>
-
 Tap a path in an agent's output and the file opens on the phone: an image previews, a video plays, text reads as text. From there you can browse its folder and share the file on.
 
 ### Voice
@@ -119,24 +107,35 @@ Dictation runs on the device. **Qwen3-ASR** (0.6B, a one-time download) hears Ch
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/en-US/02-home-terminal.png" width="480" alt="Home and terminal, side by side.">
-</p>
-
 Hosts on the left, the terminal on the right. On a hardware keyboard, <kbd>⌘K</kbd> shows all panes, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> picks a window and <kbd>⌘W</kbd> goes back to Home.
 
 ### The companion and the icons
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/en-US/07-pet.png" width="220" alt="Hatch a pixel buddy to wait with you.">
-</p>
 
 | Feature | What it means |
 | :-- | :-- |
 | **A pixel companion** | It hatches from an egg on Home, perches on the card of whichever agent needs you most, takes on that agent's state, and keeps you company on the Dynamic Island and the Live Activity. With it on, each host's face becomes a pixel creature, drawn from the same key |
 | **Twenty-two icons** | All in Settings: a pixel egg by default, the companion peeking over a pane for each of its six species (each with a shiny one), Classic and eight more. When your companion hatches, Home asks whether to switch to its species |
 
-Every screenshot here is from the App Store set, made by the Screenshots workflow and refreshed after every complete run. Every language and the iPad: [all screenshots](https://blog.cluas.eu.org/moshpit/shots/).
+<a id="gallery"></a>
+
+## Screenshots
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/01-lock.png" width="220" alt="Who needs you and why, right on the Lock Screen."></a><br>Who needs you and why, right on the Lock Screen.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/03-home.png" width="220" alt="See who's working and who's waiting."></a><br>See who's working and who's waiting.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/02-pane.png" width="220" alt="Tap in, land on the pane that asked."></a><br>Tap in, land on the pane that asked.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/05-overview.png" width="220" alt="Every tmux and herdr pane at a glance."></a><br>Every tmux and herdr pane at a glance.</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/08-keyboard.png" width="220" alt="A keyboard made for the terminal."></a><br>A keyboard made for the terminal.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/04-island.png" width="220" alt="Progress right on the Dynamic Island."></a><br>Progress right on the Dynamic Island.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/06-preview.png" width="220" alt="Open the file your agent just touched."></a><br>Open the file your agent just touched.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/en-US/07-pet.png" width="220" alt="Hatch a pixel buddy to wait with you."></a><br>Hatch a pixel buddy to wait with you.</td>
+</tr>
+</table>
+
+Bare screenshots from the app, made by the Screenshots workflow and refreshed after every complete run. Every language and the iPad: [all screenshots](https://blog.cluas.eu.org/moshpit/shots/).
 
 ## Honest by design
 

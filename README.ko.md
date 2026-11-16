@@ -19,7 +19,7 @@ iPhone과 iPad에서 쓰는 SSH, Mosh, tmux, herdr 터미널입니다. 질문마
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/01-lock.png" width="250" alt="누가 무엇을 기다리는지 잠금 화면에서 바로 보여요"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/03-home.png" width="250" alt="누가 일하고 누가 기다리는지 한눈에"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/02-pane.png" width="250" alt="탭하면 물어본 그 패널로 바로">
+<a href="#gallery"><img src="docs/readme/ko/hero.png" width="900" alt="누가 무엇을 기다리는지 잠금 화면에서 바로 보여요 · 누가 일하고 누가 기다리는지 한눈에 · 탭하면 물어본 그 패널로 바로"></a>
 
 </div>
 
@@ -76,10 +76,6 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### 먼저, 제대로 된 터미널
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/05-overview.png" width="220" alt="tmux, herdr 패널을 한 화면에"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/08-keyboard.png" width="220" alt="터미널을 위해 만든 키보드">
-</p>
-
 | 기능 | 설명 |
 | :-- | :-- |
 | **SSH와 Mosh** | Mosh는 예측 에코를 지원합니다. Wi-Fi와 5G 사이 전환, 잠자기, 불안정한 호텔 네트워크에서도 세션이 유지되고, 앱이 백그라운드에 있는 동안 살아남은 연결은 다시 연결하지 않고 그대로 이어서 씁니다 |
@@ -94,10 +90,6 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### 에이전트 작업을 위해
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/04-island.png" width="220" alt="앱을 안 열어도 진행 상황이 보여요">
-</p>
-
 | 기능 | 설명 |
 | :-- | :-- |
 | **“기다리는 중”이 맨 위에** | 홈은 모든 호스트에서 나를 기다리는 에이전트를 먼저 보여 줍니다. 그 아래로 작업 중인 에이전트와 작업 시간, 대기 중인 에이전트가 이어집니다 |
@@ -108,10 +100,6 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### 에이전트가 언급한 파일
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/06-preview.png" width="220" alt="에이전트가 고친 파일, 탭 한 번으로 열기">
-</p>
-
 에이전트 출력에 나온 경로를 탭하면 그 파일이 휴대폰에서 열립니다. 이미지는 미리 보고, 동영상은 재생하고, 텍스트는 텍스트로 읽습니다. 거기서 파일이 있는 폴더를 둘러보거나 파일을 다른 곳으로 공유할 수 있습니다.
 
 ### 음성 입력
@@ -120,24 +108,35 @@ SSH로 접속하는 머신(워크스테이션, 서버, 클라우드 인스턴스
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/ko/02-home-terminal.png" width="480" alt="홈과 터미널을 나란히">
-</p>
-
 왼쪽에는 호스트, 오른쪽에는 터미널이 있습니다. 하드웨어 키보드에서는 <kbd>⌘K</kbd>로 모든 패널을 보고, <kbd>⌘1</kbd>–<kbd>⌘9</kbd>로 창을 고르고, <kbd>⌘W</kbd>로 홈에 돌아갑니다.
 
 ### 컴패니언과 아이콘
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/ko/07-pet.png" width="220" alt="같이 기다려 줄 픽셀 친구를 키워요">
-</p>
 
 | 기능 | 설명 |
 | :-- | :-- |
 | **픽셀 컴패니언** | 홈에서 알을 깨고 나와, 나를 가장 급하게 기다리는 에이전트의 카드 위에 올라앉아 그 에이전트의 상태를 따라 하고, Dynamic Island와 실시간 현황에서도 곁을 지킵니다. 켜 두면 호스트마다의 얼굴도 같은 키에서 그려 낸 픽셀 크리처로 바뀝니다 |
 | **아이콘 22개** | 모두 설정에 있습니다. 기본은 픽셀 알이고, 컴패니언 여섯 종이 각각 패널 너머로 고개를 내민 아이콘(종마다 반짝이 하나씩), Classic, 그리고 여덟 개가 더 있습니다. 컴패니언이 부화하면 홈에서 아이콘을 그 종으로 바꿀지 묻습니다 |
 
-여기 실린 스크린샷은 모두 App Store용 세트로, Screenshots 워크플로가 만들고 전체 실행이 끝날 때마다 새로 바뀝니다. 모든 언어와 iPad 스크린샷은 [전체 스크린샷](https://blog.cluas.eu.org/moshpit/shots/#ko)에서 볼 수 있습니다.
+<a id="gallery"></a>
+
+## 스크린샷
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/01-lock.png" width="220" alt="누가 무엇을 기다리는지 잠금 화면에서 바로 보여요"></a><br>누가 무엇을 기다리는지 잠금 화면에서 바로 보여요</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/03-home.png" width="220" alt="누가 일하고 누가 기다리는지 한눈에"></a><br>누가 일하고 누가 기다리는지 한눈에</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/02-pane.png" width="220" alt="탭하면 물어본 그 패널로 바로"></a><br>탭하면 물어본 그 패널로 바로</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/05-overview.png" width="220" alt="tmux, herdr 패널을 한 화면에"></a><br>tmux, herdr 패널을 한 화면에</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/08-keyboard.png" width="220" alt="터미널을 위해 만든 키보드"></a><br>터미널을 위해 만든 키보드</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/04-island.png" width="220" alt="앱을 안 열어도 진행 상황이 보여요"></a><br>앱을 안 열어도 진행 상황이 보여요</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/06-preview.png" width="220" alt="에이전트가 고친 파일, 탭 한 번으로 열기"></a><br>에이전트가 고친 파일, 탭 한 번으로 열기</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/ko/07-pet.png" width="220" alt="같이 기다려 줄 픽셀 친구를 키워요"></a><br>같이 기다려 줄 픽셀 친구를 키워요</td>
+</tr>
+</table>
+
+여기 실린 스크린샷은 앱 화면을 그대로 담은 것으로, Screenshots 워크플로가 만들고 전체 실행이 끝날 때마다 새로 바뀝니다. 모든 언어와 iPad 스크린샷은 [전체 스크린샷](https://blog.cluas.eu.org/moshpit/shots/#ko)에서 볼 수 있습니다.
 
 ## 숨기는 것 없이
 

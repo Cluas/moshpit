@@ -19,7 +19,7 @@ iPhone 和 iPad 上的 SSH、Mosh、tmux、herdr 終端機：每個提問都會�
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/01-lock.png" width="250" alt="誰在等你、等你什麼，鎖定畫面就看得到"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/03-home.png" width="250" alt="誰在跑、誰在等你，一眼就知道"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/02-pane.png" width="250" alt="點開，直接回到發問的那個窗格">
+<a href="#gallery"><img src="docs/readme/zh-Hant/hero.png" width="900" alt="誰在等你、等你什麼，鎖定畫面就看得到 · 誰在跑、誰在等你，一眼就知道 · 點開，直接回到發問的那個窗格"></a>
 
 </div>
 
@@ -76,10 +76,6 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### 首先是終端機
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/05-overview.png" width="220" alt="tmux、herdr 的窗格，一個畫面全看到"> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/08-keyboard.png" width="220" alt="專為終端機設計的鍵盤">
-</p>
-
 | 功能 | 說明 |
 | :-- | :-- |
 | **SSH 和 Mosh** | Mosh 附預測回顯。Wi-Fi 和 5G 之間切換、手機休眠、飯店的爛網路，工作階段都不會斷；App 在背景待了一陣子，只要連線還在，回來就直接接著用，不必重新連線 |
@@ -94,10 +90,6 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### 為智能體的工作而設計
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/04-island.png" width="220" alt="不用打開 App，進度就在動態島上">
-</p>
-
 | 功能 | 說明 |
 | :-- | :-- |
 | **「在等你」排第一** | 首頁最上面列出所有主機上在等你的智能體。往下是誰在工作、做了多久，以及誰閒置 |
@@ -108,10 +100,6 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### 智能體提到的檔案
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/06-preview.png" width="220" alt="改了哪個檔案，點一下就能看">
-</p>
-
 點一下智能體輸出裡的路徑，檔案就會在手機上打開：圖片可以預覽，影片可以播放，文字就照文字讀。打開後還能瀏覽它所在的資料夾，或把檔案分享出去。
 
 ### 語音
@@ -120,24 +108,35 @@ App 透過 SSH 或 Mosh 連到你的主機，用 tmux 的控制模式驅動 tmux
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/zh-Hant/02-home-terminal.png" width="480" alt="首頁和終端機並排">
-</p>
-
 左邊是主機，右邊是終端機。接上硬體鍵盤時，<kbd>⌘K</kbd> 顯示所有窗格，<kbd>⌘1</kbd>–<kbd>⌘9</kbd> 切換視窗，<kbd>⌘W</kbd> 回到首頁。
 
 ### 夥伴和 App 圖像
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/zh-Hant/07-pet.png" width="220" alt="孵一隻陪你等的像素夥伴">
-</p>
 
 | 功能 | 說明 |
 | :-- | :-- |
 | **像素夥伴** | 在首頁從蛋裡孵出來，停在最需要你的那個智能體的卡片上，跟著它的狀態變化，也會在動態島和即時動態上陪著你。開啟後，每台主機的頭像也會變成一隻像素小怪，長相同樣由主機金鑰決定 |
 | **22 個 App 圖像** | 全都在設定裡：預設是一顆像素蛋；六種夥伴各有一個從窗格後面探出頭的圖像（每種另有一個閃光版），另外還有 Classic 和其他八個。夥伴孵化後，首頁會問你要不要換成牠那一種 |
 
-這裡的截圖都來自 App Store 用的那一套，由 Screenshots 工作流程產生，每次完整跑完就會更新。所有語言和 iPad 的截圖：[全部截圖](https://blog.cluas.eu.org/moshpit/shots/#zh-Hant)。
+<a id="gallery"></a>
+
+## 截圖
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/01-lock.png" width="220" alt="誰在等你、等你什麼，鎖定畫面就看得到"></a><br>誰在等你、等你什麼，鎖定畫面就看得到</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/03-home.png" width="220" alt="誰在跑、誰在等你，一眼就知道"></a><br>誰在跑、誰在等你，一眼就知道</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/02-pane.png" width="220" alt="點開，直接回到發問的那個窗格"></a><br>點開，直接回到發問的那個窗格</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/05-overview.png" width="220" alt="tmux、herdr 的窗格，一個畫面全看到"></a><br>tmux、herdr 的窗格，一個畫面全看到</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/08-keyboard.png" width="220" alt="專為終端機設計的鍵盤"></a><br>專為終端機設計的鍵盤</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/04-island.png" width="220" alt="不用打開 App，進度就在動態島上"></a><br>不用打開 App，進度就在動態島上</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/06-preview.png" width="220" alt="改了哪個檔案，點一下就能看"></a><br>改了哪個檔案，點一下就能看</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/zh-Hant/07-pet.png" width="220" alt="孵一隻陪你等的像素夥伴"></a><br>孵一隻陪你等的像素夥伴</td>
+</tr>
+</table>
+
+這裡都是 App 裡直接截的圖，由 Screenshots 工作流程產生，每次完整跑完就會更新。所有語言和 iPad 的截圖： [全部截圖](https://blog.cluas.eu.org/moshpit/shots/#zh-Hant)。
 
 ## 不玩花樣
 

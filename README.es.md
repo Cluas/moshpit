@@ -19,7 +19,7 @@ y una Actividad en Vivo que muestra quién te espera, quién trabaja y desde hac
 
 <br>
 
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/01-lock.png" width="250" alt="Quién te necesita y para qué, en la pantalla bloqueada."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/03-home.png" width="250" alt="Quién trabaja y quién te espera, de un vistazo."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/02-pane.png" width="250" alt="Toca y llegas al panel que preguntó.">
+<a href="#gallery"><img src="docs/readme/es-ES/hero.png" width="900" alt="Quién te necesita y para qué, en la pantalla bloqueada. · Quién trabaja y quién te espera, de un vistazo. · Toca y llegas al panel que preguntó."></a>
 
 </div>
 
@@ -76,10 +76,6 @@ La app llega a tu host por SSH o Mosh y maneja tmux con su modo de control y her
 
 ### Ante todo, un terminal
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/05-overview.png" width="220" alt="Todos los paneles de tmux y herdr en una pantalla."> <img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/08-keyboard.png" width="220" alt="Un teclado hecho para la terminal.">
-</p>
-
 | Función | Qué significa |
 | :-- | :-- |
 | **SSH y Mosh** | Mosh con su eco predictivo. Las sesiones aguantan el paso de Wi-Fi a 5G y viceversa, el reposo del teléfono y las malas redes de hotel, y una conexión que siguió viva mientras la app estaba en segundo plano se retoma sin reconectar |
@@ -94,10 +90,6 @@ La app llega a tu host por SSH o Mosh y maneja tmux con su modo de control y her
 
 ### Pensado para trabajar con agentes
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/04-island.png" width="220" alt="El progreso, en la Dynamic Island.">
-</p>
-
 | Función | Qué significa |
 | :-- | :-- |
 | **Primero, «Te espera»** | Inicio muestra arriba todos los agentes que te esperan, en todos tus hosts. Debajo, quién está trabajando, desde hace cuánto y quién está inactivo |
@@ -108,10 +100,6 @@ La app llega a tu host por SSH o Mosh y maneja tmux con su modo de control y her
 
 ### Archivos que menciona un agente
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/06-preview.png" width="220" alt="Abre el archivo que tu agente acaba de tocar.">
-</p>
-
 Toca una ruta en la salida de un agente y el archivo se abre en el teléfono: una imagen se previsualiza, un vídeo se reproduce y el texto se lee como texto. Desde ahí puedes recorrer su carpeta y compartir el archivo.
 
 ### Voz
@@ -120,24 +108,35 @@ El dictado se hace en el dispositivo. **Qwen3-ASR** (0.6B, se descarga una sola 
 
 ### iPad
 
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/ipad/es-ES/02-home-terminal.png" width="480" alt="Inicio y terminal, lado a lado.">
-</p>
-
 Los hosts a la izquierda y el terminal a la derecha. Con un teclado físico, <kbd>⌘K</kbd> muestra todos los paneles, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> eligen una ventana y <kbd>⌘W</kbd> vuelve a Inicio.
 
 ### El compañero y los iconos
-
-<p align="center">
-<img src="https://blog.cluas.eu.org/moshpit/shots/iphone/es-ES/07-pet.png" width="220" alt="Incuba un compañero pixelado para esperar juntos.">
-</p>
 
 | Función | Qué significa |
 | :-- | :-- |
 | **Un compañero de píxeles** | Eclosiona de un huevo en Inicio, se posa en la tarjeta del agente que más te necesita, adopta su estado y te hace compañía en la Dynamic Island y en la Actividad en Vivo. Con él activado, la cara de cada host se convierte en una criatura de píxeles, dibujada a partir de la misma clave |
 | **Veintidós iconos** | Todos en Ajustes: un huevo de píxeles por defecto, el compañero asomando por encima de un panel para cada una de sus seis especies (cada una con su versión brillante), Classic y ocho más. Cuando tu compañero eclosiona, Inicio te pregunta si quieres cambiar al icono de su especie |
 
-Todas las capturas de aquí son las del App Store, generadas por el workflow Screenshots y renovadas tras cada ejecución completa. Todos los idiomas y el iPad: [todas las capturas](https://blog.cluas.eu.org/moshpit/shots/#es-ES).
+<a id="gallery"></a>
+
+## Capturas
+
+<table>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/01-lock.png" width="220" alt="Quién te necesita y para qué, en la pantalla bloqueada."></a><br>Quién te necesita y para qué, en la pantalla bloqueada.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/03-home.png" width="220" alt="Quién trabaja y quién te espera, de un vistazo."></a><br>Quién trabaja y quién te espera, de un vistazo.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/02-pane.png" width="220" alt="Toca y llegas al panel que preguntó."></a><br>Toca y llegas al panel que preguntó.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/05-overview.png" width="220" alt="Todos los paneles de tmux y herdr en una pantalla."></a><br>Todos los paneles de tmux y herdr en una pantalla.</td>
+</tr>
+<tr>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/08-keyboard.png" width="220" alt="Un teclado hecho para la terminal."></a><br>Un teclado hecho para la terminal.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/04-island.png" width="220" alt="El progreso, en la Dynamic Island."></a><br>El progreso, en la Dynamic Island.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/06-preview.png" width="220" alt="Abre el archivo que tu agente acaba de tocar."></a><br>Abre el archivo que tu agente acaba de tocar.</td>
+<td align="center" valign="top"><a href="#gallery"><img src="docs/readme/es-ES/07-pet.png" width="220" alt="Incuba un compañero pixelado para esperar juntos."></a><br>Incuba un compañero pixelado para esperar juntos.</td>
+</tr>
+</table>
+
+Capturas de la app tal cual, generadas por el workflow Screenshots y renovadas tras cada ejecución completa. Todos los idiomas y el iPad: [todas las capturas](https://blog.cluas.eu.org/moshpit/shots/#es-ES).
 
 ## Sin letra pequeña
 
