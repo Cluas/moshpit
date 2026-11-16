@@ -68,6 +68,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Seconds here rather than after the build: what macOS's bash 3.2
+      # (the runners' /bin/bash) would trip on (43812423973 lost every job
+      # to an empty array under set -u), then syntax and shellcheck.
+      - name: Check the shots scripts
+        run: |
+          python3 -I scripts/shots/lint.py
+          for script in scripts/shots/*.sh scripts/shots/stage/*.sh; do bash -n "$script"; done
+          shellcheck -S warning scripts/shots/*.sh scripts/shots/stage/*.sh
+
       - name: Plan the shoot jobs
         id: plan
         run: python3 -I scripts/shots/plan.py "$DEVICES" "$LOCALES" "$SHOTS" | tee -a "$GITHUB_OUTPUT"

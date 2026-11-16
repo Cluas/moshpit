@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2154 # sourced: the caller sets stage, scripts, text and hold
 # The staged sessions and the agents' stamps, shared by stage-host.sh (a CI
 # runner's host) and stage-vm-host.sh (a host on this Mac a VM reaches).
 # Sourced. Expects:
@@ -70,11 +71,11 @@ stamp_all() {
         "Claude needs your permission to use Edit"
     stamp t_dev work:build working codex $((now - 380)) "Running the test suite"
     stamp t_dev work:review.0 working claude $((now - 610)) "Writing tests for backoff.js"
-    stamp t_dev work:shell done claude $((now - 1500))
+    stamp t_dev work:shell "done" claude $((now - 1500))
     stamp t_gpu train:claude working claude $((now - 1260)) "Tuning the learning-rate warmup"
     stamp t_gpu train:eval attention gemini $((now - 40)) \
         "Allow execution of: 'python eval.py'?"
     stamp t_build ci:deploy working claude $((now - 200)) "Planning the bucket move"
-    stamp t_build ci:codex done codex $((now - 900))
+    stamp t_build ci:codex "done" codex $((now - 900))
 }
 
