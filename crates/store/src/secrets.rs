@@ -247,10 +247,15 @@ pub fn check_key(
 ) -> Option<KeyCheck> {
     connections.reload_if_needed();
     keys.reload_if_needed();
-    let key = keys.keys().iter().find(|k| k.id == id)?;
+    // Whether the stores can be told comes first (B810's follow-up): a
+    // launch before the first unlock reads the key list as empty, and a key
+    // it doesn't hold was answered "no such key" — read as nothing left to
+    // keep, free to delete. While they can't be told, every answer is
+    // unknown, a key they don't hold too.
     if keys.keychain_refs(None).is_none() {
         return Some(KeyCheck::Unknown);
     }
+    let key = keys.keys().iter().find(|k| k.id == id)?;
     Some(
         match connections.names_using_key(id, key.keychain_ref.as_deref()) {
             None => KeyCheck::Unknown,
@@ -863,6 +868,39 @@ mod tests {
         );
         assert_eq!(referenced(&connections, &keys, None, None), None);
         assert_eq!(items(&keychain), BTreeSet::from([mine]));
+    }
+
+    /// B810's follow-up: a launch before the first unlock reads the key
+    /// list as empty, so a key the person sees (or saw) isn't in it, and
+    /// the check answered "no such key" — which the app reads as nothing
+    /// left to keep, free to delete — before asking whether the stores can
+    /// be told at all. While they can't, every answer is unknown: a key
+    /// they don't hold, too.
+    #[test]
+    fn a_key_untrusted_stores_dont_hold_is_unknown_not_gone() {
+        let defaults = Arc::new(MemoryDefaults::new());
+        defaults.set_protected_data_available(false);
+        let mut keys = SshKeyStore::new(defaults.clone(), Readiness::System);
+        let mut connections = ConnectionStore::new(defaults.clone(), Readiness::System);
+        let mine = account();
+        let laptop = key("laptop", Some(&mine));
+        let keychain = MemoryKeychain::with([(mine.clone(), b"PRIVATE".to_vec())]);
+        assert_eq!(
+            check_key(laptop.id, &mut keys, &mut connections),
+            Some(KeyCheck::Unknown)
+        );
+        assert_eq!(
+            delete_key(laptop.id, &mut keys, &mut connections, &keychain),
+            KeyDeletion::Unknown
+        );
+        assert_eq!(items(&keychain), BTreeSet::from([mine]));
+        // Trusted, a key no record holds is gone, as before.
+        let mut s = stores();
+        assert_eq!(check_key(laptop.id, &mut s.keys, &mut s.connections), None);
+        assert_eq!(
+            delete_key(laptop.id, &mut s.keys, &mut s.connections, &keychain),
+            KeyDeletion::NotFound
+        );
     }
 
     #[test]
