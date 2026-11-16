@@ -26,6 +26,15 @@ use moshpit_session::{
 };
 use support::*;
 
+/// The person's sessions: the phone's own group of one (`<name>~mp-…`,
+/// made from tmux 3.8 on, B459/B812) is none of theirs.
+fn theirs(sessions: Vec<String>) -> Vec<String> {
+    sessions
+        .into_iter()
+        .filter(|name| !moshpit_tmux::controller::is_group_name(name))
+        .collect()
+}
+
 macro_rules! need_sshd {
     () => {
         if !Sshd::available() {
@@ -530,7 +539,7 @@ async fn tmux_attaches_and_a_pane_echoes() {
     assert!(term.wait_for("tmux-42", 15).await, "{}", term.text());
     let captured = tmux.run(&["capture-pane", "-p", "-t", &active.pane]);
     assert!(captured.contains("tmux-42"), "{captured}");
-    assert_eq!(tmux.sessions(), vec!["w10".to_owned()]);
+    assert_eq!(theirs(tmux.sessions()), vec!["w10".to_owned()]);
     let _ = bench.sessions.disconnect(id).await;
     // The disconnect handed the window back: no size override left.
     let size = tmux.run(&["show-options", "-w", "-t", "w10", "-v", "window-size"]);
@@ -898,8 +907,9 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     let _reaper = mosh_server_pid(&mut bench, id).await;
     let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
-    // tmux's status line names the session.
-    assert!(term.wait_for("[w10]", 15).await, "{}", term.text());
+    // tmux's status line names the session: `[w10]`, or from tmux 3.8 the
+    // phone's own group of it, `[w10~mp-…` (B773, B812).
+    assert!(term.wait_for("[w10", 15).await, "{}", term.text());
     term.write(b"echo mt-$((6*7))\r");
     assert!(term.wait_for("mt-42", 15).await, "{}", term.text());
     let pane = tmux.run(&["display-message", "-p", "-t", "w10", "#{pane_id}"]);
@@ -923,8 +933,8 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
         .sessions
         .tmux(id, moshpit_session::TmuxAction::NewSession { name: None })
         .unwrap();
-    assert!(term.wait_for("[0]", 15).await, "{}", term.text());
-    assert_eq!(empty.sessions().len(), 1, "{:?}", empty.sessions());
+    assert!(term.wait_for("[0", 15).await, "{}", term.text());
+    assert_eq!(theirs(empty.sessions()).len(), 1, "{:?}", empty.sessions());
     let _ = bench.sessions.disconnect(id).await;
 }
 
