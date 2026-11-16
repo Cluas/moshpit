@@ -360,6 +360,12 @@ pub(crate) enum TmuxNote {
     /// The control channel is dead, or its shell went away: a drop (the
     /// sessions the person works in live on the server).
     Lost(String),
+    /// The person's first session is made (B228): the control client
+    /// attaches it again on a new channel of the same connection, the leg
+    /// replaced in place. Never a drop: the session doesn't reconnect for
+    /// it, whose Reconnecting showed as a disconnect after New Session
+    /// (B855).
+    Reattach,
 }
 
 /// How a tmux task starts.
@@ -635,7 +641,7 @@ async fn run(
             },
             made = wait(&mut reattach) => match made {
                 Ok(()) if !task.sidecar => {
-                    (task.notes)(TmuxNote::Lost("the first session is made: attaching again".to_owned()));
+                    (task.notes)(TmuxNote::Reattach);
                     break;
                 }
                 // mosh's sidecar and renderer attach on their own.
