@@ -681,6 +681,7 @@
   "CAN'T OPEN": "OUVERTURE IMPOSSIBLE",
   "This file is %@. Download it to preview?": "Ce fichier fait %@. Le télécharger pour l’aperçu ?",
   "This file is no longer on the host.": "Ce fichier n’est plus sur l’hôte.",
+  "Moshpit won't delete your home folder, or a folder it's in.": "Moshpit ne supprime pas votre dossier personnel, ni un dossier qui le contient.",
   "This host has SFTP turned off, and the file is too large to send without it.": "SFTP est désactivé sur cet hôte, et le fichier est trop volumineux pour être transféré sans.",
   "Couldn't reach the host. Check the connection and try again.": "Impossible de joindre l’hôte. Vérifiez la connexion et réessayez.",
   "Only images, video, audio, PDFs and documents are shown here.": "Seuls les images, vidéos, fichiers audio, PDF et documents s’affichent ici.",

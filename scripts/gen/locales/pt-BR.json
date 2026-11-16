@@ -681,6 +681,7 @@
   "CAN'T OPEN": "NÃO FOI POSSÍVEL ABRIR",
   "This file is %@. Download it to preview?": "Este arquivo tem %@. Baixar para visualizar?",
   "This file is no longer on the host.": "Este arquivo não está mais no host.",
+  "Moshpit won't delete your home folder, or a folder it's in.": "O Moshpit não apaga sua pasta pessoal nem uma pasta que a contenha.",
   "This host has SFTP turned off, and the file is too large to send without it.": "O SFTP está desativado neste host, e o arquivo é grande demais para ser enviado sem ele.",
   "Couldn't reach the host. Check the connection and try again.": "Não foi possível alcançar o host. Confira a conexão e tente de novo.",
   "Only images, video, audio, PDFs and documents are shown here.": "Aqui aparecem só imagens, vídeos, áudio, PDFs e documentos.",

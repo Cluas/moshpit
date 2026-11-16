@@ -71,6 +71,8 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
     case writeDenied
     /// Something with that name is already there.
     case nameTaken
+    /// The delete would take the home folder, or a folder it is in (B816).
+    case homeFolder
     /// The host has SFTP turned off and the file is past what the exec form
     /// moves (`RemoteFileCommands.execDownloadLimit`).
     case tooLargeWithoutSFTP
@@ -98,6 +100,8 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
             return String(localized: "The host didn't allow it. Check that you can write to this folder.")
         case .nameTaken:
             return String(localized: "Something with that name is already there.")
+        case .homeFolder:
+            return String(localized: "Moshpit won't delete your home folder, or a folder it's in.")
         case .tooLargeWithoutSFTP:
             return String(localized: "This host has SFTP turned off, and the file is too large to send without it.")
         case .exited, .endedWithoutStatus, .failed:
@@ -115,6 +119,7 @@ enum HostConnectionError: Error, Equatable, LocalizedError, CustomStringConverti
         case .readDenied: return "read permission denied"
         case .writeDenied: return "write permission denied"
         case .nameTaken: return "name taken"
+        case .homeFolder: return "the home folder, or a folder holding it"
         case .tooLargeWithoutSFTP: return "too large without SFTP"
         case .exited(let status): return "command exited with status \(status)"
         case .endedWithoutStatus: return "command's channel closed without an exit status"

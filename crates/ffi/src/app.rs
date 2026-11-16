@@ -920,6 +920,7 @@ pub fn remote_file_edit_markers() -> Vec<String> {
     vec![
         remote_paths::EDIT_OK.to_owned(),
         remote_paths::EDIT_TAKEN.to_owned(),
+        remote_paths::EDIT_HOME.to_owned(),
     ]
 }
 

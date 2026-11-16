@@ -26877,6 +26877,58 @@
         }
       }
     },
+    "Moshpit won't delete your home folder, or a folder it's in.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit löscht deinen Home-Ordner nicht und auch keinen Ordner, in dem er liegt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit no borra tu carpeta de inicio ni ninguna carpeta que la contenga."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit ne supprime pas votre dossier personnel, ni un dossier qui le contient."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホームフォルダと、それを含むフォルダは Moshpit では削除しません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moshpit은 홈 폴더와 홈 폴더가 들어 있는 상위 폴더를 삭제하지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Moshpit não apaga sua pasta pessoal nem uma pasta que a contenha."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主目录和它所在的上级文件夹，Moshpit 都不会删除。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主目錄和它所在的上層資料夾，Moshpit 都不會刪除。"
+          }
+        }
+      }
+    },
     "Moshpit's hooks come out of every agent's config, and this phone's pairing is removed. If no other phone is paired with this host, ~/.moshpit goes too. Everything else in the agents' configs stays.": {
       "localizations": {
         "de": {
