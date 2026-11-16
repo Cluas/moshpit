@@ -113,7 +113,7 @@ fn start_with(params: Params) -> (App, Slops) {
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
     HostEnvironment {
         locale: params.nsh_locale(),
-        font_scale: None,
+        font_scale: params.font_scale,
     }
     .apply(&mut config.environment);
     let mut app = common::headless(config);
@@ -446,4 +446,34 @@ fn a_key_or_chip_without_a_press_is_display_only() {
         assert!(!seen.hidden, "{id}");
         assert_eq!(seen.role, AccessibilityRole::Button, "{id}");
     }
+}
+
+/// How many lines the name under the swatch `id` may take (0: as many as
+/// it needs).
+fn name_lines(app: &Headless, id: &str) -> u32 {
+    let nodes = app.screen().layout_nodes();
+    let swatch = nodes
+        .iter()
+        .find(|n| n.test_id.as_deref() == Some(id))
+        .unwrap_or_else(|| panic!("no view {id}"))
+        .id;
+    nodes
+        .iter()
+        .find_map(|n| (n.parent == swatch).then_some(n.text.as_ref()?.text.max_lines))
+        .unwrap_or_else(|| panic!("{id} has no name"))
+}
+
+/// B840: a swatch's name takes one line up to the largest standard text
+/// size, and as many as it needs from AX1, as a row's words do (B753).
+/// French "Couleur d'accentuation" was cut on Settings › Terminal at AX5.
+#[test]
+fn from_ax1_a_swatchs_name_reads_in_full() {
+    let (app, _) = start(false);
+    assert_eq!(name_lines(&app, "ui-gallery-swatch-accent"), 1, "at Large");
+    let (app, _) = start_with(Params {
+        light: Some(false),
+        font_scale: Some(2.0),
+        ..Params::default()
+    });
+    assert_eq!(name_lines(&app, "ui-gallery-swatch-accent"), 0, "at AX1");
 }

@@ -185,7 +185,11 @@ impl IntoElement for Swatch {
                     })
                 }
             })
-            .number_of_lines(1u32)
+            // One line up to the largest standard size, as many as it
+            // needs from AX1, centred under the circle (B840): French
+            // "Couleur d'accentuation" was cut at AX5.
+            .number_of_lines(name_lines)
+            .text_center()
             .max_w(relative(1.0));
         let mut control = nsh_base::button()
             .accessibility_label(name)
@@ -202,6 +206,13 @@ impl IntoElement for Swatch {
         }
         control.child(circle).child(words).into_element()
     }
+}
+
+/// The lines a swatch's name takes at the user's text size: one up to the
+/// largest standard size, as many as it needs from AX1, as a row's words
+/// do (B753).
+fn name_lines() -> u32 {
+    u32::from(crate::face::category(font_scale()) < crate::face::AX1)
 }
 
 // MARK: - The cursor's colors
