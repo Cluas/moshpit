@@ -1286,7 +1286,13 @@ pub fn generate(seed: u64, count: usize) -> Vec<String> {
                         5,
                     )
                 };
-                let pane = |rng: &mut SplitMix64| rng.pick(&["%3", "%12", "@1", "%0"]).to_string();
+                // No hooks test (`cmd stamptest`): since B355 it is one
+                // command on this side and three the Swift code never
+                // joined, so the Swift side has nothing to answer it with
+                // (it stopped the run: "bad cmd stamptest"). The difference
+                // is documented (stamp-test-restores) and its minimal cases
+                // are divergence_cases'; the draws went to the quoting the
+                // test's commands were here for.
                 match rng.below(13) {
                     0 => format!(
                         "cmd write {} {} {}",
@@ -1297,16 +1303,7 @@ pub fn generate(seed: u64, count: usize) -> Vec<String> {
                     1 => format!("cmd read {}", out(&path(&mut rng))),
                     2 => format!("cmd sha {}", out(&path(&mut rng))),
                     3 => format!("cmd backup {}", out(&path(&mut rng))),
-                    4 | 5 => format!(
-                        "cmd stamptest {} {}",
-                        out(&value(&mut rng)),
-                        out(&value(&mut rng))
-                    ),
-                    6 => format!(
-                        "cmd stamptest {} {}",
-                        out(&pane(&mut rng)),
-                        out(&value(&mut rng))
-                    ),
+                    4..=6 => format!("cmd quote {}", out(&value(&mut rng).replace('\u{301}', ""))),
                     7 => format!("cmd remove {}", out(&path(&mut rng))),
                     8 => format!("cmd prune {} {}", out(&path(&mut rng)), rng.below(4)),
                     9 => format!("cmd quote {}", out(&value(&mut rng).replace('\u{301}', ""))),
