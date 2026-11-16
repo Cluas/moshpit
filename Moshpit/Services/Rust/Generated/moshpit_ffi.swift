@@ -14063,6 +14063,76 @@ public func FfiConverterTypeRemoteFolderState_lower(_ value: RemoteFolderState) 
 
 
 /**
+ * What a step of finger travel scrolls by rows: the whole rows due and
+ * the travel still carried (`moshpit_term::scroll::Scroll::take`).
+ */
+public struct ScrollRows: Equatable, Hashable {
+    /**
+     * Positive: toward older output.
+     */
+    public var rows: Int64
+    /**
+     * The sub-row remainder, for the next step.
+     */
+    public var carry: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Positive: toward older output.
+         */rows: Int64, 
+        /**
+         * The sub-row remainder, for the next step.
+         */carry: Double) {
+        self.rows = rows
+        self.carry = carry
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ScrollRows: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeScrollRows: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScrollRows {
+        return
+            try ScrollRows(
+                rows: FfiConverterInt64.read(from: &buf), 
+                carry: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ScrollRows, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.rows, into: &buf)
+        FfiConverterDouble.write(value.carry, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScrollRows_lift(_ buf: RustBuffer) throws -> ScrollRows {
+    return try FfiConverterTypeScrollRows.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeScrollRows_lower(_ value: ScrollRows) -> RustBuffer {
+    return FfiConverterTypeScrollRows.lower(value)
+}
+
+
+/**
  * Which secrets the host's own fields hold: a password that is not empty,
  * a pasted key that is more than white space.
  */
@@ -31332,6 +31402,23 @@ public func pasteBytes(text: String, bracketed: Bool) -> Data  {
 })
 }
 /**
+ * `pixels` of travel (positive: toward older output) over the `carry`
+ * left by the last step, in rows of `cell_height`: the rows due now and
+ * what is carried, so a slow drag adds up to the rows a fast one does.
+ * Routes that move only by rows use it (a forwarded wheel, tmux's copy
+ * mode over mosh, herdr). Any finite travel is taken: the rows saturate
+ * at the integer's ends, and a carry pushed past f64's range starts over.
+ */
+public func scrollRows(carry: Double, pixels: Double, cellHeight: Double) -> ScrollRows  {
+    return try!  FfiConverterTypeScrollRows_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_scroll_rows(
+        FfiConverterDouble.lower(carry),
+        FfiConverterDouble.lower(pixels),
+        FfiConverterDouble.lower(cellHeight),$0
+    )
+})
+}
+/**
  * A custom accent theme from one accent, the rest derived.
  */
 public func storeAccentTheme(id: String, name: String, accentHex: String) -> AccentThemeRecord  {
@@ -31849,6 +31936,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_paste_bytes() != 42833) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_scroll_rows() != 49641) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_accent_theme() != 12419) {

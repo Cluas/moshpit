@@ -1944,3 +1944,32 @@ mod tests {
 pub fn paste_bytes(text: String, bracketed: bool) -> Vec<u8> {
     moshpit_term::input::paste(&text, bracketed)
 }
+
+/// What a step of finger travel scrolls by rows: the whole rows due and
+/// the travel still carried (`moshpit_term::scroll::Scroll::take`).
+#[derive(Debug, Clone, Copy, PartialEq, uniffi::Record)]
+pub struct ScrollRows {
+    /// Positive: toward older output.
+    pub rows: i64,
+    /// The sub-row remainder, for the next step.
+    pub carry: f64,
+}
+
+/// `pixels` of travel (positive: toward older output) over the `carry`
+/// left by the last step, in rows of `cell_height`: the rows due now and
+/// what is carried, so a slow drag adds up to the rows a fast one does.
+/// Routes that move only by rows use it (a forwarded wheel, tmux's copy
+/// mode over mosh, herdr). Any finite travel is taken: the rows saturate
+/// at the integer's ends, and a carry pushed past f64's range starts over.
+#[uniffi::export]
+pub fn scroll_rows(carry: f64, pixels: f64, cell_height: f64) -> ScrollRows {
+    let mut scroll = moshpit_term::scroll::Scroll {
+        offset_px: 0,
+        carry_px: carry,
+    };
+    let rows = scroll.take(pixels, cell_height);
+    ScrollRows {
+        rows,
+        carry: scroll.carry_px,
+    }
+}

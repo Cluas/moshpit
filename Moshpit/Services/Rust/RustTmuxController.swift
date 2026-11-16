@@ -127,7 +127,8 @@ final class RustTmuxController: MultiplexerControlling {
     /// all, while the landing's patience runs.
     @ObservationIgnored private var heldPanes: Set<String> = []
     @ObservationIgnored private var model: TmuxReadModel?
-    @ObservationIgnored private var rowCarry = ScrollRowCarry()
+    /// Finger travel not yet a whole row (the core's ``scrollRows(carry:pixels:cellHeight:)``).
+    @ObservationIgnored private var rowCarry: Double = 0
     /// Whether a pane of this attach has been revealed.
     @ObservationIgnored private(set) var paintedSinceAttach = false
     /// What the core refused, worded here (B250): the notice, for as long
@@ -462,7 +463,7 @@ final class RustTmuxController: MultiplexerControlling {
         coordinator.onScrollPixels = { [weak self] dy in self?.scroll(pixels: dy) ?? 0 }
         coordinator.onScrollEnd = { [weak self] in self?.scrollDidEnd() }
         coordinator.onScrollBegin = { [weak self, weak coordinator] in
-            self?.rowCarry.reset()
+            self?.rowCarry = 0
             // The wheel goes where the drag began (B578).
             if let aim = coordinator?.wheelAim {
                 self?.driver?.perform(.aimWheel(col: Int64(aim.col), row: Int64(aim.row)))
@@ -672,8 +673,9 @@ final class RustTmuxController: MultiplexerControlling {
             // first (a drag begun in the local history before the flags
             // landed must not leave it up there).
             pane.coordinator.releaseScrollHold()
-            let rows = rowCarry.take(pixels: dy, cellHeight: pane.coordinator.cellHeight)
-            if rows != 0 { driver?.perform(.scrollLines(lines: Int64(rows))) }
+            let step = scrollRows(carry: rowCarry, pixels: Double(dy), cellHeight: Double(pane.coordinator.cellHeight))
+            rowCarry = step.carry
+            if step.rows != 0 { driver?.perform(.scrollLines(lines: step.rows)) }
             return dy
         case .drop:
             return 0

@@ -2627,6 +2627,11 @@ int8_t uniffi_moshpit_ffi_fn_func_local_network_may_be_why(RustBuffer host, Rust
 RustBuffer uniffi_moshpit_ffi_fn_func_paste_bytes(RustBuffer text, int8_t bracketed, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SCROLL_ROWS
+RustBuffer uniffi_moshpit_ffi_fn_func_scroll_rows(double carry, double pixels, double cell_height, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 RustBuffer uniffi_moshpit_ffi_fn_func_store_accent_theme(RustBuffer id, RustBuffer name, RustBuffer accent_hex, RustCallStatus *_Nonnull out_status
@@ -3466,6 +3471,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_local_network_may_be_why(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PASTE_BYTES
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PASTE_BYTES
 uint16_t uniffi_moshpit_ffi_checksum_func_paste_bytes(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SCROLL_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SCROLL_ROWS
+uint16_t uniffi_moshpit_ffi_checksum_func_scroll_rows(void
     
 );
 #endif
