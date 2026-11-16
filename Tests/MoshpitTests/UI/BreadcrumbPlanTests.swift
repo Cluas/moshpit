@@ -58,6 +58,27 @@ struct BreadcrumbPlanTests {
         #expect(plan?.sessionSqueezable == true)
     }
 
+    /// One pane, one dot: the crumb reads a stamp exactly as Home does. A
+    /// tmux "attention" whose pane is back at a shell (or whose title is
+    /// Claude's idle reminder) is a done agent on Home, so it is here too;
+    /// herdr's own status is shown as herdr reports it, on both.
+    @Test("One pane, same dot on Home and in the crumb")
+    func sameDotAsHome() {
+        func dot(_ hook: AgentHook, mux: String = "tmux") -> AgentSignalValue? {
+            BreadcrumbPlan.make(snapshot: snapshot(), hooks: ["w1:p1": hook], mux: mux)?.paneSignal
+        }
+        let shellAgain = AgentHook(state: "attention", agent: "Claude Code", command: "zsh")
+        let reminder = AgentHook(state: "attention", agent: "Claude Code",
+                                 command: "claude", title: "Claude is waiting for your input")
+        let asking = AgentHook(state: "attention", agent: "Claude Code", command: "claude")
+        #expect(dot(shellAgain) == .done)
+        #expect(dot(reminder) == .done)
+        #expect(dot(asking) == .attention)
+        #expect(dot(shellAgain, mux: "herdr") == .attention)
+        // That these are Home's dots is the core's test
+        // (`a_panes_dot_is_homes_on_every_screen`, crates/ffi home.rs).
+    }
+
     @Test("A hook on some OTHER pane changes nothing here")
     func hookElsewhere() {
         let plan = BreadcrumbPlan.make(

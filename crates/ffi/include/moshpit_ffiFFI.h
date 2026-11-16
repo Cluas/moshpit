@@ -2469,6 +2469,21 @@ RustBuffer uniffi_moshpit_ffi_fn_func_theme_editor_message(RustBuffer theme, int
 double uniffi_moshpit_ffi_fn_func_herdr_stamp_interval(int8_t push_active, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signal(RustBuffer state, RustBuffer title, RustBuffer command, int8_t herdr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNAL_WORDS
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signal_words(RustBuffer signal, RustBuffer locale, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNALS_AGGREGATE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_AGENT_SIGNALS_AGGREGATE
+RustBuffer uniffi_moshpit_ffi_fn_func_agent_signals_aggregate(RustBuffer signals, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_MULTIPLEXER_WORDS
 RustBuffer uniffi_moshpit_ffi_fn_func_multiplexer_words(int8_t herdr, RustBuffer locale, RustCallStatus *_Nonnull out_status
@@ -3265,6 +3280,24 @@ uint16_t uniffi_moshpit_ffi_checksum_func_theme_editor_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HERDR_STAMP_INTERVAL
 uint16_t uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signal(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL_WORDS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNAL_WORDS
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signal_words(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNALS_AGGREGATE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_AGENT_SIGNALS_AGGREGATE
+uint16_t uniffi_moshpit_ffi_checksum_func_agent_signals_aggregate(void
     
 );
 #endif

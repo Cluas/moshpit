@@ -176,6 +176,14 @@ struct AgentHook: Equatable, Sendable {
     var since: Date?
     var command: String?
     var title: String?
+
+    /// The dot this pane shows, the same on every screen (E7c): Home's
+    /// rule, the core's (a tmux stamp the agents monitor reads as done —
+    /// a shell back in the foreground, Claude's idle reminder — is done;
+    /// herdr's as it reports). nil: idle, unknown or no stamp.
+    func dot(herdr: Bool) -> AgentSignalValue? {
+        agentSignal(state: state, title: title, command: command, herdr: herdr)
+    }
 }
 
 // MARK: - The multiplexer's words (E7c)

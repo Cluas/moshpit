@@ -5,31 +5,11 @@ import UIKit
 @testable import Moshpit
 import MoshpitKit
 
-/// The shared meaning of a state — one mapping for the sheets, the Agents
-/// section and the Island.
-@Suite("Agent signal")
-struct AgentSignalTests {
-
-    @Test("Hook strings map to signals; anything else is silence")
-    func mapping() {
-        #expect(AgentSignal("attention") == .attention)
-        #expect(AgentSignal("working") == .working)
-        #expect(AgentSignal("done") == .done)
-        #expect(AgentSignal("idle") == nil)
-        #expect(AgentSignal(nil) == nil)
-        #expect(AgentSignal("something new") == nil)
-    }
-
-    /// Aggregate dots must keep showing exactly what they shipped showing:
-    /// attention beats working, and `done` doesn't light a window up.
-    @Test("Aggregate preserves the sheets' existing behaviour")
-    func aggregate() {
-        #expect(AgentSignal.aggregate([.working, .attention]) == .attention)
-        #expect(AgentSignal.aggregate([.working, nil]) == .working)
-        #expect(AgentSignal.aggregate([.done]) == nil)
-        #expect(AgentSignal.aggregate([nil, nil]) == nil)
-        #expect(AgentSignal.aggregate([]) == nil)
-    }
+/// What an agent's state looks like on screen. The state's meaning (which
+/// stamp lights which dot) is the core's, tested there and in the
+/// breadcrumb's suite.
+@Suite("Agent palette")
+struct AgentPaletteTests {
 
     @Test("The agents' palette is the app's warn and success tones")
     func colours() {

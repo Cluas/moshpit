@@ -780,7 +780,9 @@ struct TerminalNSHChrome: Equatable {
         if let pane = plan.paneTitle {
             json["pane"] = pane
             // What VoiceOver reads: the title and what the dot means.
-            json["paneLabel"] = plan.paneSignal.map { "\(pane), \($0.label)" } ?? pane
+            json["paneLabel"] = plan.paneSignal.map {
+                "\(pane), \(agentSignalWords(signal: $0, locale: NSHScreenParams.locale))"
+            } ?? pane
         }
         if let signal = plan.paneSignal {
             json["signal"] = switch signal {

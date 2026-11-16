@@ -82,7 +82,7 @@ extension MuxPickerState {
         let rows = panes.map { item -> Row in
             let hook = hooks[item.pane.id]
             var row = Row(id: item.pane.id, index: item.pane.index, command: item.pane.command,
-                          agent: hook?.agent, signal: AgentSignal(hook?.state))
+                          agent: hook?.agent, signal: hook?.dot(herdr: controller.multiplexer == .herdr))
             row.window = item.place
             return row
         }

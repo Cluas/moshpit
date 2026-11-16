@@ -95,6 +95,78 @@ mod tests {
     use moshpit_ui::home::model::{FailureReason, Link};
 
     use super::*;
+
+    /// E7c: one pane, one dot. The breadcrumb's and the pickers' dot is
+    /// Home's: a tmux stamp the agents monitor would read as done (a shell
+    /// back in the foreground, Claude's idle reminder) is done there too,
+    /// where they read the raw stamp before; herdr's as it reports.
+    #[test]
+    fn a_panes_dot_is_homes_on_every_screen() {
+        let dot = |state: &str, title: Option<&str>, command: Option<&str>, herdr: bool| {
+            agent_signal(
+                Some(state.to_owned()),
+                title.map(str::to_owned),
+                command.map(str::to_owned),
+                herdr,
+            )
+        };
+        for (state, title, command, herdr) in [
+            ("attention", None, Some("zsh"), false),
+            (
+                "attention",
+                Some("Claude is waiting for your input"),
+                Some("claude"),
+                false,
+            ),
+            ("attention", Some("Bash: ls"), Some("claude"), false),
+            ("working", None, Some("-bash"), false),
+            ("working", None, Some("node"), false),
+            ("done", None, None, false),
+            ("idle", None, None, false),
+            ("attention", None, Some("zsh"), true),
+        ] {
+            let home = moshpit_app::home::shown_stamp(state, title, command, herdr);
+            assert_eq!(
+                dot(state, title, command, herdr),
+                HomeSignal::of(Some(&home)).map(Into::into),
+                "{state} {title:?} {command:?} herdr {herdr}"
+            );
+        }
+        assert_eq!(
+            dot("attention", None, Some("zsh"), false),
+            Some(AgentSignalValue::Done)
+        );
+        assert_eq!(
+            dot(
+                "attention",
+                Some("Claude is waiting for your input"),
+                None,
+                false
+            ),
+            Some(AgentSignalValue::Done)
+        );
+        assert_eq!(
+            dot("attention", None, Some("claude"), false),
+            Some(AgentSignalValue::Attention)
+        );
+        assert_eq!(
+            dot("attention", None, Some("zsh"), true),
+            Some(AgentSignalValue::Attention)
+        );
+        assert_eq!(agent_signal(None, None, None, false), None);
+        assert_eq!(
+            agent_signals_aggregate(vec![
+                Some(AgentSignalValue::Done),
+                Some(AgentSignalValue::Working)
+            ]),
+            Some(AgentSignalValue::Working)
+        );
+        assert_eq!(
+            agent_signal_words(AgentSignalValue::Done, "en".into()),
+            "done"
+        );
+    }
+
     use crate::agents::AgentSettingsValue;
     use crate::session::{
         Credential, CredentialFailure, CredentialHost, PlatformSignature, SessionEvent,
@@ -305,4 +377,70 @@ pub fn multiplexer_words(herdr: bool, locale: String) -> MultiplexerWords {
         session_icon: vocab.session_icon.to_owned(),
         window_icon: vocab.window_icon.to_owned(),
     }
+}
+
+/// An agent's dot (`moshpit_ui::home::model::Signal`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AgentSignalValue {
+    /// Waiting on a human.
+    Attention,
+    /// Doing something.
+    Working,
+    /// Finished, not yet looked at.
+    Done,
+}
+
+impl From<HomeSignal> for AgentSignalValue {
+    fn from(signal: HomeSignal) -> Self {
+        match signal {
+            HomeSignal::Attention => Self::Attention,
+            HomeSignal::Working => Self::Working,
+            HomeSignal::Done => Self::Done,
+        }
+    }
+}
+
+impl From<AgentSignalValue> for HomeSignal {
+    fn from(signal: AgentSignalValue) -> Self {
+        match signal {
+            AgentSignalValue::Attention => Self::Attention,
+            AgentSignalValue::Working => Self::Working,
+            AgentSignalValue::Done => Self::Done,
+        }
+    }
+}
+
+use moshpit_ui::home::model::Signal as HomeSignal;
+
+/// The dot a pane's stamp shows, the same on every screen (E7c): Home's
+/// rule (`moshpit_app::home::shown_stamp`): a tmux stamp reclassified as
+/// the agents monitor reads it (a shell back in the foreground, Claude's
+/// idle reminder: done), herdr's as reported. None for idle or unknown.
+#[uniffi::export]
+pub fn agent_signal(
+    state: Option<String>,
+    title: Option<String>,
+    command: Option<String>,
+    herdr: bool,
+) -> Option<AgentSignalValue> {
+    let shown = moshpit_app::home::shown_stamp(
+        state.as_deref()?,
+        title.as_deref(),
+        command.as_deref(),
+        herdr,
+    );
+    HomeSignal::of(Some(&shown)).map(Into::into)
+}
+
+/// A window's or a session's dot for its panes' (who waits, else who
+/// works; done lights no window).
+#[uniffi::export]
+pub fn agent_signals_aggregate(signals: Vec<Option<AgentSignalValue>>) -> Option<AgentSignalValue> {
+    HomeSignal::aggregate(signals.into_iter().map(|s| s.map(Into::into))).map(Into::into)
+}
+
+/// What a dot means, in words, in `locale` (VoiceOver's reading).
+#[uniffi::export]
+pub fn agent_signal_words(signal: AgentSignalValue, locale: String) -> String {
+    HomeSignal::from(signal).words(&locale)
 }

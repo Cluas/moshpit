@@ -17460,6 +17460,92 @@ public func FfiConverterTypeAgentEffectValue_lower(_ value: AgentEffectValue) ->
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * An agent's dot (`moshpit_ui::home::model::Signal`).
+ */
+
+public enum AgentSignalValue: Equatable, Hashable {
+    
+    /**
+     * Waiting on a human.
+     */
+    case attention
+    /**
+     * Doing something.
+     */
+    case working
+    /**
+     * Finished, not yet looked at.
+     */
+    case done
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AgentSignalValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentSignalValue: FfiConverterRustBuffer {
+    typealias SwiftType = AgentSignalValue
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentSignalValue {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .attention
+        
+        case 2: return .working
+        
+        case 3: return .done
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AgentSignalValue, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .attention:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .working:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .done:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentSignalValue_lift(_ buf: RustBuffer) throws -> AgentSignalValue {
+    return try FfiConverterTypeAgentSignalValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentSignalValue_lower(_ value: AgentSignalValue) -> RustBuffer {
+    return FfiConverterTypeAgentSignalValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Where an attachment flow is.
  */
 
@@ -28796,6 +28882,30 @@ fileprivate struct FfiConverterOptionTypeTmuxReadModel: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAgentSignalValue: FfiConverterRustBuffer {
+    typealias SwiftType = AgentSignalValue?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAgentSignalValue.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAgentSignalValue.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeConnectionFormIntent: FfiConverterRustBuffer {
     typealias SwiftType = ConnectionFormIntent?
 
@@ -30084,6 +30194,31 @@ fileprivate struct FfiConverterSequenceOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceOptionTypeAgentSignalValue: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentSignalValue?]
+
+    public static func write(_ value: [AgentSignalValue?], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterOptionTypeAgentSignalValue.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentSignalValue?] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentSignalValue?]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterOptionTypeAgentSignalValue.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterDictionaryUInt32TypePathHitRecord: FfiConverterRustBuffer {
     public static func write(_ value: [UInt32: PathHitRecord], into buf: inout [UInt8]) {
         let len = Int32(value.count)
@@ -30811,6 +30946,44 @@ public func herdrStampInterval(pushActive: Bool) -> Double  {
     return try!  FfiConverterDouble.lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_herdr_stamp_interval(
         FfiConverterBool.lower(pushActive),$0
+    )
+})
+}
+/**
+ * The dot a pane's stamp shows, the same on every screen (E7c): Home's
+ * rule (`moshpit_app::home::shown_stamp`): a tmux stamp reclassified as
+ * the agents monitor reads it (a shell back in the foreground, Claude's
+ * idle reminder: done), herdr's as reported. None for idle or unknown.
+ */
+public func agentSignal(state: String?, title: String?, command: String?, herdr: Bool) -> AgentSignalValue?  {
+    return try!  FfiConverterOptionTypeAgentSignalValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_agent_signal(
+        FfiConverterOptionString.lower(state),
+        FfiConverterOptionString.lower(title),
+        FfiConverterOptionString.lower(command),
+        FfiConverterBool.lower(herdr),$0
+    )
+})
+}
+/**
+ * What a dot means, in words, in `locale` (VoiceOver's reading).
+ */
+public func agentSignalWords(signal: AgentSignalValue, locale: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_agent_signal_words(
+        FfiConverterTypeAgentSignalValue_lower(signal),
+        FfiConverterString.lower(locale),$0
+    )
+})
+}
+/**
+ * A window's or a session's dot for its panes' (who waits, else who
+ * works; done lights no window).
+ */
+public func agentSignalsAggregate(signals: [AgentSignalValue?]) -> AgentSignalValue?  {
+    return try!  FfiConverterOptionTypeAgentSignalValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_agent_signals_aggregate(
+        FfiConverterSequenceOptionTypeAgentSignalValue.lower(signals),$0
     )
 })
 }
@@ -31583,6 +31756,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_herdr_stamp_interval() != 24183) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_agent_signal() != 12623) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_agent_signal_words() != 31125) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_agent_signals_aggregate() != 36154) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_multiplexer_words() != 55286) {

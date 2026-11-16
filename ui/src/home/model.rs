@@ -385,6 +385,31 @@ impl Signal {
         }
     }
 
+    /// What a window or session row shows for its panes: who waits on you,
+    /// else who works. A finished agent is a row of its own on Home, never
+    /// a whole window's dot (as the window and session lists always were).
+    pub fn aggregate(signals: impl IntoIterator<Item = Option<Signal>>) -> Option<Signal> {
+        let mut working = false;
+        for signal in signals.into_iter().flatten() {
+            match signal {
+                Signal::Attention => return Some(Signal::Attention),
+                Signal::Working => working = true,
+                Signal::Done => {}
+            }
+        }
+        working.then_some(Signal::Working)
+    }
+
+    /// What it means, in words, in `locale` (VoiceOver's reading of a
+    /// dot), outside a surface too.
+    pub fn words(self, locale: &str) -> String {
+        match self {
+            Signal::Attention => crate::tl!("needs you", locale),
+            Signal::Working => crate::tl!("working", locale),
+            Signal::Done => crate::tl!("done", locale),
+        }
+    }
+
     /// What needs a human comes first.
     pub fn rank(self) -> u8 {
         match self {

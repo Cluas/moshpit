@@ -454,11 +454,22 @@ fn herdr_control(herdr: &HerdrView, since: &BTreeMap<String, f64>, locale: &str)
 /// while the island and the notifications said done (B621). A state the
 /// monitor doesn't know stays as stamped.
 fn shown_state(raw: &str, hook: &moshpit_tmux::hooks::AgentHook) -> String {
+    shown_stamp(raw, hook.title.as_deref(), hook.command.as_deref(), false)
+}
+
+/// A pane's stamp as every screen shows it (E7c: Home, the terminal's
+/// breadcrumb, the pickers, so one pane has one dot everywhere): a tmux
+/// stamp read as the agents monitor reads it ([`shown_state`]), herdr's as
+/// herdr reports it (its own `agent_status`, which Home takes as is).
+pub fn shown_stamp(raw: &str, title: Option<&str>, command: Option<&str>, herdr: bool) -> String {
     use moshpit_agents::{AgentState, reclassify};
+    if herdr {
+        return raw.to_owned();
+    }
     let Some(stamped) = AgentState::from_hook(Some(raw)) else {
         return raw.to_owned();
     };
-    match reclassify(stamped, hook.title.as_deref(), hook.command.as_deref()) {
+    match reclassify(stamped, title, command) {
         AgentState::Working => "working",
         AgentState::Attention => "attention",
         AgentState::Done => "done",
