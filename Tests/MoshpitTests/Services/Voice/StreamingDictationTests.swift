@@ -205,4 +205,27 @@ struct StreamingDictationTests {
         backed.append(Self.chunk(1, count: 16_000))
         #expect(await backed.finish() == .text("Qwen3"))
     }
+
+    @Test("A model that won't load is said while listening, unless a final pass will write the text (B862)")
+    func loadFailureSaidAtOnce() async {
+        struct Missing: Error {}
+        let said = Shown()
+        let alone = StreamingDictationCore(load: { throw Missing() }, finalPass: nil, tick: .milliseconds(5),
+                                           onLoadFailure: { said.add($0) }) { _ in }
+        alone.begin()
+        alone.append(Self.chunk(1, count: 16_000))
+        #expect(await Self.eventually { said.all.count == 1 }, "the dictation listened on, for nothing")
+
+        let backed = StreamingDictationCore(load: { throw Missing() }, finalPass: { _ in "Qwen3" },
+                                            tick: .milliseconds(5), onLoadFailure: { said.add($0) }) { _ in }
+        backed.begin()
+        let cancelled = StreamingDictationCore(load: {
+            try? await Task.sleep(for: .milliseconds(50))
+            throw Missing()
+        }, finalPass: nil, tick: .milliseconds(5), onLoadFailure: { said.add($0) }) { _ in }
+        cancelled.begin()
+        cancelled.cancel()
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(said.all.count == 1)
+    }
 }

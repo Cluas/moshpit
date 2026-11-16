@@ -81,4 +81,21 @@ struct DictationSingleWriteTests {
         #expect(session.writes.isEmpty)
         #expect(await waitUntil(stream.isClosed))
     }
+
+    @Test("X-ASR that won't load fails on the panel, the mic off, and types nothing (B862)")
+    func loadFailureTypesNothing() async throws {
+        struct Corrupt: Error {}
+        let audio = Fakes.FakeAudioSource()
+        let controller = VoiceDictationController(engineFactory: { _, _ in
+            [XASRDictationEngine(load: { throw Corrupt() }, label: "X-ASR")]
+        }, audioSource: audio)
+        await controller.start(DictationRequest())
+        for _ in 0 ..< 3 { audio.onBuffer?(try buffer()) }
+        #expect(await waitUntil(controller.phase != .listening), "listening for good, words never coming")
+        if case .failed = controller.phase {} else { Issue.record("phase \(controller.phase)") }
+        #expect(audio.stopped)
+        let session = Session()
+        await session.finish(controller)
+        #expect(session.writes.isEmpty)
+    }
 }

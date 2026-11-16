@@ -485,4 +485,25 @@ struct WhisperDictationEngineTests {
         #expect(published.allSatisfy { $0.finalizedText.isEmpty })
         #expect(stream.isClosed)
     }
+
+    @Test("X-ASR that won't load ends its updates with the failure while listening (B862)")
+    func streamingEngineLoadFailure() async throws {
+        struct Corrupt: Error {}
+        let engine = XASRDictationEngine(load: { throw Corrupt() }, label: "X-ASR")
+        try await engine.start()
+        let ended = Task { () -> Error? in
+            do { for try await _ in engine.updates {} } catch { return error }
+            return nil
+        }
+        engine.append(try buffer(frames: 16_000))
+        // Without the failure, only this ends the updates, and empty-handed.
+        let giveUp = Task {
+            try await Task.sleep(for: .seconds(2))
+            engine.cancel()
+        }
+        let failure = await ended.value
+        giveUp.cancel()
+        #expect(failure is DictationFailure, "still listening to a model that never loaded")
+        engine.cancel()
+    }
 }
