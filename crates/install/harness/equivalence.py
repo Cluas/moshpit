@@ -5,7 +5,8 @@
     equivalence.py update-goldens [--no-build]
 
 `run` builds both front ends (harness/build-swift.sh over the app's
-unchanged Moshpit/Services/Install sources and HostCapabilities, and
+unchanged Moshpit/Services/Install sources and HostCapabilities, kept in
+harness/swift/frozen since the app's went to the core, and
 examples/install_harness.rs) and feeds both the same cases: seeded ones from
 `install_harness gen` and the committed tests/fixtures/swift/cases.txt.
 

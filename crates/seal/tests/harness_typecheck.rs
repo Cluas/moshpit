@@ -74,7 +74,8 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
-        pins: &["81c121a1", "e57f7941", "8ef981c5"],
+        // Its Swift is kept in harness/swift/frozen: no commit to read.
+        pins: &[],
     },
     Harness {
         name: "seal (crates/seal/harness)",
