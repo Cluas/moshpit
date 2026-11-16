@@ -182,6 +182,23 @@ minimal surface is a feature, not a limitation.
 - Fill out the PR template. Describe what changed and, in the spirit above, why.
 - Include a simulator screenshot or short clip for any user-facing UI change.
 
+## README translations
+
+`README.md` is the source. Its translations (`README-zh.md`, and
+`README.<locale>.md` for the other languages the app speaks) are each written
+natively, not translated line by line, and each opens with the blob of the
+`README.md` it follows:
+
+```
+<!-- source: README.md <git hash-object README.md> -->
+```
+
+When you change `README.md`, update the translations you can and give them the
+new blob in their marker. The ones you can't leave as they are: they keep the
+old blob, and `python3 scripts/readme-translations.py` lists them as behind (CI
+warns on them and never fails). Commands, paths and code names stay as they are
+in every language; feature names follow the app's own wording in that language.
+
 ## Commit messages
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/):
