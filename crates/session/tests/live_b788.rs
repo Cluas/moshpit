@@ -215,3 +215,65 @@ async fn a_disconnect_hands_the_window_back_with_tmux_only_on_the_probed_path() 
         "left on the window (set: {set:?})"
     );
 }
+
+/// B855: the first session made from the empty state attaches without the
+/// session reconnecting. The leg reported a drop to attach again, and the
+/// lifecycle went Connected, Reconnecting, Connected: the disconnect the
+/// person saw flash by after New Session (Canary 151, after kill-server).
+/// Now the control client attaches on a new channel of the same
+/// connection: the session never leaves Connected, and the phone is in
+/// the new session.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd and tmux; see the module docs"]
+async fn new_session_after_kill_server_never_reconnects() {
+    need_sshd!();
+    let tmux = Tmux::named("moshpit-b855");
+    tmux.new_session("work");
+    let sshd = Sshd::start().await;
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let mut spec = spec(sshd.port);
+    spec.multiplexer = Multiplexer::Tmux;
+    spec.tmux_path = Some(tmux.prefix());
+    let id = bench.sessions.connect(spec);
+    bench.sessions.set_visible(Some(id));
+    bench.connected(id).await;
+    let attached = eventually(&mut bench, 20, |b| {
+        b.sessions
+            .tmux_view(id)
+            .is_some_and(|t| t.snapshot.is_attached)
+    })
+    .await;
+    assert!(attached, "never attached to work");
+    tmux.run(&["kill-server"]);
+    let empty = eventually(&mut bench, 20, |b| {
+        b.sessions.tmux_view(id).is_some_and(|t| t.no_session)
+    })
+    .await;
+    assert!(empty, "never read the server as gone");
+    bench.drain();
+    let before = bench.states(id).len();
+    bench
+        .sessions
+        .tmux(
+            id,
+            TmuxAction::NewSession {
+                name: Some("x".to_owned()),
+            },
+        )
+        .unwrap();
+    let made = eventually(&mut bench, 20, |b| {
+        b.sessions.tmux_view(id).is_some_and(|t| {
+            t.snapshot.is_attached && t.snapshot.sessions.values().any(|s| s.name == "x")
+        })
+    })
+    .await;
+    bench.drain();
+    let since: Vec<_> = bench.states(id).into_iter().skip(before).collect();
+    let _ = bench.sessions.disconnect(id).await;
+    assert!(made, "the phone isn't in x: {:?}", tmux.sessions());
+    assert_eq!(
+        since,
+        Vec::<moshpit_session::SessionState>::new(),
+        "the session left Connected for New Session"
+    );
+}

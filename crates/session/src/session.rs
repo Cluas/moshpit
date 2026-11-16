@@ -178,7 +178,18 @@ pub(crate) enum Msg {
     },
     TmuxNote {
         generation: u64,
+        /// Which leg of `generation` said it ([`Leg::Tmux`]'s `attach`): one
+        /// replaced in place (B855) says nothing any more.
+        attach: u64,
         note: TmuxNote,
+    },
+    /// A tmux leg's replacement on the same connection is ready, or isn't
+    /// (`pty` none): the first session made from the empty state (B855).
+    TmuxReattached {
+        generation: u64,
+        attach: u64,
+        pty: Option<Process>,
+        handoff: Option<Handoff>,
     },
     Mosh {
         generation: u64,
@@ -468,6 +479,9 @@ enum Leg {
     },
     Tmux {
         generation: u64,
+        /// This leg among the generation's: a first session made from the
+        /// empty state replaces it in place (B855).
+        attach: u64,
         ssh: Ssh,
         tmux: TmuxLeg,
     },
@@ -1325,7 +1339,17 @@ impl Actor {
                 }
                 ShellEnd::Lost => self.life.lost(generation, now),
             },
-            Msg::TmuxNote { generation, note } => self.tmux_note(generation, note),
+            Msg::TmuxNote {
+                generation,
+                attach,
+                note,
+            } => self.tmux_note(generation, attach, note),
+            Msg::TmuxReattached {
+                generation,
+                attach,
+                pty,
+                handoff,
+            } => self.tmux_reattached(generation, attach, pty, handoff),
             Msg::Mosh { generation, note } => self.mosh_note(generation, note),
             Msg::HerdrNote { generation, note } => self.herdr_note(generation, note),
             Msg::HerdrMosh { generation, note } => self.herdr_mosh_note(generation, note),
@@ -2242,40 +2266,7 @@ impl Actor {
                     });
                     self.publish_shell_pane();
                 }
-                Multiplexer::Tmux => {
-                    self.attach += 1;
-                    let start = TmuxStart {
-                        ssh: ssh.clone(),
-                        pty,
-                        tmux: self.spec.tmux_command().to_owned(),
-                        config: self.tmux_config(),
-                        grid: self.grid,
-                        // The person's pick, made while redialling (B405).
-                        restore_chosen: self.tmux_pick.is_some(),
-                        restore: self.next_tmux_restore(),
-                        inherited: std::mem::take(&mut self.handoff),
-                        attach_stall: self.timing.attach_stall,
-                        inbound: self.inbound.clone(),
-                        pinned: self.pinned(),
-                        sidecar: None,
-                    };
-                    let me = self.me.clone();
-                    let clock = self.clock.clone();
-                    let tmux = TmuxLeg::spawn(
-                        start,
-                        move || clock.now(),
-                        Box::new(move |note| {
-                            let _ = me.send(Msg::TmuxNote { generation, note });
-                        }),
-                    );
-                    self.current.clear();
-                    self.update(|view| view.attach_stalled = false);
-                    self.leg = Some(Leg::Tmux {
-                        generation,
-                        ssh,
-                        tmux,
-                    });
-                }
+                Multiplexer::Tmux => self.start_tmux_leg(generation, ssh, pty),
                 Multiplexer::Herdr => {
                     self.attach += 1;
                     self.current.clear();
@@ -2847,11 +2838,13 @@ impl Actor {
                 self.update(|view| view.attach_stalled = true);
                 self.emit(EventKind::AttachStalled);
             }
-            // The sidecar renders nothing: no panes, no frames, no views.
+            // The sidecar renders nothing: no panes, no frames, no views;
+            // mosh's renderer attaches a first session on its own.
             TmuxNote::Opened { .. }
             | TmuxNote::Panes(_)
             | TmuxNote::View { .. }
-            | TmuxNote::FirstFrame => {}
+            | TmuxNote::FirstFrame
+            | TmuxNote::Reattach => {}
         }
     }
 
@@ -3430,11 +3423,147 @@ impl Actor {
         held
     }
 
+    /// A tmux leg on `ssh`'s terminal `pty` (the control client its
+    /// program), the session's for `generation`: from an attempt, or in
+    /// place of the one before it on the same connection (B855).
+    fn start_tmux_leg(&mut self, generation: u64, ssh: Ssh, pty: Process) {
+        self.attach += 1;
+        let attach = self.attach;
+        let start = TmuxStart {
+            ssh: ssh.clone(),
+            pty,
+            tmux: self.spec.tmux_command().to_owned(),
+            config: self.tmux_config(),
+            grid: self.grid,
+            // The person's pick, made while redialling (B405).
+            restore_chosen: self.tmux_pick.is_some(),
+            restore: self.next_tmux_restore(),
+            inherited: std::mem::take(&mut self.handoff),
+            attach_stall: self.timing.attach_stall,
+            inbound: self.inbound.clone(),
+            pinned: self.pinned(),
+            sidecar: None,
+        };
+        let me = self.me.clone();
+        let clock = self.clock.clone();
+        let tmux = TmuxLeg::spawn(
+            start,
+            move || clock.now(),
+            Box::new(move |note| {
+                let _ = me.send(Msg::TmuxNote {
+                    generation,
+                    attach,
+                    note,
+                });
+            }),
+        );
+        self.current.clear();
+        self.update(|view| view.attach_stalled = false);
+        self.leg = Some(Leg::Tmux {
+            generation,
+            attach,
+            ssh,
+            tmux,
+        });
+    }
+
+    /// The first session is made from the empty state (B228): the control
+    /// client attaches it on a new channel of the same connection, the leg
+    /// of `attach` replaced in place, its handoff taken over. It was a drop
+    /// the lifecycle redialled for: Connected, Reconnecting, Connected —
+    /// the disconnect the person saw flash by after New Session (B855).
+    /// What is on screen stays until the new attach paints (the empty
+    /// state, then the pane behind its own veil until its first frame).
+    fn reattach_tmux(&mut self, generation: u64, attach: u64) {
+        let Some(Leg::Tmux { ssh, tmux, .. }) = &self.leg else {
+            return;
+        };
+        let (ssh, commands) = (ssh.clone(), tmux.commands.clone());
+        let mut request = PtyRequest::new(u32::from(self.grid.0), u32::from(self.grid.1));
+        request.command = Some(moshpit_tmux::boot::control_attach_program(
+            self.spec.tmux_command(),
+            &crate::attempt::shell_after(&self.spec),
+        ));
+        let timeout = self.timing.channel_timeout;
+        let me = self.me.clone();
+        // Typing waits for the new attach's pane (B5).
+        self.current.clear();
+        tokio::spawn(async move {
+            let (reply, handed) = oneshot::channel();
+            let _ = commands.send(TmuxCommand::Close {
+                courtesy: false,
+                reply,
+            });
+            let handoff = tokio::time::timeout(Duration::from_millis(500), handed)
+                .await
+                .ok()
+                .and_then(Result::ok);
+            let pty = match tokio::time::timeout(timeout, ssh.terminal(&request)).await {
+                Ok(Ok(pty)) => Some(pty),
+                _ => None,
+            };
+            let _ = me.send(Msg::TmuxReattached {
+                generation,
+                attach,
+                pty,
+                handoff,
+            });
+        });
+    }
+
+    /// The replacement for the leg of `attach` is ready (`pty`), or its
+    /// channel didn't open: then the drop the first session's reattach used
+    /// to be, the lifecycle redialling (to Connected, or the end B786 says
+    /// for a server gone), never a session left waiting.
+    fn tmux_reattached(
+        &mut self,
+        generation: u64,
+        attach: u64,
+        pty: Option<Process>,
+        handoff: Option<Handoff>,
+    ) {
+        if leg_role(self.tmux_leg_tag(), generation, attach) != LegRole::Current {
+            return;
+        }
+        let Some(pty) = pty else {
+            log::info!(
+                "session {}: tmux's control channel didn't open again: a drop",
+                self.id
+            );
+            let now = self.now();
+            self.life.lost(generation, now);
+            return;
+        };
+        let Some(Leg::Tmux { ssh, tmux: old, .. }) = self.leg.take() else {
+            return;
+        };
+        old.abort();
+        if let Some(handoff) = handoff {
+            self.handoff = handoff;
+        }
+        self.start_tmux_leg(generation, ssh, pty);
+    }
+
+    /// The tmux leg running, as its notes name it: generation and attach.
+    fn tmux_leg_tag(&self) -> Option<(u64, u64)> {
+        match &self.leg {
+            Some(Leg::Tmux {
+                generation, attach, ..
+            }) => Some((*generation, *attach)),
+            _ => None,
+        }
+    }
+
     // MARK: What the pane tasks say
 
-    fn tmux_note(&mut self, generation: u64, note: TmuxNote) {
-        let current =
-            matches!(&self.leg, Some(Leg::Tmux { generation: g, .. }) if *g == generation);
+    fn tmux_note(&mut self, generation: u64, attach: u64, note: TmuxNote) {
+        let role = leg_role(self.tmux_leg_tag(), generation, attach);
+        // A leg replaced in place (B855): what it says late — its exit,
+        // its channel's end — is nobody's, never a drop.
+        if role == LegRole::Replaced {
+            return;
+        }
+        let current = role == LegRole::Current;
         if let TmuxNote::Lost(reason) = note {
             log::info!("session {}: tmux lost: {reason}", self.id);
             let now = self.now();
@@ -3468,6 +3597,7 @@ impl Actor {
                 self.update(|view| view.attach_stalled = true);
                 self.emit(EventKind::AttachStalled);
             }
+            TmuxNote::Reattach => self.reattach_tmux(generation, attach),
             TmuxNote::Lost(_) => unreachable!("handled above"),
         }
     }
@@ -4712,8 +4842,43 @@ fn prefix_bytes(option: &str) -> Vec<u8> {
     }
     vec![0x02]
 }
+/// Who a tmux note is from, against the leg running (`tag`: its generation
+/// and attach).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegRole {
+    /// The leg running.
+    Current,
+    /// A leg of the same generation that one replaced in place (B855): its
+    /// late exit or channel end must not drop the session.
+    Replaced,
+    /// Another generation's, or none running: the lifecycle judges.
+    Other,
+}
+
+fn leg_role(tag: Option<(u64, u64)>, generation: u64, attach: u64) -> LegRole {
+    match tag {
+        Some((g, a)) if g == generation && a == attach => LegRole::Current,
+        Some((g, _)) if g == generation => LegRole::Replaced,
+        _ => LegRole::Other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// B855: a tmux leg replaced in place by the first session's reattach
+    /// may still say something — its exit, its channel's end — after the
+    /// new one is up (here attach 3 runs in generation 2, attach 2 was
+    /// replaced). That is nobody's, never a drop of the session. The running
+    /// leg's own word is the session's; another generation's, or one with no
+    /// tmux leg running, is the lifecycle's to judge, as before.
+    #[test]
+    fn a_replaced_tmux_legs_late_word_is_nobodys() {
+        assert_eq!(leg_role(Some((2, 3)), 2, 2), LegRole::Replaced);
+        assert_eq!(leg_role(Some((2, 3)), 2, 3), LegRole::Current);
+        assert_eq!(leg_role(Some((2, 3)), 1, 2), LegRole::Other);
+        assert_eq!(leg_role(None, 2, 2), LegRole::Other);
+    }
     use super::*;
 
     /// A return whose question finds nothing to ask (no leg for its
