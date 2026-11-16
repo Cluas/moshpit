@@ -824,12 +824,10 @@ fn stamp(home: &Path, tmux: &Tmux, pane: &str, state: &str, grace: &str) {
 fn appears(path: &Path) -> Option<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
-        if let Ok(text) = std::fs::read_to_string(path) {
-            if text.ends_with('\n') {
-                return Some(text);
-            }
+        match std::fs::read_to_string(path) {
+            Ok(text) if text.ends_with('\n') => return Some(text),
+            _ => std::thread::sleep(std::time::Duration::from_millis(50)),
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
     }
     std::fs::read_to_string(path).ok()
 }
