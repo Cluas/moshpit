@@ -63,7 +63,9 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "host care (crates/hostcare/harness)",
         build: r#"crates/hostcare/harness/build-swift.sh "$OUT/care-swift""#,
-        pins: &["81c121a1", "8ef981c5"],
+        // Its Swift is kept in harness/swift/frozen and the install
+        // harness's: no commit to read.
+        pins: &[],
     },
     Harness {
         name: "UniFFI smoke (crates/ffi/harness)",
