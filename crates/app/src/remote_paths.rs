@@ -557,6 +557,8 @@ pub fn cat_command(path: &str) -> String {
 pub const EDIT_OK: &str = "MOSHPIT_EDIT_OK";
 /// Printed when the target name is already taken.
 pub const EDIT_TAKEN: &str = "MOSHPIT_EDIT_TAKEN";
+/// Printed when a delete would take the home folder (B816).
+pub const EDIT_HOME: &str = "MOSHPIT_EDIT_HOME";
 
 /// A name the user typed, trimmed; none when it can't name one item in a
 /// folder: empty, `.` or `..`, or holding a `/` or a NUL anywhere — among
@@ -654,12 +656,29 @@ pub fn rename_command(path: &str, new_path: &str) -> String {
 }
 
 /// Deletes `path`; none for a path [`deletable`] refuses.
+///
+/// Fix (B816): [`deletable`] lets any folder two levels deep go, and the
+/// home folder is one (`/Users/dev`, `/home/dev`): one Delete in the folder
+/// sheet took it and everything in it, and its parent the same way. The
+/// host refuses, saying [`EDIT_HOME`]: never the home folder, nor a folder
+/// it is in — the home and the path compared as given and as their real
+/// paths, so neither `/var` being `/private/var` on a Mac nor a linked
+/// folder on the way gets one past.
 pub fn remove_command(path: &str, is_directory: bool) -> Option<String> {
     if !deletable(path) {
         return None;
     }
     let rm = if is_directory { "rm -rf" } else { "rm -f" };
-    Some(sh(&format!("{rm} -- \"$1\" && echo {EDIT_OK}"), &[path]))
+    Some(sh(
+        &format!(
+            "h=$(cd \"$HOME\" 2>/dev/null && pwd -P); p=$(cd \"$1\" 2>/dev/null && pwd -P); \
+             for d in \"$HOME\" \"$h\"; do [ -n \"$d\" ] || continue; \
+             for t in \"$1\" \"$p\"; do [ -n \"$t\" ] || continue; \
+             case ${{d%/}}/ in \"${{t%/}}/\"*) echo {EDIT_HOME}; exit 1;; esac; done; done; \
+             {rm} -- \"$1\" && echo {EDIT_OK}"
+        ),
+        &[path],
+    ))
 }
 
 /// An upload over exec: base64 appended to a side file, decoded at the

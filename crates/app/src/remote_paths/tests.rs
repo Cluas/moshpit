@@ -504,6 +504,46 @@ fn the_exec_edits_create_rename_refuse_a_taken_name_upload_and_delete() {
     }
 }
 
+/// B816: the folder sheet deletes any folder two levels deep, and the home
+/// folder is one (`/Users/dev`, `/home/dev`): one Delete took it and
+/// everything in it, and its parent the same way. The host refuses: never
+/// the home folder, nor a folder it is in — by its name or its real path —
+/// and says so; what is inside it goes as before.
+#[test]
+fn the_home_folder_and_the_folders_holding_it_are_never_deleted() {
+    for sh in shells() {
+        let base = scratch("home");
+        let home = base.join("Users/dev");
+        std::fs::create_dir_all(home.join("out")).unwrap();
+        std::fs::write(home.join("keep.txt"), "x").unwrap();
+        let real = std::fs::canonicalize(&home).unwrap();
+        // A linked folder on the way to it.
+        std::os::unix::fs::symlink(base.join("Users"), base.join("alias")).unwrap();
+        let run = |command: &str| shell(sh, command, &home);
+        let doomed = [
+            home.to_str().unwrap().to_owned(),
+            format!("{}/", home.display()),
+            base.join("Users").to_str().unwrap().to_owned(),
+            real.to_str().unwrap().to_owned(),
+            real.parent().unwrap().to_str().unwrap().to_owned(),
+            base.join("alias/dev").to_str().unwrap().to_owned(),
+        ];
+        for path in doomed {
+            let said = run(&remove_command(&path, true).unwrap());
+            assert!(said.contains(EDIT_HOME), "{sh}: {path}: {said:?}");
+            assert!(!said.contains(EDIT_OK), "{sh}: {path}: {said:?}");
+            assert!(
+                home.join("keep.txt").exists(),
+                "{sh}: deleting {path} took the home folder"
+            );
+        }
+        let out = home.join("out");
+        assert!(run(&remove_command(out.to_str().unwrap(), true).unwrap()).contains(EDIT_OK));
+        assert!(!out.exists());
+        std::fs::remove_dir_all(&base).ok();
+    }
+}
+
 fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();

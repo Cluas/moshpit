@@ -276,6 +276,8 @@ enum RemoteFileEdits {
     static let okMarker = remoteFileEditMarkers()[0]
     /// Printed when the target name is already taken.
     static let takenMarker = remoteFileEditMarkers()[1]
+    /// Printed when a delete would take the home folder (B816).
+    static let homeMarker = remoteFileEditMarkers()[2]
 
     /// A name the user typed, trimmed; nil when it can't name one item in a
     /// folder (B141: a `/` or NUL among the scalars).

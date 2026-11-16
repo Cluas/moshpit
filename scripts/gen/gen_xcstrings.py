@@ -1311,6 +1311,9 @@ add("CAN'T OPEN", "打不开", "開けません")
 add("This file is %@. Download it to preview?", "这个文件有 %@，要下载下来预览吗？",
     "このファイルは %@ です。ダウンロードしてプレビューしますか？")
 add("This file is no longer on the host.", "这个文件已经不在主机上了。", "このファイルはもうホストにありません。")
+add("Moshpit won't delete your home folder, or a folder it's in.",
+    "主目录和它所在的上级文件夹，Moshpit 都不会删除。",
+    "ホームフォルダと、それを含むフォルダは Moshpit では削除しません。")
 add("This host has SFTP turned off, and the file is too large to send without it.",
     "这台主机关了 SFTP，文件又太大，没法用别的办法传过来。",
     "このホストは SFTP がオフで、SFTP なしで送るにはファイルが大きすぎます。")

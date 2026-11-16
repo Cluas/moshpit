@@ -287,6 +287,7 @@ final class BorrowedHost: HostConnection {
         let output = try await core(writing: true) { try await $0.run(command: command) }
         let said = String(decoding: output.stdout, as: UTF8.self)
         if said.contains(RemoteFileEdits.takenMarker) { throw HostConnectionError.nameTaken }
+        if said.contains(RemoteFileEdits.homeMarker) { throw HostConnectionError.homeFolder }
         guard output.finished else { throw HostConnectionError.notAnswering }
         guard output.status == 0, said.contains(RemoteFileEdits.okMarker) else {
             throw HostConnectionError.writeDenied
