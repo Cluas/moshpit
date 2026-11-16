@@ -113,8 +113,10 @@ struct CardPixels {
     let pixels: [UInt8]
 
     init?(_ image: CGImage) {
-        width = image.width
-        height = image.height
+        // Locals, not `self.width`/`self.height`: the closure below runs
+        // before `pixels` is set, and a closure may not capture `self` then.
+        let width = image.width
+        let height = image.height
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -126,6 +128,8 @@ struct CardPixels {
             return true
         }
         guard drawn else { return nil }
+        self.width = width
+        self.height = height
         pixels = bytes
     }
 
