@@ -232,6 +232,7 @@
   "Connecting…": "Connexion…",
   "Creating…": "Création…",
   "The session ended: the remote shell exited or mosh-server was stopped.": "La session est terminée : le shell distant s’est fermé ou mosh-server a été arrêté.",
+  "Session ended: tmux on the host stopped.": "La session est terminée : tmux s’est arrêté sur l’hôte.",
   "The session ended: the remote shell exited.": "La session est terminée : le shell distant s’est fermé.",
   "Windows": "Fenêtres",
   "Sessions": "Sessions",

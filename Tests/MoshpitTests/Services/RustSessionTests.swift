@@ -932,6 +932,17 @@ struct RustSessionTests {
         #expect(prompts != rejected)
     }
 
+    /// B787: tmux on the host gone under mosh's screen says so; mosh-server's
+    /// own end keeps its line, which blamed the shell.
+    @Test("each end says its own line: tmux gone apart from mosh-server's end (B787)")
+    func endCopy() {
+        #expect(RustCopy.ended(.tmuxGone) == "Session ended: tmux on the host stopped.")
+        #expect(RustCopy.ended(.moshServerEnded)
+                == "The session ended: the remote shell exited or mosh-server was stopped.")
+        #expect(RustCopy.ended(.shellExited(status: 0)) == "The session ended: the remote shell exited.")
+        #expect(RustCopy.ended(.disconnected) == nil)
+    }
+
     /// B740: a first connection that reaches nothing says why — a port that
     /// turned it away, a name that resolves to nothing, a host that never
     /// answered, no route — instead of one sentence for all of them. A host

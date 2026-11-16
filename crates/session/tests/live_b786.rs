@@ -259,8 +259,8 @@ async fn a_detached_control_client_attaches_again() {
 /// says its port refuses either (B402). The session stayed connected on a
 /// transport with no server: the last frame frozen, typing going nowhere,
 /// the "isn't receiving data" banner. The sidecar knows the server has no
-/// session, so the renderer is gone: the session ends as mosh-server's own
-/// end does.
+/// session, so the renderer is gone: the session ends, saying tmux on the
+/// host stopped (`EndReason::TmuxGone`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
 async fn mosh_with_a_tmux_that_crashed_while_away_ends() {
@@ -298,7 +298,7 @@ async fn mosh_with_a_tmux_that_crashed_while_away_ends() {
     for _ in 0..80 {
         while bench.next(0).await.is_some() {}
         if bench.sessions.view(id).unwrap().state
-            == SessionState::Ended(moshpit_session::EndReason::MoshServerEnded)
+            == SessionState::Ended(moshpit_session::EndReason::TmuxGone)
         {
             udp.faults.blackhole(false);
             return;

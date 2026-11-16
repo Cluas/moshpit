@@ -26,6 +26,25 @@ enum RustCopy {
         String(localized: "Your last tmux action didn't go through: the control connection dropped, and it's back now.")
     }
 
+    // MARK: Ends
+
+    /// What a session that ended says, by why; nil when the person
+    /// disconnected (nothing to say).
+    static func ended(_ reason: EndValue) -> String? {
+        switch reason {
+        case .disconnected:
+            return nil
+        case .shellExited:
+            return String(localized: "The session ended: the remote shell exited.")
+        case .moshServerEnded:
+            return String(localized: "The session ended: the remote shell exited or mosh-server was stopped.")
+        case .tmuxGone:
+            // mosh + tmux: tmux on the host went away under mosh's screen,
+            // its own client (B787): the plain mosh line blamed the shell.
+            return String(localized: "Session ended: tmux on the host stopped.")
+        }
+    }
+
     // MARK: Failures
 
     /// The card's text for a failed connect.

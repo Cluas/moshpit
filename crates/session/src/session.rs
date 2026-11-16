@@ -2794,7 +2794,7 @@ impl Actor {
                 // and mosh-server with it — its program exited. Its goodbye
                 // ends the session; one that never reached the phone (away
                 // when tmux crashed) left it connected to no server, the
-                // last frame frozen, until the sidecar's word ends it too.
+                // last frame frozen. The sidecar's word ends it, saying why.
                 let renderer_gone = self.control.as_mut().and_then(|control| {
                     control.rendered |= tmux.snapshot.is_attached;
                     (control.rendered && tmux.no_session).then_some(control.generation)
@@ -2816,7 +2816,7 @@ impl Actor {
                         self.id
                     );
                     let now = self.now();
-                    self.life.ended(generation, EndReason::MoshServerEnded, now);
+                    self.life.ended(generation, EndReason::TmuxGone, now);
                 }
             }
             TmuxNote::Activity(pane) => self.emit(EventKind::PaneActivity { pane }),
@@ -6225,9 +6225,9 @@ mod tests {
 
     /// B787: mosh + tmux, the sidecar's server has no session after this
     /// leg's renderer had one: the renderer, that server's client and
-    /// mosh-server's program, is gone, and the session ends as mosh-server's
-    /// own end does — a goodbye that never reached the phone left it
-    /// connected to no server, the last frame frozen. A server with no
+    /// mosh-server's program, is gone, and the session ends saying tmux on
+    /// the host stopped — mosh-server's goodbye that never reached the phone
+    /// left it connected to no server, the last frame frozen. A server with no
     /// session from the start is the first session's wait (B228): nothing
     /// ends.
     #[tokio::test]
@@ -6290,10 +6290,7 @@ mod tests {
         actor.sidecar_note(1, tree(true, false));
         assert_eq!(actor.life.state(), SessionState::Connected);
         actor.sidecar_note(1, tree(false, true));
-        assert_eq!(
-            actor.life.state(),
-            SessionState::Ended(EndReason::MoshServerEnded)
-        );
+        assert_eq!(actor.life.state(), SessionState::Ended(EndReason::TmuxGone));
     }
 
     /// B524: a reply for a pane asked for in the background, on a live SSH

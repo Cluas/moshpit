@@ -392,8 +392,12 @@ pub enum SessionStateValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum EndValue {
-    ShellExited { status: Option<u32> },
+    ShellExited {
+        status: Option<u32>,
+    },
     MoshServerEnded,
+    /// mosh + tmux: tmux on the host went away under mosh's screen (B787).
+    TmuxGone,
     Disconnected,
 }
 
@@ -1438,6 +1442,7 @@ fn state_value(state: &SessionState) -> SessionStateValue {
             reason: match reason {
                 EndReason::ShellExited { status } => EndValue::ShellExited { status: *status },
                 EndReason::MoshServerEnded => EndValue::MoshServerEnded,
+                EndReason::TmuxGone => EndValue::TmuxGone,
                 EndReason::Disconnected => EndValue::Disconnected,
             },
         },
