@@ -206,7 +206,7 @@ struct AgentsScriptTests {
                 let content = request.content
                 let pane = content.userInfo[AgentNotifications.paneKey] as? String ?? "?"
                 recorder.lines.append("post \(request.identifier.replacingOccurrences(of: Self.conn, with: "C")) \(pane)"
-                    + " | \(content.title) | \(content.body) | sound=\(content.sound != nil)"
+                    + " | \(content.title) | \(Self.laidOut(content)) | sound=\(content.sound != nil)"
                     + " | \(Self.level(content.interruptionLevel))")
             },
             withdraw: { recorder.lines.append("withdraw \($0.replacingOccurrences(of: Self.conn, with: "C"))") },
@@ -289,6 +289,14 @@ struct AgentsScriptTests {
         lines.append("announced " + announced.joined(separator: ","))
         monitor.untrack(connectionId: connection.id)
         return lines
+    }
+
+    /// A card's words on one line as the Swift monitor laid them out —
+    /// "what — where", or "where" — so the committed transcripts still
+    /// compare: since B639 the place is the subtitle (the Rust harness's
+    /// `laid_out` joins the same way).
+    static func laidOut(_ content: UNNotificationContent) -> String {
+        content.body.isEmpty ? content.subtitle : "\(content.body) — \(content.subtitle)"
     }
 
     static func level(_ level: UNNotificationInterruptionLevel) -> String {

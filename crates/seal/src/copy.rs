@@ -330,20 +330,29 @@ pub enum InterruptionLevel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardText {
     pub title: String,
+    /// Where: the connection's name and the session, on a line of its own
+    /// (B639).
+    pub subtitle: String,
+    /// What was said: the detail, or nothing.
     pub body: String,
     /// Whether the card plays the default sound.
     pub sound: bool,
     pub level: InterruptionLevel,
 }
 
-/// "what — where", or just "where" when there is no what. The place on one
-/// line too: a stored one may come from a session the host named.
-pub fn body(detail_text: Option<&str>, place: &str) -> String {
-    let place = one_line(place);
-    match detail(detail_text) {
-        Some(detail) => format!("{detail} — {place}"),
-        None => place,
-    }
+/// What was said — the detail, on one line — or nothing when there is no
+/// what. The place is the subtitle ([`subtitle`]).
+pub fn body(detail_text: Option<&str>) -> String {
+    detail(detail_text).unwrap_or_default()
+}
+
+/// Where, as the card's subtitle: the place on a line of its own (B639,
+/// the lead's call). It used to end the body ("what — where"), where a long
+/// detail pushed it off the lock screen's two lines and a detail could
+/// pose as it with a "— somewhere" of its own. One line too: a stored place
+/// may come from a session the host named.
+pub fn subtitle(place: &str) -> String {
+    one_line(place)
 }
 
 /// Whether a finish of a turn that ran `duration_seconds` would wake the
@@ -381,7 +390,8 @@ pub fn done(
     let long = duration_seconds >= threshold && rings;
     CardText {
         title,
-        body: body(detail_text, place),
+        subtitle: subtitle(place),
+        body: body(detail_text),
         sound: long && sound,
         level: if long {
             InterruptionLevel::Active
@@ -412,7 +422,8 @@ pub fn attention(
     };
     CardText {
         title: fill(language.needs_you_template(), &who),
-        body: body(detail_text, place),
+        subtitle: subtitle(place),
+        body: body(detail_text),
         sound: edge && sound,
         level: if edge {
             InterruptionLevel::TimeSensitive
@@ -644,10 +655,8 @@ mod tests {
             Language::En,
         );
         assert_eq!(card.title, "✓ claude finished · 12 min");
-        assert_eq!(
-            card.body,
-            "Upload the build with the new Xcode — mac-mini · work"
-        );
+        assert_eq!(card.body, "Upload the build with the new Xcode");
+        assert_eq!(card.subtitle, "mac-mini · work");
         assert!(card.sound);
         assert_eq!(card.level, InterruptionLevel::Active);
     }
@@ -656,7 +665,8 @@ mod tests {
     fn a_short_finish_is_information_not_an_interruption() {
         let card = done("claude", None, "mac-mini", 20, true, 180, true, Language::En);
         assert_eq!(card.title, "✓ claude finished");
-        assert_eq!(card.body, "mac-mini");
+        assert_eq!(card.body, "");
+        assert_eq!(card.subtitle, "mac-mini");
         assert!(!card.sound);
         assert_eq!(card.level, InterruptionLevel::Passive);
     }
@@ -673,15 +683,39 @@ mod tests {
             Language::En,
         );
         assert_eq!(card.title, "claude needs you");
-        assert_eq!(card.body, "Bash: rm -rf build — mac-mini · work");
+        assert_eq!(card.body, "Bash: rm -rf build");
+        assert_eq!(card.subtitle, "mac-mini · work");
         assert!(card.sound);
         assert_eq!(card.level, InterruptionLevel::TimeSensitive);
 
         let more = attention("claude", 3, None, "mac-mini", false, true, Language::En);
         assert_eq!(more.title, "claude +2 needs you");
-        assert_eq!(more.body, "mac-mini");
+        assert_eq!(more.body, "");
+        assert_eq!(more.subtitle, "mac-mini");
         assert!(!more.sound);
         assert_eq!(more.level, InterruptionLevel::Passive);
+    }
+
+    /// B639 (the lead's call): the place is the card's subtitle, on a line
+    /// of its own, and the body is what was said alone. A detail can't push
+    /// the place off the lock screen's two lines, nor pose as it with a
+    /// "— somewhere" of its own.
+    #[test]
+    fn the_place_is_the_subtitle_and_the_detail_alone_the_body() {
+        let card = attention(
+            "claude",
+            1,
+            Some("Allow? — trust.example.com"),
+            "build.example.com · work",
+            true,
+            true,
+            Language::En,
+        );
+        assert_eq!(card.subtitle, "build.example.com · work");
+        assert_eq!(card.body, "Allow? — trust.example.com");
+        let bare = done("claude", None, "mac-mini", 0, true, 180, true, Language::En);
+        assert_eq!(bare.subtitle, "mac-mini");
+        assert_eq!(bare.body, "");
     }
 
     /// What no card shows (B639): the bidi controls, and the control
@@ -708,10 +742,8 @@ mod tests {
             true,
             Language::En,
         );
-        assert_eq!(
-            card.body,
-            "Allow?moc.elpmaxe.tsurt — — build.example.com · work"
-        );
+        assert_eq!(card.body, "Allow?moc.elpmaxe.tsurt —");
+        assert_eq!(card.subtitle, "build.example.com · work");
     }
 
     #[test]
@@ -720,10 +752,12 @@ mod tests {
             let text = format!("a{c}b");
             let finished = done(&text, Some(&text), &text, 0, true, 180, true, Language::En);
             assert_eq!(finished.title, "✓ ab finished", "U+{:04X}", u32::from(*c));
-            assert_eq!(finished.body, "ab — ab", "U+{:04X}", u32::from(*c));
+            assert_eq!(finished.body, "ab", "U+{:04X}", u32::from(*c));
+            assert_eq!(finished.subtitle, "ab", "U+{:04X}", u32::from(*c));
             let waiting = attention(&text, 2, Some(&text), &text, true, true, Language::En);
             assert_eq!(waiting.title, "ab +1 needs you", "U+{:04X}", u32::from(*c));
-            assert_eq!(waiting.body, "ab — ab", "U+{:04X}", u32::from(*c));
+            assert_eq!(waiting.body, "ab", "U+{:04X}", u32::from(*c));
+            assert_eq!(waiting.subtitle, "ab", "U+{:04X}", u32::from(*c));
         }
     }
 
@@ -741,7 +775,8 @@ mod tests {
             Language::En,
         );
         assert_eq!(card.title, "claude code needs you");
-        assert_eq!(card.body, "Allow? — mac-mini · work");
+        assert_eq!(card.body, "Allow?");
+        assert_eq!(card.subtitle, "mac-mini · work");
     }
 
     /// What isn't shown doesn't count toward the cut.

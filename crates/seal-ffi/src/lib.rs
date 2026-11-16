@@ -85,6 +85,7 @@ fn level(level: InterruptionLevel) -> &'static str {
 fn card(card: &Card) -> Value {
     json!({
         "title": card.title,
+        "subtitle": card.subtitle,
         "body": card.body,
         "sound": card.sound,
         "level": level(card.level),
@@ -280,7 +281,8 @@ mod tests {
         let asked = group.push("%3", "attention", 1_790_000_500, true);
         assert_eq!(asked["delivery"], "card");
         assert_eq!(asked["card"]["title"], "claude needs you");
-        assert_eq!(asked["card"]["body"], "Bash: npm test — Mac · work");
+        assert_eq!(asked["card"]["subtitle"], "Mac · work");
+        assert_eq!(asked["card"]["body"], "Bash: npm test");
         assert_eq!((asked["card"]["sound"].as_bool(), asked["card"]["level"].as_str()), (Some(true), Some("timeSensitive")));
         assert_eq!(asked["card"]["userInfo"]["connectionId"], CONN);
         assert_eq!(asked["card"]["userInfo"]["paneId"], "%3");

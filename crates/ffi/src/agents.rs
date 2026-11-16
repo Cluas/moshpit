@@ -127,6 +127,9 @@ pub enum AgentCardLevel {
 pub struct AgentCardValue {
     pub id: String,
     pub title: String,
+    /// Where: the connection's name and the session, the card's subtitle
+    /// (B639).
+    pub subtitle: String,
     pub body: String,
     pub sound: bool,
     pub level: AgentCardLevel,
@@ -183,6 +186,7 @@ fn effect(effect: Effect) -> AgentEffectValue {
             card: AgentCardValue {
                 id: card.id,
                 title: card.text.title,
+                subtitle: card.text.subtitle,
                 body: card.text.body,
                 sound: card.text.sound,
                 level: match card.text.level {

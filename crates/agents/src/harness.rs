@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use moshpit_seal::copy::{InterruptionLevel, Language};
+use moshpit_seal::copy::{CardText, InterruptionLevel, Language};
 use moshpit_seal::standing::{Entry, LIFETIME_SECONDS};
 use moshpit_seal::{Date, PushFinishesFile, PushStandingFile};
 use serde::{Deserialize, Serialize};
@@ -281,7 +281,7 @@ pub fn line(effect: &Effect) -> Option<String> {
             card.id.replace(CONN, "C"),
             card.pane_id,
             card.text.title,
-            card.text.body,
+            laid_out(&card.text),
             card.text.sound,
             level(card.text.level)
         ),
@@ -290,6 +290,18 @@ pub fn line(effect: &Effect) -> Option<String> {
         // The pet's count: no Swift monitor had it, so no transcript line.
         Effect::SaveAnnounced(_) | Effect::Note(_) | Effect::Finished { .. } => return None,
     })
+}
+
+/// A card's words on one line as the Swift monitor laid them out — "what —
+/// where", or "where" — so the transcripts it printed still compare: since
+/// B639 the place is the card's subtitle, and joined back here it reads as
+/// it did. (`AgentsScriptTests` joins the same way.)
+pub fn laid_out(text: &CardText) -> String {
+    if text.body.is_empty() {
+        text.subtitle.clone()
+    } else {
+        format!("{} — {}", text.body, text.subtitle)
+    }
 }
 
 pub fn level(level: InterruptionLevel) -> &'static str {

@@ -532,6 +532,7 @@ final class AgentActivityMonitor {
     static func request(_ card: AgentCardValue) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = card.title
+        content.subtitle = card.subtitle
         content.body = card.body
         content.sound = card.sound ? .default : nil
         switch card.level {
