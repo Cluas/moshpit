@@ -106,6 +106,48 @@ final class ShotsUITest: XCTestCase {
         Thread.sleep(forTimeInterval: seconds)
     }
 
+    /// Waits for the middle of the screen to show something light: a
+    /// QuickLook preview's frame comes up black before its file (B844: 06
+    /// was kept black in every locale), and what it draws lives in another
+    /// process, out of the app's accessibility tree, so the screen itself
+    /// is what can tell.
+    @MainActor
+    private func waitForLight(_ timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        repeat {
+            if Self.lightShare(XCUIScreen.main.screenshot().image) > 0.05 { return true }
+            Thread.sleep(forTimeInterval: 1)
+        } while Date() < end
+        return false
+    }
+
+    /// The share of the screen's middle (the centre 60 % each way) that is
+    /// light, read from a 48 × 48 copy of it.
+    private static func lightShare(_ image: UIImage) -> CGFloat {
+        guard let cg = image.cgImage else { return 0 }
+        let crop = CGRect(x: CGFloat(cg.width) * 0.2, y: CGFloat(cg.height) * 0.2,
+                          width: CGFloat(cg.width) * 0.6, height: CGFloat(cg.height) * 0.6)
+        guard let middle = cg.cropping(to: crop.integral) else { return 0 }
+        let side = 48
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+                bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(middle, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return 0 }
+        var light = 0
+        for i in stride(from: 0, to: pixels.count, by: 4) where
+            Int(pixels[i]) + Int(pixels[i + 1]) + Int(pixels[i + 2]) > 3 * 200 {
+            light += 1
+        }
+        return CGFloat(light) / CGFloat(side * side)
+    }
+
     @MainActor
     private func keep(_ locale: Locale, _ shot: String) {
         let screen = XCUIScreen.main.screenshot()
@@ -323,10 +365,15 @@ final class ShotsUITest: XCTestCase {
                 if file.waitForExistence(timeout: 20) { file.tap() }
             }
             if preview.waitForExistence(timeout: 30) {
-                // The frame comes before the picture (dry run 5 shot it
-                // black): an image in it, or the download's time.
-                if !app.images.firstMatch.waitForExistence(timeout: 20) { settle(8) }
-                settle(2)
+                // The frame comes before the picture (dry run 5, B844 kept
+                // it black): the chart itself, white, on the screen.
+                guard waitForLight(20) else {
+                    explain(app, locale, "06-preview")
+                    XCTFail("\(locale.name): the preview opened and never showed the chart")
+                    app.terminate()
+                    continue
+                }
+                settle(1)
                 keep(locale, "06-preview")
             } else {
                 explain(app, locale, "06-preview")
