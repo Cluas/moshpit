@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the four strings catalogs: Moshpit/Resources/Localizable.xcstrings (the app),
-Extensions/MoshpitIsland/Localizable.xcstrings (the widget),
-Extensions/MoshpitPush/Localizable.xcstrings (the notification service extension) and
-Extensions/MoshpitShare/Localizable.xcstrings (the share extension).
+"""Generate the three strings catalogs: Moshpit/Resources/Localizable.xcstrings (the app),
+Extensions/MoshpitIsland/Localizable.xcstrings (the widget) and
+Extensions/MoshpitShare/Localizable.xcstrings (the share extension). The notification
+service extension has none: its cards are crates/seal's (copy.rs), in the nine
+languages, since it runs on that core (E7b).
 
 Source language: en (the key IS the English value).
 Each entry carries complete zh-Hans + ja translations inline; zh-Hant, ko, de, es,
@@ -871,8 +872,6 @@ add("%@ %@ %@? Everything in it dies.", "%1$@ %2$@ %3$@？其中的一切都会�
 add("Pane", "窗格", "ペイン")
 # Home tree, window-row long-press: split a new pane off the window.
 add("New Pane", "新建窗格", "新しいペイン")
-# "✓ %@ finished" lives in the PUSH table below: the notification service
-# extension renders the same card and needs the key in its own catalog.
 
 # APNs fallback text. These are not shown by any Swift code: the push relay puts
 # them in the payload as `title-loc-key` / `loc-key`, and iOS resolves them
@@ -1748,19 +1747,6 @@ SHARE["Moshpit uploads and hands over the path the moment that session is live."
     "那个会话一连上，Moshpit 就会上传图片并把路径交过去。",
     "そのセッションがつながった時点で、Moshpit がアップロードしてパスを渡します。")
 
-# ---------- Agent notifications (shared with the push extension) ----------
-# AgentNotificationCopy (MoshpitKit) composes every agent card — the local one
-# the app posts and the pushed one the notification service extension writes.
-# String(localized:) resolves against Bundle.main, which inside the extension is
-# the EXTENSION, so it carries these keys in a catalog of its own.
-PUSH = {}
-def push(key, zh, ja):
-    PUSH[key] = (zh, ja)
-    S[key] = (zh, ja)
-push("✓ %@ finished", "✓ %@ 已完成", "✓ %@ が完了しました")
-push("%@ needs you", "%@ 在等你", "%@ が待っています")
-
-
 # ---------- Info.plist permission texts ----------
 # The English lives in project.yml (XcodeGen regenerates Info.plist from it);
 # it is read from there so the two can never drift. zh-Hans / ja sit here like
@@ -2050,7 +2036,6 @@ def check(paths):
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOGS = [os.path.join(root, "Moshpit/Resources/Localizable.xcstrings"),
             os.path.join(root, "Extensions/MoshpitIsland/Localizable.xcstrings"),
-            os.path.join(root, "Extensions/MoshpitPush/Localizable.xcstrings"),
             os.path.join(root, "Extensions/MoshpitShare/Localizable.xcstrings")]
 INFOPLIST_CATALOG = os.path.join(root, "Moshpit/Resources/InfoPlist.xcstrings")
 
@@ -2059,12 +2044,11 @@ if "--check" in sys.argv:
 
 write_catalog(CATALOGS[0], S)
 write_catalog(CATALOGS[1], ISLAND)
-write_catalog(CATALOGS[2], PUSH)
-write_catalog(CATALOGS[3], SHARE)
+write_catalog(CATALOGS[2], SHARE)
 INFOPLIST_EN = infoplist_english()
 write_catalog(INFOPLIST_CATALOG, {k: INFOPLIST_ZH_JA[k] for k in INFOPLIST_ZH_JA}, english=INFOPLIST_EN)
 
-ALL = dict(S); ALL.update(ISLAND); ALL.update(PUSH); ALL.update(SHARE); ALL.update({k: INFOPLIST_ZH_JA[k] for k in INFOPLIST_ZH_JA})
+ALL = dict(S); ALL.update(ISLAND); ALL.update(SHARE); ALL.update({k: INFOPLIST_ZH_JA[k] for k in INFOPLIST_ZH_JA})
 print("extra locales (scripts/gen/locales/*.json):")
 if not report_locales(ALL):
     raise SystemExit("locale files have problems; see above")

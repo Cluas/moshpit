@@ -648,8 +648,6 @@
   "tmux + mosh aren't installed on this host.": "這台主機上沒裝 tmux 和 mosh。",
   "working": "工作中",
   "idle": "閒置",
-  "✓ %@ finished": "✓ %@ 已完成",
-  "%@ needs you": "%@ 在等你",
   "NSFaceIDUsageDescription": "用 Face ID 解鎖 SSH 金鑰",
   "NSMicrophoneUsageDescription": "語音輸入需要使用麥克風，這樣你可以把指令和提示詞直接說進終端機。音訊會在這部裝置上轉寫，用 Apple 的語音模型或你下載的語音模型，不會上傳到任何地方。",
   "NSSpeechRecognitionUsageDescription": "聽寫在裝置上進行語音辨識。你的語音和轉寫文字都不會離開這部裝置，Moshpit 不使用伺服器端辨識。",

@@ -154,48 +154,6 @@ fn every_divergence_still_tells_the_two_apart() {
     }
 }
 
-/// The two sentences of the notification service's own catalog, as the
-/// Rust renderer holds them.
-#[test]
-fn the_card_sentences_are_the_extensions_catalog() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../Extensions/MoshpitPush/Localizable.xcstrings");
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let catalog = json::parse(&bytes, Dialect::Decoder).expect("the catalog is JSON");
-    let strings = catalog
-        .as_object()
-        .and_then(|c| c.get("strings"))
-        .and_then(Value::as_object)
-        .expect("strings");
-    let keys: Vec<&str> = strings.keys().collect();
-    assert_eq!(keys.len(), 2, "the extension's catalog grew: {keys:?}");
-    for language in moshpit_seal::Language::ALL {
-        for (key, ours) in [
-            ("✓ %@ finished", language.finished_template()),
-            ("%@ needs you", language.needs_you_template()),
-        ] {
-            let theirs = if language.code() == "en" {
-                key.to_owned()
-            } else {
-                strings
-                    .get(key)
-                    .and_then(Value::as_object)
-                    .and_then(|entry| entry.get("localizations"))
-                    .and_then(Value::as_object)
-                    .and_then(|l| l.get(language.code()))
-                    .and_then(Value::as_object)
-                    .and_then(|l| l.get("stringUnit"))
-                    .and_then(Value::as_object)
-                    .and_then(|unit| unit.get("value"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_else(|| panic!("{key} has no {}", language.code()))
-                    .to_owned()
-            };
-            assert_eq!(ours, theirs, "{key} in {}", language.code());
-        }
-    }
-}
-
 /// `numeric_table.rs` is what the Swift runtime's `numericType` says.
 #[test]
 fn the_numeric_table_is_swifts() {

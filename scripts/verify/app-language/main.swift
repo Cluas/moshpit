@@ -6,7 +6,6 @@ import Foundation
 let root = CommandLine.arguments[1]
 let app = CommandLine.arguments[2]
 let island = Bundle(path: root + "/island.bundle")!
-let push = Bundle(path: root + "/push.bundle")!
 var failures = 0
 
 func expect(_ label: String, _ got: String, _ want: String) {
@@ -25,13 +24,11 @@ print("system \(system), Moshpit \(app)")
 let want: [String: [String: String]] = [
     "en": [
         "state": "done", "header": "1 needs you · 2 done", "more": "+3 more",
-        "stale": "paused — open Moshpit to refresh", "finished": "✓ claude finished",
-        "asking": "claude +1 needs you", "minutes": "12 min",
+        "stale": "paused — open Moshpit to refresh", "minutes": "12 min",
     ],
     "zh-Hans": [
         "state": "已完成", "header": "1 个在等你 · 2 个已完成", "more": "还有 3 个",
-        "stale": "已暂停，打开 Moshpit 刷新", "finished": "✓ claude 已完成",
-        "asking": "claude +1 在等你", "minutes": "12分钟",
+        "stale": "已暂停，打开 Moshpit 刷新", "minutes": "12分钟",
     ],
 ]
 guard let w = want[app] else { fatalError("no expectations for \(app)") }
@@ -43,9 +40,8 @@ expect("island header",
        + AppLanguage.string("\(2) done", language: app, in: island), w["header"]!)
 expect("island more", AppLanguage.string("+\(3) more", language: app, in: island), w["more"]!)
 expect("island stale", AppLanguage.string("paused — open Moshpit to refresh", language: app, in: island), w["stale"]!)
-// The push extension's catalog — which has no en.lproj at all: its English is the keys.
-expect("push finished", AppLanguage.string("✓ \("claude") finished", language: app, in: push), w["finished"]!)
-expect("push asking", AppLanguage.string("\("claude +1") needs you", language: app, in: push), w["asking"]!)
+// The pushed cards are crates/seal's, in the language the app recorded
+// (E7b): its own tests hold them, the extension has no catalog.
 // A finished turn's duration, in that language's locale.
 expect("duration", Duration.seconds(12 * 60).formatted(
     .units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2)

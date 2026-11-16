@@ -648,8 +648,6 @@
   "tmux + mosh aren't installed on this host.": "tmux y mosh no están instalados en este host.",
   "working": "trabajando",
   "idle": "inactivo",
-  "✓ %@ finished": "✓ %@ terminó",
-  "%@ needs you": "%@ te necesita",
   "NSFaceIDUsageDescription": "Desbloquea las claves SSH con Face ID",
   "NSMicrophoneUsageDescription": "La entrada de voz usa el micrófono para que puedas dictar comandos y prompts directamente al terminal. El audio se transcribe en este dispositivo, con el modelo de voz de Apple o con un modelo de voz que hayas descargado, y no se sube a ningún sitio.",
   "NSSpeechRecognitionUsageDescription": "El dictado reconoce la voz en el propio dispositivo. Ni tu voz ni la transcripción salen de él; Moshpit no usa reconocimiento en servidores.",

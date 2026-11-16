@@ -648,8 +648,6 @@
   "tmux + mosh aren't installed on this host.": "이 호스트에 tmux와 mosh가 설치되어 있지 않습니다.",
   "working": "작업 중",
   "idle": "유휴",
-  "✓ %@ finished": "✓ %@ 완료",
-  "%@ needs you": "%@ 대기 중",
   "NSFaceIDUsageDescription": "Face ID로 SSH 키를 잠금 해제합니다",
   "NSMicrophoneUsageDescription": "음성 입력에 마이크를 사용해 명령과 프롬프트를 터미널에 말로 입력할 수 있습니다. 오디오는 Apple 음성 모델이나 다운로드한 음성 모델로 이 기기에서 텍스트로 바뀌며, 어디에도 업로드되지 않습니다.",
   "NSSpeechRecognitionUsageDescription": "받아쓰기는 기기 안에서 음성을 인식합니다. 음성과 변환된 텍스트는 이 기기를 벗어나지 않으며, Moshpit은 서버 측 인식을 사용하지 않습니다.",
