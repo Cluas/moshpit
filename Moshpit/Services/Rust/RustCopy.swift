@@ -48,9 +48,22 @@ enum RustCopy {
     // MARK: Failures
 
     /// The card's text for a failed connect of `connection` (nil: one the
-    /// copy can't name, which says it without its name).
+    /// copy can't name, which says it without its name). On the jump
+    /// host's leg (`leg`, its saved name; F1) the jump host comes first, as
+    /// Home's card says it: "the password is wrong" alone would read as
+    /// the host's own — and `connection` is then the jump host's. What the
+    /// jump host answered about the host behind it names it already.
     static func failure(kind: FailureKindValue, cause: FailureCauseValue,
-                        connection: ServerConnection? = nil) -> String {
+                        connection: ServerConnection? = nil, leg: String? = nil) -> String {
+        let text = words(kind: kind, cause: cause, connection: connection)
+        guard let leg, !leg.isEmpty else { return text }
+        if case .tunnel = cause { return text }
+        return String(localized: "Jump host “\(leg)”: \(text)")
+    }
+
+    /// What happened, whichever leg it happened on.
+    private static func words(kind: FailureKindValue, cause: FailureCauseValue,
+                              connection: ServerConnection?) -> String {
         switch cause {
         case .unreachable(let host, let port, let why):
             return unreachable(host: host, port: port, why: why)
@@ -73,6 +86,27 @@ enum RustCopy {
                 return String(localized: "mosh-server didn't start within \(Int(seconds)) seconds. A startup file on the host may be waiting for input.")
             case .unreadable:
                 return String(localized: "mosh-server didn't start: it never said where to reach it.")
+            }
+        case .tunnel(let via, let host, let port, let why):
+            // The jump host's answer about the host behind it (F1): a host
+            // on its network, so never the local-network permission.
+            switch why {
+            case .prohibited:
+                return String(localized: "The jump host “\(via)” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).")
+            case .timedOut:
+                return String(localized: "The jump host “\(via)” got no answer from \(host) in time.")
+            case .connectFailed, .other:
+                return String(localized: "The jump host “\(via)” couldn't reach \(host) on port \(String(port)).")
+            }
+        case .route(let why):
+            // Never a direct dial instead (F1).
+            switch why {
+            case .deleted:
+                return String(localized: "The connection this one goes through was deleted. Pick another in Edit.")
+            case .chained:
+                return String(localized: "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.")
+            case .unresolved:
+                return String(localized: "This connection goes through another, but which one couldn't be told. Pick it again in Edit.")
             }
         case .plain:
             switch kind {

@@ -10961,6 +10961,58 @@
         }
       }
     },
+    "Connect via": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden über"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectar a través de"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter via"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経由"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경유"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectar via"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經由"
+          }
+        }
+      }
+    },
     "Connected": {
       "localizations": {
         "de": {
@@ -11373,6 +11425,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "連線"
+          }
+        }
+      }
+    },
+    "Connections that go through it (%@) won't connect until another is picked in Edit.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindungen über diese (%@) verbinden sich erst wieder, wenn unter „Bearbeiten“ eine andere gewählt ist."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las conexiones que pasan por ella (%@) no se conectarán hasta que elijas otra en Editar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les connexions qui passent par celle-ci (%@) ne se connecteront plus tant qu’une autre n’est pas choisie dans Modifier."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これを経由する接続（%@）は、編集で別の接続を選ぶまで接続できません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결을 경유하는 연결(%@)은 편집에서 다른 연결을 고를 때까지 연결되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As conexões que passam por ela (%@) não vão conectar até você escolher outra em Editar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由它的连接（%@）在编辑里重新选择之前都连不上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經由它的連線（%@）在編輯裡重新選擇之前都連不上。"
           }
         }
       }
@@ -14979,6 +15083,58 @@
         }
       }
     },
+    "Deleted connection": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelöschte Verbindung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexión eliminada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion supprimée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除された接続"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제된 연결"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexão excluída"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除的连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已刪除的連線"
+          }
+        }
+      }
+    },
     "Deletes the branch checkout under ~/.herdr/worktrees. %@ itself is untouched.": {
       "localizations": {
         "de": {
@@ -15235,6 +15391,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "挖挖"
+          }
+        }
+      }
+    },
+    "Direct": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direktverbindung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexión directa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion directe"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接接続"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 연결"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conexão direta"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接連線"
           }
         }
       }
@@ -22567,6 +22775,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "JSON"
+          }
+        }
+      }
+    },
+    "JUMP HOST": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JUMP-HOST"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HOST DE SALTO"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HÔTE DE REBOND"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HOST DE SALTO"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主機"
           }
         }
       }
@@ -41957,6 +42217,58 @@
         }
       }
     },
+    "Signs in to it first with its own key or password, then reaches this host from there.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meldet sich zuerst dort mit deren eigenem Schlüssel oder Passwort an und erreicht diesen Host von dort aus."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero inicia sesión en ella con su propia clave o contraseña y, desde ahí, llega a este host."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecte d’abord à celle-ci avec sa propre clé ou son mot de passe, puis rejoint cet hôte depuis là."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まずその接続自身の鍵かパスワードでログインし、そこからこのホストに接続します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 그 연결의 키나 암호로 로그인한 뒤, 거기서 이 호스트에 연결합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primeiro entra nela com a própria chave ou senha e, de lá, chega a este host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先用那条连接自己的密钥或密码登录，再从那里连到这台主机。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先用那條連線自己的金鑰或密碼登入，再從那裡連到這台主機。"
+          }
+        }
+      }
+    },
     "Single shell, no session persistence": {
       "localizations": {
         "de": {
@@ -46221,6 +46533,110 @@
         }
       }
     },
+    "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Verbindung, über die diese geht, läuft selbst über eine andere. Wähle unter „Bearbeiten“ eine, die sich direkt verbindet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión por la que pasa esta pasa a su vez por otra. Elige en Editar una que se conecte directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion par laquelle passe celle-ci passe elle-même par une autre. Choisis dans Modifier une connexion directe."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経由する接続がさらに別の接続を経由しています。編集で直接接続するものを選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경유하는 연결이 또 다른 연결을 경유합니다. 편집에서 직접 연결하는 것을 고르세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conexão pela qual esta passa passa por outra. Escolha em Editar uma que se conecte diretamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由的连接自己也经由别的连接。请在编辑里换一条直接连接的。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經由的連線自己也經由別的連線。請在編輯裡換一條直接連線的。"
+          }
+        }
+      }
+    },
+    "The connection this one goes through was deleted. Pick another in Edit.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Verbindung, über die diese geht, wurde gelöscht. Wähle unter „Bearbeiten“ eine andere."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se eliminó la conexión por la que pasa esta. Elige otra en Editar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion par laquelle passe celle-ci a été supprimée. Choisis-en une autre dans Modifier."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経由する接続が削除されました。編集で別の接続を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "경유하던 연결이 삭제되었습니다. 편집에서 다른 연결을 고르세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A conexão pela qual esta passa foi excluída. Escolha outra em Editar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经由的连接已被删除，请在编辑里重新选择。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經由的連線已被刪除，請在編輯裡重新選擇。"
+          }
+        }
+      }
+    },
     "The host didn't allow it. Check that you can write to this folder.": {
       "localizations": {
         "de": {
@@ -46789,6 +47205,162 @@
           "stringUnit": {
             "state": "translated",
             "value": "圖像和強調色分開選，是因為 iOS 只允許在 App 內建的幾個圖像之間切換，沒辦法替自訂強調色現做一個配套圖像。"
+          }
+        }
+      }
+    },
+    "The jump host “%@” couldn't reach %@ on port %@.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Jump-Host „%@“ hat %@ auf Port %@ nicht erreicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El host de salto «%@» no pudo llegar a %@ en el puerto %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’hôte de rebond « %@ » n’a pas pu joindre %@ sur le port %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台「%@」から %@ のポート %@ に接続できませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트 ‘%@’가 %@의 %@번 포트에 연결하지 못했습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O host de salto “%@” não alcançou %@ na porta %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主机「%@」连不上 %@ 的 %@ 端口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主機「%@」連不上 %@ 的 %@ 連接埠。"
+          }
+        }
+      }
+    },
+    "The jump host “%@” doesn't forward connections. Turn on TCP forwarding there (AllowTcpForwarding).": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Jump-Host „%@“ leitet keine Verbindungen weiter. Schalte dort die TCP-Weiterleitung ein (AllowTcpForwarding)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El host de salto «%@» no reenvía conexiones. Activa allí el reenvío TCP (AllowTcpForwarding)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’hôte de rebond « %@ » ne relaie pas les connexions. Active le transfert TCP sur celui-ci (AllowTcpForwarding)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台「%@」は接続を転送しません。そちらで TCP 転送（AllowTcpForwarding）を有効にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트 ‘%@’가 연결을 전달하지 않습니다. 거기서 TCP 전달(AllowTcpForwarding)을 켜세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O host de salto “%@” não encaminha conexões. Ative lá o encaminhamento TCP (AllowTcpForwarding)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主机「%@」不转发连接。请在它上面打开 TCP 转发（AllowTcpForwarding）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主機「%@」不轉發連線。請在它上面開啟 TCP 轉發（AllowTcpForwarding）。"
+          }
+        }
+      }
+    },
+    "The jump host “%@” got no answer from %@ in time.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Jump-Host „%@“ hat von %@ nicht rechtzeitig Antwort bekommen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El host de salto «%@» no obtuvo respuesta de %@ a tiempo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’hôte de rebond « %@ » n’a pas eu de réponse de %@ à temps."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台「%@」から %@ への接続が時間内に応答しませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트 ‘%@’가 제때 %@의 응답을 받지 못했습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O host de salto “%@” não teve resposta de %@ a tempo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主机「%@」没能及时连上 %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主機「%@」沒能及時連上 %@。"
           }
         }
       }
@@ -48661,6 +49233,110 @@
           "stringUnit": {
             "state": "translated",
             "value": "這個強調色會被移除。內建強調色不受影響。"
+          }
+        }
+      }
+    },
+    "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Verbindung geht über eine andere, aber welche, ließ sich nicht feststellen. Wähle sie unter „Bearbeiten“ erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión pasa por otra, pero no se pudo saber cuál. Vuelve a elegirla en Editar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion passe par une autre, mais impossible de savoir laquelle. Choisis-la à nouveau dans Modifier."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続は別の接続を経由しますが、どれか判断できませんでした。編集でもう一度選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결은 다른 연결을 경유하지만 어느 것인지 알 수 없습니다. 편집에서 다시 고르세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexão passa por outra, mas não deu para saber qual. Escolha de novo em Editar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条连接要经由别的连接，但没能确定是哪一条。请在编辑里重新选择。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這條連線要經由別的連線，但沒能確定是哪一條。請在編輯裡重新選擇。"
+          }
+        }
+      }
+    },
+    "This connection is the jump host for %@, so it connects directly.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Verbindung ist der Jump-Host für %@ und verbindet sich deshalb direkt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión es el host de salto de %@, así que se conecta directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion est l’hôte de rebond de %@ ; elle se connecte donc directement."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続は %@ の踏み台なので、直接接続します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결은 %@의 점프 호스트라서 직접 연결합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexão é o host de salto de %@, então se conecta diretamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条连接是 %@ 的跳板主机，所以它只能直接连接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這條連線是 %@ 的跳板主機，所以它只能直接連線。"
           }
         }
       }
@@ -54745,6 +55421,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "這台主機上沒裝 mosh。"
+          }
+        }
+      }
+    },
+    "mosh needs UDP straight to the host; through another connection it's SSH only.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh braucht UDP direkt zum Host; über eine andere Verbindung geht nur SSH."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh necesita UDP directo hasta el host; a través de otra conexión solo hay SSH."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh a besoin d’UDP direct jusqu’à l’hôte ; via une autre connexion, c’est SSH uniquement."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh はホストまで直接 UDP が届く必要があるので、別の接続を経由するときは SSH だけです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh는 호스트까지 UDP가 바로 닿아야 하므로, 다른 연결을 경유할 때는 SSH만 씁니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O mosh precisa de UDP direto até o host; por outra conexão, só SSH."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 要用 UDP 直接连到主机，经由别的连接时只能用 SSH。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 要用 UDP 直接連到主機，經由別的連線時只能用 SSH。"
           }
         }
       }

@@ -44,6 +44,10 @@ use moshpit_session::{
     ProxyWhy, ResumeOutcome, SessionMemory, SessionState, Sessions, Timing, TmuxAction, TmuxView,
     Transport, TunnelWhy, UdpFlow, UdpNetwork, UnreachableWhy,
 };
+use moshpit_session::{Hop, HopBroken, Via};
+use moshpit_store::connections::{Route, ServerConnection};
+
+use crate::store::ConnectionRecord;
 use moshpit_ssh::{
     Auth, BoxFuture, HardwareKey, HostSignature, KeySigner, KnownHosts, LinkFault, SignerError,
     Socks5Proxy, Target,
@@ -181,6 +185,62 @@ pub struct SessionSpec {
     /// The connection was connected to before (its `lastConnectedAt`,
     /// B783): a new host's card says so.
     pub connected_before: bool,
+    /// Through another saved connection ([`session_hop`], F1); `None`:
+    /// straight to the host.
+    #[uniffi(default = None)]
+    pub hop: Option<SessionHop>,
+}
+
+/// How a session reaches its host when not straight there (F1).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum SessionHop {
+    /// Through this saved connection's SSH: its id (its credentials), its
+    /// name (what a failure on its leg is told by), its address and proxy.
+    Through {
+        connection_id: String,
+        name: String,
+        user: String,
+        host: String,
+        port: u16,
+        proxy_host: Option<String>,
+        proxy_port: Option<u16>,
+    },
+    /// Through a connection that was deleted: fails at once, never dialled
+    /// direct instead.
+    Deleted,
+    /// Through one that goes through another itself: more than one hop.
+    Chained,
+}
+
+/// How the saved `connection` reaches its host, checked against `saved`
+/// (F1): what [`SessionSpec::hop`] takes. `None`: straight there.
+#[uniffi::export]
+pub fn session_hop(
+    connection: ConnectionRecord,
+    saved: Vec<ConnectionRecord>,
+) -> Option<SessionHop> {
+    let connection = ServerConnection::try_from(connection).ok()?;
+    let saved: Vec<ServerConnection> = saved
+        .into_iter()
+        .filter_map(|record| ServerConnection::try_from(record).ok())
+        .collect();
+    match connection.route(&saved) {
+        Route::Direct => None,
+        Route::Through(jump) => Some(SessionHop::Through {
+            connection_id: jump.id.to_string(),
+            name: jump.display_name(),
+            user: jump.username.clone(),
+            host: jump.host.clone(),
+            port: u16::try_from(jump.port).unwrap_or(22),
+            proxy_host: (jump.use_socks_proxy == Some(true))
+                .then(|| jump.socks_proxy_host.clone())
+                .flatten()
+                .filter(|h| !h.is_empty()),
+            proxy_port: jump.socks_proxy_port.and_then(|p| u16::try_from(p).ok()),
+        }),
+        Route::Deleted => Some(SessionHop::Deleted),
+        Route::Chained => Some(SessionHop::Chained),
+    }
 }
 
 impl SessionSpec {
@@ -225,6 +285,42 @@ impl SessionSpec {
         }
         spec.initial_grid = (self.cols.max(1), self.rows.max(1));
         spec.connected_before = self.connected_before;
+        spec.hop = match &self.hop {
+            // Fail closed (F1): a connection the store knows to go through
+            // another, reaching here without its way (a caller that left it
+            // out, a save it missed), is refused — never dialled direct.
+            None if crate::store::goes_through(&self.connection_id) => {
+                Hop::Broken(HopBroken::Unresolved)
+            }
+            None => Hop::Direct,
+            Some(SessionHop::Through {
+                connection_id,
+                name,
+                user,
+                host,
+                port,
+                proxy_host,
+                proxy_port,
+            }) => Hop::Through(Box::new(Via {
+                connection_id: connection_id.clone(),
+                name: name.clone(),
+                target: Target::new(user.clone(), moshpit_ssh::unbracketed(host), *port),
+                proxy: proxy_host
+                    .as_ref()
+                    .filter(|host| !host.is_empty())
+                    .map(|host| {
+                        Socks5Proxy::new(moshpit_ssh::unbracketed(host), proxy_port.unwrap_or(1080))
+                    }),
+            })),
+            Some(SessionHop::Deleted) => Hop::Broken(HopBroken::Deleted),
+            Some(SessionHop::Chained) => Hop::Broken(HopBroken::Chained),
+        };
+        // Through a jump host: SSH only, and its proxy, not one of this
+        // connection's own.
+        if !spec.hop.is_direct() {
+            spec.proxy = None;
+            spec.protocol = Protocol::Ssh;
+        }
         spec
     }
 }
@@ -387,6 +483,10 @@ pub enum SessionStateValue {
         /// English, for the log only.
         log: String,
         retryable: bool,
+        /// The jump host's saved name when the failure is on its leg (F1):
+        /// its credentials, its key, its answer about the host behind it.
+        /// `None`: the connection's own host.
+        leg: Option<String>,
     },
 }
 
@@ -413,6 +513,28 @@ pub enum FailureKindValue {
     Channel,
     MoshBootstrap,
     Lost,
+    /// The way through another connection can't be taken (F1).
+    Route,
+}
+
+/// Why a jump host didn't open the way to the host behind it (F1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum TunnelWhyValue {
+    ConnectFailed,
+    Prohibited,
+    TimedOut,
+    Other,
+}
+
+/// Why a connection's way through another can't be taken (F1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum RouteWhyValue {
+    /// The connection it went through was deleted.
+    Deleted,
+    /// More than one hop.
+    Chained,
+    /// The connect wasn't told which (refused, never dialled direct).
+    Unresolved,
 }
 
 /// Why nothing answered.
@@ -517,6 +639,17 @@ pub enum FailureCauseValue {
     },
     MoshBootstrap {
         why: MoshWhyValue,
+    },
+    /// The jump host `via` (its saved name) couldn't reach `host:port`
+    /// (F1): a host on its network, not the device's.
+    Tunnel {
+        via: String,
+        host: String,
+        port: u16,
+        why: TunnelWhyValue,
+    },
+    Route {
+        why: RouteWhyValue,
     },
 }
 
@@ -1478,18 +1611,17 @@ fn failure_value(failure: &Failure) -> SessionStateValue {
             FailureKind::Channel => FailureKindValue::Channel,
             FailureKind::MoshBootstrap => FailureKindValue::MoshBootstrap,
             FailureKind::Lost => FailureKindValue::Lost,
-            // F1's jump hosts are the NSH form's: the Swift app's specs go
-            // direct and never fail this way. Said as the nearest.
-            FailureKind::Route => FailureKindValue::Unreachable,
+            FailureKind::Route => FailureKindValue::Route,
         },
-        cause: cause_value(&failure.cause),
+        cause: cause_value(failure),
         log: failure.log.clone(),
         retryable: failure.retryable,
+        leg: failure.leg.clone(),
     }
 }
 
-pub(crate) fn cause_value(cause: &Cause) -> FailureCauseValue {
-    match cause {
+pub(crate) fn cause_value(failure: &Failure) -> FailureCauseValue {
+    match &failure.cause {
         Cause::Plain => FailureCauseValue::Plain,
         Cause::Unreachable { host, port, why } => FailureCauseValue::Unreachable {
             host: host.clone(),
@@ -1535,16 +1667,24 @@ pub(crate) fn cause_value(cause: &Cause) -> FailureCauseValue {
             host: host.clone(),
             port: *port,
         },
-        // F1 (see `failure_value`): never from the Swift app's specs.
-        Cause::Tunnel { host, port, why } => FailureCauseValue::Unreachable {
+        Cause::Tunnel { host, port, why } => FailureCauseValue::Tunnel {
+            via: failure.leg.clone().unwrap_or_default(),
             host: host.clone(),
             port: *port,
             why: match why {
-                TunnelWhy::TimedOut => UnreachableValue::TimedOut,
-                _ => UnreachableValue::Other,
+                TunnelWhy::ConnectFailed => TunnelWhyValue::ConnectFailed,
+                TunnelWhy::Prohibited => TunnelWhyValue::Prohibited,
+                TunnelWhy::TimedOut => TunnelWhyValue::TimedOut,
+                TunnelWhy::Other => TunnelWhyValue::Other,
             },
         },
-        Cause::Route(_) => FailureCauseValue::Plain,
+        Cause::Route(why) => FailureCauseValue::Route {
+            why: match why {
+                HopBroken::Deleted => RouteWhyValue::Deleted,
+                HopBroken::Chained => RouteWhyValue::Chained,
+                HopBroken::Unresolved => RouteWhyValue::Unresolved,
+            },
+        },
         Cause::Credentials(why) => FailureCauseValue::Credentials {
             why: match why {
                 CredentialsWhy::Rejected { user } => {
@@ -1695,6 +1835,76 @@ mod tests {
     /// B337: the session layer's word that the server has no session
     /// reaches the app, where the terminal shows the empty state with its
     /// Create over mosh's waiting renderer.
+    /// F1: a saved connection through another reaches the core as a hop
+    /// through that one — its id, name, address and proxy — SSH only and
+    /// without a proxy of its own; through one deleted, a hop that fails.
+    #[test]
+    fn f1_a_spec_goes_through_the_saved_jump_host() {
+        use moshpit_seal::foundation::{date::Date, uuid::Uuid};
+        let made = || ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+        let mut bastion = made();
+        bastion.name = "bastion".into();
+        bastion.username = "dev".into();
+        bastion.host = "[2001:db8::1]".into();
+        bastion.port = 2222;
+        bastion.use_socks_proxy = Some(true);
+        bastion.socks_proxy_host = Some("192.0.2.9".into());
+        let mut hpc = made();
+        hpc.via_connection_id = Some(bastion.id);
+        let saved: Vec<ConnectionRecord> = [&bastion, &hpc].map(ConnectionRecord::from).to_vec();
+        let hop = session_hop(ConnectionRecord::from(&hpc), saved.clone()).unwrap();
+        assert_eq!(
+            hop,
+            SessionHop::Through {
+                connection_id: bastion.id.to_string(),
+                name: "bastion".into(),
+                user: "dev".into(),
+                host: "[2001:db8::1]".into(),
+                port: 2222,
+                proxy_host: Some("192.0.2.9".into()),
+                proxy_port: None,
+            }
+        );
+        let spec = SessionSpec {
+            connection_id: hpc.id.to_string(),
+            user: "me".into(),
+            host: "node01".into(),
+            port: 22,
+            proxy_host: Some("192.0.2.10".into()),
+            proxy_port: None,
+            mosh: true,
+            multiplexer: SessionMultiplexer::Tmux,
+            tmux_path: None,
+            mosh_server_path: None,
+            mosh_port_low: None,
+            mosh_port_high: None,
+            herdr_path: None,
+            locale: String::new(),
+            cols: 80,
+            rows: 24,
+            connected_before: false,
+            hop: Some(hop),
+        }
+        .core();
+        let Hop::Through(via) = &spec.hop else {
+            panic!("{:?}", spec.hop)
+        };
+        assert_eq!(via.target, Target::new("dev", "2001:db8::1", 2222));
+        assert_eq!(via.proxy, Some(Socks5Proxy::new("192.0.2.9", 1080)));
+        assert_eq!(spec.protocol, Protocol::Ssh);
+        assert_eq!(spec.proxy, None);
+        // Straight there: no hop.
+        assert_eq!(session_hop(ConnectionRecord::from(&bastion), saved), None);
+        // The jump host deleted.
+        assert_eq!(
+            session_hop(
+                ConnectionRecord::from(&hpc),
+                vec![ConnectionRecord::from(&hpc)]
+            ),
+            Some(SessionHop::Deleted)
+        );
+    }
+
     #[test]
     fn a_tmux_server_with_no_session_says_so_to_the_app() {
         let mut view = TmuxView {
@@ -1762,6 +1972,24 @@ mod tests {
         }
     }
 
+    /// A failure on the jump host's leg says whose (F1): the card and the
+    /// alert put its name first; one on the host's own leg says nothing.
+    #[test]
+    fn f1_a_failure_says_which_leg_it_is_on() {
+        let rejected =
+            Failure::credentials(CredentialsWhy::Rejected { user: "dev".into() }, "rejected");
+        let SessionStateValue::Failed { leg, .. } =
+            failure_value(&rejected.clone().on_jump("bastion"))
+        else {
+            panic!()
+        };
+        assert_eq!(leg.as_deref(), Some("bastion"));
+        let SessionStateValue::Failed { leg, .. } = failure_value(&rejected) else {
+            panic!()
+        };
+        assert_eq!(leg, None);
+    }
+
     #[test]
     fn a_spec_becomes_the_cores() {
         let spec = SessionSpec {
@@ -1782,6 +2010,7 @@ mod tests {
             cols: 0,
             rows: 40,
             connected_before: false,
+            hop: None,
         };
         let core = spec.core();
         assert_eq!(core.connection_id, spec.connection_id);
@@ -1822,6 +2051,7 @@ mod tests {
             cols: 80,
             rows: 24,
             connected_before: false,
+            hop: None,
         };
         let core = spec.core();
         assert_eq!(core.target, Target::new("me", "2001:db8::1", 22));
@@ -1863,7 +2093,8 @@ mod tests {
                             changed: true
                         },
                         log: "refused".into(),
-                        retryable: false
+                        retryable: false,
+                        leg: None
                     }
                 }
             })

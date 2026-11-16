@@ -45,6 +45,8 @@ struct MoshpitApp: App {
         HostCare.shared.connectionStore = store
         let hub = SessionHub(metrics: metrics)
         HostCare.shared.hub = hub
+        // A connection through another (F1) reads its jump host from here.
+        RustSessionDriver.savedConnections = { [weak store] in store?.connections ?? [] }
         let sshKeys = AppStores.sshKeys()
         // A sign-in with a managed key is that key's last use (B601).
         hub.signedIn = { [weak sshKeys, weak store] connection in

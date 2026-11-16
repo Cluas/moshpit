@@ -434,6 +434,16 @@ fn reason_words(reason: FailureReason) -> Option<String> {
         FailureReason::Unreachable => t!("Couldn't reach the host"),
         FailureReason::Timeout => t!("Timed out"),
         FailureReason::Proxy => t!("The proxy didn't connect"),
+        // Never a direct dial instead (F1).
+        FailureReason::ViaDeleted => {
+            t!("The connection this one goes through was deleted. Pick another in Edit.")
+        }
+        FailureReason::ViaChained => t!(
+            "The connection this one goes through goes through another itself. Pick one that connects directly, in Edit."
+        ),
+        FailureReason::ViaUnresolved => t!(
+            "This connection goes through another, but which one couldn't be told. Pick it again in Edit."
+        ),
         FailureReason::Other => return None,
     })
 }

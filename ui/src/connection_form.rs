@@ -38,7 +38,11 @@
 //!
 //! The sections are §6.5's: CONNECTION, SIGN IN, MOSH, PROXY, ADVANCED,
 //! and Delete connection… when editing; each long explanation of today's
-//! form is one line. The identifiers UI tests know stay (`save-connection`,
+//! form is one line. JUMP HOST (F1), before MOSH, picks another saved
+//! connection to reach this host through (`ssh -J`): with one picked,
+//! mosh is off and says why (its UDP can't take the way) and PROXY goes
+//! (the jump host's own proxy applies to its leg). A connection others go
+//! through can't pick one (one hop): its row is off and names them. The identifiers UI tests know stay (`save-connection`,
 //! `toggle-use-mosh`, `key-picker-row`, `private-key-editor`,
 //! `multiplexer-picker`, `connection-form-password`); a field is
 //! `connection-form-<name>`, its control `-input`, its label `-label`, its
@@ -171,6 +175,18 @@ pub struct FormState {
     /// keyboard. Nothing is kept then (`secrets`' stored flags are off).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing: Option<Missing>,
+    /// The saved connection this one goes through (its id; F1); empty:
+    /// straight to its host.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub via: String,
+    /// What it may go through (the host's, at message time): the other
+    /// saved connections that reach their hosts directly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub via_choices: Vec<ViaChoice>,
+    /// What the connections that go through this one are called: a jump
+    /// host goes straight to its own host, so this one can't pick one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub via_users: Vec<String>,
 }
 
 /// The secret a connection names that this device doesn't hold (B782): a
@@ -200,6 +216,22 @@ impl Missing {
             ),
         }
     }
+}
+
+/// A saved connection this one can go through (F1), as the menu shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViaChoice {
+    pub id: String,
+    /// Its name ("bastion").
+    pub name: String,
+    /// `user@host`, under the name.
+    pub detail: String,
+}
+
+/// Whether the draft goes through another connection (F1).
+pub fn goes_through(state: &FormState) -> bool {
+    !state.via.is_empty()
 }
 
 /// Another saved connection, as the form compares itself with it (B532).
@@ -596,6 +628,8 @@ pub enum Field {
     TmuxPath(String),
     HerdrPath(String),
     Emoji(String),
+    /// The connection to go through (its id; empty: none).
+    Via(String),
 }
 
 impl Field {
@@ -617,6 +651,7 @@ impl Field {
             Field::TmuxPath(v) => ("tmuxPath", json!(v)),
             Field::HerdrPath(v) => ("herdrPath", json!(v)),
             Field::Emoji(v) => ("emoji", json!(v)),
+            Field::Via(v) => ("via", json!(v)),
         };
         json!({"ev": "set", "key": key, "value": value})
     }
@@ -639,8 +674,20 @@ impl Field {
             Field::TmuxPath(v) => s.tmux_path = v,
             Field::HerdrPath(v) => s.herdr_path = v,
             Field::Emoji(v) => s.emoji = v,
+            Field::Via(v) => go_through(s, v),
         }
     }
+}
+
+/// `s` going through the connection `via` (empty: none). Through one, mosh
+/// is off (its UDP can't take the way) and so is the SOCKS proxy (the
+/// jump host's own applies to its leg); none again leaves them off.
+pub fn go_through(s: &mut FormState, via: String) {
+    if !via.is_empty() {
+        s.mosh = false;
+        s.socks = false;
+    }
+    s.via = via;
 }
 
 /// Whether the draft can be saved: it has a name and a host (more than
@@ -998,6 +1045,7 @@ fn sections(bar: BarMetrics, scrolled: nav_bar::ScrollEdge, draft: Draft) -> Scr
         connection(&draft),
         duplicate_banner(&draft),
         sign_in(&draft),
+        jump_host(&draft),
         mosh(&draft),
         proxy(&draft),
         advanced(&draft),
@@ -1370,15 +1418,104 @@ fn expanding(
         .into_element()
 }
 
+// --- JUMP HOST ---------------------------------------------------------------------
+
+/// The connection to go through (F1): straight to the host, or another
+/// saved connection reached directly. Shown once there is one to pick,
+/// one picked, or connections that go through this one (then it is off
+/// and names them: a jump host goes straight to its own host).
+fn jump_host(draft: &Draft) -> AnyElement {
+    let state = draft.state;
+    let shown = computed(move || {
+        state.with(|s| {
+            s.as_ref().is_some_and(|s| {
+                !s.via_choices.is_empty() || goes_through(s) || !s.via_users.is_empty()
+            })
+        })
+    });
+    let draft = draft.clone();
+    view()
+        .w_full()
+        .child(when(move || shown.get(), move || jump_host_section(&draft)))
+        .into_element()
+}
+
+fn jump_host_section(draft: &Draft) -> AnyElement {
+    let state = draft.state;
+    let users = draft.read(|s| s.via_users.clone());
+    let section = section()
+        .header(t!("JUMP HOST"))
+        .test_id("connection-form-jump-host");
+    if !users.is_empty() {
+        let names = users
+            .iter()
+            .cloned()
+            .reduce(|list, name| t!("%@, %@", arg1 = list, arg2 = name))
+            .unwrap_or_default();
+        return section
+            .row(
+                row(t!("Connect via"))
+                    .value(t!("Direct"))
+                    .subtitle(t!(
+                        "This connection is the jump host for %@, so it connects directly.",
+                        arg1 = names
+                    ))
+                    .wrap_subtitle()
+                    .disabled(|| true)
+                    .test_id("connection-form-via"),
+            )
+            .into_element();
+    }
+    let (choices, via) = draft.read(|s| (s.via_choices.clone(), s.via.clone()));
+    let mut options = vec![option("", t!("Direct"))];
+    options.extend(
+        choices
+            .iter()
+            .map(|c| option(c.id.clone(), c.name.clone()).detail(c.detail.clone())),
+    );
+    // Saved through one no longer there (deleted, or not one hop any
+    // more): said as such until another is picked; never a direct dial.
+    if !via.is_empty() && !choices.iter().any(|c| c.id == via) {
+        options.push(option(via, t!("Deleted connection")));
+    }
+    let pick = draft.setter(Field::Via);
+    section
+        .item(
+            select(
+                t!("Connect via"),
+                options,
+                move || {
+                    state.with(|s| s.as_ref().map(|s| s.via.clone()).unwrap_or_default().into())
+                },
+                move |id| pick(id.to_string()),
+            )
+            .test_id("connection-form-via"),
+            Inset::Content,
+        )
+        .footer(t!(
+            "Signs in to it first with its own key or password, then reaches this host from there."
+        ))
+        .into_element()
+}
+
 fn mosh(draft: &Draft) -> AnyElement {
     let state = draft.state;
     let on = computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.mosh)));
+    let through = computed(move || state.with(|s| s.as_ref().is_some_and(goes_through)));
     let set = draft.setter(Field::Mosh);
     let toggle = row(t!("Use mosh"))
-        .subtitle(t!("Survives network changes; needs UDP."))
+        .subtitle_with(move || {
+            if through.get() {
+                t!("mosh needs UDP straight to the host; through another connection it's SSH only.")
+            } else {
+                t!("Survives network changes; needs UDP.")
+            }
+            .into()
+        })
         .wrap_subtitle()
         .trailing(
             switch(move || on.get(), set)
+                .disabled(move || through.get())
                 .label(t!("Use mosh"))
                 .test_id("toggle-use-mosh"),
         );
@@ -1430,6 +1567,17 @@ fn mosh_rows(draft: &Draft) -> Vec<AnyElement> {
 // --- PROXY ------------------------------------------------------------------------------
 
 fn proxy(draft: &Draft) -> AnyElement {
+    let state = draft.state;
+    let through = computed(move || state.with(|s| s.as_ref().is_some_and(goes_through)));
+    let draft = draft.clone();
+    // Through a jump host, its own proxy (if any) carries its leg.
+    view()
+        .w_full()
+        .child(when(move || !through.get(), move || proxy_section(&draft)))
+        .into_element()
+}
+
+fn proxy_section(draft: &Draft) -> AnyElement {
     let state = draft.state;
     let on = computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.socks)));
     let set = draft.setter(Field::Socks);

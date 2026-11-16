@@ -149,6 +149,10 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// emoji, checked by the Rust form model). Optional: connections saved
     /// before it existed decode as `nil`, the face.
     var emoji: String?
+    /// The saved connection this one is reached through (a jump host,
+    /// `ssh -J`; F1), picked in the NSH form. Optional: `nil` goes straight
+    /// to the host. The legacy `jumpHost` string is another key, unread.
+    var viaConnectionId: UUID?
 
     /// Whether a connect to this goes to another box than one to `before`:
     /// another host (case aside, as DNS compares names), port or SSH port

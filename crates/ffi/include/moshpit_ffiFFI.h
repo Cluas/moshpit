@@ -2602,6 +2602,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_page_message(RustBuffer message, RustCallS
 int8_t uniffi_moshpit_ffi_fn_func_local_network_may_be_why(RustBuffer host, RustBuffer why, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SESSION_HOP
+RustBuffer uniffi_moshpit_ffi_fn_func_session_hop(RustBuffer connection, RustBuffer saved, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 RustBuffer uniffi_moshpit_ffi_fn_func_store_accent_theme(RustBuffer id, RustBuffer name, RustBuffer accent_hex, RustCallStatus *_Nonnull out_status
@@ -3405,6 +3410,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_page_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 uint16_t uniffi_moshpit_ffi_checksum_func_local_network_may_be_why(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SESSION_HOP
+uint16_t uniffi_moshpit_ffi_checksum_func_session_hop(void
     
 );
 #endif

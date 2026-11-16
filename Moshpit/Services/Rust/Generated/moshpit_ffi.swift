@@ -10814,6 +10814,11 @@ public struct ConnectionDraft: Equatable, Hashable {
      * The emoji field as typed; empty: the host key's face.
      */
     public var emoji: String
+    /**
+     * The saved connection this one goes through (a UUID; F1); empty:
+     * straight to its host.
+     */
+    public var via: String
     public var stored: StoredCredential
     /**
      * The connection's own secret this device doesn't hold (B782,
@@ -10835,7 +10840,11 @@ public struct ConnectionDraft: Equatable, Hashable {
          */moshServerPath: String, useSocksProxy: Bool, socksProxyHost: String, socksProxyPort: String, 
         /**
          * The emoji field as typed; empty: the host key's face.
-         */emoji: String, stored: StoredCredential, 
+         */emoji: String, 
+        /**
+         * The saved connection this one goes through (a UUID; F1); empty:
+         * straight to its host.
+         */via: String = "", stored: StoredCredential, 
         /**
          * The connection's own secret this device doesn't hold (B782,
          * [`connection_draft_secret_missing`]).
@@ -10857,6 +10866,7 @@ public struct ConnectionDraft: Equatable, Hashable {
         self.socksProxyHost = socksProxyHost
         self.socksProxyPort = socksProxyPort
         self.emoji = emoji
+        self.via = via
         self.stored = stored
         self.missing = missing
     }
@@ -10894,6 +10904,7 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
                 socksProxyHost: FfiConverterString.read(from: &buf), 
                 socksProxyPort: FfiConverterString.read(from: &buf), 
                 emoji: FfiConverterString.read(from: &buf), 
+                via: FfiConverterString.read(from: &buf), 
                 stored: FfiConverterTypeStoredCredential.read(from: &buf), 
                 missing: FfiConverterOptionTypeMissingSecret.read(from: &buf)
         )
@@ -10917,6 +10928,7 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
         FfiConverterString.write(value.socksProxyHost, into: &buf)
         FfiConverterString.write(value.socksProxyPort, into: &buf)
         FfiConverterString.write(value.emoji, into: &buf)
+        FfiConverterString.write(value.via, into: &buf)
         FfiConverterTypeStoredCredential.write(value.stored, into: &buf)
         FfiConverterOptionTypeMissingSecret.write(value.missing, into: &buf)
     }
@@ -11095,6 +11107,10 @@ public struct ConnectionRecord: Equatable, Hashable {
      * The emoji its mark shows in place of its host key's face.
      */
     public var emoji: String?
+    /**
+     * The saved connection it goes through (a UUID; F1).
+     */
+    public var viaConnectionId: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -11104,7 +11120,10 @@ public struct ConnectionRecord: Equatable, Hashable {
          */keychainRef: String?, createdAt: Double, lastConnectedAt: Double?, useTmux: Bool, predictModeRaw: String?, roamOnCellular: Bool?, tmuxPath: String?, herdrPath: String?, multiplexerRaw: String?, sshKeyId: String?, sshKeyAlgorithmRaw: String?, useSocksProxy: Bool?, socksProxyHost: String?, socksProxyPort: Int64?, 
         /**
          * The emoji its mark shows in place of its host key's face.
-         */emoji: String?) {
+         */emoji: String?, 
+        /**
+         * The saved connection it goes through (a UUID; F1).
+         */viaConnectionId: String? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -11131,6 +11150,7 @@ public struct ConnectionRecord: Equatable, Hashable {
         self.socksProxyHost = socksProxyHost
         self.socksProxyPort = socksProxyPort
         self.emoji = emoji
+        self.viaConnectionId = viaConnectionId
     }
 
     
@@ -11174,7 +11194,8 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
                 useSocksProxy: FfiConverterOptionBool.read(from: &buf), 
                 socksProxyHost: FfiConverterOptionString.read(from: &buf), 
                 socksProxyPort: FfiConverterOptionInt64.read(from: &buf), 
-                emoji: FfiConverterOptionString.read(from: &buf)
+                emoji: FfiConverterOptionString.read(from: &buf), 
+                viaConnectionId: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -11205,6 +11226,7 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.socksProxyHost, into: &buf)
         FfiConverterOptionInt64.write(value.socksProxyPort, into: &buf)
         FfiConverterOptionString.write(value.emoji, into: &buf)
+        FfiConverterOptionString.write(value.viaConnectionId, into: &buf)
     }
 }
 
@@ -14227,6 +14249,11 @@ public struct SessionSpec: Equatable, Hashable {
      * B783): a new host's card says so.
      */
     public var connectedBefore: Bool
+    /**
+     * Through another saved connection ([`session_hop`], F1); `None`:
+     * straight to the host.
+     */
+    public var hop: SessionHop?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14247,7 +14274,11 @@ public struct SessionSpec: Equatable, Hashable {
         /**
          * The connection was connected to before (its `lastConnectedAt`,
          * B783): a new host's card says so.
-         */connectedBefore: Bool) {
+         */connectedBefore: Bool, 
+        /**
+         * Through another saved connection ([`session_hop`], F1); `None`:
+         * straight to the host.
+         */hop: SessionHop? = nil) {
         self.connectionId = connectionId
         self.user = user
         self.host = host
@@ -14265,6 +14296,7 @@ public struct SessionSpec: Equatable, Hashable {
         self.cols = cols
         self.rows = rows
         self.connectedBefore = connectedBefore
+        self.hop = hop
     }
 
     
@@ -14299,7 +14331,8 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
                 locale: FfiConverterString.read(from: &buf), 
                 cols: FfiConverterUInt16.read(from: &buf), 
                 rows: FfiConverterUInt16.read(from: &buf), 
-                connectedBefore: FfiConverterBool.read(from: &buf)
+                connectedBefore: FfiConverterBool.read(from: &buf), 
+                hop: FfiConverterOptionTypeSessionHop.read(from: &buf)
         )
     }
 
@@ -14321,6 +14354,7 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
         FfiConverterUInt16.write(value.cols, into: &buf)
         FfiConverterUInt16.write(value.rows, into: &buf)
         FfiConverterBool.write(value.connectedBefore, into: &buf)
+        FfiConverterOptionTypeSessionHop.write(value.hop, into: &buf)
     }
 }
 
@@ -18480,6 +18514,14 @@ public enum FailureCauseValue: Equatable, Hashable {
     )
     case moshBootstrap(why: MoshWhyValue
     )
+    /**
+     * The jump host `via` (its saved name) couldn't reach `host:port`
+     * (F1): a host on its network, not the device's.
+     */
+    case tunnel(via: String, host: String, port: UInt16, why: TunnelWhyValue
+    )
+    case route(why: RouteWhyValue
+    )
 
 
 
@@ -18525,6 +18567,12 @@ public struct FfiConverterTypeFailureCauseValue: FfiConverterRustBuffer {
         )
         
         case 9: return .moshBootstrap(why: try FfiConverterTypeMoshWhyValue.read(from: &buf)
+        )
+        
+        case 10: return .tunnel(via: try FfiConverterString.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), why: try FfiConverterTypeTunnelWhyValue.read(from: &buf)
+        )
+        
+        case 11: return .route(why: try FfiConverterTypeRouteWhyValue.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -18586,6 +18634,19 @@ public struct FfiConverterTypeFailureCauseValue: FfiConverterRustBuffer {
             writeInt(&buf, Int32(9))
             FfiConverterTypeMoshWhyValue.write(why, into: &buf)
             
+        
+        case let .tunnel(via,host,port,why):
+            writeInt(&buf, Int32(10))
+            FfiConverterString.write(via, into: &buf)
+            FfiConverterString.write(host, into: &buf)
+            FfiConverterUInt16.write(port, into: &buf)
+            FfiConverterTypeTunnelWhyValue.write(why, into: &buf)
+            
+        
+        case let .route(why):
+            writeInt(&buf, Int32(11))
+            FfiConverterTypeRouteWhyValue.write(why, into: &buf)
+            
         }
     }
 }
@@ -18621,6 +18682,10 @@ public enum FailureKindValue: Equatable, Hashable {
     case channel
     case moshBootstrap
     case lost
+    /**
+     * The way through another connection can't be taken (F1).
+     */
+    case route
 
 
 
@@ -18661,6 +18726,8 @@ public struct FfiConverterTypeFailureKindValue: FfiConverterRustBuffer {
         case 9: return .moshBootstrap
         
         case 10: return .lost
+        
+        case 11: return .route
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -18708,6 +18775,10 @@ public struct FfiConverterTypeFailureKindValue: FfiConverterRustBuffer {
         
         case .lost:
             writeInt(&buf, Int32(10))
+        
+        
+        case .route:
+            writeInt(&buf, Int32(11))
         
         }
     }
@@ -23832,6 +23903,92 @@ public func FfiConverterTypeResumeOutcomeValue_lower(_ value: ResumeOutcomeValue
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Why a connection's way through another can't be taken (F1).
+ */
+
+public enum RouteWhyValue: Equatable, Hashable {
+    
+    /**
+     * The connection it went through was deleted.
+     */
+    case deleted
+    /**
+     * More than one hop.
+     */
+    case chained
+    /**
+     * The connect wasn't told which (refused, never dialled direct).
+     */
+    case unresolved
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RouteWhyValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRouteWhyValue: FfiConverterRustBuffer {
+    typealias SwiftType = RouteWhyValue
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RouteWhyValue {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .deleted
+        
+        case 2: return .chained
+        
+        case 3: return .unresolved
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RouteWhyValue, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .deleted:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .chained:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .unresolved:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRouteWhyValue_lift(_ buf: RustBuffer) throws -> RouteWhyValue {
+    return try FfiConverterTypeRouteWhyValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRouteWhyValue_lower(_ value: RouteWhyValue) -> RustBuffer {
+    return FfiConverterTypeRouteWhyValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum SessionEventKind: Equatable, Hashable {
     
@@ -24230,6 +24387,103 @@ public func FfiConverterTypeSessionEventKind_lower(_ value: SessionEventKind) ->
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How a session reaches its host when not straight there (F1).
+ */
+
+public enum SessionHop: Equatable, Hashable {
+    
+    /**
+     * Through this saved connection's SSH: its id (its credentials), its
+     * name (what a failure on its leg is told by), its address and proxy.
+     */
+    case through(connectionId: String, name: String, user: String, host: String, port: UInt16, proxyHost: String?, proxyPort: UInt16?
+    )
+    /**
+     * Through a connection that was deleted: fails at once, never dialled
+     * direct instead.
+     */
+    case deleted
+    /**
+     * Through one that goes through another itself: more than one hop.
+     */
+    case chained
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SessionHop: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionHop: FfiConverterRustBuffer {
+    typealias SwiftType = SessionHop
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionHop {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .through(connectionId: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf), user: try FfiConverterString.read(from: &buf), host: try FfiConverterString.read(from: &buf), port: try FfiConverterUInt16.read(from: &buf), proxyHost: try FfiConverterOptionString.read(from: &buf), proxyPort: try FfiConverterOptionUInt16.read(from: &buf)
+        )
+        
+        case 2: return .deleted
+        
+        case 3: return .chained
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SessionHop, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .through(connectionId,name,user,host,port,proxyHost,proxyPort):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(connectionId, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            FfiConverterString.write(user, into: &buf)
+            FfiConverterString.write(host, into: &buf)
+            FfiConverterUInt16.write(port, into: &buf)
+            FfiConverterOptionString.write(proxyHost, into: &buf)
+            FfiConverterOptionUInt16.write(proxyPort, into: &buf)
+            
+        
+        case .deleted:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .chained:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionHop_lift(_ buf: RustBuffer) throws -> SessionHop {
+    return try FfiConverterTypeSessionHop.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionHop_lower(_ value: SessionHop) -> RustBuffer {
+    return FfiConverterTypeSessionHop.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum SessionMultiplexer: Equatable, Hashable {
     
@@ -24318,7 +24572,12 @@ public enum SessionStateValue: Equatable, Hashable {
          */cause: FailureCauseValue, 
         /**
          * English, for the log only.
-         */log: String, retryable: Bool
+         */log: String, retryable: Bool, 
+        /**
+         * The jump host's saved name when the failure is on its leg (F1):
+         * its credentials, its key, its answer about the host behind it.
+         * `None`: the connection's own host.
+         */leg: String?
     )
 
 
@@ -24350,7 +24609,7 @@ public struct FfiConverterTypeSessionStateValue: FfiConverterRustBuffer {
         case 4: return .ended(reason: try FfiConverterTypeEndValue.read(from: &buf)
         )
         
-        case 5: return .failed(kind: try FfiConverterTypeFailureKindValue.read(from: &buf), cause: try FfiConverterTypeFailureCauseValue.read(from: &buf), log: try FfiConverterString.read(from: &buf), retryable: try FfiConverterBool.read(from: &buf)
+        case 5: return .failed(kind: try FfiConverterTypeFailureKindValue.read(from: &buf), cause: try FfiConverterTypeFailureCauseValue.read(from: &buf), log: try FfiConverterString.read(from: &buf), retryable: try FfiConverterBool.read(from: &buf), leg: try FfiConverterOptionString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -24378,12 +24637,13 @@ public struct FfiConverterTypeSessionStateValue: FfiConverterRustBuffer {
             FfiConverterTypeEndValue.write(reason, into: &buf)
             
         
-        case let .failed(kind,cause,log,retryable):
+        case let .failed(kind,cause,log,retryable,leg):
             writeInt(&buf, Int32(5))
             FfiConverterTypeFailureKindValue.write(kind, into: &buf)
             FfiConverterTypeFailureCauseValue.write(cause, into: &buf)
             FfiConverterString.write(log, into: &buf)
             FfiConverterBool.write(retryable, into: &buf)
+            FfiConverterOptionString.write(leg, into: &buf)
             
         }
     }
@@ -27697,6 +27957,90 @@ public func FfiConverterTypeTransportValue_lower(_ value: TransportValue) -> Rus
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Why a jump host didn't open the way to the host behind it (F1).
+ */
+
+public enum TunnelWhyValue: Equatable, Hashable {
+    
+    case connectFailed
+    case prohibited
+    case timedOut
+    case other
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TunnelWhyValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTunnelWhyValue: FfiConverterRustBuffer {
+    typealias SwiftType = TunnelWhyValue
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TunnelWhyValue {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .connectFailed
+        
+        case 2: return .prohibited
+        
+        case 3: return .timedOut
+        
+        case 4: return .other
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TunnelWhyValue, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .connectFailed:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .prohibited:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .timedOut:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .other:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTunnelWhyValue_lift(_ buf: RustBuffer) throws -> TunnelWhyValue {
+    return try FfiConverterTypeTunnelWhyValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTunnelWhyValue_lower(_ value: TunnelWhyValue) -> RustBuffer {
+    return FfiConverterTypeTunnelWhyValue.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Why nothing answered.
  */
 
@@ -28841,6 +29185,30 @@ fileprivate struct FfiConverterOptionTypeRemoteFileKind: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRemoteFileKind.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSessionHop: FfiConverterRustBuffer {
+    typealias SwiftType = SessionHop?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSessionHop.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSessionHop.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -31028,6 +31396,18 @@ public func localNetworkMayBeWhy(host: String, why: UnreachableValue) -> Bool  {
 })
 }
 /**
+ * How the saved `connection` reaches its host, checked against `saved`
+ * (F1): what [`SessionSpec::hop`] takes. `None`: straight there.
+ */
+public func sessionHop(connection: ConnectionRecord, saved: [ConnectionRecord]) -> SessionHop?  {
+    return try!  FfiConverterOptionTypeSessionHop.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_session_hop(
+        FfiConverterTypeConnectionRecord_lower(connection),
+        FfiConverterSequenceTypeConnectionRecord.lower(saved),$0
+    )
+})
+}
+/**
  * A custom accent theme from one accent, the rest derived.
  */
 public func storeAccentTheme(id: String, name: String, accentHex: String) -> AccentThemeRecord  {
@@ -31527,6 +31907,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_local_network_may_be_why() != 54429) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_session_hop() != 29890) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_accent_theme() != 12419) {

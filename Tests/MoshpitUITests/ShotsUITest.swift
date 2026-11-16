@@ -329,6 +329,31 @@ final class ShotsUITest: XCTestCase {
         }
     }
 
+    /// The middle of `count` columns from `column` across a row of the pane,
+    /// as a fraction of the row, and the row's columns. A row's element is
+    /// the terminal view's whole width; its cells are the app's own ("W" of
+    /// the system monospaced font at `size`, in whole pixels:
+    /// TerminalCellGeometry.measuredCell), the grid centred in the view to
+    /// the pixel (CoreTerminalView.gridOrigin). B817: a guess of 40 columns
+    /// put the tap two columns past the path on a row of 62.
+    @MainActor
+    private static func middle(ofColumns column: Int, _ count: Int, in row: XCUIElement,
+                               of app: XCUIApplication, size: CGFloat) -> (CGFloat, Int) {
+        // The screen's pixels a point: a screenshot's against the app's frame.
+        let pixels = XCUIScreen.main.screenshot().image.cgImage.map { CGFloat(max($0.width, $0.height)) } ?? 0
+        let points = max(app.frame.width, app.frame.height)
+        let scale = pixels > 0 && points > 0 ? max((pixels / points).rounded(), 1) : 3
+        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let cell = ceil(("W" as NSString).size(withAttributes: [.font: font]).width * scale) / scale
+        let width = row.frame.width
+        guard cell > 0, width > cell else { return (0.3, 0) }
+        let columns = Int(width / cell)
+        let spare = width - CGFloat(columns) * cell
+        let origin = min(spare, ((spare / 2) * scale).rounded() / scale)
+        let x = (origin + (CGFloat(column) + CGFloat(count) / 2) * cell) / width
+        return (min(max(x, 0.02), 0.98), columns)
+    }
+
     /// 06: the chart the agent wrote, opened from its path in the pane
     /// (a link once the host confirmed the file), previewed. If the tap
     /// misses the link, the Files chip's folder sheet reaches it.
@@ -337,7 +362,8 @@ final class ShotsUITest: XCTestCase {
         guard Self.phone else { throw XCTSkip("iPhone only") }
         guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
         for locale in Self.locales {
-            let app = launch(locale, Self.terminal(session))
+            let size = 11
+            let app = launch(locale, Self.terminal(session, size: size))
             guard waitLive(app, locale) else { app.terminate(); continue }
             // The path is a link once the host's probe confirmed it.
             settle(4)
@@ -347,12 +373,14 @@ final class ShotsUITest: XCTestCase {
                 format: "label == 'latency.png' OR identifier == 'QLPreviewControllerView'")).firstMatch
             let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'bench/latency.png'")).firstMatch
             if row.waitForExistence(timeout: 10) {
-                // The path starts after "     Wrote ": aim at its middle.
-                let label = row.label as NSString
-                let start = label.range(of: "bench/latency.png").location
-                let columns = max(label.length, 40)
-                let x = (CGFloat(start) + 8) / CGFloat(columns)
-                row.coordinate(withNormalizedOffset: CGVector(dx: min(x, 0.6), dy: 0.5)).tap()
+                // The path starts after "     Wrote " (a column a
+                // character): aim at its middle.
+                let path = (row.label as NSString).range(of: "bench/latency.png")
+                let (x, columns) = Self.middle(ofColumns: path.location, path.length, in: row, of: app,
+                                                   size: CGFloat(size))
+                XCTContext.runActivity(named: "Tap the path, columns \(path.location)–\(path.location + path.length - 1) of \(columns), at x \(String(format: "%.3f", x))") { _ in
+                    row.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.5)).tap()
+                }
             }
             if !preview.waitForExistence(timeout: 20) {
                 // The folder sheet: the pane's folder, then bench/.

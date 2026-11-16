@@ -117,7 +117,7 @@ extension ConnectionRecord {
             herdrPath: c.herdrPath, multiplexerRaw: c.multiplexerRaw, sshKeyId: c.sshKeyId?.uuidString,
             sshKeyAlgorithmRaw: c.sshKeyAlgorithmRaw, useSocksProxy: c.useSOCKSProxy,
             socksProxyHost: c.socksProxyHost, socksProxyPort: c.socksProxyPort.map(Int64.init),
-            emoji: c.emoji)
+            emoji: c.emoji, viaConnectionId: c.viaConnectionId?.uuidString)
     }
 }
 
@@ -142,6 +142,7 @@ extension ServerConnection {
         socksProxyHost = r.socksProxyHost
         socksProxyPort = r.socksProxyPort.map { Int($0) }
         emoji = r.emoji
+        viaConnectionId = r.viaConnectionId.flatMap(UUID.init(uuidString:))
     }
 }
 

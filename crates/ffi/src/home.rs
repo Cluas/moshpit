@@ -180,6 +180,87 @@ mod tests {
         }
     }
 
+    /// F1, failing closed: a saved connection the store knows to go
+    /// through another, connected by a caller that left its way out (an
+    /// older Swift caller, a save it missed), fails as a way that can't be
+    /// taken — and never dials its host directly, though the host listens
+    /// right there.
+    #[test]
+    fn f1_a_connection_through_another_never_dials_direct_without_its_way() {
+        use crate::session::{FailureCauseValue, FailureKindValue, RouteWhyValue};
+        use crate::store::{ConnectionRecord, ConnectionStoreHandle, ReadinessMode};
+        use moshpit_seal::foundation::{date::Date, uuid::Uuid};
+        use moshpit_store::connections::ServerConnection;
+
+        let listening = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listening.set_nonblocking(true).unwrap();
+        let port = listening.local_addr().unwrap().port();
+        let mut hpc = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+        hpc.host = "127.0.0.1".into();
+        hpc.port = port.into();
+        hpc.via_connection_id = Some(Uuid::new_v4());
+        let store = ConnectionStoreHandle::new(Arc::new(Nothing), ReadinessMode::Always);
+        store.add(ConnectionRecord::from(&hpc)).unwrap();
+
+        let nothing = Arc::new(Nothing);
+        let sessions = CoreSessions::new(
+            nothing.clone(),
+            nothing.clone(),
+            nothing.clone(),
+            nothing,
+            "test".into(),
+        );
+        let id = sessions.connect(SessionSpec {
+            connection_id: hpc.id.to_string(),
+            user: "dev".into(),
+            host: "127.0.0.1".into(),
+            port,
+            proxy_host: None,
+            proxy_port: None,
+            mosh: false,
+            multiplexer: SessionMultiplexer::None,
+            tmux_path: None,
+            mosh_server_path: None,
+            mosh_port_low: None,
+            mosh_port_high: None,
+            herdr_path: None,
+            locale: "en_US.UTF-8".into(),
+            cols: 80,
+            rows: 24,
+            connected_before: false,
+            hop: None,
+        });
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let failed = loop {
+            if let Some(SessionStateValue::Failed {
+                kind,
+                cause,
+                retryable,
+                ..
+            }) = sessions.view(id).map(|v| v.state)
+            {
+                break (kind, cause, retryable);
+            }
+            assert!(Instant::now() < deadline, "the connect never failed");
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(
+            failed,
+            (
+                FailureKindValue::Route,
+                FailureCauseValue::Route {
+                    why: RouteWhyValue::Unresolved
+                },
+                false
+            )
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            matches!(listening.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+            "never dialled direct"
+        );
+    }
+
     /// The registry's own view of a real session, through the entry point
     /// the host calls: a connect refused on a closed local port reads as a
     /// dead card that says why; an id the registry doesn't know (a session
@@ -217,6 +298,7 @@ mod tests {
             cols: 80,
             rows: 24,
             connected_before: false,
+            hop: None,
         });
         let deadline = Instant::now() + Duration::from_secs(20);
         while !matches!(

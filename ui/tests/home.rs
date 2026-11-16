@@ -1294,6 +1294,45 @@ fn a_dead_card_says_why_its_host_didnt_answer() {
     }
 }
 
+/// F1: a card whose connection went through a jump host since deleted
+/// says so, and where to pick another — in English and in Chinese.
+#[test]
+fn a_dead_card_says_its_jump_host_was_deleted() {
+    for (params, sentence) in [
+        (
+            Params::default(),
+            "The connection this one goes through was deleted. Pick another in Edit.",
+        ),
+        (zh_hans(), "经由的连接已被删除，请在编辑里重新选择。"),
+    ] {
+        let mut dead = Connection {
+            id: "c-box".into(),
+            name: "box".into(),
+            initial: "B".into(),
+            user: "me".into(),
+            host: "node01".into(),
+            link: Link::Dead,
+            lost_at: Some(NOW - 300.0),
+            ..Connection::default()
+        };
+        dead.failure = Some(ConnectionFailure {
+            reason: FailureReason::ViaDeleted,
+            detail: "said".into(),
+            unreachable: None,
+            leg: None,
+        });
+        let (mut app, channel, _) = phone(params);
+        show(&mut app, &channel, vec![dead]);
+        find(&mut app, "id:card-dead-box");
+        assert!(
+            app.screen().texts().iter().any(|t| t.contains(sentence)),
+            "{sentence}: {:?}",
+            app.screen().texts()
+        );
+        channel.close();
+    }
+}
+
 /// B535: a disconnect flushes the session for up to ~2 s. Until it is
 /// over the card says so — "Disconnecting…", a spinner in ⋯'s place —
 /// and offers nothing to tap: an Open or Connect asked of a session being
