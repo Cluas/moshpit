@@ -163,6 +163,8 @@ struct MoshpitApp: App {
         settings.reloadIfNeeded()
         // The agents' announced record a sealed launch couldn't read (B348).
         monitor.reloadIfNeeded()
+        // The pet a sealed launch read as an egg (B865).
+        CompanionPet.shared.reloadIfNeeded()
         // Pairings left by connections deleted before a delete took its
         // pairing along: forgotten once per launch, the first time the saved
         // connections can be trusted (before `.active` asks the relay to

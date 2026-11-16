@@ -6380,6 +6380,15 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     func message()  -> String
     
     /**
+     * The app came forward (B865): preferences read before the first
+     * unlock, as empty, are read again once they can be believed. The pet
+     * they hold is the one shown — merged with one adopted meanwhile — and
+     * one only this launch has (adopted from iCloud while sealed) is kept
+     * now; the egg keeps what it heard meanwhile. A no-op once read.
+     */
+    func reloadIfNeeded() 
+    
+    /**
      * Renames it at `now`; an empty name gives back the species' name.
      */
     func rename(name: String, now: Int64) 
@@ -6600,6 +6609,20 @@ open func message() -> String  {
             self.uniffiCloneHandle(),$0
     )
 })
+}
+    
+    /**
+     * The app came forward (B865): preferences read before the first
+     * unlock, as empty, are read again once they can be believed. The pet
+     * they hold is the one shown — merged with one adopted meanwhile — and
+     * one only this launch has (adopted from iCloud while sealed) is kept
+     * now; the egg keeps what it heard meanwhile. A no-op once read.
+     */
+open func reloadIfNeeded()  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_reload_if_needed(
+            self.uniffiCloneHandle(),$0
+    )
+}
 }
     
     /**
@@ -32883,6 +32906,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_message() != 35061) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_reload_if_needed() != 12845) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_rename() != 16141) {
