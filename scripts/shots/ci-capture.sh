@@ -284,6 +284,30 @@ sys.exit(bad)
 PY
 }
 
+# A freshly booted simulator stays busy for minutes after bootstatus says
+# it's up, and the first test paid for it (43816020313: the iPhone's lost
+# its launch at 85 s, "Timed out while acquiring background assertion",
+# and the iPad's a UI query at 490 s; each then took a second pass). So
+# the app is launched once by itself first, as the tests launch it, the
+# runner waited on until its CPU settles (three minutes at most), and the
+# app closed.
+warm_up() {
+    local bundle start idle calm=0 seen=""
+    bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
+    start=$(date +%s)
+    xcrun simctl launch "$udid" "$bundle" "${common[@]}" "${quiet[@]}" >/dev/null 2>&1 ||
+        echo "✘ the warm-up launch failed; on to the tests" >&2
+    sleep 10
+    while [ $(($(date +%s) - start)) -lt 180 ]; do
+        idle="$(top -l 2 -s 3 -n 0 | awk '/^CPU usage/ { v = $7 } END { sub("%", "", v); print int(v) }')"
+        seen="$seen ${idle:-?}"
+        if [ "${idle:-0}" -ge 70 ]; then calm=$((calm + 1)); else calm=0; fi
+        [ "$calm" -lt 2 ] || break
+    done
+    xcrun simctl terminate "$udid" "$bundle" >/dev/null 2>&1 || true
+    log "$device · warmed up in $(($(date +%s) - start)) s (the runner's idle %, every 3 s:$seen)"
+}
+
 # "<test> <locale>" for each asked shot neither the capture nor
 # SHOTS_EXTERNAL has (scripts/shots/slots.py).
 missing_shots() {
@@ -298,6 +322,7 @@ if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
     if [ "${#tests[@]}" -eq 0 ]; then
         log "$device · nothing for ShotsUITest: every asked shot is an external one"
     else
+        warm_up
         log "$device · ShotsUITest: ${tests[*]}"
         shots_pass "" "${tests[@]}" -- "${locales[@]}"
     fi
