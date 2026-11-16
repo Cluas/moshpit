@@ -5,16 +5,17 @@
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
 @5 recv %begin 100 0 0\n%end 100 0 0\n\n
-@6 rule ok list-sessions => $10 0 ten\n$2 0 two\n$3 1 three
-@7 rule ok list-windows => $3 @0 0 b25d,80x24,0,0,0 1 1 main
-@8 rule ok list-panes -a -F '#{pane_id}| => -
-@9 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 80 24 1 0 0 bash
-@10 rule ok capture-pane -p -e -S => history 1\nhistory 2\n\s\s
-@11 rule ok capture-pane -p -e\s\s-t => ALT SCREEN
-@12 rule ok capture-pane -p -e -t => $ ls\nREADY\n
-@13 rule ok display-message -p -t %0 '#{cursor_x} => 2 1
-@14 rule ok display-message -p -t %1 '#{cursor_x} => 0 0
-@15 settle
+@6 rule ok display-message -p 'v= => v=3.8
+@7 rule ok list-sessions => $10 0 ten\n$2 0 two\n$3 1 three
+@8 rule ok list-windows => $3 @0 0 b25d,80x24,0,0,0 1 1 main
+@9 rule ok list-panes -a -F '#{pane_id}| => -
+@10 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 80 24 1 0 0 bash
+@11 rule ok capture-pane -p -e -S => history 1\nhistory 2\n\s\s
+@12 rule ok capture-pane -p -e\s\s-t => ALT SCREEN
+@13 rule ok capture-pane -p -e -t => $ ls\nREADY\n
+@14 rule ok display-message -p -t %0 '#{cursor_x} => 2 1
+@15 rule ok display-message -p -t %1 '#{cursor_x} => 0 0
+@16 settle
 . open %0
 . view %0 veil
 . view %0 extend 2.000
@@ -38,7 +39,7 @@
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
 > display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
-@16 dump
+@17 dump
 = attached=1 ever=1 session=$3 window=@0 pane=%0 fwd=1 swiped=0
 = s $2 att=0 name=two
 = s $3 att=1 name=three
@@ -46,11 +47,9 @@
 = w @0 s=$3 idx=0 act=1 panes=1 zoom=0 name=main layout=b25d,80x24,0,0,0
 = p %0 w=@0 idx=0 act=1 80x24 cmd=bash
 = follow=- notice=- refreshing=0 resized=@0 mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=
-@17 kill-session $3
+@18 kill-session $3
 > list-windows -t '$2' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
-> new-session -t '$2' -s 'two~mp-iPhone-2-1hc' -P -F '#{session_id}'
-> set-option -t '=two~mp-iPhone-2-1hc:' destroy-unattached on
-> set-option -t '=two~mp-iPhone-2-1hc:' @moshpit_group_of '$2'
+> switch-client -t $2
 > set-option -u -w -t @0 window-size
 > set-option -wu -t @0 @moshpit_size_owner
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
@@ -59,32 +58,31 @@
 > list-sessions -F '#{session_id} #{session_attached} #{session_name}'
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@18 dump
+@19 dump
 = attached=1 ever=1 session=$2 window=@0 pane=%0 fwd=1 swiped=0
 = s $2 att=0 name=two
 = s $10 att=0 name=ten
 = follow=- notice=- refreshing=0 resized= mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=
-@19 rule err kill- => can't find
-@20 kill-window @0
+@20 rule err kill- => can't find
+@21 kill-window @0
 > kill-window -t @0
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@21 kill-pane %0
+@22 kill-pane %0
 > kill-pane -t %0
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@22 rename-window @0 \s
-@23 rename-window @0 it's
+@23 rename-window @0 \s
+@24 rename-window @0 it's
 > rename-window -t @0 -- "it's"
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@24 rename-session $2 my\sproj
+@25 rename-session $2 my\sproj
 > rename-session -t $2 -- "my proj"
 > list-sessions -F '#{session_id} #{session_attached} #{session_name}'
-@25 settle
+@26 settle
 > list-windows -t '$2' -F '#{window_id} #{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
-> switch-client -t $2
-@26 dump
+@27 dump
 = attached=1 ever=1 session=$2 window=@0 pane=%0 fwd=1 swiped=0
 = s $2 att=0 name=two
 = s $3 att=1 name=three
@@ -92,6 +90,6 @@
 = w @0 s=$3 idx=0 act=1 panes=1 zoom=0 name=main layout=b25d,80x24,0,0,0
 = p %0 w=@0 idx=0 act=1 80x24 cmd=bash
 = follow=- notice=can't find refreshing=0 resized= mouse=0 alt=0 client=moshpit-a hooks-loaded=0 painted=1 renderer=- renderer-session=- owned=
-@27 run display-message hi
+@28 run display-message hi
 > display-message hi
-@28 settle
+@29 settle

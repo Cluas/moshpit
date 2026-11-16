@@ -1202,10 +1202,11 @@ fn a_session_switch_records_what_it_squashes() {
     let before = fresh
         .iter()
         .position(|c| c.starts_with("list-windows -t '$1'"));
-    // B459: the switch goes into the phone's own group of `$1`.
+    // No `%session-changed` in this rig, so no version read: the plain
+    // switch (B812). The group's is `group.rs`'s.
     let switch = fresh
         .iter()
-        .position(|c| c.starts_with("new-session -t '$1'"));
+        .position(|c| c.starts_with("switch-client -t $1"));
     let after = fresh
         .iter()
         .rposition(|c| c.starts_with("list-windows -t '$1'"));
@@ -1236,8 +1237,8 @@ fn a_session_switch_hands_back_the_window_left() {
     let fresh = rig.since(base).to_vec();
     let switch = fresh
         .iter()
-        .position(|c| c.starts_with("new-session -t '$1'"))
-        .expect("into $1's group");
+        .position(|c| c.starts_with("switch-client -t $1"))
+        .expect("onto $1 (no version read in this rig, B812)");
     let unpin = fresh
         .iter()
         .position(|c| c == "set-option -u -w -t @0 window-size")
@@ -1278,7 +1279,7 @@ fn a_session_switchs_second_read_waits_for_the_first_ones_reply() {
             .count()
     };
     assert_eq!(reads(&sent), 1, "{sent:#?}");
-    assert!(sent.iter().any(|c| c.starts_with("new-session -t '$1'")));
+    assert!(sent.iter().any(|c| c.starts_with("switch-client -t $1")));
     rig.settle();
     assert_eq!(reads(rig.since(base)), 2, "{:#?}", rig.since(base));
 }

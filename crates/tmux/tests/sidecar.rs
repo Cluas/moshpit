@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use moshpit_tmux::controller::{Config, Notification, PinLedger};
+use moshpit_tmux::controller::{Config, Notification, PinLedger, VERSION_READ};
 use moshpit_tmux::rig::{Rig, err, ok};
 
 #[derive(Clone, Debug)]
@@ -65,6 +65,34 @@ struct Fake {
     /// on the session itself as it did before groups.
     groups: bool,
     made: u32,
+    /// `#{version}`, when not the rig's own (B812).
+    version: Option<&'static str>,
+}
+
+impl Fake {
+    /// What `@moshpit_group_of` holds for session `id`: for a phone's group
+    /// (`<name>~mp-…`), the id of the session named `<name>`; else nothing.
+    fn group_of(&self, id: &str) -> String {
+        let rows: Vec<Vec<&str>> = self
+            .sessions
+            .iter()
+            .map(|row| row.splitn(3, ' ').collect())
+            .collect();
+        let Some(name) = rows
+            .iter()
+            .find(|row| row.first() == Some(&id))
+            .and_then(|row| row.get(2))
+        else {
+            return String::new();
+        };
+        let Some((base, _)) = name.split_once("~mp-") else {
+            return String::new();
+        };
+        rows.iter()
+            .find(|row| row.get(2) == Some(&base))
+            .map(|row| row[0].to_owned())
+            .unwrap_or_default()
+    }
 }
 
 type Shared = Rc<RefCell<Fake>>;
@@ -82,6 +110,26 @@ fn responder(fake: Shared) -> moshpit_tmux::rig::Responder {
                 .clients
                 .iter()
                 .map(|c| c.render(format))
+                .collect::<Vec<_>>());
+        }
+        if command == VERSION_READ
+            && let Some(version) = fake.version
+        {
+            return ok([format!("v={version}")]);
+        }
+        if command.starts_with(
+            "list-sessions -F '#{session_id} #{session_attached} #{@moshpit_group_of}'",
+        ) {
+            // The sweep's listing (B459, B812).
+            return ok(fake
+                .sessions
+                .iter()
+                .map(|row| {
+                    let mut words = row.splitn(3, ' ');
+                    let id = words.next().unwrap_or_default();
+                    let attached = words.next().unwrap_or("0");
+                    format!("{id} {attached} {}", fake.group_of(id))
+                })
                 .collect::<Vec<_>>());
         }
         if command == "display-message -p 'self=#{client_name}'" {
@@ -203,7 +251,7 @@ impl Sidecar {
             panes: Vec::new(),
             marks: Vec::new(),
             groups,
-            made: 0,
+            ..Fake::default()
         }));
         let mut rig = Rig::new(Config {
             renders_output: false,
@@ -1699,4 +1747,116 @@ fn an_owned_sessions_status_line_is_hidden_on_the_phones_group() {
         "{:#?}",
         s.status_commands()
     );
+}
+
+/// The sidecar's group commands that end a session (B812).
+fn kills(commands: &[String]) -> Vec<&String> {
+    commands
+        .iter()
+        .filter(|c| c.starts_with("kill-session") || c.starts_with("if-shell"))
+        .collect()
+}
+
+/// The old group the last sidecar (or an older build) left the renderer on:
+/// `$7`, of `work` (`$1`), the renderer its one client.
+const OLD_GROUP: &str = "work~mp-iPhone-1-0ab";
+
+fn rebuilt_on_old_group(groups: bool, version: Option<&'static str>) -> Sidecar {
+    let fake = Rc::new(RefCell::new(Fake {
+        clients: vec![
+            work(true, 45613, "/dev/ttys030"),
+            work(false, 41002, "/dev/ttys010"),
+            client(false, 45533, "$7", OLD_GROUP, "/dev/ttys026"),
+        ],
+        sessions: vec!["$1 2 work".into(), format!("$7 1 {OLD_GROUP}")],
+        windows: vec![
+            "$1 @3 0 b25d,80x24,0,0,3 0 1 zsh".into(),
+            "$1 @4 1 b25e,80x24,0,0,4 1 1 vim".into(),
+        ],
+        groups,
+        version,
+        ..Fake::default()
+    }));
+    let mut rig = Rig::new(Config {
+        renders_output: false,
+        ..Config::default()
+    });
+    rig.respond(responder(fake.clone()));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $1 work\n");
+    rig.settle();
+    let mut s = Sidecar { rig, fake };
+    s.rig.with(|c, now| c.expect_renderer_pid(45533, now));
+    s.rig.settle();
+    s
+}
+
+/// B773, B812: a rebuilt sidecar (its SSH leg back, mosh never gone) finds
+/// the renderer on a group it doesn't hold — the last sidecar's, or one an
+/// older build made. It took that group for a session: a group of the
+/// group, and the phone showing the group's name. The renderer views the
+/// session the group is of: it comes into our group of that session, and
+/// the old group ends behind it unless a client is still on it.
+#[test]
+fn a_rebuilt_sidecar_takes_the_renderer_out_of_an_old_group() {
+    let s = rebuilt_on_old_group(true, None);
+    let commands = s.rig.commands.clone();
+    assert!(
+        !commands
+            .iter()
+            .any(|c| c.starts_with("new-session -t '$7'")),
+        "no group of a group: {commands:#?}"
+    );
+    let on = renderer_on(&s, 45533);
+    assert!(
+        on.starts_with("work~mp-") && on != OLD_GROUP,
+        "the renderer in our group: {on:?}: {commands:#?}"
+    );
+    let moved = commands
+        .iter()
+        .position(|c| c.starts_with("switch-client -c /dev/ttys026 -t"))
+        .unwrap();
+    let ended = commands
+        .iter()
+        .position(|c| {
+            c == "if-shell -F -t '$7' '#{==:#{session_attached},0}' \"kill-session -t '$7'\""
+        })
+        .unwrap_or_else(|| panic!("the old group ends: {commands:#?}"));
+    assert!(moved < ended, "{commands:#?}");
+    assert_eq!(renderer_on(&s, 41002), "work", "the desktop stays");
+    assert_eq!(
+        s.rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$1"),
+        "the phone shows the session"
+    );
+    assert_eq!(s.rig.controller.renderer_session_id(), Some("$1"));
+}
+
+/// B812: the same on a tmux before 3.8, where the phone gets no group: the
+/// renderer comes onto the session itself, and the old group — one a
+/// window renumbered under it can crash the server with — ends behind it.
+#[test]
+fn before_tmux_3_8_a_rebuilt_sidecar_takes_the_renderer_onto_the_session() {
+    let s = rebuilt_on_old_group(false, Some("3.6a"));
+    let commands = s.rig.commands.clone();
+    assert!(
+        !commands.iter().any(|c| c.starts_with("new-session -t ")),
+        "no group: {commands:#?}"
+    );
+    assert_eq!(renderer_on(&s, 45533), "work", "{commands:#?}");
+    let moved = commands
+        .iter()
+        .position(|c| c == "switch-client -c /dev/ttys026 -t $1")
+        .unwrap_or_else(|| panic!("{commands:#?}"));
+    let ended = commands
+        .iter()
+        .position(|c| c.starts_with("if-shell -F -t '$7' "))
+        .unwrap_or_else(|| panic!("the old group ends: {:#?}", kills(&commands)));
+    assert!(moved < ended, "{commands:#?}");
+    assert_eq!(
+        s.rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$1")
+    );
+    assert_eq!(s.rig.controller.renderer_session_id(), Some("$1"));
 }

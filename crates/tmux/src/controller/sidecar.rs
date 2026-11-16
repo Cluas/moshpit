@@ -44,6 +44,13 @@ pub(super) struct SidecarState {
     /// B773: the renderer goes into our group once the group has landed
     /// where its session is.
     pub renderer_awaits_landing: bool,
+    /// B812: the group the sidecar left, ended once the renderer has left
+    /// it too.
+    pub group_left: Option<String>,
+    /// B773, B812: a group we don't hold the renderer was found on (the
+    /// last sidecar's, or one an older build made), ended once the renderer
+    /// has left it.
+    pub renderer_group: Option<String>,
 }
 
 /// The session option that marks a session Moshpit made (B86): the mark
@@ -225,6 +232,16 @@ impl Controller {
             self.sidecar.renderer_session_id = Some(group.session.clone());
             return;
         }
+        // B773, B812: on a group we don't hold — the last sidecar's (its
+        // SSH leg back, mosh never gone), or one an older build made — the
+        // renderer views the session that group is of. Taken for a session,
+        // it got a group of the group, and the phone showed the group.
+        if let Some(of) = self.group.marked.get(session).cloned()
+            && of != session
+        {
+            self.follow_renderer_out_of(session, &of);
+            return;
+        }
         self.sidecar.renderer_session_id = Some(session.to_owned());
         if self.snapshot.active_session_id.as_deref() == Some(session) {
             // We view it already, through our group: the renderer comes in.
@@ -259,7 +276,7 @@ impl Controller {
                 .unwrap_or_default();
             self.enter_group(session, &name);
         } else {
-            self.send(format!("switch-client -t {session}"));
+            self.switch_without_group(session);
         }
         self.refresh_windows_and_panes(false, None);
     }
@@ -291,6 +308,59 @@ impl Controller {
             None => format!("'={}'", group.name),
         };
         self.send(format!("switch-client -c {} -t {target}", renderer.name));
+        // B812: the group both have now left, behind the move.
+        if let Some(left) = self.sidecar.group_left.take() {
+            self.send(format!("kill-session -t '{left}'"));
+        }
+        self.end_renderer_group();
+    }
+
+    /// The renderer on `group`, a group of `session` we don't hold: it
+    /// comes into our group of `session`, or — none to come (tmux before
+    /// 3.8, B812) — onto `session` itself; `group` ends behind it.
+    fn follow_renderer_out_of(&mut self, group: &str, session: &str) {
+        if self.group.marked.contains_key(session) {
+            // A group of a group: marks no build of ours sets. Not chased.
+            return;
+        }
+        self.sidecar.renderer_group = Some(group.to_owned());
+        if !self.group_will_take_renderer(session)
+            && let Some(renderer) = self.sidecar.renderer_client.clone()
+        {
+            self.send(format!("switch-client -c {} -t {session}", renderer.name));
+            self.end_renderer_group();
+        }
+        self.follow_renderer(session);
+    }
+
+    /// Whether a group of ours on `session` will take the renderer in: ours
+    /// already, the attach's check still deciding, or one made as the
+    /// sidecar follows it there.
+    fn group_will_take_renderer(&self, session: &str) -> bool {
+        let ours = self
+            .group
+            .current
+            .as_ref()
+            .is_some_and(|group| group.session == session);
+        self.group.supported == Some(true)
+            && (ours
+                || (self.group_possible(session)
+                    && (self.group.deciding
+                        || self.snapshot.active_session_id.as_deref() != Some(session))))
+    }
+
+    /// The group the renderer was found on, now it has left: ended unless
+    /// a client is still on it — another phone's, picked in mosh's own
+    /// session list. A listing sent before shows the renderer still there.
+    fn end_renderer_group(&mut self) {
+        let Some(group) = self.sidecar.renderer_group.take() else {
+            return;
+        };
+        self.group.marked.remove(&group);
+        self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
+        self.send(format!(
+            "if-shell -F -t '{group}' '#{{==:#{{session_attached}},0}}' \"kill-session -t '{group}'\""
+        ));
     }
 
     /// The window the sidecar may size: the active one, when it is on the
@@ -401,7 +471,7 @@ impl Controller {
                 self.sidecar.renderer_awaits_landing = false;
             }
         } else {
-            self.send(format!("switch-client -t {session}"));
+            self.switch_without_group(session);
         }
         self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         if !moving.is_empty()

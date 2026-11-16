@@ -2,6 +2,7 @@
 restore $0 @1 %4
 attach
 recv %begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 0\n
+rule ok display-message -p 'v= => v=3.8
 rule ok list-sessions => $0 1 0
 rule ok list-windows => $0 @1 1 ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]} 1 7 team
 rule ok list-panes -a -F '#{pane_id}| => -

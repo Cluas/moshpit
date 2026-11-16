@@ -50,11 +50,16 @@ CAPTURES = [
 ]
 
 
+# The server's tmux (B812: a group only from 3.8). First, so no generic
+# display-message rule answers for it.
+VERSION = "rule ok display-message -p 'v= => v=3.8"
+
+
 def ssh(*rules, size=(70, 35), client="moshpit-a"):
     steps = ["config label=iPhone quiet=30", f"init-size {size[0]} {size[1]}"]
     if client:
         steps.append(f"client-name {client}")
-    steps += ["attach", BOOT, *rules]
+    steps += ["attach", BOOT, VERSION, *rules]
     return steps
 
 
@@ -66,7 +71,7 @@ S["attach-basic"] = ssh(*ONE, *CAPTURES) + ["settle", "dump", "wait 800", "settl
 
 S["attach-session-changed"] = [
     "config label=iPhone", "init-size 69 60", "begin",
-    "recv %begin 100 0 0\\n%end 100 0 0\\n\\n%session-changed $0 main\\n",
+    "recv %begin 100 0 0\\n%end 100 0 0\\n\\n%session-changed $0 main\\n", VERSION,
     "rule ok display-message -p '#{client_name}' => /dev/ttys003",
     "rule ok list-clients -F '#{client_name}' => /dev/ttys003",
     "rule ok show-options -wqv => -", *ONE, *CAPTURES,
@@ -128,7 +133,7 @@ S["pane-before-discovery"] = [
     "settle", "dump"]
 
 S["restore-into-split-window"] = [
-    "restore $0 @1 %4", "attach", BOOT + "%session-changed $0 0\\n",
+    "restore $0 @1 %4", "attach", BOOT + "%session-changed $0 0\\n", VERSION,
     *world(["$0 1 0"], ["$0 @1 1 ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]} 1 7 team"],
            [f"%{i} @1 {i} 80 9 {1 if i == 6 else 0} 0 0 claude" for i in range(7)], hooks=[]),
     "rule ok display-message -p -t '@1' => 7 0 %6 ed9b,499x62,0,0{215x62,0,0,0,283x62,216,0[283x11,216,0,1,283x10,216,12,2,283x9,216,23,3,283x9,216,33,4,283x9,216,43,5,283x9,216,53,6]}",
@@ -340,7 +345,7 @@ S["div-scroll-alt-no-mouse"] = SCROLL + [flags(0, 1), "settle", "mouse", "settle
                                          "scroll-px 30 16", "scroll-end", "dump"]
 
 # The mosh sidecar.
-SIDECAR = ["config renders=0", "attach", BOOT]
+SIDECAR = ["config renders=0", "attach", BOOT, VERSION]
 
 
 def clients(*rows):

@@ -5,31 +5,36 @@
 > list-clients -F '#{client_name}'
 > list-sessions -F '#{session_id} owned=#{@moshpit_owned} hidden=#{@moshpit_status_hidden}'
 @3 recv %begin 100 0 0\n%end 100 0 0\n\n
-@4 rule ok list-sessions => $0 1 aaa
-@5 rule ok list-windows => $0 @0 0 b25d,80x24,0,0,0 1 1 zsh
-@6 rule ok list-panes -a -F '#{pane_id}| => -
-@7 rule ok list-panes -a -F '#{pane_id}\s => 
-@8 rule ok list-clients -F '#{client_control_mode} => 1|45613|$0|/dev/ttys030
-@9 settle
-@10 recv %session-changed $0 aaa\n
+@4 rule ok display-message -p 'v= => v=3.8
+@5 rule ok list-sessions => $0 1 aaa
+@6 rule ok list-windows => $0 @0 0 b25d,80x24,0,0,0 1 1 zsh
+@7 rule ok list-panes -a -F '#{pane_id}| => -
+@8 rule ok list-panes -a -F '#{pane_id}\s => 
+@9 rule ok list-clients -F '#{client_control_mode} => 1|45613|$0|/dev/ttys030
+@10 settle
+@11 recv %session-changed $0 aaa\n
+> display-message -p 'v=#{version}'
+> display-message -p 'self=#{client_name}'
+> list-clients -F 'cc=#{client_control_mode} #{session_id} #{client_name}'
+> show-options -sqv @moshpit_cc
+> list-sessions -F '#{session_id} #{session_attached} #{session_name}'
+> list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
+> list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
+@12 settle
+> set-option -s -a -F @moshpit_cc ' #{client_name}'
 > new-session -t '$0' -s 'aaa~mp-iPhone-0-1hc' -P -F '#{session_id}'
-> set-option -t '=aaa~mp-iPhone-0-1hc:' destroy-unattached on
 > set-option -t '=aaa~mp-iPhone-0-1hc:' @moshpit_group_of '$0'
 > select-window -t @0
-> list-sessions -F '#{session_id} #{session_attached} #{session_name}'
-> list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
-> list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@11 settle
 > display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
-@12 recv %sessions-changed\n%client-session-changed /dev/ttys009 $0 aaa\n%sessions-changed\n%unlinked-window-add @7\n%unlinked-window-add @8\n%window-renamed @0 marker\n
+@13 recv %sessions-changed\n%client-session-changed /dev/ttys009 $0 aaa\n%sessions-changed\n%unlinked-window-add @7\n%unlinked-window-add @8\n%window-renamed @0 marker\n
 > list-sessions -F '#{session_id} #{session_attached} #{session_name}'
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@13 settle
+@14 settle
 > list-sessions -F '#{session_id} #{session_attached} #{session_name}'
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
-@14 dump
+@15 dump
 = attached=1 ever=1 session=$0 window=@0 pane=- fwd=1 swiped=0
 = s $0 att=1 name=aaa
 = w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=zsh layout=b25d,80x24,0,0,0

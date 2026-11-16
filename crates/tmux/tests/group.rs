@@ -42,6 +42,8 @@ struct Tmux {
     /// The server option `@moshpit_cc`.
     registry: String,
     next: u32,
+    /// `#{version}` (B812: a group only from 3.8).
+    version: String,
 }
 
 impl Tmux {
@@ -71,6 +73,7 @@ impl Tmux {
             control_desktops: Vec::new(),
             registry: String::new(),
             next: 1,
+            version: "3.8".into(),
         }))
     }
 
@@ -215,6 +218,9 @@ impl Tmux {
                 after: "%sessions-changed\n".into(),
                 ..Answer::default()
             });
+        }
+        if command == "display-message -p 'v=#{version}'" {
+            return ok([format!("v={}", self.version)]);
         }
         if command == "display-message -p 'self=#{client_name}'" {
             return ok([format!("self=/dev/{phone}")]);
@@ -460,8 +466,14 @@ fn the_phone_lands_where_the_session_is() {
 /// tmux destroys the group when its last client goes — set only once the
 /// phone is on it (on a group nobody is on yet, tmux destroys it at once)
 /// — and the session keeps every window.
+///
+/// B812: never through `destroy-unattached`. tmux reaped such a session
+/// under a client still pointing at it (one the server had marked exiting:
+/// a stalled phone), and the client's next redraw check crashed the server
+/// (3.2a–3.7). The phone ends its group itself, on the person's end; a
+/// dropped one stays for the next attach's sweep.
 #[test]
-fn the_group_goes_with_the_phone_and_the_session_keeps_its_windows() {
+fn the_group_ends_with_the_persons_end_never_by_destroy_unattached() {
     let tmux = Tmux::new();
     let rig = phone(&tmux, "ttys003", "iPhone", None);
     let make = rig
@@ -475,14 +487,108 @@ fn the_group_goes_with_the_phone_and_the_session_keeps_its_windows() {
         rig.commands[option]
     );
     assert!(make < option);
-    assert!(rig.commands[option].ends_with("destroy-unattached on"));
+    assert!(
+        !rig.commands
+            .iter()
+            .any(|c| c.contains("destroy-unattached")),
+        "{:#?}",
+        rig.commands
+    );
     let group = group_of(&tmux.borrow(), "ttys003").clone();
     assert_eq!(group.group_of.as_deref(), Some("$0"));
+    assert_eq!(
+        rig.controller.group_release_command(),
+        Some(format!("kill-session -t '{}'", group.id)),
+        "the person's end kills it"
+    );
+    // A dropped connection leaves it, for the next attach's sweep.
     tmux.borrow_mut().drop_client("ttys003");
     let model = tmux.borrow();
-    assert!(model.session(&group.id).is_none(), "the group is gone");
-    assert_eq!(model.sessions.len(), 1);
+    assert!(model.session(&group.id).is_some(), "left for the sweep");
     assert_eq!(model.windows.len(), 2, "the session keeps its windows");
+}
+
+/// B812: a tmux before 3.8 gets no group: a manual `move-window -r` and a
+/// window closing could crash the whole server with one in place (3.2a to
+/// 3.7 on private servers). The phone stays on the session, as before
+/// groups; the version is read before anything else.
+#[test]
+fn a_tmux_before_3_8_gets_no_group() {
+    for version in ["3.6a", "3.7", "3.2a", "openbsd-7.6", ""] {
+        let tmux = Tmux::new();
+        tmux.borrow_mut().version = version.into();
+        let rig = phone(&tmux, "ttys003", "iPhone", None);
+        assert!(
+            !rig.has("new-session -t "),
+            "{version:?}: {:#?}",
+            rig.commands
+        );
+        assert_eq!(rig.commands[0], "display-message -p 'v=#{version}'");
+        assert_eq!(
+            rig.controller.snapshot().active_session_id.as_deref(),
+            Some("$0")
+        );
+        assert_eq!(rig.controller.group_release_command(), None);
+    }
+}
+
+/// B812: `#{version}` as tmux builds write it, and whether each gets a
+/// group: from 3.8 on; a build from the tree is newer than any release;
+/// anything that doesn't read as a version is unknown, and gets none.
+#[test]
+fn the_version_reads_as_tmux_writes_it() {
+    use moshpit_tmux::controller::{groups_are_safe_on, tmux_version};
+    let table = [
+        ("3.8", Some((3, 8)), true),
+        ("3.8a", Some((3, 8)), true),
+        ("3.10", Some((3, 10)), true),
+        ("4.0", Some((4, 0)), true),
+        ("next-3.9", Some((3, 9)), true),
+        ("master", None, true),
+        ("3.7", Some((3, 7)), false),
+        ("3.6a", Some((3, 6)), false),
+        ("3.2a", Some((3, 2)), false),
+        ("next-3.7", Some((3, 7)), false),
+        ("openbsd-7.6", None, false),
+        ("", None, false),
+        ("3", None, false),
+        ("x.y", None, false),
+    ];
+    for (raw, version, safe) in table {
+        assert_eq!(tmux_version(raw), version, "{raw:?}");
+        assert_eq!(groups_are_safe_on(raw), safe, "{raw:?}");
+    }
+}
+
+/// B812: switching sessions ends the group left, behind the move into the
+/// next one (no `destroy-unattached` does it any more).
+#[test]
+fn a_session_switch_ends_the_group_left() {
+    let tmux = Tmux::new();
+    tmux.borrow_mut().sessions.push(Session {
+        id: "$1".into(),
+        name: "dev".into(),
+        current: "@1".into(),
+        desktops: 1,
+        group_of: None,
+        destroy_unattached: false,
+    });
+    let mut rig = phone(&tmux, "ttys003", "iPhone", None);
+    let first = group_of(&tmux.borrow(), "ttys003").id.clone();
+    let base = rig.commands.len();
+    rig.with(|c, now| c.select_session("$1", now));
+    rig.settle();
+    let sent = rig.since(base).to_vec();
+    let made = sent
+        .iter()
+        .position(|c| c.starts_with("new-session -t '$1'"))
+        .unwrap_or_else(|| panic!("{sent:#?}"));
+    let ended = sent
+        .iter()
+        .position(|c| *c == format!("kill-session -t '{first}'"))
+        .unwrap_or_else(|| panic!("{sent:#?}"));
+    assert!(made < ended, "{sent:#?}");
+    assert!(tmux.borrow().session(&first).is_none());
 }
 
 /// What a phone that died between the make and its option left: a marked
@@ -505,14 +611,28 @@ fn a_leftover_group_is_swept() {
         let unmarked = group("$6", "notes~mp-x", None, 0);
         let live = group("$7", "main~mp-iPad-0ac", Some("$0"), 1);
         let orphan = group("$8", "gone~mp-iPhone-0ad", Some("$99"), 0);
-        model.sessions.extend([stale, unmarked, live, orphan]);
+        // B812: another phone still on it, its session gone.
+        let held_orphan = group("$9", "old~mp-iPad-0ae", Some("$98"), 1);
+        model
+            .sessions
+            .extend([stale, unmarked, live, orphan, held_orphan]);
     }
     let rig = phone(&tmux, "ttys003", "iPhone", None);
     assert!(rig.has("kill-session -t '$5'"));
     assert!(rig.has("kill-session -t '$8'"));
     assert!(!rig.has("kill-session -t '$6'"));
-    assert!(!rig.has("kill-session -t '$7'"));
     assert!(!rig.has("kill-session -t '$0'"));
+    // B812: never one a client is on, another phone's above all: only
+    // `destroy-unattached` taken off it (an earlier version set it, and
+    // tmux reaping it under a client crashed the server).
+    for live in ["$7", "$9"] {
+        assert!(!rig.has(&format!("kill-session -t '{live}'")), "{live}");
+        assert!(
+            rig.has(&format!("set-option -t '{live}' destroy-unattached off")),
+            "{live}: {:#?}",
+            rig.commands
+        );
+    }
 }
 
 /// The person sees the session, never a group: the list, the breadcrumb's

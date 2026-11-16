@@ -5,15 +5,16 @@
 > list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_layout} #{window_active} #{window_panes} #{window_name}'
 > list-panes -a -F '#{pane_id} #{window_id} #{pane_index} #{pane_width} #{pane_height} #{pane_active} #{alternate_on} #{pane_in_mode} #{pane_current_command} #{pane_current_path}'
 @5 recv %begin 100 0 0\n%end 100 0 0\n\n
-@6 rule ok list-clients -F '#{client_name}' => moshpit-a\nmoshpit-b
-@7 rule ok show-options -wqv => moshpit-b|iPad|1757999940
-@8 rule ok list-sessions => $0 1 main
-@9 rule ok list-windows => $0 @0 0 200x50,0,0,0 1 1 main
-@10 rule ok list-panes -a -F '#{pane_id}| => -
-@11 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 200 50 1 0 0 bash
-@12 rule ok capture-pane => READY
-@13 rule ok display-message => 0 0
-@14 settle
+@6 rule ok display-message -p 'v= => v=3.8
+@7 rule ok list-clients -F '#{client_name}' => moshpit-a\nmoshpit-b
+@8 rule ok show-options -wqv => moshpit-b|iPad|1757999940
+@9 rule ok list-sessions => $0 1 main
+@10 rule ok list-windows => $0 @0 0 200x50,0,0,0 1 1 main
+@11 rule ok list-panes -a -F '#{pane_id}| => -
+@12 rule ok list-panes -a -F '#{pane_id}\s => %0 @0 0 200 50 1 0 0 bash
+@13 rule ok capture-pane => READY
+@14 rule ok display-message => 0 0
+@15 settle
 . open %0
 . view %0 veil
 . view %0 extend 2.000
@@ -37,7 +38,7 @@
 > set-option -w -t @0 @moshpit_size_owner "moshpit-a|iPhone|0"
 > display-message -p -t '@0' '#{window_panes} #{window_zoomed_flag} #{pane_id} #{window_layout} #{window-size} #{@moshpit_layout}'
 > resize-window -t @0 -x 70 -y 35
-@15 dump
+@16 dump
 = attached=1 ever=1 session=$0 window=@0 pane=%0 fwd=1 swiped=0
 = s $0 att=1 name=main
 = w @0 s=$0 idx=0 act=1 panes=1 zoom=0 name=main layout=200x50,0,0,0

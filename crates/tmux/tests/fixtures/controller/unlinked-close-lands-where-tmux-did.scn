@@ -4,6 +4,7 @@ init-size 70 35
 client-name moshpit-a
 attach
 recv %begin 100 0 0\n%end 100 0 0\n\n
+rule ok display-message -p 'v= => v=3.8
 rule ok list-sessions => $0 1 main
 rule ok list-windows => $0 @0 0 b25d,80x24,0,0,0 0 1 main\n$0 @2 1 b25e,80x24,0,0,2 0 1 logs\n$0 @1 2 b25f,80x24,0,0,1 1 1 vim
 rule ok list-panes -a -F '#{pane_id}| => -

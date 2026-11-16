@@ -1261,6 +1261,12 @@ pub(crate) fn courtesy_commands(
         // The status line the sidecar turned off, back.
         commands.extend(moshpit_tmux::boot::status_restore_commands(tmux, session));
     }
+    // B812: the phone's own group ends with the session; tmux's
+    // `destroy-unattached` no longer does it (it could crash the server
+    // under a client still pointing at the group).
+    if let Some(command) = controller.group_release_command() {
+        commands.push(format!("{tmux} {command}"));
+    }
     commands
         .iter()
         .map(|command| moshpit_tmux::boot::exec(command))

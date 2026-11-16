@@ -11,15 +11,29 @@
 //!
 //! Its life:
 //!
+//! - Only on tmux 3.8 and later (B812). Every earlier version (3.2a–3.7,
+//!   all tried on private servers) can be crashed — the whole server, every
+//!   session on the host — with a group in place: a group whose current
+//!   window index a manual `move-window -r` left behind goes NULL on the
+//!   next close (`server_client_loop`, `curw->window` at 0x10), whatever
+//!   the group's options. The attach reads `#{version}` first; below 3.8,
+//!   or unread, the phone stays on S as before groups (B457 guards the
+//!   restore).
 //! - Made from this `-CC` client without `-d`: tmux makes it and moves the
 //!   client into it in one step, and every command after it runs there — a
-//!   restore's `select-window` included. Only then `destroy-unattached on`
-//!   (set on a group no client is on yet, tmux destroys it at once) and the
-//!   mark `@moshpit_group_of` naming S.
-//! - Gone the moment this client leaves it — a switch, a detach, the app
-//!   killed, the network dropped — by tmux itself; S keeps every window.
-//! - What a client that died between the make and the option left, an
-//!   attach sweeps: a marked group no client is on.
+//!   restore's `select-window` included. Then the mark `@moshpit_group_of`
+//!   naming S.
+//! - Never `destroy-unattached` (B812): tmux reaps such a session without
+//!   detaching a client still pointing at it — a phone's control client
+//!   the server marked exiting ("too far behind": a phone in the
+//!   background, its connection stalled) — and that client's next redraw
+//!   check crashed the server (3.2a–3.7). The phone ends its group itself:
+//!   the old one right behind a switch to another, its own on the person's
+//!   end of the session ([`Controller::group_release_command`]); what a
+//!   dropped connection left, the next attach sweeps (a marked group no
+//!   client is on). `kill-session` detaches whatever still points at it.
+//! - Groups an earlier version of the app left with `destroy-unattached on`
+//!   lose it at the sweep.
 //! - S killed under it (a desktop's `kill-session`): the windows would live
 //!   on in the group alone; ours goes too, as the desktop meant.
 //!
@@ -38,7 +52,7 @@
 //! control clients are Moshpit's: each Moshpit `-CC` client (a phone's, a
 //! mosh sidecar) keeps its name in the server option `@moshpit_cc`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::control::CommandResponse;
 use crate::format::is_valid_id;
@@ -55,6 +69,30 @@ pub const GROUP_OF_OPTION: &str = "@moshpit_group_of";
 /// The server option listing Moshpit's own control clients by name: a
 /// control client on S not in it is a desktop's.
 pub const CLIENTS_OPTION: &str = "@moshpit_cc";
+
+/// The first tmux whose grouped sessions can't crash the server (B812).
+pub const GROUPS_FROM: (u32, u32) = (3, 8);
+
+/// `#{version}` as a (major, minor): `3.8`, `3.8a`, `next-3.9`; `None`
+/// for anything else (`master`, an empty reply).
+pub fn tmux_version(raw: &str) -> Option<(u32, u32)> {
+    let raw = raw.trim();
+    let raw = raw.strip_prefix("next-").unwrap_or(raw);
+    let (major, rest) = raw.split_once('.')?;
+    let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+/// Whether a server of this `#{version}` may hold a phone's group (B812):
+/// 3.8 and later, `next-3.9` included; `master` (a build from the tree)
+/// is newer than any release. Anything else — `openbsd-7.6`, an empty
+/// reply, what doesn't parse — is unknown, and gets no group.
+pub fn groups_are_safe_on(raw: &str) -> bool {
+    raw.trim() == "master" || tmux_version(raw).is_some_and(|version| version >= GROUPS_FROM)
+}
+
+/// The read of the server's version (B812), answered `v=<#{version}>`.
+pub const VERSION_READ: &str = "display-message -p 'v=#{version}'";
 
 /// Whether `name` is a phone's group, by its name.
 pub fn is_group_name(name: &str) -> bool {
@@ -101,6 +139,17 @@ pub(super) struct GroupState {
     /// The sessions a control client that isn't Moshpit's was on at the
     /// attach's check: no group of those.
     pub foreign: BTreeSet<String>,
+    /// The server is tmux 3.8 or later (B812): `None` until `#{version}`
+    /// is read, `Some(false)` when it is earlier or unread.
+    pub supported: Option<bool>,
+    /// The version read is out.
+    pub version_asked: bool,
+    /// Plain switches sent before the version was known (B812), whose
+    /// `%session-changed` is still to come.
+    pub unversioned_switches: u32,
+    /// Every phone's group at the last sweep, by id: the session each is
+    /// of (`@moshpit_group_of`).
+    pub marked: BTreeMap<String, String>,
     /// The check's answers, until the last one comes.
     pub check_self: Option<String>,
     pub check_rows: Option<Vec<(bool, String, String)>>,
@@ -141,10 +190,17 @@ impl Controller {
         (group.id.as_deref() == Some(id) || group.name == name).then(|| group.session.clone())
     }
 
-    /// Our group of `session`, unless one is already ours, tmux refused, or
-    /// a desktop's control client was on it at the attach. A mosh sidecar's
-    /// too (B773): the phone's renderer is moved into it.
+    /// Our group of `session`, unless one is already ours, tmux refused, a
+    /// desktop's control client was on it at the attach, or the server's
+    /// tmux is one a group can crash (B812). A mosh sidecar's too (B773):
+    /// the phone's renderer is moved into it.
     pub(super) fn wants_group_for(&self, session: &str) -> bool {
+        self.group.supported == Some(true) && self.group_possible(session)
+    }
+
+    /// [`Self::wants_group_for`] before the version is known: the attach
+    /// asks, and decides once the answers are in.
+    pub(super) fn group_possible(&self, session: &str) -> bool {
         !self.group.refused
             && !self.group.foreign.contains(session)
             && self
@@ -171,16 +227,37 @@ impl Controller {
         // session name only with the colon (3.6a: `-t '=name'` is "no such
         // session").
         let exact = format!("'={}:'", group.name);
+        // The group this client leaves: ended behind the move (B812: no
+        // `destroy-unattached` ends it for us).
+        let left = self
+            .group
+            .current
+            .as_ref()
+            .and_then(|current| current.id.clone());
         self.send_command(
             format!("new-session -t '{session}' -s {quoted} -P -F '#{{session_id}}'"),
             Reply::GroupMade {
                 group: group.clone(),
             },
         );
-        self.send(format!("set-option -t {exact} destroy-unattached on"));
         self.send(format!(
             "set-option -t {exact} {GROUP_OF_OPTION} '{session}'"
         ));
+        if let Some(left) = &left {
+            self.group.group_ids.remove(left);
+        }
+        if self.config.renders_output {
+            // This client was its only one, and has moved.
+            if let Some(left) = &left {
+                self.send(format!("kill-session -t '{left}'"));
+            }
+        } else {
+            // Over mosh the renderer may still be on it: ended once the
+            // renderer has moved too ([`Self::bring_renderer_into_group`]),
+            // else left to the next attach's sweep — a kill under the
+            // renderer detached it, and ended the mosh session (B583).
+            self.sidecar.group_left = left;
+        }
         self.group.current = Some(group);
         self.group.entering = true;
         self.group.landing = true;
@@ -363,6 +440,24 @@ impl Controller {
             log::info!(
                 "tmux: another session was picked while the attach asked: no group of {session} (B581)"
             );
+            // B812: picked before the version was in, it went onto that
+            // session itself: its group now, as the pick would have made.
+            let active = self.snapshot.active_session_id.clone();
+            if let Some(active) = active
+                && self.group.current.is_none()
+                && self.group.supported == Some(true)
+                && self.group_possible(&active)
+            {
+                let name = self
+                    .snapshot
+                    .sessions
+                    .get(&active)
+                    .map(|info| info.name.clone())
+                    .unwrap_or_default();
+                self.group.late = true;
+                self.enter_group(&active, &name);
+                return;
+            }
             self.group.deciding = false;
             self.apply_pending_restore_if_ready();
             return;
@@ -375,8 +470,62 @@ impl Controller {
             self.apply_pending_restore_if_ready();
             return;
         }
+        if self.group.supported != Some(true) {
+            // B812: a tmux a group can crash.
+            self.group.deciding = false;
+            self.apply_pending_restore_if_ready();
+            return;
+        }
         self.group.late = true;
         self.enter_group(session, name);
+    }
+
+    /// Read the server's version once a connection, ahead of everything a
+    /// fresh attach asks (B812): the group decisions wait for it. Not
+    /// before tmux has said where this client is: a command written
+    /// earlier lands in the shell, and is dropped.
+    pub(super) fn read_server_version(&mut self) {
+        if self.group.supported.is_some() || self.group.version_asked || !self.snapshot.is_attached
+        {
+            return;
+        }
+        self.group.version_asked = true;
+        self.send_command(VERSION_READ.to_owned(), Reply::ServerVersion);
+    }
+
+    pub(super) fn server_version_answered(&mut self, response: &CommandResponse) {
+        let version = response
+            .lines
+            .first()
+            .filter(|_| !response.is_error)
+            .and_then(|line| moshpit_herdr::text::trim_whitespaces(line).strip_prefix("v="))
+            .unwrap_or("")
+            .to_owned();
+        let safe = groups_are_safe_on(&version);
+        if !safe {
+            log::info!(
+                "tmux {version:?}: no group for the phone (B812: a group can crash a tmux before 3.8)"
+            );
+        }
+        self.group.supported = Some(safe);
+    }
+
+    /// This client onto `session` itself, no group. Before the version is
+    /// known (B812) its `%session-changed` comes back after it: counted, so
+    /// that echo is not taken for a move to make a group of — the person
+    /// may have picked another session since.
+    pub(super) fn switch_without_group(&mut self, session: &str) {
+        self.send(format!("switch-client -t {session}"));
+        if self.group.supported.is_none() {
+            self.group.unversioned_switches += 1;
+        }
+    }
+
+    /// The person's end of the session (B812): our group ended, over a
+    /// channel outside `-CC`. tmux's `destroy-unattached` used to.
+    pub fn group_release_command(&self) -> Option<String> {
+        let id = self.group.current.as_ref()?.id.clone()?;
+        is_valid_id(&id).then(|| format!("kill-session -t '{id}'"))
     }
 
     /// This control client into Moshpit's list (a mosh sidecar's attach).
@@ -493,19 +642,35 @@ impl Controller {
                 Some((id.to_owned(), attached, of))
             })
             .collect();
+        self.group.marked = rows
+            .iter()
+            .filter(|(_, _, of)| !of.is_empty())
+            .map(|(id, _, of)| (id.clone(), of.clone()))
+            .collect();
         let ours = self.group.current.as_ref().and_then(|g| g.id.clone());
-        let ids: BTreeSet<&str> = rows.iter().map(|(id, _, _)| id.as_str()).collect();
         let mut doomed = Vec::new();
+        let mut defused = Vec::new();
         for (id, attached, of) in &rows {
             if of.is_empty() || Some(id) == ours.as_ref() {
                 continue;
             }
-            if *attached == 0 || !ids.contains(of.as_str()) {
+            // B812: never one a client is on (another phone's, made by
+            // any version): `kill-session` would end that phone's view.
+            // Its session gone, it waits for its phone to leave.
+            if *attached == 0 {
                 doomed.push(id.clone());
+            } else {
+                defused.push(id.clone());
             }
         }
         for id in doomed {
             self.send(format!("kill-session -t '{id}'"));
+        }
+        // B812: another phone's group still in use, made by an earlier
+        // version with `destroy-unattached on`: off, so tmux never reaps it
+        // under a client it still points at.
+        for id in defused {
+            self.send(format!("set-option -t '{id}' destroy-unattached off"));
         }
     }
 

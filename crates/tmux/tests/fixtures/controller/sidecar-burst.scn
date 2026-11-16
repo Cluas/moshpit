@@ -2,6 +2,7 @@
 config renders=0
 attach
 recv %begin 100 0 0\n%end 100 0 0\n\n
+rule ok display-message -p 'v= => v=3.8
 rule ok list-sessions => $0 1 aaa
 rule ok list-windows => $0 @0 0 b25d,80x24,0,0,0 1 1 zsh
 rule ok list-panes -a -F '#{pane_id}| => -
