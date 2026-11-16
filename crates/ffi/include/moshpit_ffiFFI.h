@@ -414,6 +414,13 @@ typedef void (*UniffiCallbackInterfacePreferencesHostMethod2)(uint64_t, int8_t* 
     );
 
 #endif
+#ifndef UNIFFI_FFIDEF_CALLBACK_INTERFACE_STORED_KEY_READER_METHOD0
+#define UNIFFI_FFIDEF_CALLBACK_INTERFACE_STORED_KEY_READER_METHOD0
+typedef void (*UniffiCallbackInterfaceStoredKeyReaderMethod0)(uint64_t, RustBuffer, RustBuffer* _Nonnull, 
+        RustCallStatus *_Nonnull uniffiCallStatus
+    );
+
+#endif
 #ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_TRANSFER_PROGRESS
 #define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_TRANSFER_PROGRESS
 typedef struct UniffiVTableCallbackInterfaceTransferProgress {
@@ -511,6 +518,15 @@ typedef struct UniffiVTableCallbackInterfacePreferencesHost {
 } UniffiVTableCallbackInterfacePreferencesHost;
 
 #endif
+#ifndef UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_STORED_KEY_READER
+#define UNIFFI_FFIDEF_V_TABLE_CALLBACK_INTERFACE_STORED_KEY_READER
+typedef struct UniffiVTableCallbackInterfaceStoredKeyReader {
+    UniffiCallbackInterfaceFree _Nonnull uniffiFree;
+    UniffiCallbackInterfaceClone _Nonnull uniffiClone;
+    UniffiCallbackInterfaceStoredKeyReaderMethod0 _Nonnull describe;
+} UniffiVTableCallbackInterfaceStoredKeyReader;
+
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_AGENTMACHINE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_AGENTMACHINE
 uint64_t uniffi_moshpit_ffi_fn_clone_agentmachine(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -604,6 +620,36 @@ void uniffi_moshpit_ffi_fn_method_agentmachine_tree(uint64_t ptr, RustBuffer con
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_UNTRACK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_AGENTMACHINE_UNTRACK
 RustBuffer uniffi_moshpit_ffi_fn_method_agentmachine_untrack(uint64_t ptr, RustBuffer conn, int8_t keep_waiting_cards, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PUSHFILESHANDLE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_PUSHFILESHANDLE
+uint64_t uniffi_moshpit_ffi_fn_clone_pushfileshandle(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PUSHFILESHANDLE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_PUSHFILESHANDLE
+void uniffi_moshpit_ffi_fn_free_pushfileshandle(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_PUSHFILESHANDLE_NEW
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CONSTRUCTOR_PUSHFILESHANDLE_NEW
+uint64_t uniffi_moshpit_ffi_fn_constructor_pushfileshandle_new(RustBuffer standing_path, RustBuffer finishes_path, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_NOTE_RING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_NOTE_RING
+int8_t uniffi_moshpit_ffi_fn_method_pushfileshandle_note_ring(uint64_t ptr, RustBuffer conn, RustBuffer pane, int64_t ended_at, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_NOTE_STANDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_NOTE_STANDING
+int8_t uniffi_moshpit_ffi_fn_method_pushfileshandle_note_standing(uint64_t ptr, RustBuffer conn, RustBuffer entry, double now, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_STANDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PUSHFILESHANDLE_STANDING
+RustBuffer uniffi_moshpit_ffi_fn_method_pushfileshandle_standing(uint64_t ptr, RustBuffer conn, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_ACCENTEDITORHANDLE
@@ -1738,6 +1784,16 @@ int8_t uniffi_moshpit_ffi_fn_method_connectionstorehandle_mark_connected(uint64_
 RustBuffer uniffi_moshpit_ffi_fn_method_connectionstorehandle_names_using_key(uint64_t ptr, RustBuffer key, RustBuffer keychain_ref, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELEASE_ITEM
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELEASE_ITEM
+RustBuffer uniffi_moshpit_ffi_fn_method_connectionstorehandle_release_item(uint64_t ptr, RustBuffer account, uint64_t keys, uint64_t keychain, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELEASE_PENDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELEASE_PENDING
+RustBuffer uniffi_moshpit_ffi_fn_method_connectionstorehandle_release_pending(uint64_t ptr, uint64_t keys, uint64_t keychain, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELOAD_IF_NEEDED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_CONNECTIONSTOREHANDLE_RELOAD_IF_NEEDED
 void uniffi_moshpit_ffi_fn_method_connectionstorehandle_reload_if_needed(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -2068,6 +2124,26 @@ int8_t uniffi_moshpit_ffi_fn_method_shortcutstorehandle_toolbar_is_full(uint64_t
 void uniffi_moshpit_ffi_fn_method_shortcutstorehandle_update(uint64_t ptr, RustBuffer shortcut, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_STOREDKEYREADER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_STOREDKEYREADER
+uint64_t uniffi_moshpit_ffi_fn_clone_storedkeyreader(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_STOREDKEYREADER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FREE_STOREDKEYREADER
+void uniffi_moshpit_ffi_fn_free_storedkeyreader(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_STOREDKEYREADER
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_INIT_CALLBACK_VTABLE_STOREDKEYREADER
+void uniffi_moshpit_ffi_fn_init_callback_vtable_storedkeyreader(const UniffiVTableCallbackInterfaceStoredKeyReader* _Nonnull vtable
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_STOREDKEYREADER_DESCRIBE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_STOREDKEYREADER_DESCRIBE
+RustBuffer uniffi_moshpit_ffi_fn_method_storedkeyreader_describe(uint64_t ptr, RustBuffer secret, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_THEMESTOREHANDLE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_CLONE_THEMESTOREHANDLE
 uint64_t uniffi_moshpit_ffi_fn_clone_themestorehandle(uint64_t handle, RustCallStatus *_Nonnull out_status
@@ -2148,6 +2224,17 @@ void uniffi_moshpit_ffi_fn_method_themestorehandle_set_untitled_name(uint64_t pt
 RustBuffer uniffi_moshpit_ffi_fn_method_themestorehandle_theme(uint64_t ptr, RustBuffer id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PUSH_DIAGNOSTICS_RECENT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PUSH_DIAGNOSTICS_RECENT
+RustBuffer uniffi_moshpit_ffi_fn_func_push_diagnostics_recent(RustBuffer path, double since, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PUSH_DIAGNOSTICS_SOURCE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_PUSH_DIAGNOSTICS_SOURCE
+RustBuffer uniffi_moshpit_ffi_fn_func_push_diagnostics_source(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_ACCENT_EDITOR_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_ACCENT_EDITOR_MESSAGE
 RustBuffer uniffi_moshpit_ffi_fn_func_accent_editor_message(RustBuffer name, RustBuffer accent_hex, RustCallStatus *_Nonnull out_status
@@ -2186,6 +2273,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_pick_key(RustBuffer draft
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SAVE_PLAN
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SAVE_PLAN
 RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_save_plan(RustBuffer draft, RustBuffer existing, RustBuffer fresh, RustBuffer keys, RustBuffer given, int64_t udp_start, int64_t udp_end, RustBuffer new_ref, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SECRET_MISSING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SECRET_MISSING
+RustBuffer uniffi_moshpit_ffi_fn_func_connection_draft_secret_missing(RustBuffer draft, RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_CONNECTION_DRAFT_SECRET_STATES
@@ -2500,6 +2592,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_page_event(RustBuffer screen, RustBuffer j
 RustBuffer uniffi_moshpit_ffi_fn_func_page_message(RustBuffer message, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
+int8_t uniffi_moshpit_ffi_fn_func_local_network_may_be_why(RustBuffer host, RustBuffer why, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_ACCENT_THEME
 RustBuffer uniffi_moshpit_ffi_fn_func_store_accent_theme(RustBuffer id, RustBuffer name, RustBuffer accent_hex, RustCallStatus *_Nonnull out_status
@@ -2564,7 +2661,7 @@ RustBuffer uniffi_moshpit_ffi_fn_func_store_normalized_hex(RustBuffer hex, RustC
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RECOVER_ORPHANED_KEYS
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RECOVER_ORPHANED_KEYS
-RustBuffer uniffi_moshpit_ffi_fn_func_store_recover_orphaned_keys(uint64_t connections, uint64_t keys, uint64_t keychain, RustBuffer name_template, double now, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_moshpit_ffi_fn_func_store_recover_orphaned_keys(uint64_t connections, uint64_t keys, uint64_t keychain, RustBuffer reader, RustBuffer name_template, double now, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_STORE_RELEASE
@@ -2868,6 +2965,18 @@ void ffi_moshpit_ffi_rust_future_free_void(uint64_t handle
 void ffi_moshpit_ffi_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PUSH_DIAGNOSTICS_RECENT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PUSH_DIAGNOSTICS_RECENT
+uint16_t uniffi_moshpit_ffi_checksum_func_push_diagnostics_recent(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PUSH_DIAGNOSTICS_SOURCE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PUSH_DIAGNOSTICS_SOURCE
+uint16_t uniffi_moshpit_ffi_checksum_func_push_diagnostics_source(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_ACCENT_EDITOR_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_ACCENT_EDITOR_MESSAGE
 uint16_t uniffi_moshpit_ffi_checksum_func_accent_editor_message(void
@@ -2913,6 +3022,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_pick_key(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_SAVE_PLAN
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_SAVE_PLAN
 uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_save_plan(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_SECRET_MISSING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_CONNECTION_DRAFT_SECRET_MISSING
+uint16_t uniffi_moshpit_ffi_checksum_func_connection_draft_secret_missing(void
     
 );
 #endif
@@ -3282,6 +3397,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_page_message(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_LOCAL_NETWORK_MAY_BE_WHY
+uint16_t uniffi_moshpit_ffi_checksum_func_local_network_may_be_why(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ACCENT_THEME
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_STORE_ACCENT_THEME
 uint16_t uniffi_moshpit_ffi_checksum_func_store_accent_theme(void
@@ -3501,6 +3622,24 @@ uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_tree(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_UNTRACK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_AGENTMACHINE_UNTRACK
 uint16_t uniffi_moshpit_ffi_checksum_method_agentmachine_untrack(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_NOTE_RING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_NOTE_RING
+uint16_t uniffi_moshpit_ffi_checksum_method_pushfileshandle_note_ring(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_NOTE_STANDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_NOTE_STANDING
+uint16_t uniffi_moshpit_ffi_checksum_method_pushfileshandle_note_standing(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_STANDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PUSHFILESHANDLE_STANDING
+uint16_t uniffi_moshpit_ffi_checksum_method_pushfileshandle_standing(void
     
 );
 #endif
@@ -4512,6 +4651,18 @@ uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_names_using_ke
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELEASE_ITEM
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELEASE_ITEM
+uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_release_item(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELEASE_PENDING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELEASE_PENDING
+uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_release_pending(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELOAD_IF_NEEDED
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_CONNECTIONSTOREHANDLE_RELOAD_IF_NEEDED
 uint16_t uniffi_moshpit_ffi_checksum_method_connectionstorehandle_reload_if_needed(void
@@ -4800,6 +4951,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_shortcutstorehandle_update(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_STOREDKEYREADER_DESCRIBE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_STOREDKEYREADER_DESCRIBE
+uint16_t uniffi_moshpit_ffi_checksum_method_storedkeyreader_describe(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_THEMESTOREHANDLE_ALL_THEMES
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_THEMESTOREHANDLE_ALL_THEMES
 uint16_t uniffi_moshpit_ffi_checksum_method_themestorehandle_all_themes(void
@@ -4881,6 +5038,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_themestorehandle_theme(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_AGENTMACHINE_NEW
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_AGENTMACHINE_NEW
 uint16_t uniffi_moshpit_ffi_checksum_constructor_agentmachine_new(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_PUSHFILESHANDLE_NEW
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_CONSTRUCTOR_PUSHFILESHANDLE_NEW
+uint16_t uniffi_moshpit_ffi_checksum_constructor_pushfileshandle_new(void
     
 );
 #endif

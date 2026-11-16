@@ -141,7 +141,7 @@ func TestOpenStatusDecodes(t *testing.T) {
 //
 // It was produced by the exact openssl pipeline scripts/host/moshpit-push.sh runs,
 // with the IV pinned so the bytes are reproducible. The same literal appears in
-// the Swift test (Tests/MoshpitTests/Services/PushSealedBoxTests.swift). Three
+// the Rust test (crates/seal/src/envelope.rs, tests::vector). Three
 // implementations, one vector: if any of them drifts, exactly one of these tests
 // goes red instead of every notification silently becoming undecryptable in the
 // field.

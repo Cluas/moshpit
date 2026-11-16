@@ -273,14 +273,60 @@ jobs:
           done < "$RUNNER_TEMP/seed.env"
           cut -d= -f1 "$RUNNER_TEMP/seed.env"
 
-      - name: Build & test
+      # Built once; the unit tests and the UI flows then run as two steps,
+      # so a UI runner that fails to start (it timed out waiting for the
+      # simulator's accessibility to load, runs 43689263388 and 43754820240)
+      # can be retried without it hiding the unit tests' result, and the UI
+      # flows still run when a unit test fails.
+      - name: Build for testing
         run: |
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project Moshpit.xcodeproj \
             -scheme Moshpit \
             -destination "platform=iOS Simulator,name=$SIMULATOR" \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Unit tests
+        run: |
+          xcodebuild test-without-building \
+            -project Moshpit.xcodeproj \
+            -scheme Moshpit \
+            -destination "platform=iOS Simulator,name=$SIMULATOR" \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            -only-testing:MoshpitTests \
+            CODE_SIGNING_ALLOWED=NO
+
+      # The simulator is booted and finished booting before the UI runner
+      # starts. A runner that still fails to initialize is retried once on a
+      # freshly booted simulator; any other failure is the flows' own.
+      - name: UI tests
+        if: success() || failure()
+        run: |
+          boot() {
+            xcrun simctl boot "$SIMULATOR" 2>/dev/null || true
+            xcrun simctl bootstatus "$SIMULATOR" -b
+          }
+          run_ui() {
+            set -o pipefail
+            xcodebuild test-without-building \
+              -project Moshpit.xcodeproj \
+              -scheme Moshpit \
+              -destination "platform=iOS Simulator,name=$SIMULATOR" \
+              -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+              -only-testing:MoshpitUITests \
+              CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ui-tests.log"
+          }
+          boot
+          if run_ui; then exit 0; fi
+          if grep -q "failed to initialize for UI testing" "$RUNNER_TEMP/ui-tests.log"; then
+            echo "::warning::the UI test runner failed to start; retrying once on a fresh boot"
+            xcrun simctl shutdown "$SIMULATOR" || true
+            boot
+            run_ui
+          else
+            exit 1
+          fi
 
       - name: Take the staged host down
         if: always()

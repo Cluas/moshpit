@@ -1112,3 +1112,119 @@ fn the_others_are_every_saved_connection_but_the_one_edited() {
     );
     assert_eq!(others(&saved, None).len(), 2, "a new connection");
 }
+
+// MARK: - A secret this device doesn't hold (B782)
+
+/// B782: a phone restored from a backup has every connection record and
+/// none of their keychain items (all `ThisDeviceOnly`). The form showed
+/// the password as "Saved", Save kept the item that isn't there, and the
+/// connect failed with the SideStore re-sign text. Marked missing, the
+/// draft keeps nothing: the field is empty, it says whose secret is gone,
+/// Save waits for a new one, and the new one goes to the connection's own
+/// item.
+#[test]
+fn a_password_this_device_lacks_is_not_kept_and_a_new_one_goes_to_its_item() {
+    let mut c = blank();
+    c.name = "nas".to_owned();
+    c.host = "nas.example.com".to_owned();
+    c.username = "me".to_owned();
+    c.keychain_ref = Some("moshpit.secret.own".to_owned());
+    let mut draft = Draft::of(&c);
+    assert!(draft.can_save(&[]), "a kept password saves as it was");
+
+    assert!(draft.secret_missing(&c.display_name()));
+    assert_eq!(draft.password_state(), SecretState::Empty);
+    assert!(!draft.keeps_stored_password());
+    assert!(!draft.can_save(&[]), "Save waits for the password again");
+    let shown = draft.shown(&[], UDP);
+    assert_eq!(
+        shown.missing,
+        Some(screen::Missing {
+            name: "nas".to_owned(),
+            secret: Auth::Password,
+        })
+    );
+    assert!(!shown.secrets.stored_password);
+
+    draft.set_given(PASSWORD);
+    assert!(draft.can_save(&[]));
+    let plan = draft
+        .save_plan(Some(&c), blank, &[], UDP, || FRESH.to_owned())
+        .unwrap();
+    assert_eq!(plan.write, Some(AuthMethod::Password));
+    assert_eq!(
+        plan.connection.keychain_ref.as_deref(),
+        Some("moshpit.secret.own"),
+        "written where the record already points"
+    );
+    assert_eq!(plan.released, None);
+
+    // A record with no name says whose by its address.
+    let mut unnamed = c.clone();
+    unnamed.name = String::new();
+    let mut draft = Draft::of(&unnamed);
+    assert!(draft.secret_missing(&unnamed.display_name()));
+    assert_eq!(
+        draft.shown(&[], UDP).missing.map(|m| m.name),
+        Some("me@nas.example.com".to_owned())
+    );
+}
+
+#[test]
+fn a_pasted_key_this_device_lacks_is_not_kept_and_names_the_key() {
+    let mut c = blank();
+    c.name = "nas".to_owned();
+    c.host = "nas.example.com".to_owned();
+    c.username = "me".to_owned();
+    c.auth_method = AuthMethod::Key;
+    c.keychain_ref = Some("moshpit.secret.own".to_owned());
+    let mut draft = Draft::of(&c);
+    assert!(draft.secret_missing("nas"));
+    assert_eq!(draft.key_state(), SecretState::Empty);
+    assert!(!draft.can_save(&[]));
+    assert_eq!(
+        draft.shown(&[], UDP).missing.map(|m| m.secret),
+        Some(Auth::Key)
+    );
+    draft.set_given(KEY);
+    let plan = draft
+        .save_plan(Some(&c), blank, &[], UDP, || FRESH.to_owned())
+        .unwrap();
+    assert_eq!(plan.write, Some(AuthMethod::Key));
+    assert_eq!(
+        plan.connection.keychain_ref.as_deref(),
+        Some("moshpit.secret.own")
+    );
+
+    // Picking a managed key instead saves too, and lets the own item go.
+    let key = laptop();
+    let mut draft = Draft::of(&c);
+    draft.secret_missing("nas");
+    draft.pick_key(Some(key.id));
+    assert!(draft.can_save(std::slice::from_ref(&key)));
+    let plan = draft
+        .save_plan(Some(&c), blank, std::slice::from_ref(&key), UDP, || {
+            FRESH.to_owned()
+        })
+        .unwrap();
+    assert_eq!(plan.write, None);
+    assert_eq!(plan.released.as_deref(), Some("moshpit.secret.own"));
+}
+
+/// A managed key's item is the key's (B781 says it is gone, in SSH Keys),
+/// and a connection with no item of its own has nothing to lack.
+#[test]
+fn only_a_connections_own_item_can_be_missing() {
+    let key = laptop();
+    let mut draft = Draft::of(&using(&key));
+    assert!(!draft.secret_missing("box"));
+    assert_eq!(draft.shown(&[key], UDP).missing, None);
+    assert!(draft.keeps_stored_key());
+
+    let mut draft = Draft::of(&blank());
+    assert!(!draft.secret_missing("box"));
+    assert_eq!(draft.shown(&[], UDP).missing, None);
+
+    let mut draft = Draft::new(false);
+    assert!(!draft.secret_missing("box"));
+}

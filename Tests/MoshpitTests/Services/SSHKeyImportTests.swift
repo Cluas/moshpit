@@ -18,7 +18,7 @@ struct SSHKeyImportTests {
     /// converts a key kept as pasted) is one its key reader signs with.
     private static func connectPathAccepts(_ stored: Data) async throws -> Bool {
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.saveSecret(stored, forRef: ref, requireBiometry: false)
         let service = SSHService(keychain: keychain, protectedDataAvailable: { true })
         let connection = ServerConnection(name: "imported", host: "192.0.2.1", username: "tester",

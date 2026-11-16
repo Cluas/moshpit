@@ -105,10 +105,8 @@ struct SSHKeysNSHPage: View {
             model.cancelDelete()
         case .delete(let id):
             if let key = key(id) {
-                let keychain = keychainHolder.service
-                model.delete(key, from: keyStore, connections: connections.store) {
-                    try await keychain.delete(forRef: $0)
-                }
+                model.delete(key, from: keyStore, connections: connections.store,
+                             keychain: keychainHolder.service.storeHost)
             }
         case .dismissNotice:
             model.dismissNotice()
@@ -225,24 +223,21 @@ final class SSHKeysModel {
     }
 
     /// The alert's Delete: the key's private key, then its record, as on the
-    /// SwiftUI page (``SSHKeyDeletion``); the notice says why when either
-    /// stays. `deleteItem` is the keychain's delete.
+    /// SwiftUI page (``SSHKeyDeletion``, the core's rule); the notice says
+    /// why when either stays. `keychain` is where the private key is.
     func delete(_ key: SSHKeyRecord, from store: SSHKeyStore, connections: ConnectionStore,
-                deleteItem: @escaping (String) async throws -> Void) {
+                keychain: KeychainHost) {
         deleting = nil
         post()
-        Task {
-            do {
-                try await SSHKeyDeletion.delete(key, from: store, connections: connections,
-                                                deleteItem: deleteItem)
-            } catch let failure as SSHKeyDeletion.Failure {
-                show(failure)
-            } catch {
-                show(.keychain(String(describing: error)))
-            }
-            snapshot = SSHKeysSnapshot(store: store, connections: connections)
-            post()
+        do {
+            try SSHKeyDeletion.delete(key, from: store, connections: connections, keychain: keychain)
+        } catch let failure as SSHKeyDeletion.Failure {
+            show(failure)
+        } catch {
+            show(.keychain(String(describing: error)))
         }
+        snapshot = SSHKeysSnapshot(store: store, connections: connections)
+        post()
     }
 
     private func show(_ failure: SSHKeyDeletion.Failure) {

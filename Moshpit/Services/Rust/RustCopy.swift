@@ -28,8 +28,10 @@ enum RustCopy {
 
     // MARK: Failures
 
-    /// The card's text for a failed connect.
-    static func failure(kind: FailureKindValue, cause: FailureCauseValue) -> String {
+    /// The card's text for a failed connect of `connection` (nil: one the
+    /// copy can't name, which says it without its name).
+    static func failure(kind: FailureKindValue, cause: FailureCauseValue,
+                        connection: ServerConnection? = nil) -> String {
         switch cause {
         case .unreachable(let host, let port, let why):
             return unreachable(host: host, port: port, why: why)
@@ -43,7 +45,7 @@ enum RustCopy {
         case .hostKeysLocked:
             return SSHError.hostKeysLocked.description
         case .credentials(let why):
-            return credentials(why)
+            return credentials(why, connection: connection)
         case .channel:
             return SSHError.channelOpenFailed.description
         case .moshBootstrap(let why):
@@ -58,7 +60,7 @@ enum RustCopy {
             case .lost:
                 return String(localized: "The connection dropped while it was being set up. Try again.")
             case .credentialsLocked:
-                return credentials(.locked)
+                return credentials(.locked, connection: connection)
             default:
                 return SSHError.underlying(RustCoreFailure()).description
             }
@@ -77,13 +79,14 @@ enum RustCopy {
             // A port is a name, not a quantity: 2222, never "2,222".
             return String(localized: "\(host) refused the connection on port \(String(port)). Check the port, and that SSH is running there.")
         case .noAddress:
-            // A `.local` name is looked up on the local network itself.
-            if LocalNetworkHost.isMulticastName(host) {
+            // The core's rule, the Home card's too (B801): a `.local` name,
+            // looked up on the local network itself.
+            if localNetworkMayBeWhy(host: host, why: why) {
                 return String(localized: "Couldn't find \(host) on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.")
             }
             return String(localized: "Couldn't find \(host). Check the host name.")
         case .timedOut, .noRoute, .other:
-            if LocalNetworkHost.contains(host) {
+            if localNetworkMayBeWhy(host: host, why: why) {
                 return String(localized: "Couldn't reach \(host) on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.")
             }
             switch why {
@@ -97,7 +100,7 @@ enum RustCopy {
         }
     }
 
-    private static func credentials(_ why: CredentialsWhyValue) -> String {
+    private static func credentials(_ why: CredentialsWhyValue, connection: ServerConnection?) -> String {
         switch why {
         case .rejected:
             return SSHError.authenticationFailed.description
@@ -119,12 +122,32 @@ enum RustCopy {
         case .signerFailed:
             return SSHError.underlying(RustCoreFailure()).description
         case .unavailable:
-            return SSHError.credentialUnavailable.description
+            // Gone, or unreadable with the device unlocked: a phone restored
+            // from a backup has the connection and not its keychain item
+            // (B782). It used to say "re-sign via SideStore".
+            guard let connection else { return SSHError.credentialUnavailable.description }
+            return missingCredential(name: connection.displayName, method: connection.authMethod,
+                                     managedKey: connection.sshKeyId != nil)
         case .cancelled:
             // Face ID's cancel and the passphrase card's alike (B392).
             return SSHError.credentialCancelled.description
         case .locked:
             return SSHError.credentialLocked.description
+        }
+    }
+
+    /// What a sign-in says when connection `name`'s saved secret isn't on
+    /// this device (B782): its password or the key pasted into it, asked
+    /// for again in Edit (Home's Connect opens it with the field ready), or
+    /// the managed key it picked (SSH Keys says it is gone, B781).
+    static func missingCredential(name: String, method: AuthMethod, managedKey: Bool) -> String {
+        switch method {
+        case .password:
+            String(localized: "The password for \(name) isn't on this iPhone. Enter it again.")
+        case .key where managedKey:
+            String(localized: "The key \(name) signs in with isn't on this iPhone. Open Edit to pick another key.")
+        case .key:
+            String(localized: "The private key for \(name) isn't on this iPhone. Paste it again.")
         }
     }
 
@@ -256,56 +279,5 @@ enum RustCopy {
             return .wouldDowngrade(HerdrVersionReport(client: client, server: server))
         case .unneeded: return .unneeded
         }
-    }
-}
-
-/// Whether a host the person typed is on the local network as iOS's Local
-/// Network permission counts it (B740): a private or link-local address, a
-/// `.local` name (multicast DNS), or a one-word name the network's own
-/// resolver answers. A tailnet address (100.64/10) or a public one goes out
-/// through a route iOS doesn't ask about.
-enum LocalNetworkHost {
-    static func contains(_ host: String) -> Bool {
-        let name = normalized(host)
-        if let bytes = ipv4(name) {
-            switch (bytes[0], bytes[1]) {
-            case (10, _), (192, 168), (169, 254): return true
-            case (172, let second): return (16...31).contains(second)
-            default: return false
-            }
-        }
-        if let bytes = ipv6(name) {
-            // fe80::/10 link-local, fc00::/7 unique local.
-            return (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) || bytes[0] & 0xfe == 0xfc
-        }
-        if isMulticastName(name) { return true }
-        return !name.isEmpty && !name.contains(".") && name != "localhost"
-    }
-
-    /// A name looked up with multicast DNS, on the local network itself.
-    static func isMulticastName(_ host: String) -> Bool {
-        normalized(host).hasSuffix(".local")
-    }
-
-    /// Lowercased, without the brackets, zone or trailing dot a host may be
-    /// typed with.
-    private static func normalized(_ host: String) -> String {
-        var name = host.trimmingCharacters(in: .whitespaces).lowercased()
-        if name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
-        if let zone = name.firstIndex(of: "%") { name = String(name[..<zone]) }
-        while name.hasSuffix(".") { name.removeLast() }
-        return name
-    }
-
-    private static func ipv4(_ name: String) -> [UInt8]? {
-        var address = in_addr()
-        guard inet_pton(AF_INET, name, &address) == 1 else { return nil }
-        return withUnsafeBytes(of: address) { Array($0) }
-    }
-
-    private static func ipv6(_ name: String) -> [UInt8]? {
-        var address = in6_addr()
-        guard inet_pton(AF_INET6, name, &address) == 1 else { return nil }
-        return withUnsafeBytes(of: address) { Array($0) }
     }
 }

@@ -172,20 +172,12 @@ final class TerminalNSHModel {
         }
     }
 
-    #if DEBUG
-    /// The page on screen, for the debug director.
-    static weak var current: TerminalNSHModel?
-    #endif
-
     /// `surface` shows the terminal from now on: everything as it is.
     func attach(_ surface: NSHSurface) {
         self.surface = surface
         let key = "MOSHPIT_NSH_KEYBOARD_ALIGN"
         let off = UserDefaults.standard.object(forKey: key) != nil && !UserDefaults.standard.bool(forKey: key)
         if !off { keyboardAlign = NSHKeyboardAlign(surface: surface) }
-        #if DEBUG
-        Self.current = self
-        #endif
         if let chrome { surface.post(chrome.message) }
         if let bar { surface.post(bar.message) }
         if let switcher { surface.post(switcher.message) }

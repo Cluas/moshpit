@@ -14,16 +14,13 @@
 //!
 //! A text is cut short when, measured as the headless engine lays it out,
 //! it needs more lines than its limit gives it (or, on a line that doesn't
-//! wrap, more width than its box). The headless engine measures every
-//! character at `0.55 ×` its font size: about right for Latin text,
-//! half of what Chinese, Japanese and Korean take, so their verdicts here
-//! are optimistic and the device has the last word.
+//! wrap, more width than its box). The engine is `common::text_engine`'s:
+//! Approx's 0.55 em a character, a wide (CJK) one at a full em as on a
+//! phone.
 
 use std::collections::{HashMap, HashSet};
 
-use nsh_core::{
-    ApproxTextEngine, AttributedText, Bounds, EllipsizeMode, NodeId, Points, TextEngine, ViewKind,
-};
+use nsh_core::{AttributedText, Bounds, EllipsizeMode, NodeId, Points, TextEngine, ViewKind};
 use nsh_testing::{Headless, LayoutNode};
 
 /// The roles a screen reader announces as something to press.
@@ -170,17 +167,17 @@ pub fn audit(app: &Headless, width: f32, skip: &[&str]) -> Vec<String> {
         // needs more lines (or, on one unwrapped line, more width) than it
         // was given. A head or middle ellipsis (a path) is the design.
         let given = text.content.size.width.0;
-        // The engine's 0.55 em a character is a tenth wider than San
-        // Francisco's Latin letters (about 0.5 em): a Latin text is given
-        // that much more room before it counts as cut. CJK, which the
-        // engine undercounts instead, gets none.
+        // The engine's 0.55 em a Latin character is a tenth wider than San
+        // Francisco's (about 0.5 em): a Latin text is given that much more
+        // room before it counts as cut. CJK, measured at its width, gets
+        // none.
         let latin = !attributed.text.chars().any(|c| (c as u32) >= 0x1100);
         let room = if latin { given / 0.9 } else { given };
         let designed = matches!(
             attributed.ellipsize,
             EllipsizeMode::Head | EllipsizeMode::Middle
         );
-        let engine = ApproxTextEngine;
+        let engine = super::text_engine::WideTextEngine;
         let mut free: AttributedText = (**attributed).clone();
         free.max_lines = 0;
         let short = if attributed.no_wrap {

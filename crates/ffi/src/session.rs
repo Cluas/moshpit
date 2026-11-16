@@ -42,7 +42,7 @@ use moshpit_session::{
     self as core, Cause, ConnectionSpec, CredentialError, Credentials, CredentialsWhy, Degrade,
     Discarded, EndReason, EventKind, Failure, FailureKind, KeyWhy, MoshWhy, PaneInfo, Protocol,
     ProxyWhy, ResumeOutcome, SessionMemory, SessionState, Sessions, Timing, TmuxAction, TmuxView,
-    Transport, UdpFlow, UdpNetwork, UnreachableWhy,
+    Transport, TunnelWhy, UdpFlow, UdpNetwork, UnreachableWhy,
 };
 use moshpit_ssh::{
     Auth, BoxFuture, HardwareKey, HostSignature, KeySigner, KnownHosts, LinkFault, SignerError,
@@ -419,6 +419,21 @@ pub enum UnreachableValue {
     NoAddress,
     NoRoute,
     Other,
+}
+
+/// Whether the Local Network permission may be why `host` didn't answer
+/// for `why` (B740, B801): the app's alert says it by the same rule the
+/// Home card does (`moshpit_app::local_network`).
+#[uniffi::export]
+pub fn local_network_may_be_why(host: String, why: UnreachableValue) -> bool {
+    let why = match why {
+        UnreachableValue::Refused => UnreachableWhy::Refused,
+        UnreachableValue::TimedOut => UnreachableWhy::TimedOut,
+        UnreachableValue::NoAddress => UnreachableWhy::NoAddress,
+        UnreachableValue::NoRoute => UnreachableWhy::NoRoute,
+        UnreachableValue::Other => UnreachableWhy::Other,
+    };
+    moshpit_app::local_network::may_be_why(&host, why)
 }
 
 /// Why the SOCKS5 proxy didn't carry the connection.
@@ -1458,6 +1473,9 @@ fn failure_value(failure: &Failure) -> SessionStateValue {
             FailureKind::Channel => FailureKindValue::Channel,
             FailureKind::MoshBootstrap => FailureKindValue::MoshBootstrap,
             FailureKind::Lost => FailureKindValue::Lost,
+            // F1's jump hosts are the NSH form's: the Swift app's specs go
+            // direct and never fail this way. Said as the nearest.
+            FailureKind::Route => FailureKindValue::Unreachable,
         },
         cause: cause_value(&failure.cause),
         log: failure.log.clone(),
@@ -1512,6 +1530,16 @@ pub(crate) fn cause_value(cause: &Cause) -> FailureCauseValue {
             host: host.clone(),
             port: *port,
         },
+        // F1 (see `failure_value`): never from the Swift app's specs.
+        Cause::Tunnel { host, port, why } => FailureCauseValue::Unreachable {
+            host: host.clone(),
+            port: *port,
+            why: match why {
+                TunnelWhy::TimedOut => UnreachableValue::TimedOut,
+                _ => UnreachableValue::Other,
+            },
+        },
+        Cause::Route(_) => FailureCauseValue::Plain,
         Cause::Credentials(why) => FailureCauseValue::Credentials {
             why: match why {
                 CredentialsWhy::Rejected { user } => {

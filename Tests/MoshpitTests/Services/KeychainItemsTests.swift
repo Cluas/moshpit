@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import Moshpit
@@ -14,11 +15,16 @@ import MoshpitKit
 /// whose record a lost key list took with it. Only `moshpit.secret.` items
 /// nothing names are looked at, never anything else.
 ///
+/// B810: every rule here is the core's (`crates/store/src/secrets.rs`), the
+/// app's Swift copy of it gone — that copy kept its own set of the refs made
+/// this launch, and the two disagreed depending on who made an item. These
+/// run the app's calls into the core.
+///
 /// Over a keychain that answers the way the real one does, a little late
 /// (every call waits a few milliseconds), and stores on scratch defaults.
 @MainActor
 @Suite("Keychain items go with the last record naming them", .serialized)
-struct KeychainReferencesTests {
+struct KeychainItemsTests {
 
     /// The keychain, in memory, answering each call after `delay` — the
     /// real one is a round trip to securityd.
@@ -105,7 +111,9 @@ struct KeychainReferencesTests {
     }
 
     private static func ref() -> String {
-        // Not made through `generateRef()`: an item an earlier launch made.
+        // Not made through `storeNewKeychainRef()`: an item an earlier
+        // launch made — before B810, the Swift path's `generateRef()`, which
+        // wrote this same form.
         "moshpit.secret." + UUID().uuidString.lowercased()
     }
 
@@ -140,9 +148,7 @@ struct KeychainReferencesTests {
         s.keys.add(kept)
 
         #expect(SSHKeyDeletion.check(laptop, connections: s.connections, keys: s.keys) == .free)
-        try await SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections) {
-            try await service.delete(forRef: $0)
-        }
+        try SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections, keychain: service.storeHost)
 
         #expect(s.keys.keys.map(\.id) == [kept.id])
         #expect(!keychain.accountsNow.contains(ref), "the deleted key's private key is still in the keychain")
@@ -161,10 +167,8 @@ struct KeychainReferencesTests {
         s.connections.add(Self.connection("pi", key: laptop))
 
         #expect(SSHKeyDeletion.check(laptop, connections: s.connections, keys: s.keys) == .inUse(["pi"]))
-        await #expect(throws: SSHKeyDeletion.Failure.inUse(["pi"])) {
-            try await SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections) {
-                try await service.delete(forRef: $0)
-            }
+        #expect(throws: SSHKeyDeletion.Failure.inUse(["pi"])) {
+            try SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections, keychain: service.storeHost)
         }
         #expect(s.keys.keys.map(\.id) == [laptop.id])
         #expect(keychain.accountsNow.contains(ref))
@@ -181,10 +185,8 @@ struct KeychainReferencesTests {
         let laptop = Self.key("laptop", ref: ref)
         s.keys.add(laptop)
 
-        await #expect(throws: SSHKeyDeletion.Failure.self) {
-            try await SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections) {
-                try await service.delete(forRef: $0)
-            }
+        #expect(throws: SSHKeyDeletion.Failure.self) {
+            try SSHKeyDeletion.delete(laptop, from: s.keys, connections: s.connections, keychain: service.storeHost)
         }
         #expect(s.keys.keys.map(\.id) == [laptop.id])
         #expect(keychain.accountsNow.contains(ref))
@@ -197,7 +199,7 @@ struct KeychainReferencesTests {
         let ref = Self.ref()
         let laptop = Self.key("laptop", ref: ref)
         #expect(SSHKeyDeletion.check(laptop, connections: s.connections, keys: s.keys) == .unknown)
-        #expect(KeychainReferences.referenced(connections: s.connections, keys: s.keys) == nil)
+        #expect(s.connections.keychainRefs() == nil)
     }
 
     @Test("The NSH page's Delete takes the private key too, and its notice names who still uses a key")
@@ -227,7 +229,7 @@ struct KeychainReferencesTests {
 
         model.requestDelete(laptop, SSHKeyDeletion.check(laptop, connections: s.connections, keys: s.keys))
         #expect(model.deleting == laptop.id)
-        model.delete(laptop, from: s.keys, connections: s.connections) { try await service.delete(forRef: $0) }
+        model.delete(laptop, from: s.keys, connections: s.connections, keychain: service.storeHost)
         let deadline = ContinuousClock.now + .seconds(5)
         while s.keys.keys.contains(where: { $0.id == laptop.id }), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
@@ -249,12 +251,13 @@ struct KeychainReferencesTests {
         let gone = Self.key("gone", ref: ref)
         let pi = Self.connection("pi", key: gone)
         s.connections.add(pi)
-        var dropped: [String] = []
-        try await ConnectionDeletion.delete(pi, from: s.connections, keys: s.keys, care: NoPairing(),
-                                            tearDown: {}, dropSecret: { dropped.append($0) },
-                                            dropShares: { _ in })
+        let keychain = SlowKeychain([ref: Data("PRIVATE".utf8)])
+        let service = KeychainService(backend: keychain)
+        try await ConnectionDeletion.delete(pi, from: s.connections, keys: s.keys, keychain: service.storeHost,
+                                            care: NoPairing(), tearDown: {}, dropShares: { _ in })
 
-        #expect(dropped == [ref], "the private key no record names stays in the keychain")
+        #expect(!keychain.accountsNow.contains(ref), "the private key no record names stays in the keychain")
+        #expect(s.connections.connections.isEmpty)
     }
 
     @Test("Deleting a connection keeps a listed key's item, and one another connection names")
@@ -271,20 +274,18 @@ struct KeychainReferencesTests {
         s.connections.add(pi)
         s.connections.add(nas)
         s.connections.add(nas2)
-        var dropped: [String] = []
+        let keychain = SlowKeychain([keyRef: Data("KEY".utf8), shared: Data("pw".utf8)])
+        let service = KeychainService(backend: keychain)
         let care = NoPairing()
 
-        try await ConnectionDeletion.delete(pi, from: s.connections, keys: s.keys, care: care,
-                                            tearDown: {}, dropSecret: { dropped.append($0) },
-                                            dropShares: { _ in })
-        try await ConnectionDeletion.delete(nas, from: s.connections, keys: s.keys, care: care,
-                                            tearDown: {}, dropSecret: { dropped.append($0) },
-                                            dropShares: { _ in })
-        #expect(dropped.isEmpty)
-        try await ConnectionDeletion.delete(nas2, from: s.connections, keys: s.keys, care: care,
-                                            tearDown: {}, dropSecret: { dropped.append($0) },
-                                            dropShares: { _ in })
-        #expect(dropped == [shared])
+        try await ConnectionDeletion.delete(pi, from: s.connections, keys: s.keys, keychain: service.storeHost,
+                                            care: care, tearDown: {}, dropShares: { _ in })
+        try await ConnectionDeletion.delete(nas, from: s.connections, keys: s.keys, keychain: service.storeHost,
+                                            care: care, tearDown: {}, dropShares: { _ in })
+        #expect(keychain.accountsNow == [keyRef, shared])
+        try await ConnectionDeletion.delete(nas2, from: s.connections, keys: s.keys, keychain: service.storeHost,
+                                            care: care, tearDown: {}, dropShares: { _ in })
+        #expect(keychain.accountsNow == [keyRef])
     }
 
     // MARK: - Orphans: recovered, never deleted
@@ -296,7 +297,6 @@ struct KeychainReferencesTests {
 
     @Test("an orphaned private key becomes a key record again — nothing is deleted, nothing else is touched")
     func anOrphanedKeyIsRecovered() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let lost = try Self.privateKey("lost")
@@ -331,8 +331,7 @@ struct KeychainReferencesTests {
         s.defaults.set(try JSONSerialization.data(withJSONObject: list), forKey: "moshpit.connections")
         s.connections.load()
 
-        let recovered = await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                                    keychain: service, preferences: Self.preferences(s))
+        let recovered = s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost)
 
         #expect(recovered.map(\.keychainRef) == [orphan], "\(recovered.map(\.name))")
         #expect(keychain.accountsNow == Set(items.keys), "recovery deleted something")
@@ -351,69 +350,91 @@ struct KeychainReferencesTests {
         #expect(SSHKeysSnapshot(store: s.keys, connections: s.connections).imported.contains { $0.id == record.id })
     }
 
+    /// B810: the core reads every stored private key but a Secure Enclave
+    /// key's handle, which only CryptoKit opens — and for that key the item
+    /// is the only copy there is. Recovery asks the app about what the core
+    /// can't read (``EnclaveKeyReader``) and lists it again as a Secure
+    /// Enclave key. (A device has one; the simulator doesn't.)
+    @Test("an orphaned Secure Enclave key is listed again as one", .enabled(if: SecureEnclave.isAvailable))
+    func anOrphanedEnclaveKeyIsRecovered() throws {
+        let s = Self.stores()
+        defer { s.defaults.removePersistentDomain(forName: s.suite) }
+        let handle = try SecureEnclave.P256.Signing.PrivateKey().dataRepresentation
+        let described = try #require(SSHKeyFactory.describeEnclaveHandle(handle))
+        let orphan = Self.ref()
+        let keychain = SlowKeychain([orphan: handle])
+        let service = KeychainService(backend: keychain)
+
+        let recovered = s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost)
+
+        let record = try #require(recovered.first)
+        #expect(recovered.count == 1)
+        #expect(record.keychainRef == orphan)
+        #expect(record.algorithm == .seP256)
+        #expect(record.source == .secureEnclave)
+        #expect(record.fingerprint == described.fingerprint)
+        #expect(record.publicKey == described.publicKeyLine)
+        #expect(!record.requireBiometry)
+        #expect(keychain.accountsNow == [orphan], "recovery changed the keychain")
+    }
+
     @Test("a second launch adds nothing: a recovered key is named from then on")
     func recoveryIsOncePerOrphan() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let orphan = Self.ref()
         let keychain = SlowKeychain([orphan: try Self.privateKey("lost").privateBlob,
                                      Self.ref(): Data("a password".utf8)])
         let service = KeychainService(backend: keychain)
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service, preferences: Self.preferences(s)).count == 1)
+        #expect(s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost).count == 1)
         // The same launch looks once.
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
+        #expect(s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost).isEmpty)
         // The next launch: fresh stores over the same defaults and keychain.
-        KeychainReferences.resetForTesting()
         let connections = ConnectionStore(defaults: s.defaults)
         let keys = SSHKeyStore(defaults: s.defaults)
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: connections, keys: keys,
-                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
+        #expect(keys.recoverOrphansOnce(connections: connections, keychain: service.storeHost).isEmpty)
         #expect(keys.keys.filter { $0.keychainRef == orphan }.count == 1)
         #expect(keychain.accountsNow.count == 2)
     }
 
     @Test("a recovered key deleted in SSH Keys takes its secret with it, and stays gone")
     func aRecoveredKeyDeletesLikeAnyKey() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let orphan = Self.ref()
         let keychain = SlowKeychain([orphan: try Self.privateKey("lost").privateBlob])
         let service = KeychainService(backend: keychain)
-        let record = try #require(await KeychainReferences.recoverOrphansOnce(
-            connections: s.connections, keys: s.keys, keychain: service, preferences: Self.preferences(s)).first)
+        let record = try #require(s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost).first)
 
-        try await SSHKeyDeletion.delete(record, from: s.keys, connections: s.connections) {
-            try await service.delete(forRef: $0)
-        }
+        try SSHKeyDeletion.delete(record, from: s.keys, connections: s.connections, keychain: service.storeHost)
         #expect(s.keys.keys.isEmpty)
         #expect(!keychain.accountsNow.contains(orphan))
-        KeychainReferences.resetForTesting()
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                            keychain: service, preferences: Self.preferences(s)).isEmpty)
+        // A later launch: fresh stores, and the key stays gone.
+        let keys = SSHKeyStore(defaults: s.defaults)
+        #expect(keys.recoverOrphansOnce(connections: ConnectionStore(defaults: s.defaults),
+                                        keychain: service.storeHost).isEmpty)
     }
 
+    /// B810: the app made its refs in Swift and kept its own set of them,
+    /// which the core's recovery never saw — an item made this launch was
+    /// an orphan to it. Refs come from the core now: one set, the one
+    /// recovery asks.
     @Test("an item made this launch is no orphan, though its record isn't saved yet")
     func anItemOnItsWayIsNotAnOrphan() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let keychain = SlowKeychain()
         let service = KeychainService(backend: keychain)
         // Add Key's order: the private key under a fresh ref, then the
         // record — recovery lists the keychain in between.
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         try await service.saveSecret(try Self.privateKey("new").privateBlob, forRef: ref, requireBiometry: false)
         let keys = s.keys
         keychain.whileListing = {
             DispatchQueue.main.async { MainActor.assumeIsolated { keys.add(Self.key("new", ref: ref)) } }
         }
 
-        let recovered = await KeychainReferences.recoverOrphansOnce(connections: s.connections, keys: s.keys,
-                                                                    keychain: service, preferences: Self.preferences(s))
+        let recovered = s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost)
 
         #expect(recovered.isEmpty)
         try await Task.sleep(for: .milliseconds(20))
@@ -423,38 +444,29 @@ struct KeychainReferencesTests {
 
     @Test("a launch before the first unlock recovers nothing, and recovers once the stores can be trusted")
     func nothingBeforeTheStoresCanBeTrusted() async throws {
-        KeychainReferences.resetForTesting()
         let sealed = Self.stores(readable: false)
         defer { sealed.defaults.removePersistentDomain(forName: sealed.suite) }
         let named = Self.ref()
         let keychain = SlowKeychain([named: try Self.privateKey("pi's key").privateBlob])
         let service = KeychainService(backend: keychain)
         // What a sealed launch reads: nothing at all.
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: sealed.connections, keys: sealed.keys,
-                                                            keychain: service, preferences: Self.preferences(sealed)).isEmpty)
+        #expect(sealed.keys.recoverOrphansOnce(connections: sealed.connections, keychain: service.storeHost).isEmpty)
         // Unlocked: the stores read what they hold — a connection names the
         // item — and the look runs.
         let open = Self.stores()
         defer { open.defaults.removePersistentDomain(forName: open.suite) }
         open.connections.add(Self.connection("pi", ownRef: named))
-        #expect(await KeychainReferences.recoverOrphansOnce(connections: open.connections, keys: open.keys,
-                                                            keychain: service, preferences: Self.preferences(open)).isEmpty)
+        #expect(open.keys.recoverOrphansOnce(connections: open.connections, keychain: service.storeHost).isEmpty)
         #expect(open.keys.keys.isEmpty, "a connection's own key was listed as an orphan")
         #expect(keychain.accountsNow == [named])
     }
 
     // MARK: - Items connections let go of (B428)
 
-    /// The scratch defaults, as the Rust store's list reads them.
-    private static func preferences(_ s: Stores) -> PreferencesHost {
-        RustPreferencesHost(defaults: s.defaults, available: { true })
-    }
-
     private static let toRelease = "moshpit.secrets.toRelease"
 
     @Test("B428: a pasted key a save let go of while its session ran is dropped at the next launch, never offered back")
     func aListedItemIsDroppedAtTheNextLaunch() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let pasted = Self.ref()
@@ -468,13 +480,10 @@ struct KeychainReferencesTests {
         // An earlier launch let go of it while its session still signed in
         // with it, and ended before the session did.
         s.defaults.set([pasted], forKey: Self.toRelease)
-        let preferences = Self.preferences(s)
 
-        let recovered = await KeychainReferences.recoverOrphansOnce(
-            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        let recovered = s.keys.recoverOrphansOnce(connections: s.connections, keychain: service.storeHost)
         #expect(recovered.isEmpty, "offered back as a key: \(recovered.map(\.name))")
-        let settled = KeychainReferences.settleReleasesOnce(
-            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        let settled = s.connections.settleReleasesOnce(keys: s.keys, keychain: service.storeHost)
         let accounts = settled.map(\.account)
         #expect(accounts == [pasted])
         #expect(keychain.accountsNow == [managed])
@@ -484,28 +493,24 @@ struct KeychainReferencesTests {
 
     @Test("B428: an item listed this launch waits for its session; one a record names again stays")
     func aHeldItemWaitsAndANamedOneStays() async throws {
-        KeychainReferences.resetForTesting()
         let s = Self.stores()
         defer { s.defaults.removePersistentDomain(forName: s.suite) }
         let held = Self.ref()
         let named = Self.ref()
         let keychain = SlowKeychain([held: Data("pw".utf8), named: Data("pw2".utf8)])
         let service = KeychainService(backend: keychain)
-        let preferences = Self.preferences(s)
         // This launch's session still reads `held`.
-        KeychainReferences.hold(held, preferences: preferences)
+        s.connections.holdSecret(held)
         // An earlier launch listed `named`, which a connection picked up since.
         s.connections.add(Self.connection("pi", ownRef: named))
         s.defaults.set([held, named], forKey: Self.toRelease)
 
-        let settled = KeychainReferences.settleReleasesOnce(
-            connections: s.connections, keys: s.keys, keychain: service, preferences: preferences)
+        let settled = s.connections.settleReleasesOnce(keys: s.keys, keychain: service.storeHost)
         let accounts = settled.map(\.account)
         #expect(accounts == [named])
         #expect(keychain.accountsNow == [held, named])
         // The session reconnected as saved, or ended.
-        let fate = await KeychainReferences.release(held, connections: s.connections, keys: s.keys,
-                                                    keychain: service, preferences: preferences)
+        let fate = s.connections.releaseSecret(held, keys: s.keys, keychain: service.storeHost)
         #expect(fate == .deleted)
         #expect(keychain.accountsNow == [named])
         let left = s.defaults.stringArray(forKey: Self.toRelease)

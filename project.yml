@@ -18,7 +18,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "1.0.8"
+    MARKETING_VERSION: "1.0.9"
     # Only the floor for local builds. A release overrides it from the command
     # line (scripts/release/release-archive.sh) — App Store Connect requires a build
     # number that is unique and monotonically increasing within a version, and
@@ -114,6 +114,15 @@ targets:
           fi
         basedOnDependencyAnalysis: false
         showEnvVars: false
+    postBuildScripts:
+      # After the frameworks are embedded: none may claim an older iOS in its
+      # Info.plist than its binary needs, or App Store Connect refuses the
+      # upload while processing it (ITMS-90208). onnxruntime.framework ships
+      # 13.0 around an 18.0 binary (scripts/release/framework-min-os.sh).
+      - name: Embedded frameworks state their binaries' minimum iOS
+        script: '"$SRCROOT/scripts/release/framework-min-os.sh"'
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
     entitlements:
       path: Moshpit/App/Moshpit.entitlements
       properties:
@@ -150,9 +159,9 @@ targets:
         # Time-Sensitive notification anyway. Verified on a real phone, 2026-08-25.
         #
         # This is the ENTITLEMENT only. Both senders already ask for the level —
-        # `AgentNotificationCopy.attention` (MoshpitKit, shared by the app's
-        # local notifications and the push extension) sets
-        # `interruptionLevel = .timeSensitive` on the attention edge, and the
+        # crates/seal's card (`copy::attention`, shared by the app's local
+        # notifications and the push extension) is time-sensitive on the
+        # attention edge, and the
         # relay puts `"interruption-level":"time-sensitive"` in attention payloads.
         # Without this key iOS downgrades both to `.active` silently,
         # with no error anywhere, which is why it went unnoticed: nothing fails,
@@ -209,7 +218,7 @@ targets:
         # TLS certificates with Security) are named here, not left to what
         # the Swift sources happen to import.
         OTHER_LDFLAGS: >-
-          $(inherited) -lmoshpit_ffi
+          $(inherited) -lmoshpit_ffi $(MOSHPIT_TEST_ENTRY_POINTS)
           -framework UIKit -framework Foundation -framework CoreFoundation
           -framework CoreGraphics -framework CoreText -framework ImageIO
           -framework QuartzCore -framework Security
@@ -241,6 +250,12 @@ targets:
         Debug:
           CODE_SIGN_IDENTITY: "Apple Development"
           MOSHPIT_RUST_PROFILE: app-test
+          # The notification service's entry point (crates/seal-ffi, which
+          # libmoshpit_ffi.a carries: one Rust library per binary), kept in
+          # the app though nothing in it calls it: MoshpitTests compiles
+          # Extensions/MoshpitPush/NotificationService.swift and resolves
+          # the call against its host. Release leaves it out.
+          MOSHPIT_TEST_ENTRY_POINTS: -Wl,-u,_moshpit_push_receive -Wl,-u,_moshpit_push_free
         Release:
           CODE_SIGN_IDENTITY: "Apple Development"
           MOSHPIT_RUST_PROFILE: app
@@ -425,10 +440,19 @@ targets:
     sources:
       - path: Extensions/MoshpitPush
     dependencies:
-      # The envelope format, the pairing secrets, the rendering, the prefs mirror,
-      # the diagnostics ring, the standing-attention set and the log facade: all
-      # shared with the app so there is exactly one implementation of each.
+      # The app language, the device-only folder and the log facade.
       - package: MoshpitKit
+    preBuildScripts:
+      # Its own Rust library (E7b): crates/seal-ffi → libmoshpit_seal_ffi.a,
+      # the envelope, the pairings, the rendering, the standing set, the
+      # finishes, the closed turns and the diagnostics ring — the app's own
+      # rules, once. Built as the app's is (scripts/rust/build-ios.sh), and
+      # linked alone: one Rust library per binary.
+      - name: Build Rust
+        script: |
+          MOSHPIT_RUST_PACKAGE=moshpit-seal-ffi "$SRCROOT/scripts/rust/build-ios.sh"
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
     entitlements:
       path: Extensions/MoshpitPush/MoshpitPush.entitlements
       properties:
@@ -437,6 +461,22 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluas.moshpit.push
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # `import MoshpitPushFFI` (crates/ffi/include/module.modulemap) and
+        # the library the phase above builds.
+        SWIFT_INCLUDE_PATHS: $(inherited) $(SRCROOT)/crates/ffi/include
+        LIBRARY_SEARCH_PATHS: $(inherited) $(SRCROOT)/target/$(MOSHPIT_RUST_TARGET)/$(MOSHPIT_RUST_PROFILE)
+        # The system's random source (getrandom) is Security's.
+        OTHER_LDFLAGS: $(inherited) -lmoshpit_seal_ffi -framework Security
+        "MOSHPIT_RUST_TARGET[sdk=iphoneos*][arch=arm64]": aarch64-apple-ios
+        "MOSHPIT_RUST_TARGET[sdk=iphonesimulator*][arch=arm64]": aarch64-apple-ios-sim
+        "MOSHPIT_RUST_TARGET[sdk=iphonesimulator*][arch=x86_64]": x86_64-apple-ios
+      configs:
+        # The app's profiles (its target says why).
+        Debug:
+          MOSHPIT_RUST_PROFILE: app-test
+        Release:
+          MOSHPIT_RUST_PROFILE: app
     info:
       path: Extensions/MoshpitPush/Info.plist
       properties:
@@ -479,8 +519,9 @@ targets:
         type: folder
         buildPhase: resources
       # The notification service extension's entry point, so a test can drive
-      # `didReceive` itself rather than only the rendering helper it calls. That
-      # method is the closest thing to a real push this repo can exercise without
+      # it in process: its call into crates/seal (resolved against the host
+      # app, whose Debug link keeps the entry point) and how the answer lands
+      # on a notification. The closest this repo gets to a real push without
       # an APNs key and a physical phone.
       - path: Extensions/MoshpitPush/NotificationService.swift
       # The Live Activity's lock-screen layout, so a test can MEASURE it. iOS
@@ -503,7 +544,7 @@ targets:
           # Lets a source file shared with an app EXTENSION know it is being
           # compiled into the test bundle instead, and reach the app module for
           # types that are its own module elsewhere — see
-          # Extensions/MoshpitPush/NotificationService.swift. DEBUG is restated because a
+          # Extensions/MoshpitIsland/MoshpitIslandWidget.swift. DEBUG is restated because a
           # target-level value replaces the config default rather than adding to it.
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG MOSHPIT_TESTS"
     dependencies:

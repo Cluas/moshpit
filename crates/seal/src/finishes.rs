@@ -46,6 +46,9 @@ pub struct PushFinishesFile {
 }
 
 impl PushFinishesFile {
+    /// Its name in the App Group container.
+    pub const FILE_NAME: &'static str = "rung-finishes.json";
+
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }

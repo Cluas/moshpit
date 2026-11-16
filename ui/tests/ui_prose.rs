@@ -39,7 +39,7 @@ fn gallery() -> App {
         font_scale: None,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:ui-gallery").unwrap();
     steady(&mut app);
     App(app)
@@ -159,7 +159,7 @@ fn start_sending() -> App {
     config.environment.os = Os::Ios;
     config.environment.idiom = Idiom::Phone;
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:probe").unwrap();
     steady(&mut app);
     App(app)

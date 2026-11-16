@@ -63,7 +63,7 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "host care (crates/hostcare/harness)",
         build: r#"crates/hostcare/harness/build-swift.sh "$OUT/care-swift""#,
-        pins: &["81c121a1"],
+        pins: &["81c121a1", "8ef981c5"],
     },
     Harness {
         name: "UniFFI smoke (crates/ffi/harness)",
@@ -74,12 +74,12 @@ const HARNESSES: &[Harness] = &[
     Harness {
         name: "install (crates/install/harness)",
         build: r#"crates/install/harness/build-swift.sh "$OUT/install-swift""#,
-        pins: &["81c121a1", "e57f7941"],
+        pins: &["81c121a1", "e57f7941", "8ef981c5"],
     },
     Harness {
         name: "seal (crates/seal/harness)",
         build: r#"crates/seal/harness/build-swift.sh "$OUT/seal-swift""#,
-        pins: &["da2146f1"],
+        pins: &["da2146f1", "8ef981c5"],
     },
     Harness {
         name: "Home (crates/app/harness/home)",
@@ -89,7 +89,7 @@ const HARNESSES: &[Harness] = &[
     Harness {
         // verify-app-language.sh's build, its one-line stub written the same.
         name: "app language (scripts/verify/app-language)",
-        build: r#"printf 'public enum PushPrefs { public static let suite = "typecheck" }\n' > "$OUT/stub.swift" &&
+        build: r#"printf 'public enum AppGroup { public static let id = "typecheck" }\n' > "$OUT/stub.swift" &&
 swiftc -O -o "$OUT/check" Packages/MoshpitKit/Sources/MoshpitKit/AppLanguage.swift "$OUT/stub.swift" \
     scripts/verify/app-language/main.swift"#,
         pins: &[],

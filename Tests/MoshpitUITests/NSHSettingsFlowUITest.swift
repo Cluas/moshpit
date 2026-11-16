@@ -111,20 +111,34 @@ final class NSHSettingsFlowUITest: XCTestCase {
     /// A switch on Terminal (cursor blink) flips, and the flip is what the
     /// next launch reads: the press reached the setting the app stores,
     /// not only the switch's own drawing.
+    ///
+    /// Each read waits for the page to have the app's settings: until they
+    /// arrive it draws every switch off, so a read before then says off
+    /// whatever is stored, and passes or fails by chance. The flip is
+    /// checked twice: on the page opened again (the app's own setting, not
+    /// the switch the tap moved), then after a relaunch (what was stored).
+    /// A failure says which of the two lost it (B820).
     @MainActor
     func testASwitchIsStillFlippedAfterARelaunch() throws {
         var app = NSHFlow.launch()
         app.openSettings()
         app.openSettingsPart("terminal")
+        app.waitTerminalSettings()
         let blink = app.waitNSH("settings-cursor-blink")
         let start = try XCTUnwrap(blink.isOn, "the switch reports no state: \(blink.spoken)")
         app.tapNSH("settings-cursor-blink")
         XCTAssertEqual(app.nsh("settings-cursor-blink").isOn, !start, "the tap did not flip the switch")
 
-        app.terminate()
-        app = NSHFlow.launch(reset: false)
+        app.backNSH()
+        app.openSettingsPart("terminal")
+        app.waitTerminalSettings()
+        XCTAssertEqual(app.waitNSH("settings-cursor-blink").isOn, !start,
+                       "the flip never reached the app's setting: the page opened again shows it unflipped")
+
+        app = NSHFlow.relaunch(app)
         app.openSettings()
         app.openSettingsPart("terminal")
+        app.waitTerminalSettings()
         XCTAssertEqual(app.waitNSH("settings-cursor-blink").isOn, !start, "the flip did not outlive a relaunch")
 
         // Put it back for the next flow.
@@ -161,12 +175,33 @@ final class NSHSettingsFlowUITest: XCTestCase {
             let words = app.nsh("settings-font-size").spoken
             return words.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.first
         }
-        app.waitNSH("settings-font-size")
+        app.waitTerminalSettings()
         let before = try XCTUnwrap(size(), "no size in \(app.nsh("settings-font-size").spoken)")
 
         app.tapNSH("settings-font-larger")
         XCTAssertEqual(size(), before + 1)
         app.tapNSH("settings-font-smaller")
         XCTAssertEqual(size(), before)
+    }
+}
+
+extension XCUIApplication {
+    /// Waits for Terminal's page to have the app's settings. Until the
+    /// app's first post it draws the screen's defaults: every switch off,
+    /// the font size 0 pt. The app keeps the size between 8 and 32, so a
+    /// size of 8 or more means its settings are on the page (B820).
+    @MainActor
+    func waitTerminalSettings(file: StaticString = #filePath, line: UInt = #line) {
+        let size = nsh("settings-font-size")
+        let arrived = NSPredicate { _, _ in
+            let words = size.exists ? size.spoken : ""
+            let points = words.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }.first
+            return (points ?? 0) >= 8
+        }
+        let wait = XCTNSPredicateExpectation(predicate: arrived, object: nil)
+        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: NSHFlow.timeout), .completed,
+                       "Terminal's page never got the app's settings: its size row says "
+                           + (size.exists ? size.spoken : "nothing"),
+                       file: file, line: line)
     }
 }

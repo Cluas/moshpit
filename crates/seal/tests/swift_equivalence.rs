@@ -1,7 +1,10 @@
 //! The Rust port against the Swift push code's recorded output, without
 //! swiftc: `tests/fixtures/swift/cases.swift.txt` is what
 //! `harness/swift/main.swift` printed for `cases.txt` over the app's
-//! unchanged MoshpitKit sources (`harness/equivalence.py update-goldens`).
+//! unchanged MoshpitKit sources (`harness/equivalence.py update-goldens`),
+//! as of the last commit that had them: E7b put the notification service
+//! on this crate and deleted them (harness/build-swift.sh reads them out of
+//! git, 8ef981c5).
 //! Rust must print the same — store files compared as JSON, since Swift's
 //! key order is a hash order — except on the documented divergences, where
 //! it must print what `divergences.rust.txt` holds and never what Swift did.

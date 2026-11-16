@@ -5,8 +5,9 @@ import UIKit
 /// palette.
 ///
 /// Colors are stored as hex **strings**, not `SwiftUI.Color`, for two reasons:
-/// a theme has to round-trip through JSON (custom themes are persisted, and
-/// exported/imported as text), and `Color` is not meaningfully `Codable` — its
+/// a theme has to round-trip through JSON (the core's store persists custom
+/// themes and exports and imports them as text), and `Color` is not
+/// meaningfully codable — its
 /// components can only be read back by resolving it through `UIColor`, which is
 /// lossy for anything but plain sRGB. The `Color` accessors below keep call
 /// sites (`theme.background`, `theme.red`, …) reading exactly as before.
@@ -15,7 +16,7 @@ import UIKit
 /// it", which is what every built-in theme does, so authoring a theme only
 /// requires the 8 base colors. A custom theme may override any or all of the
 /// bright slots — see ``bright(_:)``.
-struct TerminalTheme: Identifiable, Codable, Equatable, Hashable {
+struct TerminalTheme: Identifiable, Equatable, Hashable {
     var id: String
     var name: String
 
@@ -38,8 +39,8 @@ struct TerminalTheme: Identifiable, Codable, Equatable, Hashable {
 
     // MARK: - Palette slots
 
-    /// The eight ANSI color names, in palette order. Doubles as the key set for
-    /// the flat JSON encoding (`black`, …, `brightBlack`, …).
+    /// The eight ANSI color names, in palette order (the names the core's
+    /// theme JSON keys them by too: `black`, …, `brightBlack`, …).
     enum ANSISlot: Int, CaseIterable, Identifiable {
         case black, red, green, yellow, blue, magenta, cyan, white
 
@@ -57,8 +58,6 @@ struct TerminalTheme: Identifiable, Codable, Equatable, Hashable {
             case .white: return "white"
             }
         }
-
-        var brightKey: String { "bright" + key.prefix(1).uppercased() + key.dropFirst() }
 
         /// Display label for the editor, e.g. "Black" / "Bright Black".
         var label: String { key.prefix(1).uppercased() + key.dropFirst() }
@@ -160,80 +159,6 @@ struct TerminalTheme: Identifiable, Codable, Equatable, Hashable {
             return Array(normalized.prefix(ANSISlot.allCases.count))
         }
         self.isBuiltIn = isBuiltIn
-    }
-
-    // MARK: - Codable (flat, human-readable keys)
-
-    /// Encoded shape — deliberately flat and named so an exported theme is
-    /// something a person can read and hand-edit, and so the importer can
-    /// accept palettes pasted from other terminal emulators, which use these
-    /// same names:
-    ///
-    /// ```json
-    /// { "id": "…", "name": "…", "background": "#0D1117", "foreground": "…",
-    ///   "cursor": "…", "black": "#08080A", …, "brightBlack": "…" }
-    /// ```
-    ///
-    /// `isBuiltIn` is never encoded: it describes where a theme came from in
-    /// *this* install, so anything decoded is by definition a custom theme.
-    private struct Key: CodingKey {
-        var stringValue: String
-        var intValue: Int? { nil }
-        init(_ value: String) { stringValue = value }
-        init?(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { return nil }
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: Key.self)
-
-        func hex(_ names: [String]) -> String? {
-            for name in names {
-                if let raw = try? c.decode(String.self, forKey: Key(name)), !raw.isEmpty {
-                    return Color.normalizedHex(raw)
-                }
-            }
-            return nil
-        }
-
-        let name = try c.decodeIfPresent(String.self, forKey: Key("name")) ?? "Imported"
-        // A theme pasted from elsewhere has no id of ours; mint one so it can
-        // still be stored and selected.
-        let id = try c.decodeIfPresent(String.self, forKey: Key("id"))
-            ?? "custom-\(UUID().uuidString.prefix(8).lowercased())"
-
-        // `bg`/`fg` are common shorthands in hand-written palettes.
-        let background = hex(["background", "bg"]) ?? "000000"
-        let foreground = hex(["foreground", "fg", "text"]) ?? "FFFFFF"
-        let cursor = hex(["cursor", "cursorColor", "caret"]) ?? foreground
-
-        var ansi: [String] = []
-        var bright: [String] = []
-        for slot in ANSISlot.allCases {
-            ansi.append(hex([slot.key, "ansi\(slot.rawValue)"]) ?? "000000")
-            bright.append(hex([slot.brightKey, "ansi\(slot.rawValue + 8)"]) ?? "")
-        }
-
-        self.init(id: id, name: name,
-                  background: background, foreground: foreground, cursor: cursor,
-                  ansi: ansi,
-                  bright: bright.allSatisfy(\.isEmpty) ? nil : bright,
-                  isBuiltIn: false)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: Key.self)
-        try c.encode(id, forKey: Key("id"))
-        try c.encode(name, forKey: Key("name"))
-        try c.encode("#" + backgroundHex, forKey: Key("background"))
-        try c.encode("#" + foregroundHex, forKey: Key("foreground"))
-        try c.encode("#" + cursorHex, forKey: Key("cursor"))
-        for slot in ANSISlot.allCases {
-            try c.encode("#" + ansiHex(slot), forKey: Key(slot.key))
-            if hasBrightOverride(slot) {
-                try c.encode("#" + brightHex(slot), forKey: Key(slot.brightKey))
-            }
-        }
     }
 
     // MARK: - Built-in themes

@@ -22,3 +22,12 @@ module moshpit_ffiFFI {
     header "moshpit_ffiFFI.h"
     export *
 }
+
+// The notification service extension's call into moshpit-seal (E7b,
+// crates/seal-ffi): the extension links libmoshpit_seal_ffi.a for it, the
+// app's library carries the same two symbols (for the tests that drive the
+// extension in-process). Here so one include path finds every module.
+module MoshpitPushFFI {
+    header "../../seal-ffi/include/moshpit_push.h"
+    export *
+}

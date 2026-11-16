@@ -16,6 +16,15 @@ import UserNotifications
 public enum AgentNotifications {
     /// `userInfo` keys identifying which pane a notification targets.
     public static let connectionKey = "connectionId"
+    /// The agent, the status's state and the hook's title a card carries
+    /// (crates/seal's `AGENT_KEY`, `STATE_KEY`, `DETAIL_KEY`): the push
+    /// extension's cards and the app's alike.
+    public static let agentKey = "moshpitAgent"
+    public static let stateKey = "moshpitState"
+    public static let detailKey = "moshpitDetail"
+    /// A pairing self-test's agent (crates/seal's `SELF_TEST_AGENT`): plumbing,
+    /// not news; the extension and the delegate both recognise it.
+    public static let selfTestAgent = "moshpit-selftest"
     public static let paneKey = "paneId"
 
     /// Install the tap handler as the notification-center delegate. Called from
@@ -67,9 +76,9 @@ public final class AgentNotificationHandler: NSObject, UNUserNotificationCenterD
     /// perfect and the last inch was gone. Nothing failed loudly, because the
     /// closure it feeds is optional and nobody was left to call it.
     public static func selfTestNonce(in info: [AnyHashable: Any]) -> String? {
-        guard info[PushRemoteNotification.agentKey] as? String
-                == PushRemoteNotification.selfTestAgent else { return nil }
-        return info[PushRemoteNotification.detailKey] as? String ?? ""
+        guard info[AgentNotifications.agentKey] as? String
+                == AgentNotifications.selfTestAgent else { return nil }
+        return info[AgentNotifications.detailKey] as? String ?? ""
     }
 
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
@@ -88,7 +97,7 @@ public final class AgentNotificationHandler: NSObject, UNUserNotificationCenterD
         let content = notification.request.content
         let target = target(of: content.userInfo)
         let level = content.interruptionLevel
-        let finished = content.userInfo[PushRemoteNotification.stateKey] as? String == "done"
+        let finished = content.userInfo[AgentNotifications.stateKey] as? String == "done"
         Task { @MainActor in
             let visible = target.map { AgentControlBridge.shared.isPaneVisible?($0.0, $0.1) == true } ?? false
             completionHandler(Self.foregroundPresentation(level: level, paneVisible: visible,

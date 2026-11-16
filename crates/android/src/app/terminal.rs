@@ -1,5 +1,5 @@
 //! The terminal page's host side, for W11g's NSH terminal screen
-//! (`ui/src/terminal`, the one iOS runs behind `MOSHPIT_NSH_TERMINAL`): what
+//! (`ui/src/terminal`, the one iOS runs too): what
 //! its chrome and shortcut bar show (`TerminalScreen.swift`'s `nshChrome`
 //! and `nshBar`, read from the Rust session), and what the person's
 //! intents do. The terminal itself is the host's view in the screen's slot

@@ -126,7 +126,7 @@ fn start_rows(font_scale: Option<f32>) -> App {
         font_scale,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:probe").unwrap();
     steady(&mut app);
     App(app)
@@ -331,7 +331,7 @@ fn gallery() -> (App, Natives) {
         font_scale: None,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     let natives = Natives::default();
     let observed = natives.clone();
     app.observe(move |_, batch| observed.apply(batch));

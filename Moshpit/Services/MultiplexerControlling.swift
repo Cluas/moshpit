@@ -79,37 +79,6 @@ struct TmuxSnapshot: Equatable {
     }
 }
 
-/// A captured session/window/pane selection, replayed after a reconnect so the
-/// user lands back where they were. tmux session/window/pane ids are stable
-/// across a client re-attach (the server persists them), so the ids survive.
-struct TmuxSelection: Equatable, Codable {
-    let session: String
-    let window: String?
-    let pane: String?
-}
-
-/// Persists the last selection PER CONNECTION so a reconnect can land back on
-/// the user's session/window/pane even when the ActiveSession that captured it
-/// is gone — a protocol switch (SSH→mosh) tears the session down, and an app
-/// relaunch loses all in-memory state. tmux ids are only meaningful against
-/// the same tmux server, which a connection maps to 1:1.
-enum TmuxSelectionStore {
-    static func key(_ id: UUID) -> String { "moshpit.tmux.lastSelection.\(id.uuidString)" }
-
-    static func load(_ id: UUID, defaults: UserDefaults = .standard) -> TmuxSelection? {
-        guard let data = defaults.data(forKey: key(id)) else { return nil }
-        return try? JSONDecoder().decode(TmuxSelection.self, from: data)
-    }
-
-    static func save(_ selection: TmuxSelection?, for id: UUID, defaults: UserDefaults = .standard) {
-        if let selection, let data = try? JSONEncoder().encode(selection) {
-            defaults.set(data, forKey: key(id))
-        } else {
-            defaults.removeObject(forKey: key(id))
-        }
-    }
-}
-
 /// The multiplexer control surface the UI drives, whichever multiplexer is
 /// behind it — `TmuxSessionController` (tmux over SSH `-CC`, live push) and
 /// `RustHerdrController` (herdr on the Rust core, which reads

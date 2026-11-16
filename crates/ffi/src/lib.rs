@@ -76,3 +76,6 @@ pub use moshpit_tmux;
 // Named, so it is linked: an unused dependency would not be, and with it
 // the screens' C ABI.
 pub use moshpit_ui;
+// Named, so it is linked (E7b): the notification service extension's C
+// entry point, for the tests that drive the extension in-process.
+pub use moshpit_seal_ffi;

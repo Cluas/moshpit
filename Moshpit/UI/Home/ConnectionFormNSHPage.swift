@@ -34,7 +34,11 @@ struct ConnectionFormNSHPage: View {
     @State private var saving = false
     @State private var confirmingDelete = false
 
+    /// `secretMissing`: the connection edited names a password or pasted
+    /// key of its own that isn't on this device (B782): its field says so
+    /// and takes the keyboard, and Save waits for a new one.
     init(store: ConnectionStore, keychain: KeychainService, existing: ServerConnection? = nil,
+         secretMissing: Bool = false,
          onDelete: ((ServerConnection) -> Void)? = nil,
          releaseSecret: @escaping (UUID, String) async -> Void = { _, _ in }) {
         self.store = store
@@ -44,7 +48,8 @@ struct ConnectionFormNSHPage: View {
         self.releaseSecret = releaseSecret
         // A new connection starts from the settings (B256): the app's one
         // settings object, the environment's too — an init can't read that.
-        let draft = existing.map(ConnectionDraft.init) ?? ConnectionDraft(newWith: .shared)
+        let draft = existing.map { ConnectionDraft($0, secretMissing: secretMissing) }
+            ?? ConnectionDraft(newWith: .shared)
         _model = State(initialValue: ConnectionFormModel(
             draft: draft, saved: store.connections, editing: existing?.id))
         _selectedKeyId = State(initialValue: draft.selectedKeyId)

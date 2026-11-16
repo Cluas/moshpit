@@ -26,7 +26,7 @@ enum NSHDiagnostics {
 
     /// The ring in the App Group (none without the group: a test host).
     static let trail = NSHTrail(url: FileManager.default
-        .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup)?
+        .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id)?
         .appendingPathComponent("nsh-diagnostics.json"))
 
     /// An NSH failure: to `Log.ui` as an error, and to the trail. Any thread.
@@ -77,7 +77,7 @@ enum NSHDiagnostics {
 
 /// A bounded ring of NSH failure lines in a file, each stamped with the
 /// launch that wrote it, so a later launch can show the ones the restart
-/// took out of the system's log. The way ``PushDiagnostics`` keeps the
+/// took out of the system's log. The way the push extension's diagnostics ring keeps the
 /// extension's lines: plain JSON, read-modify-write, silent on failure (a
 /// diagnostic must never be what breaks a page). Thread-safe.
 final class NSHTrail: @unchecked Sendable {

@@ -28,7 +28,7 @@ public enum AppLanguage {
     public static var own: String { Bundle.main.preferredLocalizations.first ?? "en" }
 
     /// Record the app's language. The app calls this at launch.
-    public static func record(_ language: String = own, suiteName: String = PushPrefs.suite) {
+    public static func record(_ language: String = own, suiteName: String = AppGroup.id) {
         guard !language.isEmpty, let defaults = UserDefaults(suiteName: suiteName) else { return }
         if defaults.string(forKey: key) != language {
             defaults.set(language, forKey: key)
@@ -36,7 +36,7 @@ public enum AppLanguage {
     }
 
     /// What the app recorded, if anything.
-    public static func stored(suiteName: String = PushPrefs.suite) -> String? {
+    public static func stored(suiteName: String = AppGroup.id) -> String? {
         guard let value = UserDefaults(suiteName: suiteName)?.string(forKey: key), !value.isEmpty
         else { return nil }
         return value
@@ -44,7 +44,7 @@ public enum AppLanguage {
 
     /// The language this process writes in: the app's, as recorded; this
     /// process's own when nothing is.
-    public static func current(suiteName: String = PushPrefs.suite) -> String {
+    public static func current(suiteName: String = AppGroup.id) -> String {
         stored(suiteName: suiteName) ?? own
     }
 

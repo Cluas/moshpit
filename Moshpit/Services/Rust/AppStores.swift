@@ -18,13 +18,12 @@ enum AppStores {
     /// the sealed-launch rule.
     static let preferences = RustPreferencesHost(defaults: .standard, protectedData: .app)
 
-    /// Before anything reads a push pairing: the pairings go through the
-    /// Rust store (``PushPairingStore/backing``). Without an App Group
+    /// Before anything reads a push pairing: the pairings' Rust store
+    /// (``RustPushPairings/shared``) is made. Without an App Group
     /// container (an unsigned build) nothing can be paired, and nothing
     /// changes.
     static func installPushPairings() {
-        guard PushPairingStore.backing == nil, let url = PushPairingStore.fileURL else { return }
-        PushPairingStore.backing = RustPushPairings(url: url)
+        _ = RustPushPairings.shared
     }
 
     static func connections() -> ConnectionStore {
@@ -49,8 +48,8 @@ extension AppSettings {
     /// The app-wide settings.
     static let shared: AppSettings = {
         // The two switches the notification service reads, mirrored into
-        // the App Group's preferences (PushPrefs).
-        let mirror = UserDefaults(suiteName: PushPrefs.suite).map {
+        // the App Group's preferences (crates/store's push-prefs mirror).
+        let mirror = UserDefaults(suiteName: AppGroup.id).map {
             RustPreferencesHost(defaults: $0, protectedData: .app)
         }
         #if DEBUG

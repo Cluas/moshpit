@@ -23,7 +23,7 @@ enum PredictMode: String, CaseIterable {
 /// VOICE INPUT). The Rust store (`crates/store/src/settings.rs`, through
 /// ``AppSettingsBacking``) reads and writes each — the keys and stored
 /// forms every build reads, the sealed-launch rule, the notification
-/// service's mirror of its two switches (`PushPrefs`).
+/// service's mirror of its two switches (crates/store's push prefs).
 ///
 /// `@AppStorage` cannot be used inside `@Observable`, so properties are
 /// computed over the backing with the access/withMutation pattern.
@@ -65,7 +65,7 @@ final class AppSettings {
     init(defaults: UserDefaults = .standard, backing: AppSettingsBacking) {
         self.defaults = defaults
         self.backing = backing
-        // Seed the notification service's mirror (PushPrefs) once the
+        // Seed the notification service's mirror (its two switches) once the
         // preferences can be trusted: a pushed notification can land before
         // the user ever opens Settings, and it must see the values the
         // switches already hold.

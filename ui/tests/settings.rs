@@ -15,8 +15,8 @@ use std::{
 };
 
 use common::{
-    App, assert_bar_follows_scrolling, emit, hear, next, post, quiet, settings_fixture::state,
-    start, start_observing, start_observing_with, steady, zh_hans,
+    App, Natives, assert_bar_follows_scrolling, emit, hear, next, post, quiet,
+    settings_fixture::state, start, start_observing, start_observing_with, steady, zh_hans,
 };
 use moshpit_ui::{
     channel::Channel,
@@ -1024,4 +1024,138 @@ fn connections_has_no_keep_alive_switch() {
     assert!(!app.screen().matches("id:settings-keep-alive").unwrap());
     assert!(!app.screen().shows("Keep connections alive"));
     channel.close();
+}
+
+/// Settings › Connections on a 402 pt phone in `locale` at Dynamic Type
+/// `scale`.
+fn connections_at(locale: &str, scale: f32) -> (App, Arc<Channel>, Natives) {
+    let params = Params {
+        page: Some("connections".into()),
+        locale: Some(locale.into()),
+        font_scale: Some(scale),
+        ..Params::default()
+    };
+    let (mut app, channel, natives) =
+        start_observing_with(Screen::Settings, params, "settings", |config| {
+            config.viewport = nsh_core::Size::new(Points(402.0), Points(874.0));
+            config.environment.idiom = Idiom::Phone;
+        });
+    show(&mut app, &channel, state());
+    find(&mut app, "id:settings-udp-range");
+    (app, channel, natives)
+}
+
+/// Where switch `id` (a native `moshpit/switch`) is laid out.
+fn switch_at(app: &Headless, natives: &Natives, id: &str) -> Bounds<Points> {
+    let node = natives
+        .find("moshpit/switch", id)
+        .unwrap_or_else(|| panic!("switch {id}"));
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .find(|n| n.id == node)
+        .unwrap_or_else(|| panic!("switch {id} is laid out"))
+        .bounds
+}
+
+/// Where the text `words` is laid out.
+fn words_at(app: &Headless, words: &str) -> Bounds<Points> {
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .find(|n| n.text.as_ref().is_some_and(|t| t.text.text == words))
+        .unwrap_or_else(|| panic!("{words}: {:?}", app.screen().texts()))
+        .bounds
+}
+
+/// B753: at an accessibility text size a row's title and its words wrap
+/// instead of being cut, in any language, and a switch keeps to the
+/// title's first line.
+#[test]
+fn at_ax5_german_titles_and_switch_words_wrap_whole() {
+    let (app, channel, natives) = connections_at("de", 53.0 / 17.0);
+    let title = "Zwischenablage für Remote lesbar";
+    let size = app
+        .0
+        .screen()
+        .span_style(&format!("text:{title}"))
+        .unwrap()
+        .font_size
+        .0;
+    let line = size * 1.19;
+    let shown = words_at(&app.0, title);
+    let switch = switch_at(&app.0, &natives, "settings-remote-clipboard");
+    assert!(
+        shown.size.height.0 > line * 1.5,
+        "the title wraps: {shown:?}, a line {line}"
+    );
+    assert!(
+        shown.origin.x.0 + shown.size.width.0 <= switch.origin.x.0 + 0.5,
+        "the title stops before the switch: {shown:?} {switch:?}"
+    );
+    let words = words_at(&app.0, "OSC 52; aus antwortet mit leerer Zwischenablage");
+    assert!(
+        words.origin.x.0 + words.size.width.0 <= 402.0,
+        "the switch's words stay on the screen: {words:?}"
+    );
+    // The switch on the title's first line, not in the middle of the row.
+    let first_line = shown.origin.y.0 + line / 2.0;
+    let middle = switch.origin.y.0 + switch.size.height.0 / 2.0;
+    assert!(
+        (middle - first_line).abs() < line / 2.0,
+        "the switch {switch:?} on the first line at {first_line}"
+    );
+    channel.close();
+}
+
+/// B753: at the default text size the rows read exactly as before: one
+/// line each, in the same places (pinned from the rows before B753; the
+/// same in English and German, the German cut on its one line).
+#[test]
+fn at_the_default_size_settings_rows_are_as_before() {
+    let golden: [(&str, [&str; 3]); 2] = [
+        (
+            "en",
+            [
+                "Keyboard on open",
+                "Remote clipboard read",
+                "Mosh for new connections",
+            ],
+        ),
+        (
+            "de",
+            [
+                "Tastatur beim Öffnen",
+                "Zwischenablage für Remote lesbar",
+                "Mosh für neue Verbindungen",
+            ],
+        ),
+    ];
+    let titles_at = [72.0, 112.5, 237.5];
+    let switches = [
+        ("settings-keyboard-on-open", 82.0),
+        ("settings-remote-clipboard", 142.0),
+        ("settings-mosh-default", 247.5),
+    ];
+    for (locale, titles) in golden {
+        let (app, channel, natives) = connections_at(locale, 1.0);
+        for (title, y) in titles.into_iter().zip(titles_at) {
+            let at = words_at(&app.0, title);
+            assert_eq!(
+                (
+                    at.origin.x.0,
+                    at.origin.y.0,
+                    at.size.width.0,
+                    at.size.height.0
+                ),
+                (32.0, y, 310.0, 20.5),
+                "{locale} {title}: one line, where it was"
+            );
+        }
+        for (id, y) in switches {
+            let at = switch_at(&app.0, &natives, id);
+            assert_eq!((at.origin.x.0, at.origin.y.0), (362.0, y), "{locale} {id}");
+        }
+        channel.close();
+    }
 }

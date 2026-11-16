@@ -16,7 +16,8 @@ use common::{
 };
 use moshpit_ui::{
     connection_form::{
-        Auth, ConnectionPredict, FormState, KeyChoice, Message, Mux, Other, SaveFailure, Secrets,
+        Auth, ConnectionPredict, FormState, KeyChoice, Message, Missing, Mux, Other, SaveFailure,
+        Secrets,
     },
     screen::{Params, Screen},
 };
@@ -1484,6 +1485,133 @@ fn a_duplicate_says_which_and_still_saves() {
         !app.screen()
             .matches("id:connection-form-duplicate")
             .unwrap()
+    );
+    channel.close();
+}
+
+/// `filled()`, its secret not on this iPhone (B782): the host marks the
+/// draft so and posts nothing kept.
+fn lacking(secret: Auth) -> FormState {
+    let mut state = filled();
+    state.name = "nas".into();
+    state.auth = secret;
+    state.secrets.stored_password = false;
+    state.missing = Some(Missing {
+        name: "nas".into(),
+        secret,
+    });
+    state
+}
+
+/// B782: a connection restored onto another iPhone has its record and not
+/// its password. The form said "Saved" and saved the password that isn't
+/// there. It says whose password is missing under the field, which takes
+/// the keyboard, and Save waits for it.
+#[test]
+fn a_password_not_on_this_iphone_says_so_under_its_field_and_takes_the_keyboard() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, lacking(Auth::Password));
+    find(&mut app, "id:connection-form-password-field-description");
+    assert!(
+        app.screen()
+            .shows("The password for nas isn't on this iPhone. Enter it again."),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(
+        !app.screen()
+            .matches("id:connection-form-password-field-badge")
+            .unwrap(),
+        "nothing kept, nothing saved"
+    );
+    let password = natives
+        .find("moshpit/connection-password", "connection-form-password")
+        .unwrap();
+    assert_eq!(natives.prop(password, "autoFocus"), Some(json!(true)));
+    assert!(!saves(&mut app, &heard), "Save waits for the password");
+    emit(&mut app, password, "filled", json!(true));
+    assert!(saves(&mut app, &heard));
+
+    // Nothing missing: no note, and the keyboard waits for a tap.
+    show(&mut app, &channel, filled());
+    find(&mut app, "id:connection-form-password-field-badge");
+    assert!(
+        !app.screen()
+            .matches("id:connection-form-password-field-description")
+            .unwrap()
+    );
+    let password = natives
+        .find("moshpit/connection-password", "connection-form-password")
+        .unwrap();
+    assert_eq!(natives.prop(password, "autoFocus"), None);
+    channel.close();
+}
+
+#[test]
+fn a_pasted_key_not_on_this_iphone_says_so_under_its_editor_and_takes_the_keyboard() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, lacking(Auth::Key));
+    find(&mut app, "id:connection-form-pem-missing");
+    assert!(
+        app.screen()
+            .shows("The private key for nas isn't on this iPhone. Paste it again."),
+        "{:?}",
+        app.screen().texts()
+    );
+    let pem = natives
+        .find("moshpit/connection-pem", "private-key-editor")
+        .unwrap();
+    assert_eq!(natives.prop(pem, "autoFocus"), Some(json!(true)));
+    assert!(!saves(&mut app, &heard), "Save waits for the key");
+    emit(&mut app, pem, "filled", json!(true));
+    assert!(saves(&mut app, &heard));
+
+    // The password's note is not the key's: switched to Password, the
+    // field neither says it nor takes the keyboard.
+    let auth = natives
+        .find("moshpit/segmented", "connection-form-auth")
+        .unwrap();
+    emit(&mut app, auth, "change", json!(0));
+    find(&mut app, "id:connection-form-password-field");
+    assert!(
+        !app.screen()
+            .matches("id:connection-form-password-field-description")
+            .unwrap()
+    );
+    let password = natives
+        .find("moshpit/connection-password", "connection-form-password")
+        .unwrap();
+    assert_eq!(natives.prop(password, "autoFocus"), None);
+    channel.close();
+}
+
+#[test]
+fn a_secret_not_on_this_iphone_says_so_in_the_apps_language() {
+    let (mut app, channel, _) = start_observing_with(
+        Screen::ConnectionForm,
+        zh_hans(),
+        "connection-form",
+        |config| {
+            config.viewport = Size::new(Points(580.0), Points(2600.0));
+        },
+    );
+    show(&mut app, &channel, lacking(Auth::Password));
+    find(&mut app, "id:connection-form-password-field-description");
+    assert!(
+        app.screen()
+            .shows("这台 iPhone 上没有 nas 的密码，请重新输入。"),
+        "{:?}",
+        app.screen().texts()
+    );
+    show(&mut app, &channel, lacking(Auth::Key));
+    find(&mut app, "id:connection-form-pem-missing");
+    assert!(
+        app.screen()
+            .shows("这台 iPhone 上没有 nas 的私钥，请重新粘贴。"),
+        "{:?}",
+        app.screen().texts()
     );
     channel.close();
 }

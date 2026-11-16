@@ -71,9 +71,16 @@ enum DiagnosticsLog {
             // exactly those lines, found nothing, and reasoned from the absence.
             // A diagnostic tool that is blind to the riskiest component misleads
             // better than it helps.
-            let fromExtension = PushDiagnostics.recent(since: cutoff).map {
-                Entry(date: $0.at, category: PushDiagnostics.source, message: $0.text)
-            }
+            // Its ring (crates/seal's diagnostics, E7b) at the container's root.
+            let ring = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id)?
+                .appendingPathComponent("push-diagnostics.json")
+            let source = pushDiagnosticsSource()
+            let fromExtension = ring.map {
+                pushDiagnosticsRecent(path: $0.path, since: cutoff.timeIntervalSince1970).map {
+                    Entry(date: Date(timeIntervalSince1970: $0.at), category: source, message: $0.text)
+                }
+            } ?? []
             // The NSH failures of the launches before this one (B366): a page
             // that came up as its bar alone, then a restart, took them out
             // of this process's log. This launch's own are in it already.

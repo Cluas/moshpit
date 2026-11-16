@@ -1,0 +1,16 @@
+[package]
+name = "moshpit-seal-ffi"
+description = "The notification service extension's one call into moshpit-seal: a push in, the card to show out (a C entry point, its own static library, linked into the extension alone)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# The extension's own static library: no UniFFI, no tokio, nothing of the
+# app's (crates/ffi is the app's, one per binary).
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+moshpit-seal = { path = "../seal" }
+serde_json = "1"

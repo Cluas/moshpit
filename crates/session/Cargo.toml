@@ -27,4 +27,7 @@ moshpit-seal = { path = "../seal" }
 # core the app draws it with (B364).
 moshpit-term = { path = "../term" }
 async-trait = "0.1"
+# tests/live_f1.rs: an in-process jump host (one that asks a password as its
+# second factor, which a private OpenSSH run as this user can't check).
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util", "process", "test-util"] }

@@ -52,10 +52,10 @@ expect("duration", Duration.seconds(12 * 60).formatted(
         .locale(AppLanguage.locale(app))), w["minutes"]!)
 
 // The store: nothing recorded is this process's own; recorded is the app's.
-UserDefaults(suiteName: PushPrefs.suite)!.removePersistentDomain(forName: PushPrefs.suite)
+UserDefaults(suiteName: AppGroup.id)!.removePersistentDomain(forName: AppGroup.id)
 expect("nothing recorded", AppLanguage.current(), AppLanguage.own)
 AppLanguage.record(app)
 expect("recorded", AppLanguage.current(), app)
-UserDefaults(suiteName: PushPrefs.suite)!.removePersistentDomain(forName: PushPrefs.suite)
+UserDefaults(suiteName: AppGroup.id)!.removePersistentDomain(forName: AppGroup.id)
 
 exit(failures == 0 ? 0 : 1)

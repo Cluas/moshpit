@@ -7,7 +7,7 @@ import MoshpitKit
 /// Three states rather than a Bool because "should hold the keyboard" and "may
 /// hold the keyboard" are different questions, and answering both with one flag
 /// made tapping the terminal do nothing: `false` didn't merely decline to
-/// focus, it *resigned* on every `updateUIView`, so a tap that focused the view
+/// focus, it *resigned* on every update, so a tap that focused the view
 /// was undone by the very next repaint.
 enum TerminalFocusPolicy {
     /// Take first responder now, and take it back if something steals it.
@@ -167,95 +167,26 @@ final class TerminalHostContainer: UIView {
     }
 }
 
-/// SwiftUI host of the session's terminal (a ``CoreTerminalView``: the
-/// core's view, ``CoreTerminalView``).
+/// The session's terminal's namespace: its ``Coordinator`` (the host the
+/// plain path and every tmux pane drive), the plain path's terminal
+/// (``mintOwnedSurface(coordinator:fontName:fontSize:)``) and the keyboard
+/// policy any terminal takes (``applyFocus(_:to:)``). The SwiftUI
+/// representable it once was is gone (E7a): the NSH page's stage hosts the
+/// terminals.
 ///
-/// ### Persistence contract (DO NOT BREAK)
-///
-/// The terminal is **persistent**: SwiftUI may invoke
-/// ``UIViewRepresentable/updateUIView(_:context:)`` many times across re-renders,
-/// but the terminal — including its scrollback, cursor position, and the data
-/// we have already fed into it — must survive every re-render.
-///
-/// As a result, `updateUIView` is **only** allowed to mutate cosmetic state
-/// (theme, font, alpha, etc.). It MUST NOT feed the terminal, clear it, or
-/// swap its delegate.
-///
-/// The single legitimate input path is via the ``Coordinator`` — a parent
-/// view holds the coordinator instance (e.g. as ``@State``) and calls
-/// ``Coordinator/feed(data:)`` whenever new output arrives from SSH or the
-/// tmux control client.
-struct CoreTerminalHost: UIViewRepresentable {
-    /// Active theme. Re-applied on every `updateUIView` (cheap, idempotent).
-    var theme: TerminalTheme
-
-    /// Monospaced font point size. Re-applied on every `updateUIView`.
-    var fontSize: Double
-
-    /// Font family id from Settings ("system" / "Menlo" / …).
-    var fontName: String = "system"
-
-    /// Cursor appearance from Settings (shape / colour id / blink). Applied
-    /// on create and whenever it changes.
-    var cursorShape: CursorShape = .block
-    var cursorColorId: String = "teal"
-    var cursorBlink: Bool = true
-
-    /// Caller-owned coordinator. Held as a property (not via
-    /// `makeCoordinator`) so a parent SwiftUI view can keep a stable
-    /// reference and route output through ``Coordinator/feed(data:)``.
-    var coordinator: Coordinator
-
-    /// What to do about the keyboard. See ``TerminalFocusPolicy``.
-    var focusPolicy: TerminalFocusPolicy = .take
-
-    /// Hold the terminal at the size it has right now — see
-    /// ``TerminalHostContainer/geometryHeld``. True while a navigation sheet
-    /// is up, so the pane keeps the grid it had across the switch.
-    var geometryHeld: Bool = false
-
-    func makeCoordinator() -> Coordinator {
-        // SwiftUI calls this once per representable identity. Return the
-        // caller-owned coordinator so SwiftUI's internal bookkeeping matches
-        // the instance the parent view is holding onto.
-        coordinator
-    }
-
-    private var look: TerminalLook {
-        TerminalLook(theme: theme, cursorShape: cursorShape, cursorColorId: cursorColorId, cursorBlink: cursorBlink)
-    }
-
-    func makeUIView(context: Context) -> TerminalHostContainer {
-        // Reuse the coordinator's own terminal when it has one: this is a
-        // REMOUNT of a live session (left the screen, came back), and the
-        // existing terminal is the only complete copy of the screen — mosh
-        // in particular never resends what it believes the client already
-        // has. See `Coordinator.surface`.
-        let surface = Self.mintOwnedSurface(coordinator: coordinator, fontName: fontName, fontSize: fontSize)
-        surface.view.removeFromSuperview()
-        let container = TerminalHostContainer()
-        container.host(surface)
-        coordinator.hostContainer = container
-        container.geometryHeld = geometryHeld
-        surface.apply(look: look)
-        // Pop the system keyboard as soon as the terminal is on screen — the
-        // app's shortcut bar rides above it via safeAreaInset.
-        if focusPolicy == .take {
-            let view = surface.view
-            DispatchQueue.main.async { [weak view] in _ = view?.becomeFirstResponder() }
-        }
-        return container
-    }
-
+/// The single input path is the ``Coordinator``: whoever holds it calls
+/// ``Coordinator/feed(data:)`` whenever output arrives from SSH or the tmux
+/// control client.
+enum CoreTerminalHost {
     /// The plain path's terminal (mosh, plain SSH, herdr) for `coordinator`:
     /// its own when it has one (re-wired: a remount), else a new one, owned
-    /// by it (``Coordinator/surface``). Whatever hosts the session's terminal
-    /// — this representable, or the NSH page's stage — gets it here.
+    /// by it (``Coordinator/surface``). The NSH page's stage gets the session's
+    /// terminal here.
     ///
     /// A new one is born at the estimated phone grid, not `.zero`. A `.zero`
     /// frame derives a two-column grid, and everything fed before the first
     /// layout pass — mosh's first screen diffs, herdr's raw-attach repaint,
-    /// both beat `makeUIView` by design (see `pendingFeed`) — gets wrapped at
+    /// both beat the first layout by design (see `pendingFeed`) — gets wrapped at
     /// two columns. Those shards sink into the scrollback, and a reflow does
     /// not round-trip (see TerminalHostContainer.host), so scrolling up
     /// shows a column of 1–2 character fragments forever while the visible
@@ -282,20 +213,6 @@ struct CoreTerminalHost: UIViewRepresentable {
         let surface = TerminalSurfaces.make(font: font, grid: TerminalGrid(cols: seed.cols, rows: seed.rows))
         coordinator.attach(surface)
         return surface
-    }
-
-    func updateUIView(_ uiView: TerminalHostContainer, context: Context) {
-        // === COSMETIC ONLY ===
-        // No feed, no buffer clear, no delegate swap. See type doc.
-        guard let surface = uiView.surface else { return }
-        if uiView.geometryHeld != geometryHeld { uiView.geometryHeld = geometryHeld }
-        surface.apply(font: TerminalFont.font(id: fontName, size: CGFloat(fontSize)))
-        // Only what changed since the last push: SwiftTerm's colour setters
-        // drop its attribute cache and repaint the whole screen, and SwiftUI
-        // calls `updateUIView` on every re-render of the parent (each SRTT
-        // tick on a mosh session included).
-        surface.apply(look: look)
-        Self.applyFocus(focusPolicy, to: surface)
     }
 
     /// ``TerminalFocusPolicy`` on any terminal: take the keyboard (now, and
@@ -331,10 +248,8 @@ struct CoreTerminalHost: UIViewRepresentable {
     /// pane-switch veil). The same for the plain path (mosh, plain SSH,
     /// herdr) and every tmux pane; nothing here knows which view draws.
     ///
-    /// This is a plain reference type — no Combine, no Observation — so a
-    /// parent view can hold it via `@State` (reference identity is stable
-    /// across re-renders) without dragging in property-wrapper machinery
-    /// that the representable doesn't need.
+    /// This is a plain reference type — no Combine, no Observation — so its
+    /// owner can hold it with a stable identity.
     final class Coordinator: NSObject {
         /// The terminal, owned HERE so it survives the screen unmounting. It
         /// has to: mosh's screen model lives server-side and only diffs
@@ -349,7 +264,7 @@ struct CoreTerminalHost: UIViewRepresentable {
         private(set) var surface: CoreTerminalView?
 
         /// Output that arrived before the terminal attached (e.g. mosh's
-        /// first screen diffs land within ~50ms, before `makeUIView` runs).
+        /// first screen diffs land within ~50ms, before the stage hosts it).
         /// Flushed in order once ``attach(_:)`` wires up the terminal.
         private var pendingFeed: [Data] = []
 
@@ -378,7 +293,8 @@ struct CoreTerminalHost: UIViewRepresentable {
         /// and pinned tmux windows to a junk grid from a transient layout
         /// pass (499×62 — "SSH+tmux 满屏乱码" regression, reverted in 369).
         /// The plain path instead keeps the birth grid and the seed grid
-        /// equal by construction — see `makeUIView` — so a terminal that
+        /// equal by construction — see ``CoreTerminalHost/mintOwnedSurface(coordinator:fontName:fontSize:)``
+        /// — so a terminal that
         /// never fires `sizeChanged` is one whose seed was already right.
         private(set) var lastReportedSize: (cols: Int, rows: Int)?
 
@@ -824,9 +740,9 @@ struct CoreTerminalHost: UIViewRepresentable {
 
         // MARK: Keyboard-transition frame lock
 
-        /// The container whose layout we may freeze. Set by whichever host
-        /// embeds the terminal (`CoreTerminalHost.makeUIView`, the NSH
-        /// stage's slot). Assigning it also wires
+        /// The container whose layout we may freeze. Only the SwiftUI
+        /// representable set it, and that is gone (E7a): the NSH stage keeps
+        /// a container of its own, so this stays nil. Assigning it also wires
         /// ``onGridReport``.
         weak var hostContainer: TerminalHostContainer? {
             didSet {
@@ -1163,7 +1079,7 @@ struct CoreTerminalHost: UIViewRepresentable {
         /// both ways (its delegate, the keyboard's moves, the path links and
         /// predictor it should have), and handed whatever output arrived
         /// before it, in order. Idempotent: a remount re-wires the same one.
-        /// The representable and the NSH stage attach the plain path's; the
+        /// The NSH stage attaches the plain path's; the
         /// tmux controllers attach each pane's when they mint it.
         func attach(_ surface: CoreTerminalView) {
             let isNew = self.surface !== surface

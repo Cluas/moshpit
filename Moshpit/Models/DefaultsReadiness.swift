@@ -67,7 +67,7 @@ extension AppLanguage {
     static func recordIfTrusted(readiness: DefaultsReadiness = .system,
                                 defaults: UserDefaults = .standard,
                                 language: String = AppLanguage.own,
-                                suiteName: String = PushPrefs.suite) -> Bool {
+                                suiteName: String = AppGroup.id) -> Bool {
         guard readiness.isReadable(defaults) else { return false }
         record(language, suiteName: suiteName)
         return true

@@ -1,4 +1,5 @@
 import Foundation
+import MoshpitKit
 import Observation
 
 // MARK: - SSH key records (prototype screens 8/9)
@@ -189,7 +190,17 @@ final class SSHKeyStore {
     /// written back.
     @ObservationIgnored private(set) var isAuthoritative = false
 
-    @ObservationIgnored private let backing: SSHKeyStoreBacking
+    /// Internal, not private: the calls over both stores take it
+    /// (``ConnectionStore``'s delete and release).
+    @ObservationIgnored let backing: SSHKeyStoreBacking
+
+    /// Set once a launch's recovery has looked
+    /// (``recoverOrphansOnce(connections:keychain:reader:)``).
+    @ObservationIgnored private var orphansLooked = false
+
+    /// Set once a launch has put right what keys show
+    /// (``learnKeyFactsOnce(keychain:)``).
+    @ObservationIgnored private var factsLearned = false
 
     /// The Rust store over `defaults`, readable as `readiness` says (tests
     /// and scratch suites; the app's is ``AppStores/sshKeys()``).
@@ -251,11 +262,85 @@ final class SSHKeyStore {
         adopt()
     }
 
-    /// The record alone. Deleting a key is ``SSHKeyDeletion``'s: the record
-    /// leaving here never took its private key with it (B232).
+    /// The record alone. Deleting a key is ``delete(id:connections:keychain:)``:
+    /// the record leaving here never took its private key with it (B232).
     func remove(id: UUID) {
         backing.remove(id: id)
         adopt()
+    }
+
+    /// What deleting key `id` would do now (`secrets::check_key`): whether a
+    /// saved connection still signs in with it. nil when the stores
+    /// couldn't be asked.
+    func checkDelete(id: UUID, connections: ConnectionStore) -> StoreKeyCheck? {
+        connections.reloadIfNeeded()
+        let check = backing.checkDelete(id: id, connections: connections.backing)
+        adopt()
+        return check
+    }
+
+    /// Delete key `id`: its private key out of `keychain` first, then its
+    /// record — unless a saved connection still signs in with it, its users
+    /// can't be told, or the keychain keeps the item; the item stays, the
+    /// record going, only while another record names it
+    /// (`secrets::delete_key`, B232). nil when the stores couldn't be asked.
+    func delete(id: UUID, connections: ConnectionStore, keychain: KeychainHost) -> StoreKeyDeletion? {
+        let deletion = backing.deleteKey(id: id, connections: connections.backing, keychain: keychain)
+        adopt()
+        connections.reloadIfNeeded()
+        return deletion
+    }
+
+    /// Give every private key earlier builds orphaned a key record again
+    /// (B232): once a launch, the first time both stores can be trusted.
+    /// The core's recovery (`secrets::recover_orphans`, B810): only a
+    /// `moshpit.secret.` item nothing names, not made this launch and not
+    /// listed to drop (B428), read without asking, that reads as a private
+    /// key — the core reads an OpenSSH or PEM key itself and asks `reader`
+    /// about the rest (a Secure Enclave key's handle). "Recovered key" and
+    /// the start of its fingerprint, in the app's language. Nothing is ever
+    /// deleted or rewritten. Returns the records added.
+    @discardableResult
+    func recoverOrphansOnce(connections: ConnectionStore, keychain: KeychainHost,
+                            reader: StoredKeyReader? = EnclaveKeyReader()) -> [SSHKeyRecord] {
+        guard !orphansLooked else { return [] }
+        // The app's own words, with the core's slot where the fingerprint
+        // goes: interpolated, it is the catalog's "Recovered key %@".
+        let slot = "\u{FFFC}"
+        let template = String(localized: "Recovered key \(slot)").replacingOccurrences(of: slot, with: "%@")
+        switch backing.recoverOrphans(connections: connections.backing, keychain: keychain, reader: reader,
+                                      nameTemplate: template, now: Date()) {
+        case .recovered(let added)?:
+            orphansLooked = true
+            adopt()
+            if !added.isEmpty {
+                Log.store.notice("keychain recovery: \(added.count, privacy: .public) orphaned private key(s) listed in SSH Keys again")
+            }
+            return added.compactMap(SSHKeyRecord.init)
+        case .unknown?:
+            Log.store.info("keychain recovery: which items are named can't be told yet — not looking")
+            return []
+        case .keychainFailed(let message)?:
+            // Locked again, or a keychain that can't list: the next time.
+            Log.store.info("keychain recovery: couldn't list the items (\(message, privacy: .public))")
+            return []
+        case nil:
+            return []
+        }
+    }
+
+    /// What each key 1.0.8 imported without its public half is (B726):
+    /// ``learnKeyFacts(keychain:)`` once a launch, once the key list can be
+    /// trusted.
+    @discardableResult
+    func learnKeyFactsOnce(keychain: KeychainHost) -> [SSHKeyRecord] {
+        guard !factsLearned, isAuthoritative else { return [] }
+        factsLearned = true
+        let learned = learnKeyFacts(keychain: keychain)
+        if !learned.isEmpty {
+            Log.store.notice("key facts: \(learned.count, privacy: .public) key(s) an earlier build imported now show what they are")
+        }
+        return learned
     }
 
     /// Put right what each key 1.0.8 imported without its public half shows
@@ -345,6 +430,14 @@ protocol SSHKeyStoreBacking: AnyObject {
     /// Key `id`'s private key imported again (B781): `key`'s facts kept on
     /// the same record, unless it is another key.
     func refill(id: UUID, key: SSHKeyFactory.Generated, requireBiometry: Bool) -> StoreRefill
+    /// The orphaned private keys listed again (`secrets::recover_orphans`);
+    /// nil when the stores couldn't be asked.
+    func recoverOrphans(connections: ConnectionStoreBacking, keychain: KeychainHost,
+                        reader: StoredKeyReader?, nameTemplate: String, now: Date) -> StoreRecovery?
+    /// What deleting key `id` would do now (`secrets::check_key`).
+    func checkDelete(id: UUID, connections: ConnectionStoreBacking) -> StoreKeyCheck?
+    /// Key `id` deleted, its private key first (`secrets::delete_key`).
+    func deleteKey(id: UUID, connections: ConnectionStoreBacking, keychain: KeychainHost) -> StoreKeyDeletion?
 }
 
 #if DEBUG

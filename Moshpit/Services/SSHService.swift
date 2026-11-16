@@ -18,8 +18,11 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
     case connectionFailed
     case handshakeFailed
     /// The saved password or key isn't there, or can't be read, with the
-    /// device unlocked: lost to a re-install or a re-sign, damaged. Waits
-    /// for the person (``credentialRead(failedWith:protectedDataAvailable:)``).
+    /// device unlocked: a phone restored from a backup or set up from
+    /// another (every item stays on the device that saved it, B782), a
+    /// re-sign, damage. Waits for the person
+    /// (``credentialRead(failedWith:protectedDataAvailable:)``). A failed
+    /// connect names whose (``RustCopy/missingCredential(name:method:managedKey:)``).
     case credentialUnavailable
     /// Face ID (or the passcode) for the saved password or key was
     /// cancelled — by the person, or by the system when the app left the
@@ -87,7 +90,7 @@ enum SSHError: Error, CustomStringConvertible, LocalizedError {
         case .handshakeFailed:
             return String(localized: "The server closed the connection while setting up SSH. Check that the port really is an SSH server, and that a firewall or proxy isn't cutting the connection.")
         case .credentialUnavailable:
-            return String(localized: "Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.")
+            return String(localized: "The saved password or key isn't on this iPhone. Open Edit and enter it again.")
         case .credentialCancelled:
             // The Rust session's words for its `Cancelled` too (RustCopy):
             // Face ID's cancel and the passphrase card's.

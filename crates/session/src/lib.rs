@@ -94,7 +94,7 @@ pub use attempt::{Route, mosh_falls_back, route};
 pub use event::{
     Cause, CredentialsWhy, Degrade, Discarded, EndReason, Event, EventKind, Failure, FailureKind,
     KeyWhy, MoshWhy, PaneInfo, ProxyWhy, ResumeOutcome, SHELL_PANE, SessionId, SessionState,
-    UnreachableWhy,
+    TunnelWhy, UnreachableWhy,
 };
 pub use herdr::{HerdrAction, HerdrAnswer, HerdrView, unanswered};
 pub use lifecycle::{Lifecycle, Transport};
@@ -102,7 +102,7 @@ pub use mosh_udp::{SystemUdp, UdpFlow, UdpNetwork};
 pub use registry::{Events, FLUSH_BOUND, Sessions};
 pub use services::{CredentialError, Credentials, NoMemory, Services, SessionMemory};
 pub use session::{DELIVERY_WAIT, SessionView};
-pub use spec::{ConnectionSpec, Protocol, Timing};
+pub use spec::{ConnectionSpec, Hop, HopBroken, Protocol, Timing, Via};
 pub use tmux_leg::{TmuxAction, TmuxRefusal, TmuxView, mark as view_marks, view_action, view_mark};
 
 pub use moshpit_install::Multiplexer;

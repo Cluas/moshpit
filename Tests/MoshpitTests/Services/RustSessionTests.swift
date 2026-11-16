@@ -598,7 +598,7 @@ struct RustSessionTests {
     func passphraseCard() async throws {
         let key = try #require(SSHKeyFixtures.all.first { $0.name == "Ed25519 · OpenSSH · passphrase" })
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         let connection = ServerConnection(name: "t", host: "192.0.2.1", port: 22, username: "me",
                                           authMethod: .key, keychainRef: ref)
@@ -638,7 +638,7 @@ struct RustSessionTests {
     func passphraseAnsweredOnce() async throws {
         let key = try #require(SSHKeyFixtures.all.first { $0.name == "Ed25519 · OpenSSH · passphrase" })
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         let connection = ServerConnection(name: "t", host: "192.0.2.1", port: 22, username: "me",
                                           authMethod: .key, keychainRef: ref)

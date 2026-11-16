@@ -19,11 +19,17 @@ extension ConnectionDraft {
     }
 
     /// The draft of a saved connection, as the editor opens it.
-    init(_ c: ServerConnection) {
+    /// `secretMissing`: its own password or pasted key isn't on this device
+    /// (B782, ``ConnectionStore/secretMissing``) — the draft keeps nothing,
+    /// and its field says whose secret is gone and takes the keyboard.
+    init(_ c: ServerConnection, secretMissing: Bool = false) {
         // A Swift connection's id is a UUID, which is all the model can
         // refuse.
         self = (try? connectionDraftOf(connection: ConnectionRecord(c)))
             ?? connectionDraftNew(moshByDefault: c.connectionProtocol == .mosh)
+        if secretMissing {
+            self = connectionDraftSecretMissing(draft: self, name: c.displayName)
+        }
     }
 
     /// The managed key picked from SSH Keys; nil: paste a PEM.
@@ -76,7 +82,7 @@ extension ConnectionDraft {
             draft: self, existing: existing.map(ConnectionRecord.init),
             fresh: ConnectionRecord(ServerConnection()), keys: keys.map(KeyRecord.init),
             given: secrets.given, udpStart: Int64(settings.udpRangeStart),
-            udpEnd: Int64(settings.udpRangeEnd), newRef: keychain.generateRef())
+            udpEnd: Int64(settings.udpRangeEnd), newRef: storeNewKeychainRef())
         guard let connection = ServerConnection(plan.connection) else {
             throw ConnectionSaveRefusal.Invalid(why: "not a UUID: \(plan.connection.id)")
         }
@@ -117,6 +123,11 @@ extension ConnectionDraft {
             store.add(connection)
         } else {
             store.update(connection)
+        }
+        // Save asked for a secret of its own or a managed key (B782): it
+        // has one now.
+        if missing != nil {
+            store.secretFound(connection.id)
         }
         if let released = plan.released {
             await release(released)

@@ -538,6 +538,9 @@ fn delete_connection(app: &mut App, core: &Core, connection: Uuid) {
         keychain.as_ref(),
     );
     log::info!(target: "moshpit", "connection deleted; its keychain item: {fate:?}");
+    // The sessions of connections that went through it fail at their next
+    // dial, never going direct (F1).
+    app.respec_through(connection);
     app.trees.retain(|t| t.connection != connection.to_string());
     app.refresh();
 }

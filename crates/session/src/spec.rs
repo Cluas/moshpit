@@ -17,6 +17,52 @@ pub enum Protocol {
     Mosh,
 }
 
+/// How a connection reaches its host (F1).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Hop {
+    /// Straight to the host (through [`ConnectionSpec::proxy`], if set).
+    #[default]
+    Direct,
+    /// Through another saved connection's SSH (`ssh -J`): only ever SSH
+    /// (mosh's UDP can't take the way), and [`ConnectionSpec::proxy`]
+    /// doesn't apply (the jump host's own does, to its leg).
+    Through(Box<Via>),
+    /// Through a saved connection that can't serve: the session fails at
+    /// once and never dials the host directly instead — a jump host is
+    /// often the only way in a network allows.
+    Broken(HopBroken),
+}
+
+impl Hop {
+    pub fn is_direct(&self) -> bool {
+        matches!(self, Hop::Direct)
+    }
+}
+
+/// The jump host a connection goes through: another saved connection,
+/// signed in to with its own credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Via {
+    /// Its connection id: what its credentials are read by.
+    pub connection_id: String,
+    /// What the person calls it ("bastion"): what a failure on its leg is
+    /// told by ([`crate::Failure::leg`]).
+    pub name: String,
+    pub target: Target,
+    /// Its own SOCKS proxy, for its leg.
+    pub proxy: Option<Socks5Proxy>,
+}
+
+/// Why a connection's way through another can't be taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HopBroken {
+    /// The connection it went through was deleted.
+    Deleted,
+    /// More than one hop: the connection it goes through goes through
+    /// another itself, or it names itself.
+    Chained,
+}
+
 /// One saved connection, as far as a session is concerned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionSpec {
@@ -26,6 +72,8 @@ pub struct ConnectionSpec {
     pub connection_id: String,
     pub target: Target,
     pub proxy: Option<Socks5Proxy>,
+    /// Straight there or through another connection's SSH (F1).
+    pub hop: Hop,
     pub protocol: Protocol,
     pub multiplexer: Multiplexer,
     /// The tmux command, as typed in the form (a path, or a path with
@@ -62,6 +110,7 @@ impl ConnectionSpec {
             connection_id: connection_id.into(),
             target,
             proxy: None,
+            hop: Hop::Direct,
             protocol: Protocol::Ssh,
             multiplexer: Multiplexer::None,
             tmux_path: None,
@@ -72,6 +121,16 @@ impl ConnectionSpec {
             initial_grid: (80, 24),
             pty_command: None,
             connected_before: false,
+        }
+    }
+
+    /// The transport a dial asks for: [`Self::protocol`], except that a
+    /// connection through another is SSH only (F1).
+    pub fn dialled_protocol(&self, protocol: Protocol) -> Protocol {
+        if self.hop.is_direct() {
+            protocol
+        } else {
+            Protocol::Ssh
         }
     }
 

@@ -7,6 +7,7 @@
 pub mod a11y;
 pub mod home_fixture;
 pub mod settings_fixture;
+pub mod text_engine;
 
 use std::{
     collections::HashMap,
@@ -26,6 +27,14 @@ use nsh_engine::EngineConfig;
 use nsh_testing::Headless;
 
 pub const WAIT: Duration = Duration::from_secs(10);
+
+/// A headless app on `config`, its text measured by
+/// [`text_engine::WideTextEngine`]: Approx's, with East Asian wide
+/// characters as wide as they are on a phone.
+pub fn headless(config: EngineConfig) -> Headless {
+    Headless::start_with_text_engine(config, || text_engine::WideTextEngine)
+        .expect("the engine starts")
+}
 
 /// How long a step waits for something that is sure to come (the screen
 /// applying a post) before it calls the screen stuck: only a broken screen
@@ -354,7 +363,7 @@ pub fn start_observing_with(
     }
     .apply(&mut config.environment);
     change(&mut config);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = headless(config);
     let natives = Natives::default();
     let observed = natives.clone();
     app.observe(move |_, batch| observed.apply(batch));

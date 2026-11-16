@@ -10,6 +10,6 @@ import MoshpitKit
 /// suites that need the container skip instead of failing.
 enum AppGroupContainer {
     static let isAvailable = FileManager.default
-        .containerURL(forSecurityApplicationGroupIdentifier: PushPairingStore.appGroup) != nil
+        .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id) != nil
     static let skipReason: Comment = "App Group container unavailable (unsigned build, CODE_SIGNING_ALLOWED=NO)"
 }

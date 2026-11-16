@@ -144,10 +144,14 @@ pub fn command(checks: &[Check]) -> Option<String> {
                 ),
                 // This device's pairing is marked as the one it used last
                 // (its mtime, B664): the sender pushes to a phone on its
-                // newest conf, the connection the phone is on.
+                // newest conf, the connection the phone is on. And the
+                // directories it is in are made the person's alone
+                // (B637): an older build made them with the host's umask.
                 Kind::File if matches!(check.component, InstallComponent::Pairing { .. }) => format!(
-                    "if [ -f \"{path}\" ]; then touch -c \"{path}\" 2>/dev/null; {}; else echo -; fi",
-                    commands::sha256(path)
+                    "if [ -f \"{path}\" ]; then chmod 700 \"{dir}\" \"{dir}/push.d\" 2>/dev/null; \
+                     touch -c \"{path}\" 2>/dev/null; {}; else echo -; fi",
+                    commands::sha256(path),
+                    dir = commands::DIR
                 ),
                 Kind::File => format!(
                     "if [ -f \"{path}\" ]; then {}; else echo -; fi",
@@ -387,6 +391,12 @@ mod tests {
         // B664: and marks this device's conf as the one it used last, and
         // nothing else.
         assert_eq!(text.matches("touch -c").count(), 1, "{text}");
+        // B637: and makes the directories it is in the person's alone.
+        assert_eq!(text.matches("chmod 700").count(), 1, "{text}");
+        assert!(
+            text.contains("chmod 700 \"$HOME/.moshpit\" \"$HOME/.moshpit/push.d\""),
+            "{text}"
+        );
         assert!(text.contains(&format!("touch -c \"$HOME/.moshpit/push.d/{CONN}.conf\"")), "{text}");
     }
 

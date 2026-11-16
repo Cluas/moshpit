@@ -1111,6 +1111,70 @@ fn a_mosh_connect_asks_for_settings_udp_ports_not_the_saved_ones() {
     connection.connection_protocol = moshpit_store::connections::ConnectionProtocol::Mosh;
     connection.mosh_port_range_start = 60001;
     connection.mosh_port_range_end = 60999;
-    let spec = super::sessions::spec(&connection, &Options::default(), (60000, 60010));
+    let spec = super::sessions::spec(&connection, &[], &Options::default(), (60000, 60010));
     assert_eq!(spec.mosh_port_range, (Some(60000), Some(60010)));
+}
+
+/// F1: a connection through another dials that one's host as its jump
+/// host — by its own id (its credentials), name, address and proxy — SSH
+/// only and without a proxy of its own; one whose jump host was deleted,
+/// or that would be a second hop, is a route that fails at once, never a
+/// direct dial.
+#[test]
+fn f1_a_connection_through_another_dials_through_it() {
+    use moshpit_session::{Hop, HopBroken, Protocol};
+    use moshpit_store::connections::{ConnectionProtocol, ServerConnection};
+    let made = || {
+        ServerConnection::new(
+            moshpit_seal::foundation::uuid::Uuid::new_v4(),
+            moshpit_seal::foundation::date::Date::from_unix(1_762_800_000.0),
+        )
+    };
+    let mut bastion = made();
+    bastion.name = "bastion".into();
+    bastion.host = "bastion.example.com".into();
+    bastion.username = "dev".into();
+    bastion.port = 2222;
+    bastion.use_socks_proxy = Some(true);
+    bastion.socks_proxy_host = Some("192.0.2.9".into());
+    let mut hpc = made();
+    hpc.name = "hpc".into();
+    hpc.host = "node01".into();
+    hpc.username = "me".into();
+    hpc.connection_protocol = ConnectionProtocol::Mosh;
+    hpc.use_socks_proxy = Some(true);
+    hpc.socks_proxy_host = Some("192.0.2.10".into());
+    hpc.via_connection_id = Some(bastion.id);
+    let saved = vec![bastion.clone(), hpc.clone()];
+    let spec = super::sessions::spec(&hpc, &saved, &Options::default(), (60000, 60010));
+    let Hop::Through(via) = &spec.hop else {
+        panic!("{:?}", spec.hop)
+    };
+    assert_eq!(via.connection_id, bastion.id.to_string());
+    assert_eq!(via.name, "bastion");
+    assert_eq!(
+        via.target,
+        moshpit_ssh::Target::new("dev", "bastion.example.com", 2222)
+    );
+    assert_eq!(
+        via.proxy,
+        Some(moshpit_ssh::Socks5Proxy::new("192.0.2.9", 1080))
+    );
+    assert_eq!(spec.target, moshpit_ssh::Target::new("me", "node01", 22));
+    assert_eq!(spec.protocol, Protocol::Ssh, "mosh can't take the way");
+    assert_eq!(spec.proxy, None, "the jump host's proxy, not its own");
+
+    // The jump host deleted: a route that fails, not a direct dial.
+    let gone = super::sessions::spec(&hpc, &[hpc.clone()], &Options::default(), (60000, 60010));
+    assert_eq!(gone.hop, Hop::Broken(HopBroken::Deleted));
+    // A jump host that goes through another: a second hop, refused.
+    let mut chained = bastion.clone();
+    chained.via_connection_id = Some(made().id);
+    let deeper = super::sessions::spec(
+        &hpc,
+        &[chained, hpc.clone()],
+        &Options::default(),
+        (60000, 60010),
+    );
+    assert_eq!(deeper.hop, Hop::Broken(HopBroken::Chained));
 }

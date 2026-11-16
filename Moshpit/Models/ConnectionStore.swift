@@ -1,4 +1,5 @@
 import Foundation
+import MoshpitKit
 import Observation
 
 /// The saved connections, as the views watch them: the Rust store
@@ -14,6 +15,14 @@ import Observation
 final class ConnectionStore {
     private(set) var connections: [ServerConnection] = []
 
+    /// The connections whose own password or pasted key isn't in this
+    /// device's keychain (B782): a phone restored from a backup, or set up
+    /// from another, has every record and none of their items. Told by
+    /// ``KeychainReferences/findMissing(connections:keys:keychain:)`` at
+    /// each return to the foreground, never stored. Home's Connect opens
+    /// such a connection's Edit instead, its field asking for the secret.
+    private(set) var secretMissing: Set<UUID> = []
+
     /// True once `connections` came from preferences known to be readable
     /// (the sealed-launch rule): until then the list is shown, never
     /// written over, read again when the app comes forward
@@ -24,10 +33,16 @@ final class ConnectionStore {
     /// saved connections.
     @ObservationIgnored private var sessionMemorySwept = false
 
+    /// Set by the first ``settleReleasesOnce(keys:keychain:)`` that could
+    /// tell what the records name.
+    @ObservationIgnored private var releasesSettled = false
+
     /// The preferences the backing keeps its data in: only to list the
     /// keys ``sweepSessionMemoryOnce()`` hands it.
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let backing: ConnectionStoreBacking
+    /// Internal, not private: the calls over both stores take it
+    /// (``SSHKeyStore``'s recovery and delete).
+    @ObservationIgnored let backing: ConnectionStoreBacking
 
     /// The Rust store over `defaults`, readable as `readiness` says (tests
     /// and scratch suites; the app's is ``AppStores/connections()``).
@@ -67,6 +82,18 @@ final class ConnectionStore {
     func add(_ connection: ServerConnection) {
         backing.add(connection)
         adopt()
+    }
+
+    /// These connections' own items aren't here (B782).
+    func setSecretMissing(_ ids: Set<UUID>) {
+        guard ids != secretMissing else { return }
+        secretMissing = ids
+    }
+
+    /// Connection `id` was saved with a secret again (its Edit, B782): it
+    /// connects from now on, before the next foreground looks again.
+    func secretFound(_ id: UUID) {
+        secretMissing.remove(id)
     }
 
     /// Pointed at another box, it forgets what sessions remembered about
@@ -115,6 +142,66 @@ final class ConnectionStore {
         sessionMemorySwept = true
         let keys = Array(defaults.dictionaryRepresentation().keys.filter { SessionMemory.connection(of: $0) != nil })
         return backing.sweepSessionMemory(keys: keys)
+    }
+
+    // MARK: - Keychain items
+
+    // Who names which keychain item, and what becomes of one nothing names,
+    // is the core's alone (`crates/store/src/secrets.rs`; B232, B428). B810:
+    // the app kept a Swift copy of it, and of the refs made this launch,
+    // and the two disagreed depending on who made an item.
+
+    /// Deletes connection `id`, and its keychain item with it once no other
+    /// connection and no key record names it — a managed key's item stays
+    /// while the key is listed; one whose key's record is already gone goes
+    /// with the last connection on it. The record goes whatever becomes of
+    /// the item: one that can't go now (what else names it can't be told,
+    /// or the keychain kept it) is listed for a later launch (B428). nil
+    /// when the stores couldn't be asked.
+    @discardableResult
+    func delete(id: UUID, keys: SSHKeyStore, keychain: KeychainHost) -> StoreSecretFate? {
+        let fate = backing.deleteReleasingSecret(id: id, keys: keys.backing, keychain: keychain)
+        adopt()
+        return fate
+    }
+
+    /// Drop `ref` once no saved connection and no key record names it: the
+    /// item a connection let go of when a save moved it onto a managed key
+    /// (B325). One that can't go now stays listed, and a later launch drops
+    /// it (B428); named again, it stays.
+    @discardableResult
+    func releaseSecret(_ ref: String, keys: SSHKeyStore, keychain: KeychainHost) -> StoreSecretFate? {
+        let fate = backing.releaseItem(ref, keys: keys.backing, keychain: keychain)
+        Log.store.info("keychain: an item a connection left: \(String(describing: fate), privacy: .public)")
+        return fate
+    }
+
+    /// Put `ref` on the list of items to drop (B428): a connection let go
+    /// of it, but it can't go yet — its session still signs in with it
+    /// (B325), or the drop failed. ``releaseSecret(_:keys:keychain:)`` drops
+    /// it once the session lets go; if the app ends first, the next launch
+    /// does (``settleReleasesOnce(keys:keychain:)``). Never offered back as
+    /// a key.
+    func holdSecret(_ ref: String) {
+        if !backing.holdRelease(ref) {
+            Log.store.error("keychain: an item a connection left couldn't be listed to drop later")
+        }
+    }
+
+    /// Drop what earlier launches listed (B428): once a launch, the first
+    /// time both stores can be trusted, before recovery looks. An item no
+    /// saved record names goes; one named again stays; one the keychain
+    /// keeps is tried at the next launch. What this launch listed waits for
+    /// its session. Returns what became of each.
+    @discardableResult
+    func settleReleasesOnce(keys: SSHKeyStore, keychain: KeychainHost) -> [StoreSettledRelease] {
+        guard !releasesSettled, savedIds != nil, keys.keychainRefs() != nil else { return [] }
+        releasesSettled = true
+        let done = backing.releasePending(keys: keys.backing, keychain: keychain)
+        if !done.isEmpty {
+            Log.store.notice("keychain: \(done.count, privacy: .public) item(s) connections let go of settled")
+        }
+        return done
     }
 
     // MARK: - Reading
@@ -184,6 +271,19 @@ protocol ConnectionStoreBacking: AnyObject {
     /// Of `keys`, removes the session-memory keys of connections no longer
     /// saved, when that can be told; the keys removed.
     func sweepSessionMemory(keys: [String]) -> [String]
+    /// Deletes connection `id`, and its keychain item once nothing else
+    /// names it (`secrets::delete_connection`); nil when the stores
+    /// couldn't be asked.
+    func deleteReleasingSecret(id: UUID, keys: SSHKeyStoreBacking, keychain: KeychainHost) -> StoreSecretFate?
+    /// Drops `account` once nothing names it, listed until it is
+    /// (`secrets::release_item`); nil when the stores couldn't be asked.
+    func releaseItem(_ account: String, keys: SSHKeyStoreBacking, keychain: KeychainHost) -> StoreSecretFate?
+    /// Lists `account` to drop later (`secrets::hold_release`); whether it
+    /// is listed.
+    func holdRelease(_ account: String) -> Bool
+    /// The listed items, settled over what the records name now
+    /// (`secrets::release_pending`).
+    func releasePending(keys: SSHKeyStoreBacking, keychain: KeychainHost) -> [StoreSettledRelease]
     /// Connection `id` signed in now: its last connect, at most once a day;
     /// whether it was written (B783).
     func markConnected(id: UUID) -> Bool
@@ -191,10 +291,11 @@ protocol ConnectionStoreBacking: AnyObject {
 
 /// What a session remembers about a connection between attempts and app
 /// launches, in `UserDefaults` under the connection's id: where the person
-/// was in tmux (``TmuxSelectionStore``) and what the host could run
-/// (``HostCapabilityCache``). Both go with their connection (B199).
+/// was in tmux (`moshpit.tmux.lastSelection.<id>`, the Rust core's
+/// `session_memory`) and what the host could run (``HostCapabilityCache``).
+/// Both go with their connection (B199).
 enum SessionMemory {
-    /// ``TmuxSelectionStore/key(_:)``'s and ``HostCapabilityCache``'s.
+    /// The tmux selection's (the core's) and ``HostCapabilityCache``'s.
     static let prefixes = ["moshpit.tmux.lastSelection.", "hostcaps."]
 
     /// Every key remembering something about connection `id`.

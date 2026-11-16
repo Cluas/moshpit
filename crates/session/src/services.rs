@@ -36,7 +36,7 @@ pub trait Credentials: Send + Sync {
 /// launches — the slice of the store (`crates/store`, W5) it needs, as a
 /// trait until that crate lands.
 pub trait SessionMemory: Send + Sync {
-    /// Where the person was in tmux (`TmuxSelectionStore`): a reconnect, a
+    /// Where the person was in tmux: a reconnect, a
     /// relaunch, a protocol switch lands back there.
     fn tmux_selection(&self, connection_id: &str) -> Option<Selection> {
         let _ = connection_id;
@@ -75,6 +75,41 @@ pub struct Services {
     pub udp: Arc<dyn UdpNetwork>,
     /// What tmux's size leases call this device ("iPhone", "iPad").
     pub device_label: String,
+    /// The session's jump host connection (F1): each session has its own
+    /// (`Actor::new`), shared by every dial it makes.
+    pub(crate) jump: JumpSlot,
+}
+
+/// A session's jump host connection, shared by every dial the session
+/// makes — the terminal, its redials, the side connections borrows take,
+/// the tmux sidecar, herdr's control, the mosh-server reap — so the
+/// session signs in to its jump host once while that connection lives
+/// (a jump host asking a one-time code asks once). Dialling it holds the
+/// slot: a second dial meanwhile waits and takes the same connection.
+#[derive(Clone, Default)]
+pub(crate) struct JumpSlot(Arc<tokio::sync::Mutex<Option<(crate::spec::Via, moshpit_ssh::Jump)>>>);
+
+impl JumpSlot {
+    /// The slot, held: the connection kept for `via` if it is still up.
+    pub(crate) async fn hold(
+        &self,
+    ) -> tokio::sync::MutexGuard<'_, Option<(crate::spec::Via, moshpit_ssh::Jump)>> {
+        self.0.lock().await
+    }
+
+    /// Lets the session's hold go: the jump host's connection closes once
+    /// no connection through it is left either.
+    pub(crate) fn release(&self) {
+        if let Ok(mut held) = self.0.try_lock() {
+            *held = None;
+        } else {
+            // A dial holds the slot: let it go after.
+            let slot = self.0.clone();
+            tokio::spawn(async move {
+                *slot.lock().await = None;
+            });
+        }
+    }
 }
 
 impl Services {
@@ -86,6 +121,7 @@ impl Services {
             memory: Arc::new(NoMemory),
             udp: Arc::new(SystemUdp),
             device_label: "iPhone".to_owned(),
+            jump: JumpSlot::default(),
         }
     }
 }

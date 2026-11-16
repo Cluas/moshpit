@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 3
+# moshpit-scripts: 4
 # moshpit-stamp.sh — what a coding agent's lifecycle hook calls.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-stamp.sh. Each agent's config
@@ -31,6 +31,17 @@
 #
 # Canonical copy. The installer (crates/install/src/scripts.rs) builds it in
 # as it is here; its SHA-256 is how a host's copy is judged current.
+# The system's tools first (a host-script audit): a directory a project
+# puts ahead of them on the hook's PATH (direnv, node_modules/.bin, a venv)
+# must not stand in for openssl, given the pairing key as an argument, or
+# curl, which reads the send token's config. tmux stays the one the caller's
+# PATH finds: the hook talks to that tmux's server, and a client of another
+# version (a distro's /usr/bin/tmux beside a newer one) can't.
+# MOSHPIT_TEST_BIN is for the tests' stand-ins only, not a setting: the
+# directory it names goes first, as a PATH entry's place never does.
+MOSHPIT_TMUX=${MOSHPIT_TMUX:-$(command -v tmux 2>/dev/null || true)}; export MOSHPIT_TMUX
+PATH=${MOSHPIT_TEST_BIN:+$MOSHPIT_TEST_BIN:}/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}; export PATH
+case "$MOSHPIT_TMUX" in /*) tmux() { "$MOSHPIT_TMUX" "$@"; } ;; esac
 ST="$1"; AG="${2:-agent}"; TITLE=""; SID=""; KEEP=""
 # That this agent's hooks really fire on this host: Codex runs a new hook only
 # once the person trusts it, and the setup screen reads this to know whether

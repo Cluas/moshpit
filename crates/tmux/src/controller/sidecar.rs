@@ -41,6 +41,9 @@ pub(super) struct SidecarState {
     pub status_hidden_session_id: Option<String>,
     /// The client names listed just before the owned sessions are read.
     pub owned_listed_clients: Option<BTreeSet<String>>,
+    /// B773: the renderer goes into our group once the group has landed
+    /// where its session is.
+    pub renderer_awaits_landing: bool,
 }
 
 /// The session option that marks a session Moshpit made (B86): the mark
@@ -215,8 +218,17 @@ impl Controller {
         if self.config.renders_output || !is_valid_id(session) {
             return;
         }
+        // B773: in our group, the renderer views the group's session.
+        if let Some(group) = self.group.current.as_ref()
+            && group.id.as_deref() == Some(session)
+        {
+            self.sidecar.renderer_session_id = Some(group.session.clone());
+            return;
+        }
         self.sidecar.renderer_session_id = Some(session.to_owned());
         if self.snapshot.active_session_id.as_deref() == Some(session) {
+            // We view it already, through our group: the renderer comes in.
+            self.bring_renderer_into_group();
             return;
         }
         let window = self
@@ -237,8 +249,48 @@ impl Controller {
         snapshot.active_window_id = window;
         snapshot.active_pane_id = pane;
         self.sync_status_line();
-        self.send(format!("switch-client -t {session}"));
+        if self.wants_group_for(session) {
+            // B773: into a group of it, the renderer after us.
+            let name = self
+                .snapshot
+                .sessions
+                .get(session)
+                .map(|info| info.name.clone())
+                .unwrap_or_default();
+            self.enter_group(session, &name);
+        } else {
+            self.send(format!("switch-client -t {session}"));
+        }
         self.refresh_windows_and_panes(false, None);
+    }
+
+    /// B773: the phone's renderer into our group, so the session's own
+    /// current window — a desktop's — never moves with the phone's. Not
+    /// before the group stands where the session is: a group starts on its
+    /// lowest window, and the phone would show that for a moment.
+    pub(super) fn bring_renderer_into_group(&mut self) {
+        if self.config.renders_output {
+            return;
+        }
+        let Some(group) = self.group.current.clone() else {
+            return;
+        };
+        if self.group.landing {
+            self.sidecar.renderer_awaits_landing = true;
+            return;
+        }
+        self.sidecar.renderer_awaits_landing = false;
+        let Some(renderer) = self.sidecar.renderer_client.clone() else {
+            return;
+        };
+        if self.sidecar.renderer_session_id.as_deref() != Some(group.session.as_str()) {
+            return;
+        }
+        let target = match &group.id {
+            Some(id) => format!("'{id}'"),
+            None => format!("'={}'", group.name),
+        };
+        self.send(format!("switch-client -c {} -t {target}", renderer.name));
     }
 
     /// The window the sidecar may size: the active one, when it is on the
@@ -327,13 +379,30 @@ impl Controller {
         if !moving.is_empty() {
             self.probe_switch_layouts(session);
         }
-        for name in &moving {
-            self.send(format!("switch-client -c {name} -t {session}"));
+        let grouped = self.wants_group_for(session);
+        if !grouped {
+            for name in &moving {
+                self.send(format!("switch-client -c {name} -t {session}"));
+            }
         }
         if renderer.is_some() && !response.is_error {
             self.sidecar.renderer_session_id = (!moving.is_empty()).then(|| session.to_owned());
         }
-        self.send(format!("switch-client -t {session}"));
+        if grouped {
+            // B773: into a group of it; the renderer follows at its landing.
+            let name = self
+                .snapshot
+                .sessions
+                .get(session)
+                .map(|info| info.name.clone())
+                .unwrap_or_default();
+            self.enter_group(session, &name);
+            if moving.is_empty() {
+                self.sidecar.renderer_awaits_landing = false;
+            }
+        } else {
+            self.send(format!("switch-client -t {session}"));
+        }
         self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         if !moving.is_empty()
             && let Some(left) = left.filter(|left| left != session)
@@ -431,11 +500,20 @@ impl Controller {
         let Some(current) = self.snapshot.active_session_id.clone() else {
             return;
         };
+        // B773: the renderer views our group of it: the group's own status
+        // line is the one on the phone's screen.
+        let shown = self
+            .group
+            .current
+            .as_ref()
+            .filter(|group| group.session == current)
+            .and_then(|group| group.id.clone())
+            .unwrap_or_else(|| current.clone());
         let wanted = self
             .sidecar
             .owned_session_ids
             .contains(&current)
-            .then_some(current);
+            .then_some(shown);
         if wanted == self.sidecar.status_hidden_session_id {
             return;
         }

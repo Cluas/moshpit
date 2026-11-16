@@ -251,7 +251,7 @@ struct WhisperDownloadFailureTests {
             onProgress(1)
         })
         center.start("small")
-        #expect(await settles { center.progress["small"] == 0.9 })
+        #expect(await settles(within: .seconds(5)) { center.progress["small"] == 0.9 })
 
         center.pause("small")
         gate.open()
@@ -278,15 +278,19 @@ struct WhisperDownloadFailureTests {
         center.start("small")
         center.pause("small")
         center.start("small")
-        #expect(await settles { center.progress["small"] == 0.1 })
+        #expect(await settles(within: .seconds(5)) { center.progress["small"] == 0.1 })
         gate.open()
         #expect(!(await settles { center.progress["small"] == 0.8 }),
                 "the paused run's progress showed under the new one")
     }
 
-    /// Polls for up to half a second.
-    private func settles(_ condition: @MainActor () -> Bool) async -> Bool {
-        let deadline = ContinuousClock.now + .milliseconds(500)
+    /// Polls for up to `within`: half a second by default, which is how long
+    /// a `!settles` check waits to see that something never happens. A
+    /// check that something does happen waits longer, since a loaded CI
+    /// simulator can take more than half a second to run the next task.
+    private func settles(within: Duration = .milliseconds(500),
+                         _ condition: @MainActor () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + within
         while ContinuousClock.now < deadline {
             if condition() { return true }
             try? await Task.sleep(for: .milliseconds(10))

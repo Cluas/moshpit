@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 3
+# moshpit-scripts: 4
 # moshpit-push.sh — seal one agent status and hand it to the Moshpit push relay.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-push.sh, next to the stamp
@@ -62,6 +62,18 @@
 # transcripts to, either do not pair it or run a kernel with hidepid=2.
 
 set -u
+
+# The system's tools first (a host-script audit): a directory a project
+# puts ahead of them on the hook's PATH (direnv, node_modules/.bin, a venv)
+# must not stand in for openssl, given the pairing key as an argument, or
+# curl, which reads the send token's config. tmux stays the one the caller's
+# PATH finds: the hook talks to that tmux's server, and a client of another
+# version (a distro's /usr/bin/tmux beside a newer one) can't.
+# MOSHPIT_TEST_BIN is for the tests' stand-ins only, not a setting: the
+# directory it names goes first, as a PATH entry's place never does.
+MOSHPIT_TMUX=${MOSHPIT_TMUX:-$(command -v tmux 2>/dev/null || true)}; export MOSHPIT_TMUX
+PATH=${MOSHPIT_TEST_BIN:+$MOSHPIT_TEST_BIN:}/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}; export PATH
+case "$MOSHPIT_TMUX" in /*) tmux() { "$MOSHPIT_TMUX" "$@"; } ;; esac
 
 # EVERY paired device gets every push. One `push.conf` used to be the whole
 # story, which quietly meant one PHONE per host: a second device pairing
@@ -381,6 +393,19 @@ send_one() {
       sleep 2
     done
     [ "$CODE" = "200" ] && DELIVERED="$DELIVERED $PHONE"
+    # The relay says the phone this conf pushes to is gone (B784): APNs
+    # called its token unregistered, and the relay answers 410 for nothing
+    # else. The conf can never deliver again. A phone restored onto a new
+    # iPhone pairs again under a new install and leaves this one behind;
+    # kept, it cost a relay call on every push, for good. A phone that is in
+    # fact alive has the app write its conf again at its next connect. Only
+    # a definite 410: 401, 404, 429 and 5xx keep it. Said in the host's log.
+    if [ "$CODE" = "410" ]; then
+      rm -f "$1" 2>/dev/null
+      mkdir -p "$HOME/.moshpit" 2>/dev/null
+      printf '%s removed %s: the relay says its device is gone (410)\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "$1" >> "$HOME/.moshpit/push.log" 2>/dev/null
+    fi
   fi
 }
 

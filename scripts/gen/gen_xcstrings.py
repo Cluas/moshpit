@@ -1118,9 +1118,19 @@ add("herdr's answer was cut off", "herdr 的回应半路断了", "herdr の応�
 add("The task is running, but the first message is still in %@'s input: pressing Return failed (%@). Press Return in the pane to send it.",
     "任务已经开始，但首条消息还停在 %@ 的输入框里：回车没按下去（%@）。到窗格里按一下回车就能发出去。",
     "タスクは開始しましたが、最初のメッセージは %@ の入力欄に残ったままです。Return を押せませんでした（%@）。ペインで Return を押すと送信されます。")
-add("Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.",
-    "读不出已保存的凭据。重装或重签名 App（例如通过 SideStore）之后，请打开「编辑」重新输入密码 / 重新选择密钥。",
-    "保存された認証情報を読み取れませんでした。アプリを再インストールまたは再署名した後（SideStore 経由など）は、「編集」を開いてパスワードを再入力するか、キーを選び直してください。")
+# A saved password or key this device doesn't hold: a phone restored from a backup (B782)
+add("The password for %@ isn't on this iPhone. Enter it again.",
+    "这台 iPhone 上没有 %@ 的密码，请重新输入。",
+    "この iPhone には %@ のパスワードがありません。もう一度入力してください。")
+add("The private key for %@ isn't on this iPhone. Paste it again.",
+    "这台 iPhone 上没有 %@ 的私钥，请重新粘贴。",
+    "この iPhone には %@ の秘密鍵がありません。もう一度ペーストしてください。")
+add("The key %@ signs in with isn't on this iPhone. Open Edit to pick another key.",
+    "这台 iPhone 上没有 %@ 登录用的密钥。打开「编辑」换一把密钥。",
+    "%@ のサインインに使うキーがこの iPhone にありません。「編集」を開いて別のキーを選んでください。")
+add("The saved password or key isn't on this iPhone. Open Edit and enter it again.",
+    "这台 iPhone 上没有保存的密码或密钥。打开「编辑」重新输入。",
+    "保存したパスワードまたはキーがこの iPhone にありません。「編集」を開いてもう一度入力してください。")
 add("While this device is locked, Moshpit can't read the server keys you've trusted, so it can't check this server. Unlock it and connect again.",
     "设备锁着的时候，Moshpit 读不到你信任过的服务器密钥，也就没法核对这台服务器。解锁之后再连一次。",
     "デバイスがロックされている間は、信頼済みのサーバーキーを読み出せないため、このサーバーを確認できません。ロックを解除してから接続し直してください。")
@@ -1358,6 +1368,8 @@ add("%@ didn't answer. Check the address, that the host is on, and your VPN if i
 add("There's no route to %@ from this network. Check your connection, and your VPN if the host sits behind one.",
     "当前网络没有通往 %@ 的路由。检查一下网络连接；如果主机在 VPN 后面，再看看 VPN 连上没有。",
     "このネットワークから %@ への経路がありません。接続状況を確認してください。VPN の内側にあるホストなら VPN の接続も確認してください。")
+# B801: a failure on a jump host's leg (F1, the jump-host feature) says which first.
+add("Jump host “%@”: %@", "跳板主机「%1$@」：%2$@", "踏み台「%1$@」：%2$@")
 add("Couldn't reach the SOCKS proxy at %@. Check that it's running, and its host and port.",
     "连不上 %@ 上的 SOCKS 代理。看看代理有没有在运行，主机和端口有没有填错。",
     "%@ の SOCKS プロキシに接続できませんでした。プロキシが動いているか、ホストとポートが正しいか確認してください。")

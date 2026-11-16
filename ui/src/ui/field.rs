@@ -677,7 +677,12 @@ fn frame(frame: Frame) -> AnyElement {
                     let ring_id = part(test_id.as_deref(), "ring");
                     when(move || focused.get(), move || ring(ring_id.clone()))
                 });
-            let note = note(description, error, part(test_id.as_deref(), "error"));
+            let note = note(
+                description,
+                error,
+                part(test_id.as_deref(), "error"),
+                part(test_id.as_deref(), "description"),
+            );
             let mut name = TextToken::Body
                 .apply(text(label))
                 .text_color(move || token("foreground"))
@@ -772,13 +777,18 @@ fn note(
     description: Option<SharedString>,
     error: Rc<dyn Fn() -> Option<SharedString>>,
     error_id: Option<String>,
+    description_id: Option<String>,
 ) -> AnyElement {
     let shown = computed({
         let error = error.clone();
         move || error()
     });
     dynamic(move || {
-        let (description, error_id) = (description.clone(), error_id.clone());
+        let (description, error_id, description_id) = (
+            description.clone(),
+            error_id.clone(),
+            description_id.clone(),
+        );
         match shown.get() {
             Some(error) => untracked(move || {
                 let rise = motion().entering(
@@ -800,15 +810,19 @@ fn note(
                     .into_element()
             }),
             None => match description {
-                Some(description) => view()
-                    .pt(px(PART_GAP))
-                    .accessibility_elements_hidden(true)
-                    .child(
-                        TextToken::Footnote
-                            .apply(text(description))
-                            .text_color(move || token("muted-foreground")),
-                    )
-                    .into_element(),
+                Some(description) => {
+                    let mut words = TextToken::Footnote
+                        .apply(text(description))
+                        .text_color(move || token("muted-foreground"));
+                    if let Some(id) = description_id {
+                        words = words.test_id(&id);
+                    }
+                    view()
+                        .pt(px(PART_GAP))
+                        .accessibility_elements_hidden(true)
+                        .child(words)
+                        .into_element()
+                }
                 None => view().into_element(),
             },
         }
@@ -857,6 +871,8 @@ pub struct SecretField {
     error: Rc<dyn Fn() -> Option<SharedString>>,
     disabled: Rc<dyn Fn() -> bool>,
     test_id: Option<SharedString>,
+    description: Option<SharedString>,
+    auto_focus: bool,
 }
 
 /// A field labeled `label` whose control is the host's secure field `host`
@@ -880,6 +896,8 @@ pub fn secret_field(
         error: Rc::new(|| None),
         disabled: Rc::new(|| false),
         test_id: None,
+        description: None,
+        auto_focus: false,
     }
 }
 
@@ -923,6 +941,20 @@ impl SecretField {
         self.test_id = Some(SharedString::from(id.to_owned()));
         self
     }
+
+    /// As [`Field::description`]: one line under the field, said after
+    /// its name (`{id}-description`).
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// The host's field takes the keyboard once it is on screen (its
+    /// `autoFocus` prop): the one thing the page is open for.
+    pub fn auto_focus(mut self) -> Self {
+        self.auto_focus = true;
+        self
+    }
 }
 
 /// `name` as the host's props take a color: `#RRGGBB(AA)`.
@@ -943,6 +975,8 @@ impl IntoElement for SecretField {
             error,
             disabled,
             test_id,
+            description,
+            auto_focus,
         } = self;
         let shown = computed(move || shown());
         let handle = handle.unwrap_or_else(element_ref);
@@ -967,7 +1001,7 @@ impl IntoElement for SecretField {
         };
         let state = ControlState {
             spoken: said,
-            description: None,
+            description: description.clone(),
             invalid,
             disabled: disabled.clone(),
             readonly: Rc::new(|| false),
@@ -979,6 +1013,7 @@ impl IntoElement for SecretField {
         let control = Rc::new(move |state: &ControlState| {
             let ControlState {
                 spoken,
+                description,
                 invalid,
                 focused,
                 handle,
@@ -1024,6 +1059,12 @@ impl IntoElement for SecretField {
                     "blur" => focused.set(false),
                     _ => {}
                 });
+            if let Some(description) = description {
+                host = host.accessibility_description(description);
+            }
+            if auto_focus {
+                host = host.prop("autoFocus", json!(true));
+            }
             if let Some(id) = &test_id {
                 host = host.test_id(id);
             }
@@ -1069,7 +1110,7 @@ impl IntoElement for SecretField {
         frame(Frame {
             label,
             layout: FieldLayout::Inline,
-            description: None,
+            description,
             error,
             disabled,
             test_id,

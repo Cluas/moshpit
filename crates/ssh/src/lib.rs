@@ -6,6 +6,8 @@
 //!   (Happy Eyeballs over the host's addresses, 15 s), the host key checked
 //!   by a [`HostKeyPolicy`], then a password, a private key or a hardware
 //!   key ([`Auth`]). Never a reconnect: the session layer owns those.
+//!   [`Ssh::connect_through`]: the same through a jump host's connection
+//!   (`ssh -J`), the two living and ending as one.
 //! - Host keys ([`host_key`]): trust on first use per `host:port`, keyed and
 //!   fingerprinted exactly as the Swift transport's `HostKeyValidator`
 //!   stored them, so every build reads and writes the same keychain map. The
@@ -59,9 +61,11 @@ pub use auth::{
     public_key_blob,
 };
 pub use channel::{Event, Exit, Output, Process, ProcessReader, ProcessWriter, PtyRequest, Stream};
-pub use connection::{ConnectionEnd, HOST_KEY_ORDER, LinkFault, OLDER_HOST_KEY, Ssh};
+pub use connection::{ConnectionEnd, HOST_KEY_ORDER, Jump, LinkFault, OLDER_HOST_KEY, Ssh};
 pub use dial::unbracketed;
-pub use error::{KeyError, ProxyError, SftpError, SignerError, Socks5Reply, SshError};
+pub use error::{
+    KeyError, ProxyError, SftpError, SignerError, Socks5Reply, SshError, TunnelRefusal,
+};
 pub use host_key::{
     BoxFuture, Decision, DenyAll, HostKey, HostKeyPolicy, HostKeyPrompt, HostKeyRefusal,
     KnownHosts, KnownHostsStore, MemoryKnownHosts, StoreError, TrustOnFirstUse,

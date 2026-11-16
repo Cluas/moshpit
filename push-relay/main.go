@@ -366,7 +366,9 @@ func (r *relay) handleNotify(w http.ResponseWriter, req *http.Request) {
 
 	if resp.Gone() {
 		// Nothing to delete any more — the token expired with the device. 410
-		// still travels back so a --test run prints "pair again from the app".
+		// still travels back so a --test run prints "pair again from the app",
+		// and a hook's push has the host drop the conf it sent with (B784).
+		// Nothing else here answers 410.
 		httpError(w, http.StatusGone, "device unregistered — pair again")
 		return
 	}
@@ -406,10 +408,18 @@ func (r *relay) send(ctx context.Context, hash string, d Device, n apns.Notifica
 	}
 	if resp.Reason == "BadDeviceToken" {
 		resp2, err2 := second.Send(ctx, n)
-		if err2 == nil && resp2.OK() {
-			log.Printf("device=%s answered on %s — the conf's tokEnv hint is wrong", Fingerprint(hash), otherEnv)
-			return resp2, nil
+		if err2 != nil {
+			// B784: the other environment couldn't be asked, so the token
+			// isn't known to be dead — not a 410, which a host takes for
+			// "delete this pairing". An unreachable APNs, as a first call
+			// that fails is.
+			return resp2, err2
 		}
+		if resp2.OK() {
+			log.Printf("device=%s answered on %s — the conf's tokEnv hint is wrong", Fingerprint(hash), otherEnv)
+		}
+		// Refused by both (gone), or the other's own answer.
+		return resp2, nil
 	}
 	return resp, nil
 }

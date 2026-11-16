@@ -96,11 +96,12 @@ pub(crate) enum Msg {
     /// The tmux server's prefix, as the mosh sidecar read it (B362).
     MoshPrefix(String),
     Visible(bool),
-    /// The connection was saved with another address, user or proxy
-    /// (B329): the next connect goes there.
+    /// The connection was saved with another address, user, proxy or way
+    /// through another connection (B329, F1): the next connect goes there.
     Respec {
         target: moshpit_ssh::Target,
         proxy: Option<moshpit_ssh::Socks5Proxy>,
+        hop: crate::spec::Hop,
     },
     AnswerHostKey {
         prompt: u64,
@@ -722,7 +723,11 @@ pub(crate) struct Actor {
     /// Where the connection was saved to point since this session started
     /// (B329): taken up at the next dial — a reconnect after a drop, or the
     /// person's — never by the transport live now.
-    pub saved: Option<(moshpit_ssh::Target, Option<moshpit_ssh::Socks5Proxy>)>,
+    pub saved: Option<(
+        moshpit_ssh::Target,
+        Option<moshpit_ssh::Socks5Proxy>,
+        crate::spec::Hop,
+    )>,
     pub timing: Timing,
     pub services: Services,
     pub life: Lifecycle,
@@ -845,8 +850,16 @@ impl Actor {
         view: Arc<Mutex<SessionView>>,
     ) -> Self {
         let clock = Clock::new();
-        let life = Lifecycle::new(timing.clone(), spec.protocol, foreground, clock.now());
+        let life = Lifecycle::new(
+            timing.clone(),
+            spec.dialled_protocol(spec.protocol),
+            foreground,
+            clock.now(),
+        );
         let grid = spec.initial_grid;
+        // A jump host connection of the session's own (F1).
+        let mut services = services;
+        services.jump = Default::default();
         Self {
             id,
             spec,
@@ -1118,7 +1131,7 @@ impl Actor {
             Msg::Unlocked => self.life.unlocked(now),
             Msg::MoshPrefix(key) => self.mosh_prefix = prefix_bytes(&key),
             Msg::Visible(visible) => self.set_visible(visible),
-            Msg::Respec { target, proxy } => self.saved = Some((target, proxy)),
+            Msg::Respec { target, proxy, hop } => self.saved = Some((target, proxy, hop)),
             Msg::AnswerHostKey { prompt, trust } => {
                 if let Some((generation, reply)) = self.prompts.remove(&prompt) {
                     let _ = reply.send(trust);
@@ -1819,6 +1832,12 @@ impl Actor {
                     if ended {
                         self.discard_pending(Discarded::SessionEnded);
                     }
+                    // Nothing will dial through the jump host on its own
+                    // again: its connection goes once nothing else holds it
+                    // (F1). A failure that retries keeps it for the retry.
+                    if ended || matches!(&state, SessionState::Failed(f) if !f.retryable) {
+                        self.services.jump.release();
+                    }
                     if matches!(state, SessionState::Ended(_) | SessionState::Failed(_)) {
                         for delivery in self.deliveries.drain(..) {
                             let _ = delivery.reply.send(false);
@@ -1840,9 +1859,10 @@ impl Actor {
             task.abort();
         }
         // B329: a connection saved since dials where it was saved to.
-        if let Some((target, proxy)) = self.saved.take() {
+        if let Some((target, proxy, hop)) = self.saved.take() {
             self.spec.target = target;
             self.spec.proxy = proxy;
+            self.spec.hop = hop;
         }
         let prompt = Arc::new(Prompt {
             session: self.me.clone(),

@@ -17,7 +17,7 @@ struct IslandLanguageTests {
         let saved = AppLanguage.stored()
         defer {
             if let saved { AppLanguage.record(saved) }
-            else { UserDefaults(suiteName: PushPrefs.suite)?.removeObject(forKey: AppLanguage.key) }
+            else { UserDefaults(suiteName: AppGroup.id)?.removeObject(forKey: AppLanguage.key) }
         }
         AppLanguage.record(language)
         try body()

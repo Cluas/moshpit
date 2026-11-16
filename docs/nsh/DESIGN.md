@@ -125,7 +125,7 @@ flowchart TB
 - **宿主**：进程入口。负责把生命周期、网络变化、解锁状态告诉内核，创建 NSH 视图，注册终端组件和平台模块。
   - iOS 宿主就是现在的 Xcode 工程，迁移期间旧界面也住在这里。Mac Catalyst 用同一个工程编。
   - Android 宿主是我们自己的 Java 代码：一个 Activity 起 `NshView`，注册 Termux 组件，跑 Rust 根组件；NSH 的 Java 运行时和 Rust 部分从同一个提交编出来。Spike 期间用脚本打包（javac、d8、aapt2、zipalign、apksigner）。正式包要接 Firebase 这类库，改在 CI 的 Linux 机器上用 Gradle 打（开发机跑不了 JDK 17 以上）。
-- **推送扩展**：iOS 的 NSE 保持 Swift 现状，从 App Group 读配对密钥。Android 的 Firebase 消息服务在 App 自己的进程里，经 `seal` 解密，密钥在 App 私有存储。中继加一条 FCM 路由：设备注册时上报令牌类型（APNs 或 FCM），开发机发信封时带上，中继按类型转发。
+- **推送扩展**：iOS 的 NSE 也走 `seal`（E7b）：它是单独的二进制，链自己那一个 Rust 静态库 `crates/seal-ffi`（只有 crypto、serde、libc，没有 tokio 和 NSH），一个 C 入口 `moshpit_push_receive` 做完收推送的整件事：用配对密钥解开信封，维护 App Group 里的在等集合、响过的完成和已结束的轮次，写诊断，返回要显示的卡片；Swift 只把结果映射到 `UNMutableNotificationContent`。「一个 App 一个 Rust 静态库」说的是同一个二进制里不能有两个，App 本身仍只链 `libmoshpit_ffi.a`（它把 seal-ffi 当普通依赖带进来，供在进程内驱动扩展的测试用：Debug 链接用 `-u` 留住这两个入口，Release 不带）；`nm` 查过两个静态库：入口各一份，`__rustc::__rust_alloc` 等运行时符号各一份，没有重复的全局定义。Swift 的 `MoshpitKit/Push` 随之删掉，几个比对 harness 从 git 读它最后的样子（8ef981c5）。实测：链进去约 0.85 MB，每条推送的峰值内存只多约 0.05 MB（Mac 上的代理测量，真机在 Canary 上量）。Android 的 Firebase 消息服务在 App 自己的进程里，经 `seal` 解密，密钥在 App 私有存储。中继加一条 FCM 路由：设备注册时上报令牌类型（APNs 或 FCM），开发机发信封时带上，中继按类型转发。
 
 线程：内核建一个 tokio 多线程运行时，交给 NSH 复用（NSH 主干支持：iOS 经 `SurfaceOptions::runtime`，Android 经 `nsh::set_runtime`）。Apple 平台上运行时的线程设成 user-interactive 优先级：G1 实测默认优先级时，回显 p95 多出 0.7 ms，尾巴拖到 8 ms。内核的状态变化发到一条事件流，界面在 NSH 引擎线程上用一个任务接收、更新信号。不轮询。
 

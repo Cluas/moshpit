@@ -174,6 +174,13 @@ pub struct ServerConnection {
     /// grapheme cluster, checked by the form); none: the face.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emoji: Option<String>,
+    /// The saved connection this one is reached through (a jump host,
+    /// `ssh -J`; F1): that connection's SSH, signed in with its own
+    /// credentials. One hop: see [`jump_host_choices`]. `jumpHost`, a
+    /// string an earlier design stored and nothing read, is another key
+    /// and stays ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via_connection_id: Option<Uuid>,
 }
 
 impl ServerConnection {
@@ -207,6 +214,7 @@ impl ServerConnection {
             socks_proxy_host: None,
             socks_proxy_port: None,
             emoji: None,
+            via_connection_id: None,
         }
     }
 
@@ -346,6 +354,65 @@ mod iso8601_opt {
             })
             .transpose()
     }
+}
+
+/// How a connection is reached, as `saved` has it (F1): one hop, never
+/// a chain, and a jump host that is gone is never replaced by a direct
+/// dial (a jump host is often the only way in a network allows).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Route<'a> {
+    /// Straight to its host (through its SOCKS proxy, if it has one).
+    Direct,
+    /// Through this saved connection's SSH.
+    Through(&'a ServerConnection),
+    /// Through a connection that was deleted.
+    Deleted,
+    /// Through a connection that is itself reached through another, or
+    /// through itself: more than one hop.
+    Chained,
+}
+
+impl ServerConnection {
+    /// How this connection is reached, checked against `saved`.
+    pub fn route<'a>(&self, saved: &'a [ServerConnection]) -> Route<'a> {
+        let Some(via) = self.via_connection_id else {
+            return Route::Direct;
+        };
+        if via == self.id {
+            return Route::Chained;
+        }
+        match saved.iter().find(|c| c.id == via) {
+            None => Route::Deleted,
+            Some(jump) if jump.via_connection_id.is_some() => Route::Chained,
+            Some(jump) => Route::Through(jump),
+        }
+    }
+}
+
+/// The connections reached through `id`: what its delete confirmation
+/// names, and why it can't be reached through another itself.
+pub fn reached_through(saved: &[ServerConnection], id: Uuid) -> Vec<&ServerConnection> {
+    saved
+        .iter()
+        .filter(|c| c.id != id && c.via_connection_id == Some(id))
+        .collect()
+}
+
+/// What the connection `editing` (`None`: a new one) may be reached
+/// through: the other saved connections reached directly (one hop; a mosh
+/// connection serves through its SSH). None when another connection is
+/// reached through `editing`: a jump host goes direct.
+pub fn jump_host_choices(
+    saved: &[ServerConnection],
+    editing: Option<Uuid>,
+) -> Vec<&ServerConnection> {
+    if editing.is_some_and(|id| !reached_through(saved, id).is_empty()) {
+        return Vec::new();
+    }
+    saved
+        .iter()
+        .filter(|c| Some(c.id) != editing && c.via_connection_id.is_none())
+        .collect()
 }
 
 /// The saved connections (`ConnectionStore`).
@@ -1091,6 +1158,136 @@ mod tests {
         let earlier: Vec<EarlierBuildConnection> = json::decode(&data).unwrap();
         assert_eq!(earlier[0].name, "studio");
         assert!(earlier[0].use_tmux);
+    }
+
+    /// `jumpHost`, a string an earlier design stored and nothing read, is
+    /// not read as the connection to go through (F1) — not even when it
+    /// holds another connection's id — and nothing writes it back as one.
+    #[test]
+    fn f1_the_legacy_jump_host_string_is_not_read_as_a_via() {
+        let earlier_list = r#"[{
+          "id": "5D1A7E0C-3F42-4B8E-9C61-0A2B3C4D5E6F", "name": "hpc",
+          "host": "node01.example.com", "port": 22, "username": "dev",
+          "authMethod": "key", "connectionProtocol": "ssh", "sshPort": 22,
+          "moshPortRangeStart": 60001, "moshPortRangeEnd": 60999,
+          "createdAt": "2026-08-27T09:00:00Z", "useTmux": false,
+          "jumpHost": "6E2B8F1D-4053-4C9F-AD72-1B3C4D5E6F70"
+        }, {
+          "id": "6E2B8F1D-4053-4C9F-AD72-1B3C4D5E6F70", "name": "bastion",
+          "host": "bastion.example.com", "port": 22, "username": "dev",
+          "authMethod": "key", "connectionProtocol": "ssh", "sshPort": 22,
+          "moshPortRangeStart": 60001, "moshPortRangeEnd": 60999,
+          "createdAt": "2026-08-27T09:00:00Z", "useTmux": false,
+          "jumpHost": "bastion.example.com"
+        }]"#;
+        let defaults = defaults();
+        defaults.set(
+            ConnectionStore::STORAGE_KEY,
+            Some(Plist::Data(earlier_list.as_bytes().to_vec())),
+        );
+        let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+        let saved = store.connections().to_vec();
+        assert_eq!(saved.len(), 2);
+        for c in &saved {
+            assert_eq!(c.via_connection_id, None, "{}", c.name);
+            assert_eq!(c.route(&saved), Route::Direct, "{}", c.name);
+        }
+        store.update(saved[0].clone());
+        for entry in stored_entries(&defaults) {
+            assert!(entry.as_object().unwrap().get("viaConnectionId").is_none());
+        }
+    }
+
+    /// The connection to go through is stored by its id
+    /// (`viaConnectionId`) and read back as it was.
+    #[test]
+    fn f1_a_via_is_stored_and_read_back() {
+        let defaults = defaults();
+        let bastion = sample("bastion");
+        let mut hpc = sample("hpc");
+        hpc.via_connection_id = Some(bastion.id);
+        {
+            let mut store = ConnectionStore::new(defaults.clone(), Readiness::Always);
+            store.add(bastion.clone());
+            store.add(hpc.clone());
+        }
+        let entry = stored_entries(&defaults)
+            .into_iter()
+            .find(|e| e.as_object().unwrap().get("name").and_then(Value::as_str) == Some("hpc"))
+            .unwrap();
+        assert_eq!(
+            entry
+                .as_object()
+                .unwrap()
+                .get("viaConnectionId")
+                .and_then(Value::as_str),
+            Some(bastion.id.to_string().as_str())
+        );
+        let store = ConnectionStore::new(defaults, Readiness::Always);
+        let saved = store.connections();
+        let read = saved.iter().find(|c| c.name == "hpc").unwrap();
+        assert_eq!(read.via_connection_id, Some(bastion.id));
+        assert!(matches!(read.route(saved), Route::Through(c) if c.id == bastion.id));
+    }
+
+    /// One hop: through a connection reached directly; one that is gone,
+    /// itself reached through another, or this very connection is no route
+    /// at all (and never a direct one instead).
+    #[test]
+    fn f1_a_route_is_one_hop() {
+        let bastion = sample("bastion");
+        let mut inner = sample("inner");
+        inner.via_connection_id = Some(bastion.id);
+        let mut through_inner = sample("deeper");
+        through_inner.via_connection_id = Some(inner.id);
+        let mut own = sample("own");
+        own.via_connection_id = Some(own.id);
+        let mut orphan = sample("orphan");
+        orphan.via_connection_id = Some(Uuid::new_v4());
+        let saved = vec![
+            bastion.clone(),
+            inner.clone(),
+            through_inner.clone(),
+            own.clone(),
+            orphan.clone(),
+        ];
+        assert_eq!(bastion.route(&saved), Route::Direct);
+        assert!(matches!(inner.route(&saved), Route::Through(c) if c.id == bastion.id));
+        assert_eq!(through_inner.route(&saved), Route::Chained);
+        assert_eq!(own.route(&saved), Route::Chained);
+        assert_eq!(orphan.route(&saved), Route::Deleted);
+    }
+
+    /// The form's choices: every other connection reached directly (mosh
+    /// ones too, through their SSH); none for a connection others go
+    /// through, and those others named.
+    #[test]
+    fn f1_what_a_connection_may_go_through() {
+        let bastion = sample("bastion");
+        let mut mosh = sample("mosh-box");
+        mosh.connection_protocol = ConnectionProtocol::Mosh;
+        let mut hpc = sample("hpc");
+        hpc.via_connection_id = Some(bastion.id);
+        let plain = sample("plain");
+        let saved = vec![bastion.clone(), mosh.clone(), hpc.clone(), plain.clone()];
+        let names = |list: Vec<&ServerConnection>| -> Vec<String> {
+            list.into_iter().map(|c| c.name.clone()).collect()
+        };
+        assert_eq!(
+            names(jump_host_choices(&saved, Some(plain.id))),
+            ["bastion", "mosh-box"]
+        );
+        assert_eq!(
+            names(jump_host_choices(&saved, Some(hpc.id))),
+            ["bastion", "mosh-box", "plain"]
+        );
+        assert_eq!(
+            names(jump_host_choices(&saved, None)),
+            ["bastion", "mosh-box", "plain"]
+        );
+        assert!(jump_host_choices(&saved, Some(bastion.id)).is_empty());
+        assert_eq!(names(reached_through(&saved, bastion.id)), ["hpc"]);
+        assert!(reached_through(&saved, plain.id).is_empty());
     }
 
     /// What a session remembers about `id`, as the app stores it.

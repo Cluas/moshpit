@@ -120,7 +120,8 @@ impl Sessions {
 
     /// The session's connection was saved while it runs (B329): its next
     /// connect — a reconnect after a drop, or the person's — goes to
-    /// `spec`'s address as `spec`'s user, through `spec`'s proxy (and asks
+    /// `spec`'s address as `spec`'s user, through `spec`'s proxy or jump
+    /// host (and asks
     /// the credentials for the connection again, as every attempt does).
     /// The transport live now stays where it is; the rest of the spec (the
     /// protocol, the multiplexer) is the session's own.
@@ -130,6 +131,7 @@ impl Sessions {
             Msg::Respec {
                 target: spec.target.clone(),
                 proxy: spec.proxy.clone(),
+                hop: spec.hop.clone(),
             },
         );
     }

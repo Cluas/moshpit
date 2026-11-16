@@ -59,6 +59,12 @@ impl HostChannel for Shell {
                 .env_clear()
                 .env("HOME", &self.home)
                 .env("PATH", path)
+                // The host scripts put the system's tools first, and the
+                // stand-ins (a stub curl) only where named outright.
+                .env(
+                    "MOSHPIT_TEST_BIN",
+                    self.bin.as_deref().map(Path::as_os_str).unwrap_or_default(),
+                )
                 .stdin(std::process::Stdio::null())
                 .stdout(std::fs::File::create(&out_path)?)
                 .stderr(std::fs::File::create(&err_path)?)
@@ -325,6 +331,7 @@ fn a_phone_with_two_connections_here_is_pushed_on_the_one_it_used_last() {
             .env_clear()
             .env("HOME", &home.0)
             .env("PATH", format!("{}:/usr/bin:/bin", home.0.join("bin").display()))
+            .env("MOSHPIT_TEST_BIN", home.0.join("bin"))
             .status()
             .unwrap();
         assert!(status.success());
@@ -376,6 +383,7 @@ fn a_muted_phone_is_sent_nothing_but_its_push_test() {
         .env_clear()
         .env("HOME", &home.0)
         .env("PATH", format!("{}:/usr/bin:/bin", home.0.join("bin").display()))
+        .env("MOSHPIT_TEST_BIN", home.0.join("bin"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -489,6 +497,7 @@ fn a_push_names_the_session_not_the_phones_group() {
         .env_clear()
         .env("HOME", &home.0)
         .env("PATH", format!("{}:/usr/bin:/bin", tmux.bin.display()))
+        .env("MOSHPIT_TEST_BIN", &tmux.bin)
         .env("TMUX", format!("{},1,0", tmux.socket.display()))
         .env("TMUX_PANE", &pane)
         .status()
@@ -799,6 +808,7 @@ fn stamp(home: &Path, tmux: &Tmux, pane: &str, state: &str, grace: &str) {
         .env_clear()
         .env("HOME", home)
         .env("PATH", format!("{}:/usr/bin:/bin", tmux.bin.display()))
+        .env("MOSHPIT_TEST_BIN", &tmux.bin)
         .env("TMUX", format!("{},1,0", tmux.socket.display()))
         .env("TMUX_PANE", pane)
         .env("MOSHPIT_NOTIFY_GRACE", grace)
@@ -1680,6 +1690,214 @@ fn remove_everything_leaves_another_phones_pairing_and_what_it_needs() {
     }
 }
 
+/// `shell`'s commands under the umask most hosts give a login shell, 022,
+/// whatever this test process's is.
+struct Umask022<'a>(&'a Shell);
+
+impl HostChannel for Umask022<'_> {
+    fn run(&self, command: &str) -> impl Future<Output = Result<Vec<u8>, ChannelError>> {
+        std::future::ready(block_on(self.0.run(&format!("umask 022; {command}"))))
+    }
+}
+
+/// B637: Moshpit's directories were made with the host's umask, 0755 on
+/// most hosts, so any local user could list `~/.moshpit/push.d` — which
+/// connections this host pushes on, and which one each phone used last —
+/// and read the manifest. The pairing files were 0600, under directories
+/// everyone could read. Both directories are the person's alone now,
+/// whichever install makes them.
+#[test]
+fn moshpits_directories_are_the_persons_alone() {
+    let now = Date::from_unix(1_762_800_000.0);
+    for pairing_first in [true, false] {
+        let home = home();
+        let shell = Shell::at(&home.0);
+        let host = Umask022(&shell);
+        let installer = HostInstaller::new(&host);
+        let pair = || {
+            let state = block_on(installer.inspect()).expect("inspect");
+            let report = block_on(installer.install_pairing(&pairing(PROVED, PHONE), &state, now))
+                .expect("pair");
+            assert!(report.succeeded(), "{:?}", report.failures());
+        };
+        let hooks = || {
+            let state = block_on(installer.inspect()).expect("inspect");
+            let report = block_on(installer.install_hooks(&claude(), &state, now)).expect("hooks");
+            assert!(report.succeeded(), "{:?}", report.failures());
+        };
+        if pairing_first {
+            pair();
+            hooks();
+        } else {
+            hooks();
+            pair();
+        }
+        let moshpit = home.0.join(".moshpit");
+        assert_eq!(
+            mode(&moshpit),
+            0o700,
+            "~/.moshpit, pairing first: {pairing_first}"
+        );
+        assert_eq!(
+            mode(&moshpit.join("push.d")),
+            0o700,
+            "push.d, pairing first: {pairing_first}"
+        );
+        assert_eq!(mode(&moshpit.join(format!("push.d/{PROVED}.conf"))), 0o600);
+    }
+}
+
+/// An install from before keeps the directories it made open until the
+/// phone next looks the host over, or changes anything on it.
+#[test]
+fn an_install_from_before_is_made_private_when_the_phone_next_looks() {
+    let home = home();
+    let (shell, _) = paired_host(&home.0, &[pairing(PROVED, PHONE)]);
+    let moshpit = home.0.join(".moshpit");
+    let open_up = || {
+        for dir in [moshpit.clone(), moshpit.join("push.d")] {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    };
+    open_up();
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).unwrap();
+    let _ = block_on(installer.verify(state, Some(PROVED))).unwrap();
+    assert_eq!(mode(&moshpit), 0o700, "the look left ~/.moshpit open");
+    assert_eq!(
+        mode(&moshpit.join("push.d")),
+        0o700,
+        "the look left push.d open"
+    );
+
+    open_up();
+    let state = block_on(installer.inspect()).unwrap();
+    let report = block_on(installer.install_pairing(
+        &pairing(SECOND, OTHER_PHONE),
+        &state,
+        Date::from_unix(1_762_800_000.0),
+    ))
+    .unwrap();
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert_eq!(mode(&moshpit), 0o700, "a change left ~/.moshpit open");
+    assert_eq!(
+        mode(&moshpit.join("push.d")),
+        0o700,
+        "a change left push.d open"
+    );
+}
+
+/// The single pairing file the first builds wrote, for `conn`, 0600: as
+/// they wrote it, with no phone token — nothing can send with it since the
+/// relay keeps no registry (inert).
+fn first_builds_pairing_file(home: &Path, conn: &str) -> PathBuf {
+    pairing_file_at_the_old_place(home, conn, None)
+}
+
+/// A single `push.conf` for `conn`, carrying `phone`'s token when there is
+/// one: one the sender can still push with (live).
+fn pairing_file_at_the_old_place(home: &Path, conn: &str, phone: Option<&str>) -> PathBuf {
+    let legacy = home.join(".moshpit/push.conf");
+    let live = phone
+        .map(|phone| format!("APNS_TOKEN={phone}\nAPNS_ENV=sandbox\nSEND_IAT=1762800000\n"))
+        .unwrap_or_default();
+    std::fs::write(
+        &legacy,
+        format!(
+            "RELAY_URL=https://push.example.org\nSEND_TOKEN={}\nSECRET={}\nCONN={conn}\n{live}",
+            "cd".repeat(32),
+            "ab".repeat(32)
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o600)).unwrap();
+    legacy
+}
+
+/// B638: the single `~/.moshpit/push.conf` the first builds wrote holds a
+/// pairing's secret and send token, and nothing took it off the host —
+/// not Unpair, not Remove everything. While it was there, Remove
+/// everything read it as another phone's pairing, and left the scripts,
+/// the manifest and Moshpit's directories behind. It goes with the pairing
+/// of the connection it names, however its id is written.
+#[test]
+fn the_first_builds_pairing_file_goes_with_its_connections_pairing() {
+    let home = home();
+    let (shell, _) = fully_installed(&home.0);
+    let legacy = first_builds_pairing_file(&home.0, &PROVED.to_lowercase());
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).unwrap();
+    let report = block_on(installer.remove_everything(PROVED, &state)).expect("removed");
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert!(!legacy.exists(), "push.conf stayed");
+    assert!(
+        !home.0.join(".moshpit").exists(),
+        "~/.moshpit is still there"
+    );
+}
+
+/// Unpair takes it too.
+#[test]
+fn unpairing_takes_the_first_builds_pairing_file_of_that_connection() {
+    let home = home();
+    let (shell, _) = paired_host(&home.0, &[pairing(PROVED, PHONE)]);
+    let legacy = first_builds_pairing_file(&home.0, PROVED);
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).unwrap();
+    let mine = InstallComponent::Pairing {
+        conn: PROVED.to_owned(),
+        install: None,
+    };
+    block_on(installer.uninstall(&[mine], &state)).expect("unpaired");
+    assert!(!legacy.exists(), "push.conf stayed");
+}
+
+/// Another connection's stays while it can still push — and so does what
+/// it needs.
+#[test]
+fn another_connections_live_first_pairing_file_stays() {
+    let home = home();
+    let (shell, _) = fully_installed(&home.0);
+    let legacy = pairing_file_at_the_old_place(&home.0, SECOND, Some(OTHER_PHONE));
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).unwrap();
+    let report = block_on(installer.remove_everything(PROVED, &state)).expect("removed");
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert!(legacy.exists(), "another connection's live push.conf went");
+    assert!(home.0.join(".moshpit/moshpit-push.sh").exists());
+}
+
+/// B638 (the lead's call): one that can't push — no phone token, as the
+/// first builds wrote every one — is Moshpit's and of no use to anyone:
+/// Remove everything takes it whichever connection it names, and with it
+/// gone takes everything else too. Unpair alone leaves another
+/// connection's.
+#[test]
+fn an_inert_first_pairing_file_goes_with_remove_everything_whoever_it_names() {
+    let home = home();
+    let (shell, _) = fully_installed(&home.0);
+    let legacy = first_builds_pairing_file(&home.0, SECOND);
+    let installer = HostInstaller::new(&shell);
+    let state = block_on(installer.inspect()).unwrap();
+    let mine = InstallComponent::Pairing {
+        conn: PROVED.to_owned(),
+        install: None,
+    };
+    block_on(installer.uninstall(std::slice::from_ref(&mine), &state)).expect("unpaired");
+    assert!(
+        legacy.exists(),
+        "unpairing took another connection's push.conf"
+    );
+    let state = block_on(installer.inspect()).unwrap();
+    let report = block_on(installer.remove_everything(PROVED, &state)).expect("removed");
+    assert!(report.succeeded(), "{:?}", report.failures());
+    assert!(!legacy.exists(), "an inert push.conf stayed");
+    assert!(
+        !home.0.join(".moshpit").exists(),
+        "~/.moshpit is still there"
+    );
+}
+
 /// B375: installing and removing the hooks wrote the person's whole config
 /// back as Foundation formats it — keys sorted, lines re-indented, numbers
 /// rewritten. Through the real installer, a config written by hand comes
@@ -1869,6 +2087,7 @@ fn a_herdr_pane_with_an_inherited_tmux_keeps_its_stamps_out_of_that_tmux() {
             .env_clear()
             .env("HOME", &home.0)
             .env("PATH", format!("{}:/usr/bin:/bin", tmux.bin.display()))
+            .env("MOSHPIT_TEST_BIN", &tmux.bin)
             .env("TMUX", format!("{},1,0", tmux.socket.display()))
             .env("TMUX_PANE", &pane)
             .env("HERDR_PANE_ID", "w1:p2")

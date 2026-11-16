@@ -120,6 +120,7 @@ fn run_script_in(args: &[&str], env: &[(&str, &str)]) -> Vec<(Value, String)> {
         .args(args)
         .env_clear()
         .env("PATH", path)
+        .env("MOSHPIT_TEST_BIN", &bin)
         .env("HOME", &run.dir)
         .env("MOSHPIT_CAPTURE", &capture)
         .env("MOSHPIT_PUSH_CONF", &conf)
@@ -368,6 +369,7 @@ fn signalled(signal: &str) -> (Vec<String>, Vec<String>) {
         .args(["attention", "claude", "may I?"])
         .env_clear()
         .env("PATH", path)
+        .env("MOSHPIT_TEST_BIN", &bin)
         .env("HOME", &run.dir)
         .env("TMPDIR", &tmp)
         .env("MOSHPIT_CAPTURE", &capture)
@@ -462,6 +464,7 @@ fn over_confs(confs: &[(&str, String)]) -> (Vec<(Value, String)>, Vec<String>) {
         .current_dir(&run.dir)
         .env_clear()
         .env("PATH", path)
+        .env("MOSHPIT_TEST_BIN", &bin)
         .env("HOME", &run.dir)
         .env("MOSHPIT_CAPTURE", &capture)
         .env("MOSHPIT_PUSH_HOST", "m1-pro")
@@ -623,4 +626,82 @@ fn an_attention_push_is_dated_by_its_question() {
     assert!(opened(&undated[0].0).ts > 1_790_000_000, "the send time");
     let done = run_script(&["done", "claude", "fix", "600", "1790000000"], Some("%3"));
     assert!(opened(&done[0].0).ts > 1_790_000_000, "a finish keeps its send time");
+}
+
+/// The system's tools come first for the host scripts (a host-script
+/// audit, with B784's version): a directory ahead of them on the hook's
+/// PATH — direnv, node_modules/.bin, a venv — no longer stands in for
+/// curl, which reads the send token's config, or openssl, given the
+/// pairing key. The tests name their stand-ins outright
+/// (`MOSHPIT_TEST_BIN`). tmux stays the one the caller's PATH finds: the
+/// hook talks to that tmux's server, which a client of another version
+/// can't reach.
+#[test]
+fn a_directory_ahead_on_the_path_doesnt_stand_in_for_curl() {
+    if skip() {
+        return;
+    }
+    let run = Run {
+        dir: std::env::temp_dir().join(format!("seal-pin-{}", moshpit_seal::random::hex(8))),
+    };
+    std::fs::create_dir_all(&run.dir).unwrap();
+    // A relay that refuses at once: the system's curl reaches nothing.
+    let iat = 1_762_800_000;
+    let apns = "AB".repeat(32);
+    let send_token = token::mint(MASTER, &apns, CONN, iat);
+    let refused = run.dir.join("refused.conf");
+    std::fs::write(
+        &refused,
+        format!(
+            "RELAY_URL=https://127.0.0.1:9\nSEND_TOKEN={send_token}\nSECRET={SECRET}\nCONN={CONN}\n\
+             APNS_TOKEN={apns}\nAPNS_ENV=sandbox\nSEND_IAT={iat}\n"
+        ),
+    )
+    .unwrap();
+    let conf = refused.to_str().unwrap();
+
+    // The stub curl named outright is the one that sends.
+    let named = run_script_in(&["done", "claude"], &[("MOSHPIT_PUSH_CONF", conf)]);
+    assert_eq!(named.len(), 1, "the named stand-in sends");
+    // Only first on the PATH, it isn't: the system's curl is.
+    let ahead = run_script_in(
+        &["done", "claude"],
+        &[("MOSHPIT_TEST_BIN", ""), ("MOSHPIT_PUSH_CONF", conf)],
+    );
+    assert_eq!(
+        ahead,
+        Vec::new(),
+        "a curl ahead on the PATH was given the token"
+    );
+
+    // A tmux ahead of the caller's (here the named directory's) is not
+    // asked for the session: the caller's tmux is.
+    let decoy = run.dir.join("decoy");
+    std::fs::create_dir_all(&decoy).unwrap();
+    std::fs::write(decoy.join("curl"), STUB_CURL).unwrap();
+    std::fs::write(decoy.join("tmux"), "#!/bin/sh\necho decoy\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for stub in ["curl", "tmux"] {
+            std::fs::set_permissions(decoy.join(stub), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+    }
+    let asked = run_script_in(
+        &["attention", "claude", "Bash: make"],
+        &[
+            ("MOSHPIT_TEST_BIN", decoy.to_str().unwrap()),
+            ("TMUX", "/tmp/desk.sock,1,0"),
+            ("TMUX_PANE", "%5"),
+        ],
+    );
+    assert_eq!(asked.len(), 1);
+    let envelope: Envelope = json::decode_value(field(&asked[0].0, "env")).expect("an envelope");
+    let status = envelope::open(&envelope, SECRET).expect("Rust opens what the host sealed");
+    assert_eq!(
+        status.sess.as_deref(),
+        Some("desk"),
+        "the caller's tmux was asked"
+    );
 }

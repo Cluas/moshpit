@@ -169,6 +169,7 @@ pub fn save(app: &mut App, draft: &FormDraft) -> Result<(), SaveFailure> {
         app.connections.add(connection);
     } else {
         app.connections.update(connection);
+        app.respec_through(id);
     }
     // B325: the item it no longer names goes — unless its session is
     // running, which signs in again with the item it started with.

@@ -10,12 +10,14 @@ import UIKit
 /// main thread as UIKit hands it over: none is lost, whatever the screen
 /// does meanwhile. Each says when it takes the keyboard (`focus`) and lets
 /// it go (`blur`), which NSH cannot see in a host's view: the `ui` layer's
-/// secret field rings itself while it has it.
+/// secret field rings itself while it has it. Prop `autoFocus` (true) has
+/// it take the keyboard once it is on screen, once (B782: the secret a
+/// restore didn't bring, asked for again).
 
 /// A private key's editor (`moshpit/key-pem`, `moshpit/connection-pem`): a
 /// `UITextView` as SwiftUI's `TextEditor` is (mono, no autocorrection),
 /// growing with the key. Props `fontSize`, `textColor`, `tint`,
-/// `identifier`, `label`. Reports the height its text needs.
+/// `identifier`, `label`, `autoFocus`. Reports the height its text needs.
 @MainActor
 final class NSHSecretEditor: NSObject, NSHComponent, UITextViewDelegate {
     private let container = LayoutView()
@@ -27,6 +29,8 @@ final class NSHSecretEditor: NSObject, NSHComponent, UITextViewDelegate {
     /// What the screen was last told (or knew from its form) of `filled`.
     private var told: Bool?
     private var reported: CGFloat?
+    /// `autoFocus` asked, and the keyboard not taken yet.
+    private var focusOnScreen = false
     var view: UIView { container }
 
     init(text: String, context: NSHComponentContext?, filled: ((String) -> Bool)? = nil,
@@ -51,6 +55,7 @@ final class NSHSecretEditor: NSObject, NSHComponent, UITextViewDelegate {
         textView.delegate = self
         container.addSubview(textView)
         container.onLayout = { [weak self] in self?.layout() }
+        container.onWindow = { [weak self] in self?.focusIfAsked() }
     }
 
     func setProp(_ name: String, _ value: Any?) {
@@ -67,9 +72,20 @@ final class NSHSecretEditor: NSObject, NSHComponent, UITextViewDelegate {
             textView.textColor = NSHHostComponents.color(value)
         case "tint":
             textView.tintColor = NSHHostComponents.color(value)
+        case "autoFocus":
+            focusOnScreen = value as? Bool == true
+            focusIfAsked()
         default:
             break
         }
+    }
+
+    /// Takes the keyboard once, when asked to and on screen: on the next
+    /// turn of the main queue, after the commit that placed it.
+    private func focusIfAsked() {
+        guard focusOnScreen, container.window != nil else { return }
+        focusOnScreen = false
+        DispatchQueue.main.async { [weak self] in _ = self?.textView.becomeFirstResponder() }
     }
 
     /// Shows `text`, which its form already holds (a file picked for it).
@@ -126,16 +142,18 @@ final class NSHSecretEditor: NSObject, NSHComponent, UITextViewDelegate {
 /// A secret on one line (`moshpit/key-passphrase`,
 /// `moshpit/connection-password`): a secure `UITextField` as SwiftUI's
 /// `SecureField` is. Props `placeholder`, `placeholderColor`, `fontSize`,
-/// `textColor`, `tint`, `identifier`.
+/// `textColor`, `tint`, `identifier`, `autoFocus`.
 @MainActor
 final class NSHSecretField: NSHComponent {
-    private let field = UITextField()
+    private let field = WindowTextField()
     private let context: NSHComponentContext?
     private let changed: (String) -> Void
     private let filled: ((String) -> Bool)?
     private var told: Bool?
     private var placeholder = ""
     private var placeholderColor = UIColor.placeholderText
+    /// `autoFocus` asked, and the keyboard not taken yet.
+    private var focusOnScreen = false
     var view: UIView { field }
 
     init(text: String, context: NSHComponentContext?, filled: ((String) -> Bool)? = nil,
@@ -154,6 +172,15 @@ final class NSHSecretField: NSHComponent {
         field.addAction(UIAction { [weak self] _ in self?.edited() }, for: .editingChanged)
         field.addAction(UIAction { [weak self] _ in self?.context?.emit("focus") }, for: .editingDidBegin)
         field.addAction(UIAction { [weak self] _ in self?.context?.emit("blur") }, for: .editingDidEnd)
+        field.onWindow = { [weak self] in self?.focusIfAsked() }
+    }
+
+    /// Takes the keyboard once, when asked to and on screen: on the next
+    /// turn of the main queue, after the commit that placed it.
+    private func focusIfAsked() {
+        guard focusOnScreen, field.window != nil else { return }
+        focusOnScreen = false
+        DispatchQueue.main.async { [weak self] in _ = self?.field.becomeFirstResponder() }
     }
 
     private func edited() {
@@ -185,6 +212,9 @@ final class NSHSecretField: NSHComponent {
         case "alignment":
             // `trailing` beside a label (B319), `leading` under one.
             field.textAlignment = value as? String == "trailing" ? .right : .natural
+        case "autoFocus":
+            focusOnScreen = value as? Bool == true
+            focusIfAsked()
         default:
             break
         }
@@ -199,9 +229,27 @@ final class NSHSecretField: NSHComponent {
 /// A view that says when it is laid out.
 final class LayoutView: UIView {
     var onLayout: (() -> Void)?
+    /// Put in a window.
+    var onWindow: (() -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayout?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { onWindow?() }
+    }
+}
+
+/// A text field that says when it is put in a window: a field can take the
+/// keyboard only there.
+final class WindowTextField: UITextField {
+    var onWindow: (() -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { onWindow?() }
     }
 }

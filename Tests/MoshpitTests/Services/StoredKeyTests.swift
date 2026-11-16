@@ -62,7 +62,7 @@ struct StoredKeyTests {
           arguments: SSHKeyFixtures.all.filter { !$0.isEncrypted && !$0.name.hasSuffix("· OpenSSH") })
     func legacyKeyIsConvertedAtConnect(_ key: SSHKeyFixtures.Key) async throws {
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
         #expect(signedIn.signs, "\(signedIn)")
@@ -77,7 +77,7 @@ struct StoredKeyTests {
     func legacyCRLFKeyIsConvertedAtConnect() async throws {
         let key = Self.fixture("Ed25519 · OpenSSH")
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(Self.crlf(key.privateKey), forRef: ref, requireBiometry: false)
         #expect(await Self.signIn(Self.service(keychain), Self.connection(ref)).signs)
         #expect(StoredKey.connectPathReads(try await keychain.loadPrivateKey(forRef: ref)))
@@ -87,7 +87,7 @@ struct StoredKeyTests {
     func usableKeyIsUntouched() async throws {
         let key = Self.fixture("Ed25519 · OpenSSH")
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         #expect(await Self.signIn(Self.service(keychain), Self.connection(ref)).signs)
         #expect(try await keychain.loadPrivateKey(forRef: ref) == key.privateKey)
@@ -97,7 +97,7 @@ struct StoredKeyTests {
     func passphraseIsAskedOnce() async throws {
         let key = Self.fixture("RSA 2048 · PEM (ssh-keygen -m PEM) · passphrase")
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         let asked = Asked()
         let answer: SSHService.KeyPassphraseHandler = { _, wrong in
@@ -121,7 +121,7 @@ struct StoredKeyTests {
     func passphraseCancelled() async throws {
         let key = Self.fixture("Ed25519 · OpenSSH · passphrase")
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(key.privateKey, forRef: ref, requireBiometry: false)
         let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
         guard case .failure(SSHError.keyNeedsPassphrase) = signedIn else {
@@ -135,7 +135,7 @@ struct StoredKeyTests {
     @Test("B126: a P-384 key signs in, left exactly as stored")
     func p384SignsIn() async throws {
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(SSHKeyFixtures.ecdsaP384, forRef: ref, requireBiometry: false)
         let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
         #expect(signedIn.signs, "\(signedIn)")
@@ -145,7 +145,7 @@ struct StoredKeyTests {
     @Test("A DSA key fails at once, saying so, before the core dials")
     func dsaSaysWhy() async throws {
         let keychain = KeychainService.inMemory()
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.savePrivateKey(Self.dsaKey, forRef: ref, requireBiometry: false)
         let signedIn = await Self.signIn(Self.service(keychain), Self.connection(ref))
         guard case .failure(let error) = signedIn,

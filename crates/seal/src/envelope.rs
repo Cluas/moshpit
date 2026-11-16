@@ -221,13 +221,15 @@ impl Envelope {
 mod tests {
     use super::*;
 
-    /// The secret the Go tests, the Swift tests and `push-vector.sh` use.
+    /// The secret the Go tests and `push-vector.sh` use (and the Swift
+    /// tests did).
     pub(crate) const SECRET: &str =
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     /// The frozen cross-language vector (`push-relay/sealbox/sealbox_test.go`
-    /// `TestOpenSSLVector`, `PushSealedBoxTests.Vector`), produced by the
-    /// openssl pipeline `moshpit-push.sh` runs with the IV pinned.
+    /// `TestOpenSSLVector`; the Swift `PushSealedBoxTests.Vector` until
+    /// E7b), produced by the openssl pipeline `moshpit-push.sh` runs with the
+    /// IV pinned.
     pub(crate) mod vector {
         pub const IV: &str = "000102030405060708090a0b0c0d0e0f";
         pub const CT: &str = "21HMutLOqDHXUpjykOXFikZCpepvsm5jV5f/9b8UHg7qOFw7ihvJXuhQMQ9iG/gbmStNwvoMQDCC6nukKAF2bmyrRIX4+lriKtR+xgIN1WWSeBXfoh2nk0KhJvMsvXqd9xJIt+ShRcbZH+NePfCXwHiOcRQ/Q3ZO89pgX/d3TO8yI0UEsVNyclSjlgqri/d/9l5q9KB/4xFJ/+mxZFLcm56XO8DAXn6nQt2mQ9Z7Dt6bBqw68BRhNdH05E7O3OqR";

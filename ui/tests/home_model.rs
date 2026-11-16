@@ -406,6 +406,8 @@ fn each_state_has_its_card_body() {
         failure: failure.map(|reason| ConnectionFailure {
             reason,
             detail: "the session's own words".into(),
+            unreachable: None,
+            leg: None,
         }),
         ..with(Link::Dead, None)
     };
@@ -414,6 +416,8 @@ fn each_state_has_its_card_body() {
         Some(CardBody::Reconnect {
             lost_at: Some(1_000.0),
             reason: None,
+            unreachable: None,
+            leg: None,
         })
     );
     assert_eq!(
@@ -433,6 +437,8 @@ fn each_state_has_its_card_body() {
             Some(CardBody::Reconnect {
                 lost_at: Some(1_000.0),
                 reason: Some(reason),
+                unreachable: None,
+                leg: None,
             }),
             "{reason:?}"
         );

@@ -213,7 +213,17 @@ struct HomeView: View {
     /// The add / edit form (``ConnectionFormNSHPage``).
     private func connectionForm(existing: ServerConnection?) -> some View {
         ConnectionFormNSHPage(store: store, keychain: keychain, existing: existing,
+                              secretMissing: existing.map { store.secretMissing.contains($0.id) } ?? false,
                               onDelete: { delete($0) }, releaseSecret: releaseSecret)
+    }
+
+    /// Connection `id` can't sign in from this device: its own password or
+    /// pasted key isn't here (B782, a phone restored from a backup), and no
+    /// session of it is connected. Its Connect opens Edit instead, the
+    /// field saying whose secret is gone and taking the keyboard: a connect
+    /// would only fail for it.
+    private func needsSecret(_ connection: ServerConnection) -> Bool {
+        store.secretMissing.contains(connection.id) && liveSession(connection.id) == nil
     }
 
     /// A save left connection `id`'s own keychain item `ref` named by
@@ -225,13 +235,13 @@ struct HomeView: View {
     /// drop first, so an app that ends before its session lets go drops it
     /// at the next launch, never offers it back as a key (B428).
     private func releaseSecret(_ id: UUID, _ ref: String) async {
-        let release = { [store, keyStore, keychain] in
-            _ = await KeychainReferences.release(ref, connections: store, keys: keyStore, keychain: keychain)
+        let release: () async -> Void = { [store, keyStore, keychain] in
+            _ = store.releaseSecret(ref, keys: keyStore, keychain: keychain.storeHost)
         }
         if let active = hub.sessions[id] {
             switch active.viewModel.status {
             case .connecting, .connected, .reconnecting:
-                KeychainReferences.hold(ref)
+                store.holdSecret(ref)
                 if !hub.releaseAfterReconnect(id, release) {
                     Log.store.info("connection save: its old item stays while its session runs; the next launch drops it")
                 }
@@ -252,21 +262,12 @@ struct HomeView: View {
         Task {
             do {
                 try await ConnectionDeletion.delete(
-                    connection, from: store, keys: keyStore, care: HostCare.shared,
+                    connection, from: store, keys: keyStore, keychain: keychain.storeHost,
+                    care: HostCare.shared,
                     tearDown: {
                         monitor.untrack(connectionId: connection.id)
                         await hub.disconnect(connection.id)
-                    },
-                    dropSecret: { ref in
-                        do {
-                            try await keychain.delete(forRef: ref)
-                        } catch {
-                            // A later launch tries again (B428).
-                            Log.store.error("delete: the keychain kept its item (\(String(describing: error), privacy: .public)); listed to drop later")
-                            KeychainReferences.hold(ref)
-                        }
-                    },
-                    holdSecret: { KeychainReferences.hold($0) })
+                    })
                 // Its finish cards, now that it is no longer saved (B437).
                 monitor.sweepDelivered()
             } catch {
@@ -476,8 +477,21 @@ struct HomeView: View {
             settings: { showSettings = true },
             add: { handleAdd() },
             toggleSidebar: { toggleSidebar() },
-            connect: { id in if let connection = find(id) { connect(connection) } },
-            enter: { id in open(id) },
+            connect: { id in
+                guard let connection = find(id) else { return }
+                if needsSecret(connection) {
+                    editingConnection = connection
+                } else {
+                    connect(connection)
+                }
+            },
+            enter: { id in
+                if let connection = find(id), needsSecret(connection) {
+                    editingConnection = connection
+                } else {
+                    open(id)
+                }
+            },
             sessions: { id in openSessions(id) },
             edit: { id in editingConnection = find(id) },
             delete: { id in deletingConnection = find(id) },

@@ -130,7 +130,8 @@ struct AgentActivityMonitorTests {
     /// which read the same snapshot: they offered nothing where 1.0.8
     /// offered the last agents, saying how old the list is. A launch leaves
     /// it; the widget turns it stale on its own timeline.
-    @Test("a launch leaves the last agents for the share sheet and Shortcuts")
+    @Test("a launch leaves the last agents for the share sheet and Shortcuts",
+          .enabled(if: AppGroupContainer.isAvailable, AppGroupContainer.skipReason))
     @MainActor
     func launchLeavesTheLastAgents() {
         let kept = AgentWidgetStore.read()

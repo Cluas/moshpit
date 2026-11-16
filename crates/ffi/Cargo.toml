@@ -36,6 +36,9 @@ moshpit-app = { path = "../app" }
 # through UniFFI); moshpit-seal for the Date and UUID it crosses with.
 moshpit-store = { path = "../store" }
 moshpit-seal = { path = "../seal" }
+# The notification service extension's C entry point (E7b), linked here
+# too so the tests that drive the extension in-process find it.
+moshpit-seal-ffi = { path = "../seal-ffi" }
 # The companion pet (src/pet.rs, through UniFFI): its record, rules and
 # sprites; the platform supplies the seed, the clock and iCloud.
 moshpit-pet = { path = "../pet" }

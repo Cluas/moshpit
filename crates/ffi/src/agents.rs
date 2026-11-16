@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use moshpit_agents::{self as agents, Effect, Monitor};
 use moshpit_seal::copy::{InterruptionLevel, Language};
-use moshpit_seal::{PushFinishesFile, PushStandingFile};
+use moshpit_seal::diagnostics::DiagnosticsFile;
+use moshpit_seal::standing::Entry;
+use moshpit_seal::{Date, PushFinishesFile, PushStandingFile};
 
 /// The user's switches, and the language the cards are written in (a BCP-47
 /// tag; the app's own localization).
@@ -355,5 +357,176 @@ impl AgentMachine {
     pub fn state_since_by_pane(&self, conn: String) -> HashMap<String, f64> {
         let monitor = self.monitor.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         monitor.state_since_by_pane(&conn).into_iter().collect()
+    }
+}
+
+/// One prompt in the waiting set the notification service and the machine
+/// share (`moshpit_seal::standing::Entry`): the pane, who asked and what,
+/// and the episode it belongs to (the host's `@moshpit_since`).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct StandingEntryValue {
+    pub pane: String,
+    pub agent: Option<String>,
+    pub title: Option<String>,
+    pub since: i64,
+}
+
+/// The waiting set and the rung finishes as the notification service keeps
+/// them (crates/seal since E7b): what a push records, written the way the
+/// service writes it, for the tests that put a push beside the machine.
+/// The app itself only hands the machine their paths.
+#[derive(uniffi::Object)]
+pub struct PushFilesHandle {
+    standing: PushStandingFile,
+    finishes: PushFinishesFile,
+}
+
+#[uniffi::export]
+impl PushFilesHandle {
+    #[uniffi::constructor]
+    pub fn new(standing_path: String, finishes_path: String) -> Arc<Self> {
+        Arc::new(Self {
+            standing: PushStandingFile::new(standing_path),
+            finishes: PushFinishesFile::new(finishes_path),
+        })
+    }
+
+    /// A pushed question, recorded at `now` as the service records it.
+    /// True on an edge: nobody else on the connection was waiting.
+    pub fn note_standing(&self, conn: String, entry: StandingEntryValue, now: f64) -> bool {
+        let now = Date::from_unix(now);
+        self.standing.note_standing(
+            &conn,
+            Entry {
+                pane: entry.pane,
+                agent: entry.agent,
+                title: entry.title,
+                location: None,
+                since: entry.since,
+                recorded_at: now,
+                lifetime: None,
+            },
+            now,
+        )
+    }
+
+    /// Who is waiting on `conn` at `now`.
+    pub fn standing(&self, conn: String, now: f64) -> Vec<StandingEntryValue> {
+        self.standing
+            .standing(&conn, Date::from_unix(now))
+            .into_iter()
+            .map(|entry| StandingEntryValue {
+                pane: entry.pane,
+                agent: entry.agent,
+                title: entry.title,
+                since: entry.since,
+            })
+            .collect()
+    }
+
+    /// A pushed finish that rang, as the service records it.
+    pub fn note_ring(&self, conn: String, pane: String, ended_at: i64, now: f64) -> bool {
+        self.finishes
+            .note_ring(&conn, &pane, ended_at, Date::from_unix(now))
+    }
+}
+
+/// One line the notification service left (`moshpit_seal::diagnostics`):
+/// when, in seconds since 1970, and what.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PushDiagnosticLine {
+    pub at: f64,
+    pub text: String,
+}
+
+/// The notification service's lines at or after `since` (seconds since
+/// 1970), oldest first, from its ring at `path` (the App Group's
+/// `push-diagnostics.json`): a separate process, whose log the app can't
+/// read, so the diagnostics screen merges these in.
+#[uniffi::export]
+pub fn push_diagnostics_recent(path: String, since: f64) -> Vec<PushDiagnosticLine> {
+    DiagnosticsFile::new(path)
+        .recent(Date::from_unix(since))
+        .into_iter()
+        .map(|line| PushDiagnosticLine {
+            at: line.at.unix(),
+            text: line.text,
+        })
+        .collect()
+}
+
+/// The category the diagnostics screen files those lines under.
+#[uniffi::export]
+pub fn push_diagnostics_source() -> String {
+    moshpit_seal::diagnostics::SOURCE.to_owned()
+}
+
+#[cfg(test)]
+mod push_files_tests {
+    use super::*;
+
+    fn scratch() -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ffi-push-files-{}", moshpit_seal::random::hex(8)));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_pushed_question_stands_and_a_ring_is_kept() {
+        let dir = scratch();
+        let files = PushFilesHandle::new(
+            dir.join("standing-attention.json").display().to_string(),
+            dir.join("rung-finishes.json").display().to_string(),
+        );
+        let now = 1_762_800_000.0;
+        let entry = StandingEntryValue {
+            pane: "%3".into(),
+            agent: Some("claude".into()),
+            title: Some("Bash: npm test".into()),
+            since: 1_762_799_990,
+        };
+        assert!(
+            files.note_standing("C".into(), entry.clone(), now),
+            "the first question is an edge"
+        );
+        assert!(
+            !files.note_standing("C".into(), entry.clone(), now + 1.0),
+            "the same question again is not"
+        );
+        assert_eq!(files.standing("C".into(), now + 2.0), vec![entry]);
+        assert!(files.standing("other".into(), now).is_empty());
+        assert!(files.note_ring("C".into(), "%3".into(), 1_762_800_010, now + 20.0));
+        assert!(
+            !files.note_ring("C".into(), "%3".into(), 1_762_800_010, now + 21.0),
+            "rung once"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_services_lines_come_back_from_a_moment_on() {
+        let dir = scratch();
+        let path = dir.join("push-diagnostics.json");
+        let ring = DiagnosticsFile::new(&path);
+        ring.record("older", Date::from_unix(1_762_800_000.0));
+        // The ring keeps whole seconds (ISO 8601, as the Swift ring did).
+        ring.record(
+            "opened with the newest pairing",
+            Date::from_unix(1_762_800_060.7),
+        );
+        let lines = push_diagnostics_recent(path.display().to_string(), 1_762_800_030.0);
+        assert_eq!(
+            lines,
+            vec![PushDiagnosticLine {
+                at: 1_762_800_060.0,
+                text: "opened with the newest pairing".into()
+            }]
+        );
+        assert!(
+            push_diagnostics_recent(dir.join("absent.json").display().to_string(), 0.0).is_empty()
+        );
+        assert_eq!(push_diagnostics_source(), "push·extension");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

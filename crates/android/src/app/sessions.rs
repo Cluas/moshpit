@@ -13,16 +13,17 @@ use moshpit_seal::foundation::date::Date;
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_session::{
     ConnectionSpec, CredentialError, Credentials, Degrade, Event, EventKind, Events, FailureKind,
-    HerdrAction, HerdrView, LinkFault, Mark, PaneInfo, Protocol, Services, SessionId,
-    SessionMemory, SessionState, Sessions, StreamId, SystemUdp, Timing, TmuxAction, TmuxView,
-    UdpFlow, UdpNetwork,
+    HerdrAction, HerdrView, Hop, HopBroken, LinkFault, Mark, PaneInfo, Protocol, Services,
+    SessionId, SessionMemory, SessionState, Sessions, StreamId, SystemUdp, Timing, TmuxAction,
+    TmuxView, UdpFlow, UdpNetwork, Via,
 };
 use moshpit_ssh::{
     Auth, BoxFuture, HardwareKey, HostSignature, KeySigner, KnownHosts, SignerError, Socks5Proxy,
     Target,
 };
 use moshpit_store::connections::{
-    AuthMethod, ConnectionProtocol, ConnectionStore, Multiplexer, ServerConnection,
+    AuthMethod, ConnectionProtocol, ConnectionStore, Multiplexer, Route as StoredRoute,
+    ServerConnection,
 };
 use moshpit_store::known_hosts::KeychainKnownHosts;
 use moshpit_store::session_memory::{self, TmuxSelection};
@@ -155,6 +156,7 @@ impl Live {
     pub fn connect(
         &mut self,
         connection: &ServerConnection,
+        saved: &[ServerConnection],
         options: &Options,
         udp: (i64, i64),
     ) -> Option<SessionId> {
@@ -162,6 +164,10 @@ impl Live {
         if let Some(conn) = self.by_connection.get(&connection.id) {
             match conn.state {
                 SessionState::Ended(_) | SessionState::Failed(_) => {
+                    // Where it was saved to point since (B329), its way
+                    // through another connection too (F1): a jump host
+                    // picked again is taken, a deleted one fails at once.
+                    sessions.respec(conn.id, &spec(connection, saved, options, udp));
                     sessions.reconnect(conn.id);
                     let conn = self.by_connection.get_mut(&connection.id)?;
                     conn.state = SessionState::Connecting;
@@ -170,7 +176,7 @@ impl Live {
                 _ => return Some(conn.id),
             }
         }
-        let id = sessions.connect(spec(connection, options, udp));
+        let id = sessions.connect(spec(connection, saved, options, udp));
         log::info!(target: "moshpit", "session {id}: connecting {}", connection.display_name());
         self.by_connection.insert(
             connection.id,
@@ -350,29 +356,37 @@ pub(crate) fn active_pane(conn: &Conn) -> Option<&PaneInfo> {
 /// Settings' (`udp`): the one source, "set in Settings, for every
 /// connection". The connection's stored range is only what the setting was
 /// at its last save, kept for older builds (J1): dialled from, a narrowed
-/// setting never reached a saved connection (B430).
-pub fn spec(connection: &ServerConnection, options: &Options, udp: (i64, i64)) -> ConnectionSpec {
-    let port = u16::try_from(connection.port).unwrap_or(22);
-    let mut spec = ConnectionSpec::ssh(
-        connection.id.to_string(),
-        Target::new(connection.username.clone(), connection.host.clone(), port),
-    );
-    if connection.use_socks_proxy == Some(true)
-        && let Some(host) = connection
-            .socks_proxy_host
-            .clone()
-            .filter(|h| !h.is_empty())
-    {
-        let proxy_port = connection
-            .socks_proxy_port
-            .and_then(|p| u16::try_from(p).ok())
-            .unwrap_or(1080);
-        spec.proxy = Some(Socks5Proxy::new(host, proxy_port));
-    }
+/// setting never reached a saved connection (B430). Its way through
+/// another connection (F1) is checked against `saved`: a jump host gone or
+/// more than one hop is a route that fails, never a direct one; through a
+/// jump host, SSH only and no proxy of its own.
+pub fn spec(
+    connection: &ServerConnection,
+    saved: &[ServerConnection],
+    options: &Options,
+    udp: (i64, i64),
+) -> ConnectionSpec {
+    let mut spec = ConnectionSpec::ssh(connection.id.to_string(), target_of(connection));
+    spec.proxy = proxy_of(connection);
     spec.protocol = match connection.connection_protocol {
         ConnectionProtocol::Mosh => Protocol::Mosh,
         ConnectionProtocol::Ssh => Protocol::Ssh,
     };
+    spec.hop = match connection.route(saved) {
+        StoredRoute::Direct => Hop::Direct,
+        StoredRoute::Through(jump) => Hop::Through(Box::new(Via {
+            connection_id: jump.id.to_string(),
+            name: jump.display_name(),
+            target: target_of(jump),
+            proxy: proxy_of(jump),
+        })),
+        StoredRoute::Deleted => Hop::Broken(HopBroken::Deleted),
+        StoredRoute::Chained => Hop::Broken(HopBroken::Chained),
+    };
+    if !spec.hop.is_direct() {
+        spec.proxy = None;
+        spec.protocol = Protocol::Ssh;
+    }
     spec.multiplexer = match connection.multiplexer() {
         Multiplexer::None => moshpit_session::Multiplexer::None,
         Multiplexer::Tmux => moshpit_session::Multiplexer::Tmux,
@@ -385,6 +399,28 @@ pub fn spec(connection: &ServerConnection, options: &Options, udp: (i64, i64)) -
     spec.mosh_port_range = (Some(udp.0), Some(udp.1));
     spec.locale = options.shell_locale.clone();
     spec
+}
+
+/// Where `connection`'s SSH goes: its user at its host and port.
+fn target_of(connection: &ServerConnection) -> Target {
+    let port = u16::try_from(connection.port).unwrap_or(22);
+    Target::new(connection.username.clone(), connection.host.clone(), port)
+}
+
+/// `connection`'s SOCKS proxy, when it has one switched on.
+fn proxy_of(connection: &ServerConnection) -> Option<Socks5Proxy> {
+    if connection.use_socks_proxy != Some(true) {
+        return None;
+    }
+    let host = connection
+        .socks_proxy_host
+        .clone()
+        .filter(|h| !h.is_empty())?;
+    let port = connection
+        .socks_proxy_port
+        .and_then(|p| u16::try_from(p).ok())
+        .unwrap_or(1080);
+    Some(Socks5Proxy::new(host, port))
 }
 
 impl App {
@@ -564,6 +600,26 @@ impl App {
         }
     }
 
+    /// `changed` was saved or deleted: the sessions of it and of the
+    /// connections reached through it dial what the saved list says next
+    /// time (B329, F1) — a jump host deleted, the ones through it fail at
+    /// once rather than dial their hosts directly.
+    pub(crate) fn respec_through(&mut self, changed: Uuid) {
+        let Some(sessions) = self.sessions.sessions() else {
+            return;
+        };
+        let saved = self.connections.connections().to_vec();
+        let udp = self.settings.udp_range();
+        for connection in &saved {
+            if connection.id != changed && connection.via_connection_id != Some(changed) {
+                continue;
+            }
+            if let Some(conn) = self.sessions.conn(connection.id) {
+                sessions.respec(conn.id, &spec(connection, &saved, &self.options, udp));
+            }
+        }
+    }
+
     /// Connects `connection` (Home's head, the terminal's retry).
     pub(crate) fn connect(&mut self, connection: Uuid) {
         let Some(saved) = self
@@ -576,7 +632,8 @@ impl App {
             return;
         };
         let udp = self.settings.udp_range();
-        self.sessions.connect(&saved, &self.options, udp);
+        let all = self.connections.connections().to_vec();
+        self.sessions.connect(&saved, &all, &self.options, udp);
         self.refresh_home();
     }
 
@@ -639,6 +696,10 @@ impl App {
                 FailureKind::Channel => "The host refused a terminal.",
                 FailureKind::MoshBootstrap => "mosh-server did not start.",
                 FailureKind::Lost => "The connection was lost.",
+                // F1: the jump host deleted, or more than one hop.
+                FailureKind::Route => {
+                    "The connection this one goes through was deleted. Pick another in Edit."
+                }
             }
             .to_owned(),
         )

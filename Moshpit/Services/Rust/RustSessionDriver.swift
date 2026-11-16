@@ -451,7 +451,7 @@ final class RustSessionDriver: RustSessionListener {
             // "Line dropped" with no reason forever (B163, B335). A failure
             // the core retries stays quiet behind the redial.
             let asked = previous == .connecting
-            let message = RustCopy.failure(kind: kind, cause: cause)
+            let message = RustCopy.failure(kind: kind, cause: cause, connection: connection)
             viewModel.adoptRustStatus(.failed(message), automatic: false,
                                       error: asked || !retryable ? message : nil)
             settle()

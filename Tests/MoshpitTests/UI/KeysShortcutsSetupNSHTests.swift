@@ -111,7 +111,7 @@ struct KeysShortcutsSetupNSHTests {
         model.cancelDelete()
         #expect(model.deleting == nil)
         model.confirmDelete(laptop.id)
-        model.delete(laptop, from: store, connections: connections) { try await keychain.delete(forRef: $0) }
+        model.delete(laptop, from: store, connections: connections, keychain: keychain.storeHost)
         #expect(model.deleting == nil)
         let deadline = ContinuousClock.now + .seconds(5)
         while !store.keys.isEmpty, ContinuousClock.now < deadline {

@@ -1568,7 +1568,7 @@ impl Controller {
             self.group.entering = false;
             self.group.landing = false;
         }
-        if self.config.renders_output && !self.group.refused && is_group_name(name) {
+        if !self.group.refused && is_group_name(name) {
             // Control mode is up (tmux said where we are): the lookup goes
             // out, and the attach still counts as fresh when it lands.
             self.group.fresh_pending |= !self.snapshot.is_attached;
@@ -1976,6 +1976,10 @@ impl Controller {
                 self.send(format!("select-window -t {window}"));
             }
             tmux_active = Some(window);
+            // B773: landed, mosh's renderer comes in.
+            if std::mem::take(&mut self.sidecar.renderer_awaits_landing) {
+                self.bring_renderer_into_group();
+            }
         }
         let current_is_ours = self
             .snapshot

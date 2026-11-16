@@ -448,6 +448,8 @@ mod tests {
         failed.failure = Some(crate::home::model::ConnectionFailure {
             reason: crate::home::model::FailureReason::Other,
             detail: String::new(),
+            unreachable: None,
+            leg: None,
         });
         let (cue, fill) = e.next(&[failed], "agent", T + 1.0).unwrap();
         assert_eq!((cue, fill.host.as_str()), (Cue::Error, "gpu-01"));

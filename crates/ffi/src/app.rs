@@ -34,7 +34,7 @@ use moshpit_store::app_themes::AppTheme;
 use moshpit_store::connections::{self, ServerConnection};
 use moshpit_store::shortcuts::TerminalShortcut;
 use moshpit_store::ssh_keys::SshKeyRecord;
-use moshpit_ui::connection_form::{Auth, ConnectionPredict, Mux};
+use moshpit_ui::connection_form::{Auth, ConnectionPredict, Missing, Mux};
 
 use crate::store::{
     AccentThemeRecord, AuthMethod, ConnectionRecord, KeyRecord, ShortcutRecord, StoreError,
@@ -84,6 +84,18 @@ pub struct ConnectionDraft {
     /// The emoji field as typed; empty: the host key's face.
     pub emoji: String,
     pub stored: StoredCredential,
+    /// The connection's own secret this device doesn't hold (B782,
+    /// [`connection_draft_secret_missing`]).
+    pub missing: Option<MissingSecret>,
+}
+
+/// A connection's own secret that this device doesn't hold (B782): its
+/// name as saved, for the note, and which secret.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, uniffi::Record)]
+pub struct MissingSecret {
+    pub name: String,
+    /// Its password, or the key pasted into it.
+    pub secret: AuthMethod,
 }
 
 /// Which secrets the host's own fields hold: a password that is not empty,
@@ -209,6 +221,13 @@ impl From<&Draft> for ConnectionDraft {
                 Stored::PastedKey => StoredCredential::PastedKey,
                 Stored::ManagedKey(id) => StoredCredential::ManagedKey { id: id.to_string() },
             },
+            missing: f.missing.as_ref().map(|m| MissingSecret {
+                name: m.name.clone(),
+                secret: match m.secret {
+                    Auth::Password => AuthMethod::Password,
+                    Auth::Key => AuthMethod::Key,
+                },
+            }),
         }
     }
 }
@@ -239,6 +258,13 @@ fn draft(d: &ConnectionDraft, given: SecretsGiven) -> Draft {
     f.socks_host = d.socks_proxy_host.clone();
     f.socks_port = d.socks_proxy_port.clone();
     f.emoji = d.emoji.clone();
+    f.missing = d.missing.as_ref().map(|m| Missing {
+        name: m.name.clone(),
+        secret: match m.secret {
+            AuthMethod::Password => Auth::Password,
+            AuthMethod::Key => Auth::Key,
+        },
+    });
     draft.key = d.selected_key.as_deref().and_then(Uuid::parse);
     draft.stored = match &d.stored {
         StoredCredential::None => Stored::None,
@@ -279,6 +305,24 @@ pub fn connection_draft_new(mosh_by_default: bool) -> ConnectionDraft {
 #[uniffi::export]
 pub fn connection_draft_of(connection: ConnectionRecord) -> Result<ConnectionDraft, StoreError> {
     Ok((&Draft::of(&self::connection(connection)?)).into())
+}
+
+/// `draft`, its connection's own password or pasted key not on this device
+/// (B782; `store_missing_items` says which): nothing kept, the field saying
+/// whose (`name`) and taking the keyboard, Save waiting for a new one. A
+/// draft signing in with a managed key, or with nothing of its own, comes
+/// back as it was.
+#[uniffi::export]
+pub fn connection_draft_secret_missing(draft: ConnectionDraft, name: String) -> ConnectionDraft {
+    let mut model = self::draft(
+        &draft,
+        SecretsGiven {
+            password: false,
+            key: false,
+        },
+    );
+    model.secret_missing(&name);
+    (&model).into()
 }
 
 /// What the screen told (`{"ev": …}`, as JSON): the draft after an edit,
@@ -1430,6 +1474,58 @@ mod tests {
         assert_eq!(
             plan.connection.connection_protocol,
             crate::store::ConnectionProtocol::Mosh
+        );
+    }
+
+    /// B782: a connection whose own item a restore didn't bring crosses
+    /// marked: nothing kept, and whose secret is missing for the note.
+    #[test]
+    fn a_secret_this_device_lacks_crosses_with_the_draft() {
+        let mut c =
+            ServerConnection::new(Uuid::new_v4(), moshpit_seal::foundation::date::Date(0.0));
+        c.name = "nas".to_owned();
+        c.host = "nas.example.com".to_owned();
+        c.username = "me".to_owned();
+        c.keychain_ref = Some("moshpit.secret.own".to_owned());
+        let d = connection_draft_of((&c).into()).unwrap();
+        assert_eq!(d.stored, StoredCredential::Password);
+        assert_eq!(d.missing, None);
+        let none = SecretsGiven {
+            password: false,
+            key: false,
+        };
+        assert!(connection_draft_can_save(d.clone(), none, Vec::new()));
+
+        let lacking = connection_draft_secret_missing(d, "nas".into());
+        assert_eq!(lacking.stored, StoredCredential::None);
+        assert_eq!(
+            lacking.missing,
+            Some(MissingSecret {
+                name: "nas".into(),
+                secret: AuthMethod::Password,
+            })
+        );
+        let back: ConnectionDraft = (&draft(&lacking, none)).into();
+        assert_eq!(back, lacking, "it stays marked across every call");
+        assert!(!connection_draft_can_save(
+            lacking.clone(),
+            none,
+            Vec::new()
+        ));
+        let message: serde_json::Value = serde_json::from_str(&connection_form_message(
+            lacking,
+            none,
+            Vec::new(),
+            60000,
+            61000,
+            Vec::new(),
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            message["missing"],
+            serde_json::json!({"name": "nas", "secret": "password"}),
+            "{message}"
         );
     }
 }

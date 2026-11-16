@@ -30,8 +30,9 @@ struct MoshpitIslandBundle: WidgetBundle {
 // State colours come from the shared palette so the island can never drift
 // from the app's dots again (it did: amber here was more saturated, and the
 // app's "working" was the theme accent rather than this teal).
-// Adaptive (R18 D): deep enough to read on a light lock screen, the colours
-// above in the Dynamic Island, which is always dark.
+// Adaptive (R18 D): deep enough to read on white where a view is drawn in
+// the light appearance, the colours above where it is dark — the Dynamic
+// Island and the lock-screen card, both pinned dark (B811).
 private let teal = AgentPalette.workingAdaptive
 private let amber = AgentPalette.attentionAdaptive
 private let green = AgentPalette.doneAdaptive
@@ -212,18 +213,40 @@ private struct StateAndTime: View {
 
 // MARK: - Lock screen
 
-/// The lock-screen card in the lock screen's appearance (R18 D): dark on a
-/// dark one as it always was, light on a light one. Its words and dots
-/// follow (`Color.primary`, the adaptive state colours).
+/// The lock-screen card: dark on every lock screen (B811). Its words and
+/// dots are drawn in the dark appearance (`Color.primary` white, the state
+/// colours' dark side) over a fixed near-black tint.
+///
+/// R18 D had it follow the lock screen's appearance, the tint chosen by
+/// `colorScheme`. iOS 27 resolves a Live Activity's background tint and
+/// system action colour apart from its content, and the two can disagree:
+/// with the activity requested anew (or the wallpaper changed), the tint
+/// came out in the light appearance, white, while the content was drawn in
+/// the dark one, white words, until the next update. Apple's forums report
+/// the same (thread 849205, FB25019357): an asset-catalogue colour, a
+/// dynamic UIColor and a switch on the scheme all fail alike; only a fixed
+/// dark tint with a fixed white action colour holds. So nothing here
+/// depends on the appearance: the tint and the action colour are fixed,
+/// and the content is pinned to the dark scheme, as the Dynamic Island is.
+/// Readable beats adaptive. (The Home Screen and lock-screen widgets stay
+/// adaptive: their container background is drawn with their content.)
 struct LockScreenCard: View {
     let state: AgentActivityAttributes.ContentState
     var isStale: Bool = false
-    @Environment(\.colorScheme) private var scheme
+
+    /// The card's ground, on every lock screen.
+    static let tint = Color.black.opacity(0.85)
+    /// The system's controls on it (the Allow prompt's, the End button).
+    static let actionColor = Color.white
+    /// The appearance its words and dots are drawn in, whatever the lock
+    /// screen's.
+    static let scheme: ColorScheme = .dark
 
     var body: some View {
         LockScreenView(state: state, isStale: isStale)
-            .activityBackgroundTint(scheme == .dark ? Color.black.opacity(0.85) : Color.white.opacity(0.85))
-            .activitySystemActionForegroundColor(scheme == .dark ? .white : .black)
+            .environment(\.colorScheme, Self.scheme)
+            .activityBackgroundTint(Self.tint)
+            .activitySystemActionForegroundColor(Self.actionColor)
             // The island's `widgetURL` is the Dynamic Island's alone: a tap
             // on this card only opened the app, wherever it was (B702).
             .widgetURL(LockScreenView.deepLink(for: state))

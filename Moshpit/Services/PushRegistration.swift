@@ -68,7 +68,7 @@ enum PushRegistration {
     }
 
     static func handle(deviceToken data: Data) {
-        let hex = data.moshpitHexString
+        let hex = data.map { String(format: "%02x", $0) }.joined()
         // A prefix only: enough to line up with the relay's own fingerprints
         // in a log, not enough to be usable as an address.
         Log.push.info("device token \(hex.prefix(8), privacy: .public)… changed=\(hex != storedToken, privacy: .public)")

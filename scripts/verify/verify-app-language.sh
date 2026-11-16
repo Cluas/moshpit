@@ -26,7 +26,7 @@ for pair in "app:Moshpit/Resources" "island:Extensions/MoshpitIsland" "push:Exte
   plutil -insert CFBundleIdentifier -string "verify.app-language.$name" "$TMP/$name.bundle/Info.plist"
 done
 
-printf 'public enum PushPrefs { public static let suite = "moshpit.verify.app-language.%s" }\n' "$$" > "$TMP/stub.swift"
+printf 'public enum AppGroup { public static let id = "moshpit.verify.app-language.%s" }\n' "$$" > "$TMP/stub.swift"
 xcrun swiftc -O -o "$TMP/check" \
   "$ROOT/Packages/MoshpitKit/Sources/MoshpitKit/AppLanguage.swift" "$TMP/stub.swift" \
   "$ROOT/scripts/verify/app-language/main.swift"

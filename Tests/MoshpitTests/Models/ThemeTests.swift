@@ -3,7 +3,7 @@ import SwiftUI
 import Testing
 @testable import Moshpit
 
-/// Covers the theme model's storage/encoding contract and the store's
+/// Covers the theme model's storage/export contract and the store's
 /// persistence + id resolution — the parts a broken change would surface as
 /// "my custom theme vanished" or "the terminal went black on black".
 @Suite("Terminal themes")
@@ -86,41 +86,43 @@ struct ThemeTests {
         #expect(Set(base + bright).count > 8, "bright half must not duplicate the base half")
     }
 
-    // MARK: Codable
+    // MARK: Export and import (the store's: the Rust core's JSON)
 
-    @Test("a theme round-trips through JSON with human-readable keys")
-    func codableRoundTrip() throws {
+    @Test("a theme round-trips through the store's export and import, with human-readable keys")
+    func exportImportRoundTrip() throws {
+        let store = makeStore()
         var original = TerminalTheme.nord
         original.id = "custom-abc"
         original.isBuiltIn = false
         original.setBrightOverride("#ABCDEF", for: .cyan)
 
-        let data = try JSONEncoder().encode(original)
-        let json = String(decoding: data, as: UTF8.self)
+        let json = try store.exportJSON(original)
         // Keys a person can read and hand-edit.
         #expect(json.contains("\"background\""))
         #expect(json.contains("\"brightCyan\""))
         // Slots without an override are not written out.
         #expect(!json.contains("\"brightRed\""))
 
-        let decoded = try JSONDecoder().decode(TerminalTheme.self, from: data)
-        #expect(decoded.id == original.id)
-        #expect(decoded.name == original.name)
-        #expect(decoded.backgroundHex == original.backgroundHex)
-        #expect(decoded.ansiHex == original.ansiHex)
-        #expect(decoded.brightHex(.cyan) == "ABCDEF")
-        #expect(decoded.brightHex(.red) == original.brightHex(.red))
+        let imported = try #require(try store.importThemes(json: json).first)
+        // An import is a theme of the user's own, under an id of its own.
+        #expect(imported.id != original.id && imported.id.hasPrefix("custom-"))
+        #expect(imported.name == original.name)
+        #expect(imported.backgroundHex == original.backgroundHex)
+        #expect(imported.ansiHex == original.ansiHex)
+        #expect(imported.brightHex(.cyan) == "ABCDEF")
+        #expect(imported.brightHex(.red) == original.brightHex(.red))
     }
 
-    @Test("decoding never yields a built-in — anything imported is the user's")
-    func decodedThemesAreCustom() throws {
-        let data = try JSONEncoder().encode(TerminalTheme.githubDark)
-        let decoded = try JSONDecoder().decode(TerminalTheme.self, from: data)
+    @Test("importing never yields a built-in — anything imported is the user's")
+    func importedThemesAreCustom() throws {
+        let store = makeStore()
+        let json = try store.exportJSON(TerminalTheme.githubDark)
+        let imported = try #require(try store.importThemes(json: json).first)
         // Otherwise an imported theme would be uneditable and undeletable.
-        #expect(!decoded.isBuiltIn)
+        #expect(!imported.isBuiltIn)
     }
 
-    @Test("a hand-written palette from another emulator decodes")
+    @Test("a hand-written palette from another emulator imports")
     func lenientImport() throws {
         // Shorthand keys and no id — the shape someone pastes from a gist.
         let json = """
@@ -129,7 +131,7 @@ struct ThemeTests {
           "yellow": "#e5e510", "blue": "#2472c8", "magenta": "#bc3fbc",
           "cyan": "#11a8cd", "white": "#e5e5e5" }
         """
-        let theme = try JSONDecoder().decode(TerminalTheme.self, from: Data(json.utf8))
+        let theme = try #require(try makeStore().importThemes(json: json).first)
         #expect(theme.name == "Pasted")
         #expect(theme.backgroundHex == "1E1E1E")
         #expect(theme.foregroundHex == "D4D4D4")

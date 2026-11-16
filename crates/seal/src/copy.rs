@@ -221,16 +221,46 @@ fn fill(template: &str, argument: &str) -> String {
     template.replacen("%@", argument, 1)
 }
 
-/// The detail as a card shows it: whitespace runs (newlines included)
-/// collapsed to one space — by character, so a space carrying a combining
-/// mark is a space — trimmed, and cut to [`DETAIL_LIMIT`] characters with an
-/// ellipsis. `None` when nothing is left.
-pub fn detail(raw: Option<&str>) -> Option<String> {
-    let raw = raw?;
-    let words = text::split_characters(raw, |c| {
+/// Whether no card shows `scalar` (B639): the bidi controls — embeddings,
+/// overrides, isolates and the three marks — and the control characters
+/// that aren't whitespace. What a pane says is untrusted text, and a
+/// right-to-left override in a detail turned everything after it around on
+/// screen, the place too: a detail could end in a host name of its choosing
+/// and show it where the card names the host. Whitespace controls stay, to
+/// collapse to a space like any other. Listed by value, the same list as
+/// `AgentNotificationCopy.isHidden`.
+fn hidden(scalar: char) -> bool {
+    matches!(
+        u32::from(scalar),
+        0x00..=0x08
+            | 0x0E..=0x1F
+            | 0x7F..=0x84
+            | 0x86..=0x9F
+            | 0x061C
+            | 0x200E
+            | 0x200F
+            | 0x202A..=0x202E
+            | 0x2066..=0x2069
+    )
+}
+
+/// `raw` on one line as a card shows it: what no card shows dropped
+/// ([`hidden`]), and whitespace runs (newlines included) collapsed to one
+/// space — by character, so a space carrying a combining mark is a space —
+/// and trimmed.
+fn one_line(raw: &str) -> String {
+    let shown: String = raw.chars().filter(|&c| !hidden(c)).collect();
+    text::split_characters(&shown, |c| {
         text::character_is_whitespace(c) || text::character_is_newline(c)
-    });
-    let collapsed = words.join(" ");
+    })
+    .join(" ")
+}
+
+/// The detail as a card shows it: on one line ([`one_line`]), and cut to
+/// [`DETAIL_LIMIT`] characters with an ellipsis. `None` when nothing is
+/// left.
+pub fn detail(raw: Option<&str>) -> Option<String> {
+    let collapsed = one_line(raw?);
     if collapsed.is_empty() {
         return None;
     }
@@ -306,11 +336,13 @@ pub struct CardText {
     pub level: InterruptionLevel,
 }
 
-/// "what — where", or just "where" when there is no what.
+/// "what — where", or just "where" when there is no what. The place on one
+/// line too: a stored one may come from a session the host named.
 pub fn body(detail_text: Option<&str>, place: &str) -> String {
+    let place = one_line(place);
     match detail(detail_text) {
         Some(detail) => format!("{detail} — {place}"),
-        None => place.to_owned(),
+        None => place,
     }
 }
 
@@ -341,7 +373,7 @@ pub fn done(
     rings: bool,
     language: Language,
 ) -> CardText {
-    let mut title = fill(language.finished_template(), agent);
+    let mut title = fill(language.finished_template(), &one_line(agent));
     if let Some(ran) = duration(duration_seconds, language) {
         title.push_str(" · ");
         title.push_str(&ran);
@@ -372,10 +404,11 @@ pub fn attention(
     sound: bool,
     language: Language,
 ) -> CardText {
+    let agent = one_line(agent);
     let who = if standing_count > 1 {
         format!("{agent} +{}", standing_count - 1)
     } else {
-        agent.to_owned()
+        agent
     };
     CardText {
         title: fill(language.needs_you_template(), &who),
@@ -649,6 +682,74 @@ mod tests {
         assert_eq!(more.body, "mac-mini");
         assert!(!more.sound);
         assert_eq!(more.level, InterruptionLevel::Passive);
+    }
+
+    /// What no card shows (B639): the bidi controls, and the control
+    /// characters that aren't whitespace.
+    const HIDDEN: &[char] = &[
+        '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}',
+        '\u{2068}', '\u{2069}', '\u{200E}', '\u{200F}', '\u{61C}', '\u{0}', '\u{7}', '\u{1B}',
+        '\u{1F}', '\u{7F}', '\u{80}', '\u{9B}', '\u{9F}',
+    ];
+
+    /// B639: what a pane says is untrusted text, and a right-to-left
+    /// override in it turned everything after it around on screen — the
+    /// place too. A detail could end in a host name of its choosing, written
+    /// backwards, and show it where the card names the host, with the real
+    /// one read backwards after it.
+    #[test]
+    fn an_override_in_the_detail_cannot_turn_the_place_around() {
+        let card = attention(
+            "claude",
+            1,
+            Some("Allow?\u{202E}moc.elpmaxe.tsurt — "),
+            "build.example.com · work",
+            true,
+            true,
+            Language::En,
+        );
+        assert_eq!(
+            card.body,
+            "Allow?moc.elpmaxe.tsurt — — build.example.com · work"
+        );
+    }
+
+    #[test]
+    fn no_card_shows_a_bidi_control_or_a_control_character() {
+        for c in HIDDEN {
+            let text = format!("a{c}b");
+            let finished = done(&text, Some(&text), &text, 0, true, 180, true, Language::En);
+            assert_eq!(finished.title, "✓ ab finished", "U+{:04X}", u32::from(*c));
+            assert_eq!(finished.body, "ab — ab", "U+{:04X}", u32::from(*c));
+            let waiting = attention(&text, 2, Some(&text), &text, true, true, Language::En);
+            assert_eq!(waiting.title, "ab +1 needs you", "U+{:04X}", u32::from(*c));
+            assert_eq!(waiting.body, "ab — ab", "U+{:04X}", u32::from(*c));
+        }
+    }
+
+    /// A break in a name or a place is a space, as it is in the detail: a
+    /// card is one line of who and one of what — where.
+    #[test]
+    fn a_line_break_in_a_name_or_a_place_is_a_space() {
+        let card = attention(
+            "claude\n\u{2028}code",
+            1,
+            Some("Allow?"),
+            "mac-mini\r\n· work\u{85}",
+            true,
+            true,
+            Language::En,
+        );
+        assert_eq!(card.title, "claude code needs you");
+        assert_eq!(card.body, "Allow? — mac-mini · work");
+    }
+
+    /// What isn't shown doesn't count toward the cut.
+    #[test]
+    fn hidden_characters_take_no_room_in_the_detail() {
+        let fits = "x".repeat(DETAIL_LIMIT);
+        let padded = format!("{}{fits}", "\u{202E}\u{2066}".repeat(20));
+        assert_eq!(detail(Some(&padded)), Some(fits));
     }
 
     #[test]

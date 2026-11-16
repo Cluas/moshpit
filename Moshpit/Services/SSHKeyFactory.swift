@@ -229,7 +229,7 @@ enum SSHKeyFactory {
     }
 
     /// What a stored private key is, read off the key alone — for a
-    /// keychain item no record names any more (``KeychainReferences``): its
+    /// keychain item no record names any more (the core's orphan recovery, `secrets::recover_orphans`): its
     /// type, public key line, fingerprint and size. The stored bytes are
     /// never rewritten. A key file in any form the app reads (unencrypted),
     /// or a Secure Enclave key's handle; nil for anything else — a
@@ -238,6 +238,14 @@ enum SSHKeyFactory {
         if let text = String(data: secret, encoding: .utf8), text.contains("-----BEGIN") {
             return sshKeyDescribeStored(text: text).flatMap { try? Generated($0) }
         }
+        return describeEnclaveHandle(secret)
+    }
+
+    /// What a stored Secure Enclave key's handle is, read through CryptoKit
+    /// — the one kind of stored key the core can't read itself (B810: the
+    /// core's orphan recovery asks ``EnclaveKeyReader``). nil for anything
+    /// else, and on a device without a Secure Enclave.
+    static func describeEnclaveHandle(_ secret: Data) -> Generated? {
         guard SecureEnclave.isAvailable,
               let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: secret),
               let line = try? sshKeyHardwarePublicKey(publicKey: key.publicKey.x963Representation, comment: "")

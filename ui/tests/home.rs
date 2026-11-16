@@ -581,6 +581,8 @@ fn a_cards_body_says_where_its_host_is() {
     failed.failure = Some(ConnectionFailure {
         reason: FailureReason::Auth,
         detail: "The password was wrong.".into(),
+        unreachable: None,
+        leg: None,
     });
     let mut attaching = host("c-att", "att", Link::Attaching);
     attaching.control = Some(Control {
@@ -1025,7 +1027,7 @@ fn companions(app: &Headless) -> usize {
         .count()
 }
 
-/// B746, team-lead's call: the app's icon, What's New and Settings all
+/// B746: the app's icon, What's New and Settings all
 /// point at an egg on Home, and a new install's Home had none (the egg
 /// perched only on a card). It waits on the empty page now, in the mark's
 /// place above the title, on a 6.1" iPhone with Add Connection still in
@@ -1190,6 +1192,106 @@ fn with_the_companion_off_the_empty_home_has_the_mark_and_no_egg() {
     assert_eq!(companions(&app), 0, "off again: gone");
     assert_eq!(natives.count("moshpit/app-icon-mark"), 1);
     channel.close();
+}
+
+/// B801: a card whose host didn't answer says why in full, as the alert
+/// does (B740): the reason, the host and port typed, and for a host on the
+/// local network where the Local Network switch is — on the card, which is
+/// all the person sees after a redial or once the alert is gone. In
+/// English and in Chinese.
+#[test]
+fn a_dead_card_says_why_its_host_didnt_answer() {
+    use moshpit_ui::home::model::{Unreachable, UnreachableReason as Why};
+    let card = |host: &str, why: Why, local_network: bool| {
+        let mut dead = Connection {
+            id: "c-box".into(),
+            name: "box".into(),
+            initial: "B".into(),
+            user: "me".into(),
+            host: host.into(),
+            link: Link::Dead,
+            lost_at: Some(NOW - 300.0),
+            ..Connection::default()
+        };
+        dead.failure = Some(ConnectionFailure {
+            reason: if why == Why::TimedOut {
+                FailureReason::Timeout
+            } else {
+                FailureReason::Unreachable
+            },
+            detail: "said".into(),
+            unreachable: Some(Unreachable {
+                host: host.into(),
+                port: 2222,
+                why,
+                local_network,
+            }),
+            leg: None,
+        });
+        vec![dead]
+    };
+    let lan = "on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.";
+    let cases = [
+        (card("192.0.2.10", Why::Refused, false), "192.0.2.10 refused the connection on port 2222. Check the port, and that SSH is running there.".to_owned()),
+        (card("box.exmaple.com", Why::NoAddress, false), "Couldn't find box.exmaple.com. Check the host name.".to_owned()),
+        (card("studio.local", Why::NoAddress, true), "Couldn't find studio.local on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.".to_owned()),
+        (card("box.example.com", Why::TimedOut, false), "box.example.com didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.".to_owned()),
+        (card("203.0.113.5", Why::NoRoute, false), "There's no route to 203.0.113.5 from this network. Check your connection, and your VPN if the host sits behind one.".to_owned()),
+        (card("192.168.1.20", Why::NoRoute, true), format!("Couldn't reach 192.168.1.20 {lan}")),
+        (card("studio", Why::TimedOut, true), format!("Couldn't reach studio {lan}")),
+        (card("box.example.com", Why::Other, false), "Couldn't reach the server. Check the host, port, and that it's online.".to_owned()),
+    ];
+    for (connections, sentence) in cases {
+        let (mut app, channel, _) = phone(Params::default());
+        show(&mut app, &channel, connections);
+        find(&mut app, "id:card-dead-box");
+        assert!(
+            app.screen().texts().iter().any(|t| t.contains(&sentence)),
+            "{sentence}: {:?}",
+            app.screen().texts()
+        );
+        channel.close();
+    }
+    for (connections, sentence) in [
+        (
+            card("192.0.2.10", Why::Refused, false),
+            "192.0.2.10 拒绝了端口 2222 上的连接。",
+        ),
+        (
+            card("192.168.1.20", Why::NoRoute, true),
+            "连不上本地网络里的 192.168.1.20。确认它开着机，并确认 Moshpit 可以使用本地网络：「设置 → 隐私与安全性 → 本地网络」。",
+        ),
+    ] {
+        let (mut app, channel, _) = phone(zh_hans());
+        show(&mut app, &channel, connections);
+        find(&mut app, "id:card-dead-box");
+        assert!(
+            app.screen().texts().iter().any(|t| t.contains(sentence)),
+            "{sentence}: {:?}",
+            app.screen().texts()
+        );
+        channel.close();
+    }
+    // A failure on a jump host's leg (the jump-host feature, F1) says which first.
+    for (params, sentence) in [
+        (
+            Params::default(),
+            "Jump host “bastion”: 192.0.2.10 refused the connection on port 2222.",
+        ),
+        (zh_hans(), "跳板主机「bastion」：192.0.2.10 拒绝了端口 2222 上的连接。"),
+    ] {
+        let mut connections = card("192.0.2.10", Why::Refused, false);
+        connections[0].failure.as_mut().unwrap().leg = Some("bastion".into());
+        let (mut app, channel, _) = phone(params);
+        show(&mut app, &channel, connections);
+        find(&mut app, "id:card-dead-box");
+        assert!(
+            app.screen().texts().iter().any(|t| t.contains(sentence)),
+            "{sentence}: {:?}",
+            app.screen().texts()
+        );
+        channel.close();
+    }
 }
 
 /// B535: a disconnect flushes the session for up to ~2 s. Until it is

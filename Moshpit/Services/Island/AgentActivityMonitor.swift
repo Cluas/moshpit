@@ -90,9 +90,9 @@ final class AgentActivityMonitor {
     /// `standing` and `finishes` are the files the notification service
     /// extension shares (the App Group's; a test's own); the rest are where
     /// the machine's answers go.
-    init(settings: AppSettings, standing: PushStandingFile? = PushStanding.appGroupFile,
+    init(settings: AppSettings, standing: URL? = DeviceLocalFiles.url("standing-attention.json"),
          writeWidget: ((AgentWidgetState) -> Void)? = nil, island: AgentIsland? = nil,
-         finishes: PushFinishesFile? = PushFinishes.appGroupFile, notifier: Notifier = .system,
+         finishes: URL? = DeviceLocalFiles.url("rung-finishes.json"), notifier: Notifier = .system,
          clock: (() -> Date)? = nil, readiness: DefaultsReadiness = .system) {
         self.settings = settings
         self.readiness = readiness
@@ -111,8 +111,8 @@ final class AgentActivityMonitor {
         recordTrusted = trusted
         let record = trusted ? Self.storedRecord(settings.store) : [:]
         machine = AgentMachine(settings: Self.value(of: settings),
-                               standingPath: standing?.url.path,
-                               finishesPath: finishes?.url.path,
+                               standingPath: standing?.path,
+                               finishesPath: finishes?.path,
                                announced: record,
                                announceGrace: Self.announceGrace,
                                now: (clock?() ?? Date()).timeIntervalSince1970)

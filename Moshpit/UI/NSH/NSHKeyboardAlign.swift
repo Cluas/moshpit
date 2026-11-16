@@ -31,8 +31,6 @@ final class NSHKeyboardAlign {
     private var deadline: CFTimeInterval = 0
     /// What was moved already (layer, key).
     private var moved: Set<String> = []
-    /// How many animations were re-timed, and by how much, for the director.
-    private(set) var shifts: [Double] = []
 
     /// How long after the notification NSH's batch may come.
     private static let window: CFTimeInterval = 0.6
@@ -90,11 +88,9 @@ final class NSHKeyboardAlign {
                     let local = layer.convertTime(begin, from: nil)
                     guard local > animation.beginTime else { continue }
                     copy.beginTime = local
-                    shifts.append((begin - posted) * 1000)
                 case .pending:
                     // Committed together with the keyboard's: its begin.
                     copy.beginTime = 0
-                    shifts.append((CACurrentMediaTime() - posted) * 1000)
                 case .none:
                     continue
                 }

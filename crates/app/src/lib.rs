@@ -37,6 +37,7 @@
 pub mod connection_form;
 pub mod home;
 pub mod image_attachment;
+pub mod local_network;
 pub mod looks;
 pub mod remote_folder;
 pub mod remote_paths;

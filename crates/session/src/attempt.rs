@@ -16,15 +16,17 @@ use moshpit_herdr::launch::{self, quote};
 use moshpit_install::{HostCapabilities, Multiplexer};
 use moshpit_mosh::bootstrap;
 use moshpit_ssh::{
-    BoxFuture, DenyAll, HostKey, HostKeyPrompt, Process, PtyRequest, SignInQuestions, Ssh,
-    SshError, Target, TrustOnFirstUse,
+    Auth, BoxFuture, DenyAll, HostKey, HostKeyPrompt, Jump, Process, PtyRequest, SignInQuestions,
+    Ssh, SshError, Target, TrustOnFirstUse,
 };
 use moshpit_tmux::controller::PinLedger;
 use moshpit_tmux::format::is_valid_id;
 
-use crate::event::{Cause, CredentialsWhy, Degrade, Failure, FailureKind, MoshWhy, ProxyWhy};
+use crate::event::{
+    Cause, CredentialsWhy, Degrade, Failure, FailureKind, MoshWhy, ProxyWhy, TunnelWhy,
+};
 use crate::services::{CredentialError, Services};
-use crate::spec::{ConnectionSpec, Protocol, Timing};
+use crate::spec::{ConnectionSpec, Hop, HopBroken, Protocol, Timing, Via};
 
 /// Where an attempt is headed: the multiplexer it runs and what it lacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,7 +253,8 @@ impl Attempt {
         )
         .await?;
         let capabilities = self.capabilities(&ssh).await;
-        let result = match self.protocol {
+        // Through a jump host, SSH only (F1): mosh's UDP can't take the way.
+        let result = match self.spec.dialled_protocol(self.protocol) {
             Protocol::Ssh => self.ssh(&ssh, &capabilities, None).await,
             Protocol::Mosh => self.mosh(&ssh, &capabilities).await,
         };
@@ -798,9 +801,53 @@ async fn dial_once(
     prompt: Arc<dyn HostKeyPrompt>,
     questions: Option<Arc<dyn SignInQuestions>>,
 ) -> Result<Ssh, Failure> {
-    let auth = services
+    let via = match &spec.hop {
+        Hop::Direct => None,
+        Hop::Through(via) => Some(via.as_ref()),
+        // Never the host directly instead (F1): a jump host is often the
+        // only way in a network allows.
+        Hop::Broken(why) => {
+            return Err(Failure::permanent(
+                FailureKind::Route,
+                Cause::Route(*why),
+                match why {
+                    HopBroken::Deleted => "the connection this one goes through was deleted",
+                    HopBroken::Chained => {
+                        "the connection this one goes through goes through another"
+                    }
+                },
+            ));
+        }
+    };
+    let jump = match via {
+        Some(via) => {
+            Some(jump_for(services, via, timing, prompt.clone(), questions.clone()).await?)
+        }
+        None => None,
+    };
+    let auth = sign_in_with(services, &spec.connection_id).await?;
+    let policy = Arc::new(TrustOnFirstUse::new(services.known_hosts.clone(), prompt));
+    match (jump, via) {
+        (Some(jump), Some(via)) => {
+            let options = timing.connect_options(None);
+            Ssh::connect_through(jump, &spec.target, auth, policy, questions, &options)
+                .await
+                .map_err(|e| behind(&e, via))
+        }
+        _ => {
+            let options = timing.connect_options(spec.proxy.clone());
+            Ssh::connect_asking(&spec.target, auth, policy, questions, &options)
+                .await
+                .map_err(|e| proxied(Failure::from(&e), &spec.proxy))
+        }
+    }
+}
+
+/// The credentials saved for `connection_id`, read for a sign-in.
+async fn sign_in_with(services: &Services, connection_id: &str) -> Result<Auth, Failure> {
+    services
         .credentials
-        .auth(&spec.connection_id)
+        .auth(connection_id)
         .await
         .map_err(|error| match error {
             CredentialError::Locked => Failure::credentials(
@@ -813,27 +860,76 @@ async fn dial_once(
             CredentialError::Unavailable(log) => {
                 Failure::credentials(CredentialsWhy::Unavailable, log)
             }
-        })?;
-    let policy = Arc::new(TrustOnFirstUse::new(services.known_hosts.clone(), prompt));
-    let options = timing.connect_options(spec.proxy.clone());
-    Ssh::connect_asking(&spec.target, auth, policy, questions, &options)
-        .await
-        .map_err(|e: SshError| {
-            let failure = Failure::from(&e);
-            // Through a proxy, a dial nothing answered never got past the
-            // proxy: the person checks the proxy, not the server.
-            match (&spec.proxy, failure.kind) {
-                (Some(proxy), FailureKind::Unreachable) => Failure::new(
-                    FailureKind::Proxy,
-                    Cause::Proxy {
-                        proxy: format!("{}:{}", proxy.host, proxy.port),
-                        why: ProxyWhy::Unreachable,
-                    },
-                    failure.log,
-                ),
-                _ => failure,
-            }
         })
+}
+
+/// Through a proxy, a dial nothing answered never got past the proxy: the
+/// person checks the proxy, not the server.
+fn proxied(failure: Failure, proxy: &Option<moshpit_ssh::Socks5Proxy>) -> Failure {
+    match (proxy, failure.kind) {
+        (Some(proxy), FailureKind::Unreachable) => Failure::new(
+            FailureKind::Proxy,
+            Cause::Proxy {
+                proxy: format!("{}:{}", proxy.host, proxy.port),
+                why: ProxyWhy::Unreachable,
+            },
+            failure.log,
+        ),
+        _ => failure,
+    }
+}
+
+/// The session's connection to `via`, the jump host (F1): the one it
+/// holds if that is still up, else a new one signed in with the jump
+/// connection's own credentials, its own key asked about, its own proxy —
+/// and kept for every dial after. A failure on its way is the jump host's
+/// ([`Failure::leg`]).
+async fn jump_for(
+    services: &Services,
+    via: &Via,
+    timing: &Timing,
+    prompt: Arc<dyn HostKeyPrompt>,
+    questions: Option<Arc<dyn SignInQuestions>>,
+) -> Result<Jump, Failure> {
+    let mut held = services.jump.hold().await;
+    if let Some((for_via, jump)) = held.as_ref()
+        && for_via == via
+        && jump.is_alive()
+    {
+        return Ok(jump.clone());
+    }
+    *held = None;
+    let auth = sign_in_with(services, &via.connection_id)
+        .await
+        .map_err(|f| f.on_jump(&via.name))?;
+    let policy = Arc::new(TrustOnFirstUse::new(services.known_hosts.clone(), prompt));
+    let options = timing.connect_options(via.proxy.clone());
+    let ssh = Ssh::connect_asking(&via.target, auth, policy, questions, &options)
+        .await
+        .map_err(|e| proxied(Failure::from(&e), &via.proxy).on_jump(&via.name))?;
+    let jump = Jump::new(ssh);
+    *held = Some((via.clone(), jump.clone()));
+    Ok(jump)
+}
+
+/// A dial through the jump host `via` that failed: what the jump host
+/// said about the host behind it is the jump host's leg, and a host it
+/// couldn't reach in time is that, not a host on the device's own network.
+fn behind(error: &SshError, via: &Via) -> Failure {
+    match error {
+        SshError::Tunnel { .. } => Failure::from(error).on_jump(&via.name),
+        SshError::ConnectTimeout { host, port, .. } => Failure::new(
+            FailureKind::Unreachable,
+            Cause::Tunnel {
+                host: host.clone(),
+                port: *port,
+                why: TunnelWhy::TimedOut,
+            },
+            error.to_string(),
+        )
+        .on_jump(&via.name),
+        _ => Failure::from(error),
+    }
 }
 
 /// Stops mosh-servers we started, over a connection of its own: one the

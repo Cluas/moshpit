@@ -5,7 +5,7 @@ import UserNotifications
 @testable import Moshpit
 import MoshpitKit
 
-/// The standing set (``PushStanding``) is what decides whether a waiting
+/// The standing set (crates/seal's `standing`) is what decides whether a waiting
 /// prompt rings: only the 0→1 edge does. The app and the notification service
 /// extension share it, and the app — the one of the two that can see a prompt
 /// being answered — has to take answered prompts out of it, whoever put them
@@ -84,8 +84,8 @@ struct AgentStandingTests {
     private struct Bench {
         let monitor: AgentActivityMonitor
         let mux: FakeMux
-        let file: PushStandingFile
-        let finishes: PushFinishesFile
+        let file: URL
+        let finishes: URL
         let connection: ServerConnection
         let directory: URL
         let defaults: String
@@ -114,8 +114,8 @@ struct AgentStandingTests {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("standing-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = PushStandingFile(url: directory.appendingPathComponent("standing-attention.json"))
-        let finishes = PushFinishesFile(url: directory.appendingPathComponent("rung-finishes.json"))
+        let file = directory.appendingPathComponent("standing-attention.json")
+        let finishes = directory.appendingPathComponent("rung-finishes.json")
         let connection = ServerConnection(name: "standing", host: "192.0.2.1", port: 22,
                                           username: "tester", authMethod: .password)
         let name = "test.standing.\(UUID().uuidString)"

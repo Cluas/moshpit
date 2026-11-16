@@ -2,7 +2,8 @@
 //! launches, where the app keeps it in `UserDefaults.standard`, as `Data`
 //! holding JSON:
 //!
-//! - where the person was in tmux (`TmuxSelectionStore`):
+//! - where the person was in tmux (1.0.8's Swift `TmuxSelectionStore` wrote
+//!   the same):
 //!   `moshpit.tmux.lastSelection.<UUID>` → `{"session":…,"window":…,"pane":…}`
 //!   (window and pane left out when unknown, as `JSONEncoder` leaves out a
 //!   `nil`);
@@ -36,7 +37,7 @@ use crate::host::Defaults;
 use crate::plist::Plist;
 use crate::readiness::Readiness;
 
-/// `TmuxSelectionStore.key(_:)`'s prefix.
+/// The tmux selection's key prefix (1.0.8's Swift `TmuxSelectionStore`'s).
 pub const TMUX_SELECTION_PREFIX: &str = "moshpit.tmux.lastSelection.";
 /// `HostCapabilityCache`'s key prefix.
 pub const HOST_CAPABILITIES_PREFIX: &str = "hostcaps.";

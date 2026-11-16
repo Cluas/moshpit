@@ -26,6 +26,9 @@
 //!   with: switching the method takes the new method's secret, or is
 //!   refused and changes nothing (B298).
 //! - A new connection starts from the "Mosh by default" setting (B256).
+//! - A password or pasted key of the connection's own that this device
+//!   doesn't hold (a restore brings no keychain item) is not kept: the
+//!   field says so, and Save waits for a new one (B782).
 
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::connections::{
@@ -35,7 +38,7 @@ use moshpit_store::ssh_keys::SshKeyRecord;
 pub use moshpit_ui::connection_form::SecretState;
 use moshpit_ui::connection_form::{
     self as screen, Auth, ConnectionPredict, DEFAULT_PORT, DEFAULT_PROXY_PORT, FormState,
-    KeyChoice, Message, Mux, Secrets,
+    KeyChoice, Message, Missing, Mux, Secrets,
 };
 use moshpit_ui::settings::PredictMode as ScreenPredict;
 use serde_json::Value;
@@ -240,6 +243,8 @@ impl Draft {
                 emoji: c.emoji.clone().unwrap_or_default(),
                 // The host's, at message time (B532).
                 others: Vec::new(),
+                // The host's to say (B782).
+                missing: None,
             },
             key: c.ssh_key_id,
             stored: Stored::of(c),
@@ -349,6 +354,30 @@ impl Draft {
             Stored::ManagedKey(id) => Some(id) == self.key,
             Stored::None | Stored::Password => false,
         }
+    }
+
+    /// The connection edited names an item of its own — its password, the
+    /// key pasted into it — that this device doesn't hold (B782; the host
+    /// asks its keychain, `store_missing_items`): a phone restored from a
+    /// backup, or set up from another, has every connection and none of
+    /// their items. Marked, the draft keeps nothing: the field is empty and
+    /// says whose secret is missing (`name`, the connection's as saved),
+    /// and Save waits for a new one, written to the connection's own item.
+    /// True when it was the connection's own item: a managed key's is the
+    /// key's (SSH Keys says it is gone, B781), and a draft with none has
+    /// nothing to lack.
+    pub fn secret_missing(&mut self, name: &str) -> bool {
+        let secret = match self.stored {
+            Stored::Password => Auth::Password,
+            Stored::PastedKey => Auth::Key,
+            Stored::None | Stored::ManagedKey(_) => return false,
+        };
+        self.stored = Stored::None;
+        self.fields.missing = Some(Missing {
+            name: name.to_owned(),
+            secret,
+        });
+        true
     }
 
     /// The connection edited keeps a password of its own, which saving with

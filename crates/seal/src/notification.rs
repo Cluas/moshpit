@@ -29,6 +29,10 @@ pub const AGENT_KEY: &str = "moshpitAgent";
 pub const STATE_KEY: &str = "moshpitState";
 pub const DETAIL_KEY: &str = "moshpitDetail";
 
+/// A connection's waiting card: `<this><conn>`, the identifier the app
+/// posts it under and the pushed copy's collapse id.
+pub const ATTENTION_CARD: &str = "moshpit.attention.";
+
 /// How long a finished turn must have RUN for its completion to make a sound.
 pub const DONE_SOUND_THRESHOLD: i64 = 180;
 
@@ -165,6 +169,45 @@ impl Default for Render<'_> {
     }
 }
 
+/// The connection's waiting card once a pushed `done` took a pane out of
+/// the waiting set (B669, `PushRemoteNotification.summary`): the newest
+/// question still standing, with the count, silent — or none when nothing
+/// stands, and the card goes. `host` names the agent and the place when an
+/// entry has none, as the app's own digest does.
+pub fn summary(
+    remaining: &[crate::standing::Entry],
+    conn: &str,
+    host: &str,
+    prefs: Prefs,
+    language: Language,
+) -> Option<Card> {
+    // The first of the newest, as Swift's `max(by:)` picks.
+    let newest = remaining.iter().rev().max_by_key(|entry| entry.since)?;
+    let who = newest.agent.as_deref().filter(|agent| !agent.is_empty()).unwrap_or(host);
+    let stored = newest.location.as_deref().map(text::trim_white_space).unwrap_or("");
+    let detail = newest.title.as_deref().map(text::trim_white_space);
+    let words = copy::attention(
+        who,
+        i64::try_from(remaining.len()).unwrap_or(i64::MAX),
+        if prefs.show_detail { detail } else { None },
+        if stored.is_empty() { host } else { stored },
+        false,
+        false,
+        language,
+    );
+    Some(Card {
+        title: words.title,
+        body: words.body,
+        sound: words.sound,
+        level: words.level,
+        connection_id: conn.to_owned(),
+        pane_id: newest.pane.clone(),
+        agent: newest.agent.clone().unwrap_or_default(),
+        state: "attention".to_owned(),
+        detail: detail.unwrap_or("").to_owned(),
+    })
+}
+
 /// Render a status into a card (`PushRemoteNotification.apply`).
 ///
 /// With "Show detail" off the body names where — never what the agent is
@@ -282,6 +325,27 @@ mod tests {
         assert_eq!(card.pane_id, "%3");
         assert_eq!(card.state, "attention");
         assert_eq!(card.agent, "claude");
+    }
+
+    /// B639: a pushed card shows no bidi control from the host's title,
+    /// agent name, host name or session, whatever the sender left in.
+    #[test]
+    fn a_pushed_card_shows_no_bidi_control() {
+        let mut spoof = status(
+            "attention",
+            Some("Allow?\u{202E}moc.elpmaxe.tsurt — "),
+            Some("claude\u{202E}"),
+            Some("work\u{2067}"),
+            None,
+        );
+        spoof.host = "m1-pro\u{200F}".into();
+        let card = render(&spoof, Render::default());
+        assert_eq!(card.title, "claude needs you");
+        assert_eq!(card.body, "Allow?moc.elpmaxe.tsurt — — m1-pro · work");
+        assert_eq!(
+            card.detail, "Allow?\u{202E}moc.elpmaxe.tsurt —",
+            "userInfo keeps what was sent"
+        );
     }
 
     #[test]

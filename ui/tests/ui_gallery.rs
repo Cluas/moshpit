@@ -116,7 +116,7 @@ fn start_with(params: Params) -> (App, Slops) {
         font_scale: None,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     let slops = Slops::default();
     let observed = slops.clone();
     app.observe(move |_, batch| observed.apply(batch));

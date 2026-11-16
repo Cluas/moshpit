@@ -157,8 +157,6 @@ final class TerminalNSHStage {
     private(set) var appearance: Appearance?
     /// Where a tmux pane's own Paste and ⌘V go (the session's paste path).
     var onPaste: ((String) -> Void)?
-    /// Every swap, for the debug director: the key shown and when.
-    var onShow: ((String?) -> Void)?
     /// What lies outside the shown terminal's grid, when it isn't the
     /// theme's background (B496): the page's chrome takes it.
     var onGround: ((UInt32?) -> Void)?
@@ -576,7 +574,6 @@ final class TerminalNSHStage {
                 if instant { dismiss(hosted) } else { retire(hosted, duration: Self.crossfadeDuration, slideForward: nil) }
             }
             hosted = nil
-            onShow?(nil)
             sayGround()
             return
         }
@@ -594,7 +591,6 @@ final class TerminalNSHStage {
         guard let next = host(target) else { return }
         let old = hosted
         hosted = next
-        onShow?(target.key)
         sayGround()
         guard let old else {
             applyFocus()
@@ -715,7 +711,7 @@ final class TerminalNSHStage {
     }
 
     /// The plain path's terminal: the coordinator's own, re-wired, or a new
-    /// one (as `CoreTerminalHost.makeUIView` does).
+    /// one (``CoreTerminalHost/mintOwnedSurface(coordinator:fontName:fontSize:)``).
     private func plainSurface(_ coordinator: CoreTerminalHost.Coordinator) -> CoreTerminalView {
         let look = appearance
         let surface = CoreTerminalHost.mintOwnedSurface(
@@ -1186,7 +1182,7 @@ final class TerminalNSHStage {
         }
     }
 
-    /// The plain path's look, as `CoreTerminalHost.updateUIView` keeps it.
+    /// The plain path's look: font, colours and cursor, whatever changed.
     func apply(appearance: Appearance) {
         guard appearance != self.appearance else { return }
         self.appearance = appearance

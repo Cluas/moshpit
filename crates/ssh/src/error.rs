@@ -33,6 +33,16 @@ pub enum SshError {
     /// The SOCKS5 proxy wouldn't open the tunnel.
     #[error("the SOCKS5 proxy {proxy} {reason}")]
     Proxy { proxy: String, reason: ProxyError },
+    /// The jump host ([`crate::Ssh::connect_through`]) wouldn't open the
+    /// way to the host: it couldn't reach it, or doesn't forward.
+    #[error("the jump host {via} could not open the way to {host}:{port}: {reason}")]
+    Tunnel {
+        /// The jump host, as its connection names it.
+        via: String,
+        host: String,
+        port: u16,
+        reason: TunnelRefusal,
+    },
     /// The SSH negotiation and sign-in took longer than
     /// [`crate::ConnectOptions::handshake_timeout`], not counting the time a
     /// person spent deciding on a host key or a hardware key spent signing.
@@ -133,6 +143,29 @@ pub enum SshError {
     Closed { host: String },
     #[error("ssh: {0}")]
     Protocol(#[from] russh::Error),
+}
+
+/// Why a jump host refused a `direct-tcpip` channel (RFC 4254 §5.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TunnelRefusal {
+    /// It doesn't forward (sshd's `AllowTcpForwarding no`, `PermitOpen`).
+    Prohibited,
+    /// It couldn't connect: the name doesn't resolve there, nothing
+    /// listens, no route.
+    ConnectFailed,
+    /// Anything else it said, as it said it.
+    Other(String),
+}
+
+impl fmt::Display for TunnelRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Prohibited => f.write_str("it doesn't forward connections"),
+            Self::ConnectFailed => f.write_str("it couldn't connect"),
+            Self::Other(said) => f.write_str(said),
+        }
+    }
 }
 
 /// A private or public key that can't be used to sign in.

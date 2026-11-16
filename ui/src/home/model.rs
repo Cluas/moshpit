@@ -200,6 +200,44 @@ pub struct ConnectionFailure {
     /// for the screen's words.
     #[serde(default)]
     pub detail: String,
+    /// What didn't answer and why, when nothing did (B801): the card says
+    /// it in full.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreachable: Option<Unreachable>,
+    /// The jump host whose leg failed, by its saved name (the jump-host
+    /// feature's `Failure.leg`, F1b): the card says it first ("Jump host
+    /// “bastion”: …"). None: the target's own leg.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leg: Option<String>,
+}
+
+/// A host that didn't answer (B801, the core's `Cause::Unreachable`): as
+/// typed, the reason, and whether the Local Network permission may be why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Unreachable {
+    pub host: String,
+    pub port: u16,
+    pub why: UnreachableReason,
+    /// The host is on the local network as iOS's permission counts it
+    /// (or a `.local` name that didn't resolve), and it didn't answer: the
+    /// card names where the Local Network switch is.
+    pub local_network: bool,
+}
+
+/// Why nothing answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UnreachableReason {
+    /// The port turned the connection away (the host answered).
+    Refused,
+    /// The name resolves to no address.
+    NoAddress,
+    /// Nothing answered within the dial's time.
+    TimedOut,
+    /// No route to the network or the host.
+    NoRoute,
+    Other,
 }
 
 /// What a session's failure was, as the screen words it (a closed set: the
@@ -1366,6 +1404,10 @@ pub enum CardBody {
     Reconnect {
         lost_at: Option<f64>,
         reason: Option<FailureReason>,
+        /// What didn't answer and why, said in full (B801).
+        unreachable: Option<Unreachable>,
+        /// The jump host whose leg failed, said first.
+        leg: Option<String>,
     },
     /// The server turned the credentials down: "Edit connection…".
     EditConnection,
@@ -1397,6 +1439,11 @@ pub fn card_body(connection: &Connection, idle_expanded: bool, fallback: &str) -
             reason => CardBody::Reconnect {
                 lost_at: connection.lost_at,
                 reason,
+                unreachable: connection
+                    .failure
+                    .as_ref()
+                    .and_then(|f| f.unreachable.clone()),
+                leg: connection.failure.as_ref().and_then(|f| f.leg.clone()),
             },
         },
         Link::Live => match &connection.control {
@@ -1450,6 +1497,8 @@ mod tests {
             Some(ConnectionFailure {
                 reason: FailureReason::Auth,
                 detail: "the server refused the password".into(),
+                unreachable: None,
+                leg: None,
             })
         );
         for reason in [

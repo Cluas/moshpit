@@ -1,5 +1,6 @@
-//! Settings › App Icon (`Moshpit/UI/Settings/AppIconGalleryView.swift`) in
-//! NSH: the home-screen icons bundled with the app, in a grid, the one in
+//! Settings › App Icon in NSH (its iOS host:
+//! `Moshpit/UI/Settings/AppIconNSHPage.swift`): the home-screen icons
+//! bundled with the app, in a grid, the one in
 //! use ticked; picking one asks the host to switch to it.
 //!
 //! The host owns the icons and the switch (iOS's `setAlternateIconName`):

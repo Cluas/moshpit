@@ -498,7 +498,14 @@ impl ConnectionStoreHandle {
     }
 
     pub fn update(&self, connection: ConnectionRecord) -> Result<(), StoreError> {
-        lock(&self.0).update(connection.try_into()?);
+        let mut connection: ServerConnection = connection.try_into()?;
+        let mut store = lock(&self.0);
+        // F1: the record has no way through another connection (the Swift
+        // form can't pick one): a save from there keeps the stored one.
+        if let Some(stored) = store.connections().iter().find(|c| c.id == connection.id) {
+            connection.via_connection_id = stored.via_connection_id;
+        }
+        store.update(connection);
         Ok(())
     }
 
@@ -582,6 +589,46 @@ impl ConnectionStoreHandle {
             secrets::delete_connection(id, &mut connections, &mut keys, &HostKeychain(keychain))
                 .into(),
         )
+    }
+
+    /// Drop `account`, an item a connection let go of, once no saved
+    /// connection and no key record names it — listed until it is
+    /// (`secrets::release_item`, B325/B428). B810: who names what is the
+    /// core's to tell; the app used to work it out in Swift and pass it in.
+    pub fn release_item(
+        &self,
+        account: String,
+        keys: Arc<KeyStoreHandle>,
+        keychain: Arc<dyn KeychainHost>,
+    ) -> StoreSecretFate {
+        let mut connections = lock(&self.0);
+        let mut keys = lock(&keys.0);
+        secrets::release_item(
+            &account,
+            &mut connections,
+            &mut keys,
+            &HostKeychain(keychain),
+        )
+        .into()
+    }
+
+    /// The items earlier launches listed to drop, settled over what the
+    /// records name now (`secrets::release_pending`, B428): once a launch,
+    /// before orphan recovery.
+    pub fn release_pending(
+        &self,
+        keys: Arc<KeyStoreHandle>,
+        keychain: Arc<dyn KeychainHost>,
+    ) -> Vec<StoreSettledRelease> {
+        let mut connections = lock(&self.0);
+        let mut keys = lock(&keys.0);
+        secrets::release_pending(&mut connections, &mut keys, &HostKeychain(keychain))
+            .into_iter()
+            .map(|(account, fate)| StoreSettledRelease {
+                account,
+                fate: fate.into(),
+            })
+            .collect()
     }
 }
 
@@ -798,17 +845,21 @@ fn ssh_algorithm(a: KeyAlgorithm) -> ssh_keys::SshKeyAlgorithm {
     }
 }
 
+fn ssh_key_source(s: KeySource) -> ssh_keys::SshKeySource {
+    match s {
+        KeySource::SecureEnclave => ssh_keys::SshKeySource::SecureEnclave,
+        KeySource::Generated => ssh_keys::SshKeySource::Generated,
+        KeySource::Imported => ssh_keys::SshKeySource::Imported,
+        KeySource::Hardware => ssh_keys::SshKeySource::Hardware,
+    }
+}
+
 impl TryFrom<KeyRecord> for SshKeyRecord {
     type Error = StoreError;
 
     fn try_from(k: KeyRecord) -> Result<Self, StoreError> {
         let algorithm = ssh_algorithm(k.algorithm);
-        let source = match k.source {
-            KeySource::SecureEnclave => ssh_keys::SshKeySource::SecureEnclave,
-            KeySource::Generated => ssh_keys::SshKeySource::Generated,
-            KeySource::Imported => ssh_keys::SshKeySource::Imported,
-            KeySource::Hardware => ssh_keys::SshKeySource::Hardware,
-        };
+        let source = ssh_key_source(k.source);
         let mut record =
             SshKeyRecord::new(uuid(&k.id)?, &k.name, algorithm, source, Date(k.created_at));
         record.bits = k.bits;
@@ -1020,20 +1071,49 @@ pub enum StoreRecovery {
     KeychainFailed { message: String },
 }
 
+/// What a stored private key the core can't read itself is, as the
+/// platform reads it (B810): the facts its record shows.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct StoredKeyFacts {
+    pub algorithm: KeyAlgorithm,
+    pub source: KeySource,
+    /// An RSA key's modulus size.
+    pub bits: Option<i64>,
+    /// The `authorized_keys` line.
+    pub public_key: String,
+    /// `SHA256:…`.
+    pub fingerprint: String,
+}
+
+/// The platform's reader for the stored private keys only it can open
+/// (iOS: a Secure Enclave key's handle, which only CryptoKit reads), asked
+/// by [`store_recover_orphaned_keys`] about what the core can't read. It is
+/// asked with both stores held, so it must not call back into them.
+#[uniffi::export(with_foreign)]
+pub trait StoredKeyReader: Send + Sync {
+    /// `secret`'s facts if it is a private key this platform reads; `None`
+    /// for anything else.
+    fn describe(&self, secret: Vec<u8>) -> Option<StoredKeyFacts>;
+}
+
 /// Give the private keys earlier builds orphaned key records again:
 /// `moshpit.secret.` items no saved connection and no key record names, not
-/// made in this process, read without asking, that read as an unencrypted
-/// OpenSSH private key (`secrets::recover_orphans`, B232). Nothing is
-/// deleted: an orphan may be the only copy of a key whose record a lost list
-/// took with it. `name_template` is the record's name with `%@` for the
-/// start of its fingerprint (the app's "Recovered key %@", in its language).
-/// The app runs it once a launch, the first time both stores can be
-/// trusted.
+/// made in this process (the one set [`store_new_keychain_ref`] keeps), not
+/// listed to drop (B428), read without asking, that read as a private key
+/// (`secrets::recover_orphans`, B232). The core reads an unencrypted key
+/// file itself and asks `reader` only about the rest — a Secure Enclave
+/// key's handle, the only copy of that key (B810: the app's Swift recovery
+/// read those, and is gone). Nothing is deleted: an orphan may be the only
+/// copy of a key whose record a lost list took with it. `name_template` is
+/// the record's name with `%@` for the start of its fingerprint (the app's
+/// "Recovered key %@", in its language). The app runs it once a launch,
+/// the first time both stores can be trusted.
 #[uniffi::export]
 pub fn store_recover_orphaned_keys(
     connections: Arc<ConnectionStoreHandle>,
     keys: Arc<KeyStoreHandle>,
     keychain: Arc<dyn KeychainHost>,
+    reader: Option<Arc<dyn StoredKeyReader>>,
     name_template: String,
     now: f64,
 ) -> StoreRecovery {
@@ -1042,11 +1122,23 @@ pub fn store_recover_orphaned_keys(
     let name = |facts: &secrets::KeyFacts| {
         name_template.replace("%@", &secrets::short_fingerprint(&facts.fingerprint))
     };
+    let describe = |secret: &[u8]| {
+        describe_private_key(secret).or_else(|| {
+            let facts = reader.as_ref()?.describe(secret.to_vec())?;
+            Some(secrets::KeyFacts {
+                algorithm: ssh_algorithm(facts.algorithm),
+                source: ssh_key_source(facts.source),
+                public_key: facts.public_key,
+                fingerprint: facts.fingerprint,
+                bits: facts.bits,
+            })
+        })
+    };
     match secrets::recover_orphans(
         &connections,
         &mut keys,
         &HostKeychain(keychain),
-        &describe_private_key,
+        &describe,
         &name,
         Date(now),
     ) {
@@ -1095,10 +1187,9 @@ pub fn store_item_moves_with_backups(account: String) -> bool {
 
 /// What a stored secret is, if it is an unencrypted private key of a kind
 /// that signs in, in any form the app reads (the facts a key record shows;
-/// `moshpit_ssh::keyfile::describe_stored`, as the app's Swift recovery
-/// asks it). A Secure Enclave key's handle can't be read here (the app's
-/// Swift recovery reads those); a password or a key behind a passphrase is
-/// `None`.
+/// `moshpit_ssh::keyfile::describe_stored`). A Secure Enclave key's handle
+/// can't be read here (the platform's [`StoredKeyReader`] reads those); a
+/// password or a key behind a passphrase is `None`.
 fn describe_private_key(secret: &[u8]) -> Option<secrets::KeyFacts> {
     let key = moshpit_ssh::keyfile::describe_stored(std::str::from_utf8(secret).ok()?)?;
     Some(secrets::KeyFacts {
@@ -1968,6 +2059,28 @@ mod tests {
         assert_eq!(from_value(&cycle), None);
     }
 
+    /// A save through the record (the Swift form) keeps the connection a
+    /// stored one goes through (F1): the record can't say it.
+    #[test]
+    fn f1_a_record_save_keeps_the_way_through() {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let bastion = Uuid::new_v4();
+        let mut hpc = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.5));
+        hpc.via_connection_id = Some(bastion);
+        {
+            let mut direct =
+                ConnectionStore::new(Arc::new(HostDefaults(host.clone())), Readiness::Always);
+            direct.add(hpc.clone());
+        }
+        let store = ConnectionStoreHandle::new(host.clone(), ReadinessMode::Always);
+        let mut record = store.connections()[0].clone();
+        record.name = "renamed".into();
+        store.update(record).unwrap();
+        let reread = ConnectionStore::new(Arc::new(HostDefaults(host)), Readiness::Always);
+        assert_eq!(reread.connections()[0].name, "renamed");
+        assert_eq!(reread.connections()[0].via_connection_id, Some(bastion));
+    }
+
     #[test]
     fn the_stores_work_through_the_host_traits() {
         let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
@@ -2265,6 +2378,7 @@ mod tests {
                 connections.clone(),
                 keys.clone(),
                 keychain.clone(),
+                None,
                 "Recovered key %@".into(),
                 784_000_100.0,
             )
@@ -2322,6 +2436,259 @@ mod tests {
         let mut left = keychain.accounts().unwrap();
         left.sort();
         assert_eq!(left, ["moshpit.knownHosts"]);
+    }
+
+    /// A Secure Enclave key's handle as the keychain holds it: bytes only
+    /// the platform (CryptoKit) opens.
+    const ENCLAVE_HANDLE: &[u8] = b"\x04 a Secure Enclave handle";
+
+    /// The platform's reader (iOS: CryptoKit over a Secure Enclave
+    /// handle): knows `ENCLAVE_HANDLE`, and keeps what it was asked.
+    #[derive(Default)]
+    struct Enclave(Mutex<Vec<Vec<u8>>>);
+
+    impl StoredKeyReader for Enclave {
+        fn describe(&self, secret: Vec<u8>) -> Option<StoredKeyFacts> {
+            lock(&self.0).push(secret.clone());
+            (secret == ENCLAVE_HANDLE).then(|| StoredKeyFacts {
+                algorithm: KeyAlgorithm::SeP256,
+                source: KeySource::SecureEnclave,
+                bits: None,
+                public_key: "ecdsa-sha2-nistp256 AAAAenclave".into(),
+                fingerprint: "SHA256:enclave0123456789".into(),
+            })
+        }
+    }
+
+    /// Two stores over one fresh set of preferences, and an empty keychain.
+    fn ref_stores() -> (Arc<ConnectionStoreHandle>, Arc<KeyStoreHandle>, Arc<Vault>) {
+        let host: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        (
+            ConnectionStoreHandle::new(host.clone(), ReadinessMode::Always),
+            KeyStoreHandle::new(host, ReadinessMode::Always),
+            Arc::new(Vault::default()),
+        )
+    }
+
+    /// A ref as the app's Swift `KeychainService.generateRef()` made them
+    /// before B810, in an earlier launch: the same `moshpit.secret.` and a
+    /// lower-case UUID, never in this process's set.
+    fn swift_minted_ref() -> String {
+        format!(
+            "moshpit.secret.{}",
+            Uuid::new_v4().to_string().to_lowercase()
+        )
+    }
+
+    fn recovered(
+        connections: &Arc<ConnectionStoreHandle>,
+        keys: &Arc<KeyStoreHandle>,
+        vault: &Arc<Vault>,
+        reader: Option<Arc<dyn StoredKeyReader>>,
+    ) -> Vec<KeyRecord> {
+        match store_recover_orphaned_keys(
+            connections.clone(),
+            keys.clone(),
+            vault.clone(),
+            reader,
+            "Recovered key %@".into(),
+            784_000_100.0,
+        ) {
+            StoreRecovery::Recovered { keys } => keys,
+            other => panic!("nothing looked at: {other:?}"),
+        }
+    }
+
+    /// B810: orphan recovery is the core's alone (the app's Swift copy is
+    /// gone), and that copy also read a Secure Enclave key's handle, which
+    /// the core can't: for a Secure Enclave key the item is the only copy
+    /// there is. The platform is asked about what the core can't read, and
+    /// only that: the orphaned Secure Enclave key is listed again as one,
+    /// the OpenSSH key is read by the core without asking, a password is
+    /// asked about and left where it is.
+    #[test]
+    fn recovery_asks_the_platform_only_about_what_the_core_cant_read() {
+        let (connections, keys, vault) = ref_stores();
+        let enclave = swift_minted_ref();
+        let openssh = swift_minted_ref();
+        let password = swift_minted_ref();
+        vault
+            .save(enclave.clone(), ENCLAVE_HANDLE.to_vec(), false)
+            .unwrap();
+        vault
+            .save(openssh.clone(), ED25519.as_bytes().to_vec(), false)
+            .unwrap();
+        vault
+            .save(password.clone(), b"hunter2".to_vec(), false)
+            .unwrap();
+        let reader = Arc::new(Enclave::default());
+
+        let found = recovered(&connections, &keys, &vault, Some(reader.clone()));
+
+        let by_ref = |account: &str| {
+            found
+                .iter()
+                .find(|k| k.keychain_ref.as_deref() == Some(account))
+        };
+        let se = by_ref(&enclave).expect("the Secure Enclave key wasn't recovered");
+        assert_eq!(se.algorithm, KeyAlgorithm::SeP256);
+        assert_eq!(se.source, KeySource::SecureEnclave);
+        assert_eq!(se.fingerprint, "SHA256:enclave0123456789");
+        assert_eq!(se.name, "Recovered key enclave0");
+        assert!(!se.require_biometry);
+        let imported = by_ref(&openssh).expect("the OpenSSH key wasn't recovered");
+        assert_eq!(imported.algorithm, KeyAlgorithm::Ed25519);
+        assert_eq!(imported.source, KeySource::Imported);
+        assert!(by_ref(&password).is_none(), "a password became a key");
+        assert_eq!(found.len(), 2);
+        let asked = lock(&reader.0).clone();
+        assert!(
+            !asked.contains(&ED25519.as_bytes().to_vec()),
+            "the platform was asked about a key the core reads"
+        );
+        assert!(asked.contains(&ENCLAVE_HANDLE.to_vec()));
+        for account in [&enclave, &openssh, &password] {
+            assert!(vault.exists(account.clone()), "recovery deleted an item");
+        }
+    }
+
+    /// B810: one set of the refs made in this process. A ref the app made
+    /// this launch — through `store_new_keychain_ref`, as the Swift path
+    /// does now — whose record isn't saved yet is never taken for an
+    /// orphan; one an earlier launch made on the Swift path, the same
+    /// `moshpit.secret.<lower-case UUID>`, is recovered by the core. No
+    /// item is touched either way, and nothing asks for Face ID (`Vault`'s
+    /// silent read).
+    #[test]
+    fn a_ref_made_this_launch_is_never_an_orphan_and_one_from_an_earlier_launch_is() {
+        let (connections, keys, vault) = ref_stores();
+        let on_its_way = store_new_keychain_ref();
+        assert!(on_its_way.starts_with("moshpit.secret."));
+        assert_eq!(on_its_way, on_its_way.to_lowercase());
+        let from_before = swift_minted_ref();
+        vault
+            .save(on_its_way.clone(), ED25519.as_bytes().to_vec(), false)
+            .unwrap();
+        vault
+            .save(from_before.clone(), ED25519.as_bytes().to_vec(), false)
+            .unwrap();
+        let before = lock(&vault.0).clone();
+
+        let found = recovered(&connections, &keys, &vault, None);
+
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].keychain_ref.as_deref(), Some(from_before.as_str()));
+        assert_eq!(*lock(&vault.0), before, "recovery changed the keychain");
+    }
+
+    /// B810: deleting takes the item whichever path minted its ref, and a
+    /// key the user deleted is never listed again by a later recovery.
+    #[test]
+    fn deleting_takes_the_item_whoever_minted_it_and_recovery_never_brings_it_back() {
+        let (connections, keys, vault) = ref_stores();
+        let keychain: Arc<dyn KeychainHost> = vault.clone();
+        for minted in [swift_minted_ref(), store_new_keychain_ref()] {
+            // A connection's own password.
+            vault.save(minted.clone(), b"pw".to_vec(), false).unwrap();
+            let mut pi = ServerConnection::new(Uuid::new_v4(), Date(784_000_000.0));
+            pi.name = "pi".into();
+            pi.keychain_ref = Some(minted.clone());
+            connections.add((&pi).into()).unwrap();
+            assert_eq!(
+                connections
+                    .delete_releasing_secret(pi.id.to_string(), keys.clone(), keychain.clone())
+                    .unwrap(),
+                StoreSecretFate::Deleted
+            );
+            assert!(
+                !vault.exists(minted.clone()),
+                "{minted}: the password stayed"
+            );
+        }
+        for minted in [swift_minted_ref(), store_new_keychain_ref()] {
+            // A key's private half.
+            vault
+                .save(minted.clone(), ED25519.as_bytes().to_vec(), false)
+                .unwrap();
+            let mut key = SshKeyRecord::new(
+                Uuid::new_v4(),
+                "laptop",
+                ssh_keys::SshKeyAlgorithm::Ed25519,
+                ssh_keys::SshKeySource::Imported,
+                Date(784_000_000.0),
+            );
+            key.keychain_ref = Some(minted.clone());
+            keys.add((&key).into()).unwrap();
+            assert_eq!(
+                keys.delete_key(key.id.to_string(), connections.clone(), keychain.clone())
+                    .unwrap(),
+                StoreKeyDeletion::Deleted
+            );
+            assert!(
+                !vault.exists(minted.clone()),
+                "{minted}: the private key stayed"
+            );
+        }
+        assert!(recovered(&connections, &keys, &vault, None).is_empty());
+        assert!(keys.keys().is_empty(), "a deleted key came back");
+    }
+
+    /// B810: what a connection let go of is dropped by the core's rule over
+    /// both stores (`secrets::release_item`, `secrets::release_pending`):
+    /// the app no longer works out in Swift which items the records name.
+    /// Named again, it stays and comes off the list; named by nothing, it
+    /// goes; listed by an earlier launch, the next launch drops it.
+    #[test]
+    fn what_a_connection_let_go_of_is_dropped_by_the_cores_rule_over_both_stores() {
+        let (connections, keys, vault) = ref_stores();
+        let keychain: Arc<dyn KeychainHost> = vault.clone();
+        let mine = swift_minted_ref();
+        let named = swift_minted_ref();
+        let listed = swift_minted_ref();
+        for account in [&mine, &named, &listed] {
+            vault.save(account.clone(), b"pw".to_vec(), false).unwrap();
+        }
+        let mut key = SshKeyRecord::new(
+            Uuid::new_v4(),
+            "laptop",
+            ssh_keys::SshKeyAlgorithm::Ed25519,
+            ssh_keys::SshKeySource::Imported,
+            Date(784_000_000.0),
+        );
+        key.keychain_ref = Some(named.clone());
+        keys.add((&key).into()).unwrap();
+
+        assert_eq!(
+            connections.release_item(mine.clone(), keys.clone(), keychain.clone()),
+            StoreSecretFate::Deleted
+        );
+        assert!(!vault.exists(mine));
+        assert_eq!(
+            connections.release_item(named.clone(), keys.clone(), keychain.clone()),
+            StoreSecretFate::Kept,
+            "a key record names it"
+        );
+        assert!(vault.exists(named.clone()));
+
+        // An earlier launch listed one; this launch settles it.
+        let prefs: Arc<dyn PreferencesHost> = Arc::new(Prefs::default());
+        let (connections, keys) = (
+            ConnectionStoreHandle::new(prefs.clone(), ReadinessMode::Always),
+            KeyStoreHandle::new(prefs.clone(), ReadinessMode::Always),
+        );
+        prefs.set(
+            secrets::TO_RELEASE_KEY.into(),
+            Some(to_value(&Plist::Array(vec![Plist::String(listed.clone())]))),
+        );
+        let settled = connections.release_pending(keys.clone(), keychain.clone());
+        assert_eq!(
+            settled,
+            [StoreSettledRelease {
+                account: listed.clone(),
+                fate: StoreSecretFate::Deleted
+            }]
+        );
+        assert!(!vault.exists(listed));
     }
 
     /// A keychain whose items in `guarded` are behind Face ID: read without

@@ -13107,58 +13107,6 @@
         }
       }
     },
-    "Couldn't read the saved credential. After re-installing or re-signing the app (e.g. via SideStore), open Edit and re-enter your password / re-select your key.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Die gesicherten Zugangsdaten konnten nicht gelesen werden. Nach einer Neuinstallation oder Neusignierung der App (z. B. über SideStore) öffne „Bearbeiten“ und gib dein Passwort neu ein bzw. wähle deinen Schlüssel neu aus."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo leer la credencial guardada. Si reinstalaste o volviste a firmar la app (por ejemplo, con SideStore), abre Editar y vuelve a introducir la contraseña o a seleccionar la clave."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de lire l’identifiant enregistré. Après une réinstallation ou une nouvelle signature de l’app (par ex. via SideStore), ouvrez Modifier et saisissez de nouveau votre mot de passe ou choisissez de nouveau votre clé."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存された認証情報を読み取れませんでした。アプリを再インストールまたは再署名した後（SideStore 経由など）は、「編集」を開いてパスワードを再入力するか、キーを選び直してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "저장된 로그인 정보를 읽을 수 없습니다. 앱을 다시 설치했거나 다시 서명했다면(예: SideStore) 편집을 열어 암호를 다시 입력하거나 키를 다시 선택하세요."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Não foi possível ler a credencial salva. Depois de reinstalar ou reassinar o app (por exemplo, pelo SideStore), abra Editar e digite a senha de novo ou selecione a chave de novo."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "读不出已保存的凭据。重装或重签名 App（例如通过 SideStore）之后，请打开「编辑」重新输入密码 / 重新选择密钥。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "讀不到儲存的登入資訊。重灌或重新簽署 App（例如透過 SideStore）之後，請打開「編輯」重新輸入密碼或重新選擇金鑰。"
-          }
-        }
-      }
-    },
     "Couldn't read this host": {
       "localizations": {
         "de": {
@@ -22671,6 +22619,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "水母"
+          }
+        }
+      }
+    },
+    "Jump host “%@”: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jump-Host „%1$@“: %2$@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host de salto «%1$@»: %2$@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hôte de rebond « %1$@ » : %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台「%1$@」：%2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트 “%1$@”: %2$@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host de salto “%1$@”: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主机「%1$@」：%2$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板主機「%1$@」：%2$@"
           }
         }
       }
@@ -46689,6 +46689,58 @@
         }
       }
     },
+    "The key %@ signs in with isn't on this iPhone. Open Edit to pick another key.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Schlüssel, mit dem sich %@ anmeldet, ist nicht auf diesem iPhone. Öffne „Bearbeiten“, um einen anderen Schlüssel zu wählen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clave con la que inicia sesión %@ no está en este iPhone. Abre Editar para elegir otra clave."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clé avec laquelle %@ se connecte n’est pas sur cet iPhone. Ouvrez Modifier pour choisir une autre clé."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のサインインに使うキーがこの iPhone にありません。「編集」を開いて別のキーを選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 로그인할 때 쓰는 키가 이 iPhone에 없습니다. 편집을 열어 다른 키를 선택하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A chave com que %@ entra não está neste iPhone. Abra Editar para escolher outra chave."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上没有 %@ 登录用的密钥。打开「编辑」换一把密钥。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 iPhone 上沒有 %@ 登入用的金鑰。打開「編輯」換一把金鑰。"
+          }
+        }
+      }
+    },
     "The key for %@ is locked with a passphrase. Enter it once: from then on the Keychain on this device protects the key, as it does every key you import.": {
       "localizations": {
         "de": {
@@ -47001,6 +47053,58 @@
         }
       }
     },
+    "The password for %@ isn't on this iPhone. Enter it again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Passwort für %@ ist nicht auf diesem iPhone. Gib es erneut ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La contraseña de %@ no está en este iPhone. Vuelve a introducirla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe de %@ n’est pas sur cet iPhone. Saisissez-le de nouveau."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone には %@ のパスワードがありません。もう一度入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone에는 %@의 암호가 없습니다. 다시 입력하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A senha de %@ não está neste iPhone. Digite-a de novo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上没有 %@ 的密码，请重新输入。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 iPhone 上沒有 %@ 的密碼，請重新輸入。"
+          }
+        }
+      }
+    },
     "The pit never closes": {
       "localizations": {
         "de": {
@@ -47157,6 +47261,58 @@
         }
       }
     },
+    "The private key for %@ isn't on this iPhone. Paste it again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der private Schlüssel für %@ ist nicht auf diesem iPhone. Füge ihn erneut ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clave privada de %@ no está en este iPhone. Vuelve a pegarla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clé privée de %@ n’est pas sur cet iPhone. Collez-la de nouveau."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone には %@ の秘密鍵がありません。もう一度ペーストしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone에는 %@의 개인 키가 없습니다. 다시 붙여 넣으세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A chave privada de %@ não está neste iPhone. Cole-a de novo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上没有 %@ 的私钥，请重新粘贴。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 iPhone 上沒有 %@ 的私密金鑰，請重新貼上。"
+          }
+        }
+      }
+    },
     "The private key saved for this connection is damaged, or isn't one Moshpit can read. Import or paste the key again.": {
       "localizations": {
         "de": {
@@ -47257,6 +47413,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理伺服器連不上"
+          }
+        }
+      }
+    },
+    "The saved password or key isn't on this iPhone. Open Edit and enter it again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das gesicherte Passwort oder der Schlüssel ist nicht auf diesem iPhone. Öffne „Bearbeiten“ und gib es erneut ein."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La contraseña o la clave guardada no está en este iPhone. Abre Editar y vuelve a introducirla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe ou la clé enregistrés ne sont pas sur cet iPhone. Ouvrez Modifier et saisissez-les de nouveau."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存したパスワードまたはキーがこの iPhone にありません。「編集」を開いてもう一度入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 암호나 키가 이 iPhone에 없습니다. 편집을 열어 다시 입력하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A senha ou a chave salva não está neste iPhone. Abra Editar e digite de novo."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上没有保存的密码或密钥。打开「编辑」重新输入。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台 iPhone 上沒有儲存的密碼或金鑰。打開「編輯」重新輸入。"
           }
         }
       }

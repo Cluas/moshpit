@@ -367,7 +367,9 @@ S["sidecar-unknown-renderer"] = SIDECAR + [
     "settle", "recv %session-changed $0 aaa\\n", "settle", "refresh", "settle", "sync-mosh 40 20",
     "repin", "select-session $1", "settle", "dump"]
 S["sidecar-status-line"] = SIDECAR + [
-    *world(["$1 2 work"], [], [], hooks=[]), clients("1|45613|$1|/dev/ttys030"), "rule ok new-session => $5",
+    # A tmux that refuses the phone's group (B773): the status line alone.
+    *world(["$1 2 work"], [], [], hooks=[]), clients("1|45613|$1|/dev/ttys030"),
+    "rule err new-session -t => sessions should be nested with care", "rule ok new-session => $5",
     "settle", "recv %session-changed $1 work\\n", "settle", "new-session mine", "settle",
     "recv %session-changed $5 mine\\n", "settle", "select-session $1", "settle",
     "recv %session-changed $1 work\\n", "settle", "new-session \\s", "settle", "dump", "restore-status", "settle"]

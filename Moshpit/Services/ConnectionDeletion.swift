@@ -2,8 +2,12 @@ import Foundation
 import MoshpitKit
 
 /// Deleting a saved connection, and everything this phone keeps for it — its
-/// keychain item too, once no other connection and no SSH key names it
-/// (``KeychainReferences``).
+/// keychain item too, once no other connection and no SSH key names it. That
+/// rule, and the record with the item, are the core's
+/// (``ConnectionStore/delete(id:keys:keychain:)``, `secrets::delete_connection`;
+/// B810: this kept a Swift copy of who names what, which disagreed with the
+/// core's depending on who made the item). What is left here is the order:
+/// care first, the session, the shares, then the record.
 ///
 /// The push pairing is what used to stay behind. Deleting a connection ended
 /// its session, dropped its keychain secret and its entry — and left its
@@ -53,19 +57,17 @@ enum ConnectionDeletion {
     /// secret dropped, the connection still saved, and care free to tend it
     /// again.
     /// `tearDown` ends what is live for it (the island's tracking, the
-    /// session); `dropSecret` removes the keychain item the connection
-    /// signed in with, once nothing else names it (`keys`: the key records,
-    /// which name theirs); `holdSecret` lists it to drop at a later launch
-    /// when what else names it can't be told now (B428: it used to stay for
-    /// good); `dropShares` removes what the share extension queued for it,
-    /// photos included (B343).
+    /// session); `keys` and `keychain` are what the core asks for the
+    /// keychain item the connection signed in with: it goes once nothing
+    /// else names it, and one that can't go now is listed for a later
+    /// launch (B428: it used to stay for good); `dropShares` removes what
+    /// the share extension queued for it, photos included (B343).
     static func delete(_ connection: ServerConnection,
                        from store: ConnectionStore,
                        keys: SSHKeyStore,
+                       keychain: KeychainHost,
                        care: any ConnectionCareHandshake,
                        tearDown: () async -> Void,
-                       dropSecret: (String) async -> Void,
-                       holdSecret: (String) -> Void = { _ in },
                        dropShares: (UUID) -> Void = { ShareQueue.removeEntries(for: $0) }) async throws {
         // Before anything that waits: from here on care pairs nothing for
         // it, and nothing it saves now outlives the forgetting.
@@ -79,27 +81,18 @@ enum ConnectionDeletion {
         // The pass it stood down, bounded: the session is down by now, so
         // the host calls a pass waits on fail fast.
         await care.careWindDown(connection.id)
-        // The item goes with the last record naming it (B232). A managed
-        // key's item is named by the key, and stays while it is listed. It
-        // used to stay whenever the connection had picked a managed key —
-        // also once that key's record was gone (deleting a key left its
-        // item for the connections still using it): the private key was
-        // then named by nothing at all, for good. Unknown keeps it, listed
-        // for a later launch to drop once nothing names it (B428).
-        if let ref = connection.keychainRef {
-            switch KeychainReferences.referenced(connections: store, keys: keys,
-                                                 excludingConnection: connection.id) {
-            case nil: holdSecret(ref)
-            case let held? where !held.contains(ref): await dropSecret(ref)
-            case _?: break
-            }
-        }
         // Its queued shares can never be delivered (the drain takes an entry
         // only for a live session), and their photos stayed in the App Group
-        // until they aged out (B343). After the pairing, as the secret: a
-        // delete that stopped there keeps them.
+        // until they aged out (B343). After the pairing: a delete that
+        // stopped there keeps them.
         dropShares(connection.id)
-        store.delete(id: connection.id)
+        // The record, and its item with the last record naming it (B232):
+        // a managed key's item is named by the key, and stays while it is
+        // listed; one whose key's record is gone goes with the last
+        // connection on it. One that can't go now is listed for a later
+        // launch to drop once nothing names it (B428).
+        let fate = store.delete(id: connection.id, keys: keys, keychain: keychain)
+        Log.store.info("delete: the connection's keychain item: \(String(describing: fate), privacy: .public)")
         care.deletionEnded(connection.id)
     }
 }

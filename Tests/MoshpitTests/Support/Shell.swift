@@ -1,6 +1,9 @@
 import Foundation
 
-/// Command lines for a remote shell.
+/// Command lines for a remote shell, as the tests check them: the app's
+/// own commands are the Rust core's now (`moshpit_install::commands::quote`
+/// quotes every word), and nothing in the app calls this (E7a). The tests
+/// keep it as their oracle for what one quoted word must be.
 enum Shell {
 
     /// `value` as one shell word, whatever it holds, in any login shell — sh,
@@ -15,10 +18,9 @@ enum Shell {
     /// in `\` never closed fish's quote and the next word ran on, and `\\`
     /// came out as `\`. Outside quotes `\\` is one backslash in all five.
     ///
-    /// The app's one shell quoter. `HostCommands.quote` and the image paths
-    /// pasted at a prompt are this function; nothing may grow its own
-    /// escaping again. (A name in a tmux control-mode line is not a
-    /// shell word: the core quotes those, crates/tmux `name_argument`.)
+    /// The rule the core's quoter keeps. (A name in a tmux control-mode
+    /// line is not a shell word: the core quotes those, crates/tmux
+    /// `name_argument`.)
     ///
     /// By Unicode scalar, never by `Character`. The six copies this replaced
     /// each did `replacingOccurrences(of: "'", with: …)`, which compares

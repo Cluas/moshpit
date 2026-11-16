@@ -9,7 +9,7 @@ use moshpit_seal::foundation::text;
 pub const DIR: &str = "$HOME/.moshpit";
 
 /// The agent label a self-test stamps and pushes with
-/// (`PushRemoteNotification.selfTestAgent`).
+/// (`AgentNotifications.selfTestAgent`, the app's).
 pub const SELF_TEST_AGENT: &str = moshpit_seal::notification::SELF_TEST_AGENT;
 
 /// `(path as NSString).deletingLastPathComponent`: repeated and trailing
@@ -40,6 +40,14 @@ pub fn last_path_component(path: &str) -> String {
 /// newline, so single-quoting it is total; `umask` before the write leaves
 /// no moment where a file of secrets is world-readable.
 ///
+/// B637: and before the directory is made — `mkdir -p` ran first, with the
+/// host's umask, so `~/.moshpit` and `push.d` came out 0755 on most hosts
+/// and anyone there could list which connections push from it. A
+/// directory of Moshpit's own (`~/.moshpit` and below) written into is
+/// made the person's alone too, one an older build made open as well; any
+/// other directory keeps its mode (an agent's config goes through
+/// [`write_keeping_mode`] anyway).
+///
 /// Fix (atomic-write, B351): the Swift original decodes straight into
 /// `path` (`HostChannel.swift`'s `writeFile`), so a write that fails part
 /// way — a full disk, a quota — has already truncated it: an installed
@@ -52,8 +60,13 @@ pub fn last_path_component(path: &str) -> String {
 /// config kept in someone's dotfiles) stays one: see [`RESOLVE`].
 pub fn write_file(path: &str, mode: &str, base64: &str) -> String {
     let dir = deleting_last_path_component(path);
+    let private = if dir == DIR || dir.starts_with(&format!("{DIR}/")) {
+        format!(" chmod 700 \"{dir}\";")
+    } else {
+        String::new()
+    };
     format!(
-        "set -e; mkdir -p \"{dir}\"; umask 077; p=\"{path}\"; {RESOLVE} t=\"$p{NEW}$$\"; trap 'rm -f \"$t\"' EXIT; \
+        "set -e; umask 077; mkdir -p \"{dir}\";{private} p=\"{path}\"; {RESOLVE} t=\"$p{NEW}$$\"; trap 'rm -f \"$t\"' EXIT; \
          printf %s '{base64}' | base64 -d > \"$t\"; chmod {mode} \"$t\"; mv -f \"$t\" \"$p\""
     )
 }
@@ -288,6 +301,31 @@ pub fn remove_the_rest(configs: &[&str]) -> String {
     )
 }
 
+/// Take the pairing file at `path` off the host, and with it the single
+/// `push.conf` the first builds wrote when that names connection `conn`
+/// (B638). It holds a pairing's secret and send token, and nothing took
+/// it off: not Unpair, not Remove everything — which read it as another
+/// phone's pairing left, and so left everything else behind too. Another
+/// connection's stays. Its id is matched in either case: the first builds
+/// wrote it as Foundation does.
+pub fn remove_pairing(path: &str, conn: &str) -> String {
+    format!(
+        "rm -f \"{path}\" || exit 1; f=\"{DIR}/push.conf\"; \
+         if grep -qix {} \"$f\" 2>/dev/null; then rm -f \"$f\"; fi",
+        quote(&format!("CONN={conn}"))
+    )
+}
+
+/// The first builds' single `push.conf`, when it can't push: no phone
+/// token, as they wrote every one — nothing can send with it since the
+/// relay keeps no registry. Remove everything takes it whichever
+/// connection it names (B638, the lead's call): it is Moshpit's and of use
+/// to no one, and while it stood it read as another phone's pairing left
+/// on the host, so nothing else went either. One a phone can still be
+/// pushed through stays.
+pub const REMOVE_INERT_LEGACY_CONF: &str = "f=\"$HOME/.moshpit/push.conf\"; \
+     if [ -f \"$f\" ] && ! grep -q '^APNS_TOKEN=.' \"$f\" 2>/dev/null; then rm -f \"$f\"; fi";
+
 /// `~/.moshpit` itself, if nothing is left in it.
 pub const REMOVE_DIR_IF_EMPTY: &str = "rmdir \"$HOME/.moshpit\" 2>/dev/null; true";
 
@@ -320,7 +358,7 @@ pub const REMOVE_DIR_IF_EMPTY: &str = "rmdir \"$HOME/.moshpit\" 2>/dev/null; tru
 ///   is read as not taken, and undone.
 pub fn lock(token: &str) -> String {
     format!(
-        "t={}; d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; \
+        "t={}; umask 077; d=\"$HOME/.moshpit/.lock\"; mkdir -p \"$HOME/.moshpit\" || exit 1; \
          link_of() {{ readlink \"$1\" 2>/dev/null || ls -ld \"$1\" 2>/dev/null | sed -n 's/.* -> //p'; }}; \
          end=$(($(date +%s) + 10)); e=; n=0; \
          while :; do s=$(date +%s); \
@@ -465,13 +503,23 @@ mod tests {
         let write = write_file("$HOME/.moshpit/push.d/X.conf", "600", "QUJD");
         assert_eq!(
             write,
-            "set -e; mkdir -p \"$HOME/.moshpit/push.d\"; umask 077; p=\"$HOME/.moshpit/push.d/X.conf\"; \
+            "set -e; umask 077; mkdir -p \"$HOME/.moshpit/push.d\"; chmod 700 \"$HOME/.moshpit/push.d\"; \
+             p=\"$HOME/.moshpit/push.d/X.conf\"; \
              i=0; while [ -L \"$p\" ] && [ $i -lt 40 ]; do l=$(readlink \"$p\"); \
              case \"$l\" in /*) p=$l ;; *) p=$(dirname \"$p\")/$l ;; esac; i=$((i+1)); done; \
              t=\"$p.moshpit-new.$$\"; trap 'rm -f \"$t\"' EXIT; printf %s 'QUJD' | base64 -d > \"$t\"; \
              chmod 600 \"$t\"; mv -f \"$t\" \"$p\""
         );
         assert!(write.find("umask 077").unwrap() < write.find("base64 -d >").unwrap());
+        // B637: and before the directory is made; a directory of anyone
+        // else's keeps its mode.
+        assert!(write.find("umask 077").unwrap() < write.find("mkdir -p").unwrap());
+        let theirs = write_file("$HOME/.claude/settings.json", "644", "QUJD");
+        assert!(
+            theirs.starts_with("set -e; umask 077; mkdir -p \"$HOME/.claude\"; p="),
+            "{theirs}"
+        );
+        assert!(!theirs.contains("chmod 700"), "{theirs}");
         assert_eq!(
             written(&write),
             Some(("$HOME/.moshpit/push.d/X.conf".to_owned(), "QUJD".to_owned()))

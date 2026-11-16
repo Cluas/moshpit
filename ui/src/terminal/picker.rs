@@ -1,6 +1,6 @@
-//! The multiplexer's pickers (`Moshpit/UI/Tmux/TmuxSheets.swift`:
-//! `WindowsSheet`, `SessionsSheet`, `SelectPaneSheet`, in `CompactSheet`)
-//! in NSH: the breadcrumb's segments open them, ⌘K the windows. One screen
+//! The multiplexer's pickers (windows, sessions, panes; their iOS host
+//! `Moshpit/UI/Terminal/MuxPickerNSHPage.swift`) in NSH: the breadcrumb's
+//! segments open them, ⌘K the windows. One screen
 //! for the three lists, in the host's container (a sheet at medium and
 //! large heights on a phone, a 400 × 380 popover hung from the breadcrumb
 //! on a regular-width iPad, as `AdaptivePresentation` presents them; NSH's

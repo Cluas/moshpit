@@ -1,18 +1,6 @@
 import UserNotifications
 import MoshpitKit
-
-// In the extension target the shared push types are compiled straight into this
-// module, so nothing needs importing. This same file is also compiled into
-// MoshpitTests — the only place `didReceive` can be driven without an APNs key
-// and a phone — and there those types arrive from the app module instead.
-//
-// The condition is an explicit flag on the test target, NOT `canImport(Moshpit)`:
-// canImport actually attempts to load the module, which drags the app's whole
-// transitive C-module graph (CNIOPosix, CCryptoBoringSSL, _AtomicsShims…) into an
-// extension that links none of it, and the build fails resolving them.
-#if MOSHPIT_TESTS
-@testable import Moshpit
-#endif
+import MoshpitPushFFI
 
 /// Notification service extension — the only Moshpit code that runs when a push
 /// arrives and the app does not.
@@ -22,6 +10,14 @@ import MoshpitKit
 /// `mutable-content: 1`, gives it a few seconds, and shows the unmodified
 /// payload if it does not answer in time — which is why the relay ships a
 /// translated generic fallback rather than an empty alert.
+///
+/// The rules are the app's, once (E7b): one call into crates/seal
+/// (`moshpit_push_receive`, crates/seal-ffi) opens the envelope with this
+/// device's pairings, keeps the standing set, the rung finishes and the
+/// closed turns, leaves the diagnostic lines, and says what to show. This
+/// file reads what only it can (the switches and the language from the App
+/// Group's defaults, the files' places) and maps the answer onto the
+/// notification.
 ///
 /// Failure here is quiet by design. A push whose MAC matches none of this
 /// device's pairing secrets is not an error to report: it means the host that
@@ -39,176 +35,129 @@ final class NotificationService: UNNotificationServiceExtension {
             return
         }
         bestAttempt = content
-
-        // Recorded where the APP can read it: this process's own log is
-        // invisible to the diagnostics screen (see PushDiagnostics).
-        PushDiagnostics.record("woke for a push")
-
-        // The user's two extension-visible switches, mirrored into the App
-        // Group by AppSettings. Read once per push; every path below —
-        // decrypted or fallback — must honor them.
-        let prefs = PushPrefs.read()
-        if !prefs.sound { content.sound = nil }
-
-        guard let envelope = PushRemoteNotification.envelope(in: request.content.userInfo) else {
-            Log.push.info("push carries no sealed envelope — delivering as received")
-            PushDiagnostics.record("no sealed envelope — delivered as received")
-            contentHandler(content)
-            return
-        }
-        let pairings = PushPairingStore.read()
-        let status: PushSealedBox.Status
-        switch PushRemoteNotification.open(envelope, pairings: pairings) {
-        case .opened(let opened):
-            status = opened
-        case .misnamed:
-            // Sealed with one connection's key, naming another: nothing in it
-            // is shown, as if no key had opened it (B435).
-            Log.push.error("a push opened with one connection's key named another — showing the generic fallback")
-            PushDiagnostics.record("a push opened with one connection's key named another — showed the fallback")
-            content.categoryIdentifier = ""
-            contentHandler(content)
-            return
-        case .unreadable:
-            // The paired host's key opened it, but it holds no status this
-            // phone reads (B635): the fallback, without the actions, saying
-            // which it was — not "paired to another install".
-            Log.push.error("a key opened this envelope, but it holds no status this phone reads — showing the generic fallback")
-            PushDiagnostics.record("a key opened this envelope, but it holds no status this phone reads — showed the fallback")
-            content.categoryIdentifier = ""
-            contentHandler(content)
-            return
-        case .unopened:
-            // The count is the whole diagnosis: 0 means the store did not reach
-            // the extension (App Group or file protection), while n > 0 means the
-            // sending host is paired to a different install of the app. Those
-            // have completely different fixes and look identical on screen.
-            Log.push.error("no key opened this envelope (\(pairings.count, privacy: .public) available) — showing the generic fallback")
-            // The number is the diagnosis: 0 means this process could not reach
-            // the pairing store at all, anything else means the sending host is
-            // paired to a different install.
-            PushDiagnostics.record("no key opened this envelope (\(pairings.count) available) — showed the fallback")
-            // And WITHOUT its action buttons. The category the relay set is
-            // Allow/Deny/Reply, but those actions need the connection and pane
-            // ids that only live inside the envelope we just failed to open — so
-            // the app would have nowhere to send the keystroke, and the tap
-            // would do nothing at all. A dead Allow is the worst outcome this
-            // feature has: the user walks away believing they approved and the
-            // agent is still waiting. Strip the actions and let the body tap
-            // open the app, which is what the fallback text already asks for.
-            content.categoryIdentifier = ""
-            contentHandler(content)
-            return
-        }
-        Log.push.info("opened a \(status.state, privacy: .public) push from \(status.host, privacy: .public)")
-        PushDiagnostics.record("opened a \(status.state) push from \(status.host)"
-                              + (status.agent == PushRemoteNotification.selfTestAgent
-                                 ? " (self-test \(status.title ?? "?"))" : ""))
-        // The card names the connection the way the phone does — the label the
-        // user typed when saving it — not by whatever `hostname` returns on the
-        // host. The envelope's `conn` points at the pairing, and the pairing
-        // remembers the label the app gave it. A local card uses the same name,
-        // so the two copies of one event finally read alike.
-        let label = UUID(uuidString: status.conn)
-            .flatMap { id in pairings.first { $0.connectionId == id }?.hostLabel }
-        // The standing store is what lets this process and the app agree on the
-        // 0→1 edge — whichever of the push and the local announcement lands
-        // first rings; the other sees "already standing" and stays silent.
-        if status.agent == PushRemoteNotification.selfTestAgent {
-            // A pairing self-test is no agent's turn (B439): it neither joins
-            // nor leaves the waiting set, and rings no finish. Its "done" used
-            // to clear the pane it named — `%0`, where an agent often waits.
-            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label)
-        } else if status.state == "attention",
-                  let ended = closedAt(conn: status.conn, pane: status.pane),
-                  ended > status.ts {
-            // B636: a question the host already said ended — APNs reordered
-            // it behind its `done`, or a relay sent it again. Not a new one:
-            // it doesn't stand, and rings nothing.
-            PushDiagnostics.record("an attention the host already ended came late — shown without a sound, not standing")
-            let count = PushStanding.standing(conn: status.conn).count
-            PushRemoteNotification.apply(status, to: content,
-                                         attentionEdge: false, standingCount: count,
-                                         prefs: prefs, label: label)
-        } else if status.state == "attention" {
-            // With its place, as the card says it: the app redraws this card
-            // from the entry when the set changes, and has only what is here.
-            let edge = PushStanding.noteStanding(
-                conn: status.conn,
-                entry: .init(pane: status.pane, agent: status.agent,
-                             title: status.title,
-                             location: PushRemoteNotification.location(status, label: label),
-                             since: status.ts,
-                             recordedAt: Date()))
-            let count = PushStanding.standing(conn: status.conn).count
-            PushRemoteNotification.apply(status, to: content,
-                                         attentionEdge: edge, standingCount: count,
-                                         prefs: prefs, label: label)
-        } else {
-            // A `done` closes its pane's turn — that pane is no longer waiting.
-            // B636: the host's word for when, by its clock: what it asked up
-            // to then stops waiting, and a question from before it that comes
-            // later is told for what it is.
-            if !PushClosed.noteClosed(conn: status.conn, pane: status.pane, closedAt: status.ts) {
-                PushDiagnostics.record("turn endings busy — this ending isn't remembered")
-            }
-            let wasWaiting = PushStanding.standing(conn: status.conn)
-                .contains { $0.pane == status.pane && $0.since <= status.ts }
-            let remaining = PushStanding.clearEnded(conn: status.conn, pane: status.pane, endedAt: status.ts)
-            // Its waiting card says what still waits, or goes (B669).
-            if wasWaiting {
-                redrawWaitingCard(conn: status.conn, remaining: remaining,
-                                  host: label ?? status.host, prefs: prefs)
-            }
-            // A long turn's finish rings once between this card and the
-            // app's local copy of it: whichever lands first.
-            var rings = true
-            if status.state == "done",
-               AgentNotificationCopy.doneWakes(duration: status.dur ?? 0,
-                                               threshold: PushRemoteNotification.doneSoundThreshold) {
-                rings = PushFinishes.noteRing(conn: status.conn, pane: status.pane, endedAt: status.ts)
-            }
-            PushRemoteNotification.apply(status, to: content, prefs: prefs, label: label,
-                                         doneRings: rings)
-        }
+        let answer = Self.receive(request.content.userInfo, now: Date())
+        Self.apply(answer, to: content)
+        if let waiting = answer?["waiting"] as? [String: Any] { Self.update(waiting) }
         contentHandler(content)
-    }
-
-    /// When the host last said this pane's turn ended (B636). Its lock busy
-    /// past the budget reads as nothing ended — today's behaviour — and is
-    /// logged; the notification is never held up for it.
-    private func closedAt(conn: String, pane: String) -> Int? {
-        do {
-            return try PushClosed.closedAt(conn: conn, pane: pane)
-        } catch {
-            PushDiagnostics.record("turn endings busy — read as nothing ended")
-            return nil
-        }
-    }
-
-    /// The connection's waiting card after a finish left the set (B669):
-    /// replaced in place, silently, under the identifier it was posted
-    /// with, or withdrawn when nothing waits.
-    private func redrawWaitingCard(conn: String, remaining: [PushStanding.Entry], host: String,
-                                   prefs: PushPrefs.Values) {
-        let id = "moshpit.attention.\(conn)"
-        let center = UNUserNotificationCenter.current()
-        guard let content = PushRemoteNotification.summary(after: remaining, conn: conn, host: host,
-                                                           prefs: prefs) else {
-            center.removeDeliveredNotifications(withIdentifiers: [id])
-            PushDiagnostics.record("a finish left nothing waiting — withdrew the waiting card")
-            return
-        }
-        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-        PushDiagnostics.record("a finish left \(remaining.count) waiting — redrew the waiting card")
     }
 
     override func serviceExtensionTimeWillExpire() {
         // The hardest failure for this process to account for, because from the
         // outside it looks identical to a push that simply showed the fallback.
-        PushDiagnostics.record("ran out of time — delivered whatever was ready")
+        if let diagnostics = Self.paths()?.diagnostics {
+            _ = Self.call(["note": "ran out of time — delivered whatever was ready",
+                           "diagnostics": diagnostics.path])
+        }
         if let contentHandler, let bestAttempt {
             contentHandler(bestAttempt)
+        }
+    }
+
+    // MARK: - The call
+
+    static let appGroup = AppGroup.id
+
+    /// The files the call keeps: the pairings and the diagnostics ring at the
+    /// container's root, the standing set and the rung finishes in its
+    /// device-only folder (B785, out of backups; the closed turns go beside
+    /// the standing set). Nil with no container (an unsigned build).
+    static func paths() -> (pairings: URL, diagnostics: URL, standing: URL, finishes: URL)? {
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup),
+              let standing = DeviceLocalFiles.url("standing-attention.json", appGroup: appGroup),
+              let finishes = DeviceLocalFiles.url("rung-finishes.json", appGroup: appGroup)
+        else { return nil }
+        // The closed turns' folder is the standing set's: made ready the same way.
+        _ = DeviceLocalFiles.url("closed-turns.json", appGroup: appGroup)
+        return (container.appendingPathComponent("push-pairings.json"),
+                container.appendingPathComponent("push-diagnostics.json"),
+                standing, finishes)
+    }
+
+    /// One push through crates/seal: its answer (crates/seal-ffi's table), or
+    /// nil when the call can't be made (no container) — then the push is
+    /// shown as it came, with the user's sound switch kept.
+    static func receive(_ userInfo: [AnyHashable: Any], now: Date,
+                        defaults: UserDefaults? = UserDefaults(suiteName: appGroup)) -> [String: Any]? {
+        guard let paths = paths() else { return nil }
+        let info = userInfo.reduce(into: [String: Any]()) { out, pair in
+            if let key = pair.key as? String { out[key] = pair.value }
+        }
+        return call([
+            "userInfo": info,
+            "pairings": paths.pairings.path,
+            "diagnostics": paths.diagnostics.path,
+            "standing": paths.standing.path,
+            "finishes": paths.finishes.path,
+            "now": now.timeIntervalSince1970,
+            "sound": defaults?.object(forKey: "moshpit.push.sound") as? Bool ?? true,
+            "showDetail": defaults?.object(forKey: "moshpit.push.showDetail") as? Bool ?? true,
+            "language": AppLanguage.current(suiteName: appGroup),
+        ])
+    }
+
+    /// `request` through `moshpit_push_receive`, its JSON answer decoded.
+    static func call(_ request: [String: Any]) -> [String: Any]? {
+        guard JSONSerialization.isValidJSONObject(request),
+              let data = try? JSONSerialization.data(withJSONObject: request),
+              let text = String(data: data, encoding: .utf8),
+              let answer = text.withCString({ moshpit_push_receive($0) })
+        else { return nil }
+        defer { moshpit_push_free(answer) }
+        guard let object = try? JSONSerialization.jsonObject(with: Data(String(cString: answer).utf8)),
+              let dictionary = object as? [String: Any]
+        else { return nil }
+        return dictionary
+    }
+
+    // MARK: - The answer on screen
+
+    /// `answer` onto `content`: a card's words, sound, interruption and
+    /// routing keys; no category on a card or the fallback (Moshpit's
+    /// notifications carry no action buttons, and the fallback's would need
+    /// the pane the envelope hides). The user's sound switch holds on every
+    /// path, the one that couldn't call included.
+    static func apply(_ answer: [String: Any]?, to content: UNMutableNotificationContent) {
+        let soundAllowed = answer?["soundAllowed"] as? Bool ?? true
+        if !soundAllowed { content.sound = nil }
+        switch answer?["delivery"] as? String {
+        case "card":
+            guard let card = answer?["card"] as? [String: Any] else { return }
+            fill(content, with: card)
+        case "fallback":
+            content.categoryIdentifier = ""
+        default:
+            break
+        }
+    }
+
+    /// `card` (crates/seal-ffi's) into `content`, its keys added to what the
+    /// push carried.
+    static func fill(_ content: UNMutableNotificationContent, with card: [String: Any]) {
+        content.title = card["title"] as? String ?? content.title
+        content.body = card["body"] as? String ?? content.body
+        content.sound = card["sound"] as? Bool == true ? .default : nil
+        switch card["level"] as? String {
+        case "timeSensitive": content.interruptionLevel = .timeSensitive
+        case "active": content.interruptionLevel = .active
+        default: content.interruptionLevel = .passive
+        }
+        var info = content.userInfo
+        for (key, value) in card["userInfo"] as? [String: Any] ?? [:] { info[key] = value }
+        content.userInfo = info
+        content.categoryIdentifier = ""
+    }
+
+    /// The connection's waiting card after a finish left the set (B669):
+    /// replaced in place, silently, under the identifier it was posted with,
+    /// or withdrawn when nothing waits.
+    static func update(_ waiting: [String: Any], center: UNUserNotificationCenter = .current()) {
+        if let redraw = waiting["redraw"] as? [String: Any], let id = redraw["id"] as? String,
+           let card = redraw["card"] as? [String: Any] {
+            let content = UNMutableNotificationContent()
+            fill(content, with: card)
+            center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        } else if let withdraw = waiting["withdraw"] as? [String: Any], let id = withdraw["id"] as? String {
+            center.removeDeliveredNotifications(withIdentifiers: [id])
         }
     }
 }

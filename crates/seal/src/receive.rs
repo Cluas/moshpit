@@ -41,10 +41,21 @@ pub enum Delivery {
     Card(Card),
 }
 
+/// What becomes of the connection's waiting card after a finish took its
+/// pane out of the waiting set (B669): posted again in place, silently,
+/// under [`notification::ATTENTION_CARD`]`<conn>`, or withdrawn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Waiting {
+    Redraw { id: String, card: Card },
+    Withdraw { id: String },
+}
+
 /// The outcome of one push.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Received {
     pub delivery: Delivery,
+    /// The waiting card's update a finish calls for (B669); none otherwise.
+    pub waiting: Option<Waiting>,
     /// Whether the notification may keep a sound at all (the user's switch;
     /// a [`Card`] has made its own decision within it).
     pub sound_allowed: bool,
@@ -69,6 +80,7 @@ pub fn receive(
         diagnostics.push("no sealed envelope — delivered as received".to_owned());
         return Received {
             delivery: Delivery::AsReceived,
+            waiting: None,
             sound_allowed,
             diagnostics,
         };
@@ -85,6 +97,7 @@ pub fn receive(
                 delivery: Delivery::Fallback {
                     secrets_tried: pairings.len(),
                 },
+                waiting: None,
                 sound_allowed,
                 diagnostics,
             };
@@ -99,6 +112,7 @@ pub fn receive(
                 delivery: Delivery::Fallback {
                     secrets_tried: pairings.len(),
                 },
+                waiting: None,
                 sound_allowed,
                 diagnostics,
             };
@@ -112,6 +126,7 @@ pub fn receive(
                 delivery: Delivery::Fallback {
                     secrets_tried: pairings.len(),
                 },
+                waiting: None,
                 sound_allowed,
                 diagnostics,
             };
@@ -149,6 +164,7 @@ pub fn receive(
     } else {
         None
     };
+    let mut waiting = None;
     let card = if status.agent.as_deref() == Some(notification::SELF_TEST_AGENT) {
         // A pairing self-test is no agent's turn (B439): it neither joins
         // nor leaves the waiting set, and rings no finish. Its "done" used
@@ -174,11 +190,13 @@ pub fn receive(
     } else if status.state == "attention" {
         let edge = standing.note_standing(
             &status.conn,
+            // With its place, as the card says it: the app redraws this
+            // card from the entry when the set changes, and has only this.
             Entry {
                 pane: status.pane.clone(),
                 agent: status.agent.clone(),
                 title: status.title.clone(),
-                location: None,
+                location: Some(notification::location(&status, label.as_deref())),
                 since: status.ts,
                 recorded_at: now,
                 lifetime: Some(LIFETIME_SECONDS),
@@ -204,7 +222,29 @@ pub fn receive(
         {
             diagnostics.push("turn endings busy — this ending isn't remembered".to_owned());
         }
-        standing.clear_ended(&status.conn, &status.pane, status.ts, now);
+        let was_waiting = standing
+            .standing(&status.conn, now)
+            .iter()
+            .any(|entry| entry.pane == status.pane && entry.since <= status.ts);
+        let remaining = standing.clear_ended(&status.conn, &status.pane, status.ts, now);
+        // Its waiting card says what still waits, or goes (B669).
+        if was_waiting {
+            let id = format!("{}{}", notification::ATTENTION_CARD, status.conn);
+            let host = label.as_deref().unwrap_or(&status.host);
+            waiting = Some(match notification::summary(&remaining, &status.conn, host, prefs, language) {
+                Some(card) => {
+                    diagnostics.push(format!(
+                        "a finish left {} waiting — redrew the waiting card",
+                        remaining.len()
+                    ));
+                    Waiting::Redraw { id, card }
+                }
+                None => {
+                    diagnostics.push("a finish left nothing waiting — withdrew the waiting card".to_owned());
+                    Waiting::Withdraw { id }
+                }
+            });
+        }
         // A long turn's finish rings once between this card and the app's
         // local copy of it: whichever lands first.
         let done_rings = status.state != "done"
@@ -214,6 +254,7 @@ pub fn receive(
     };
     Received {
         delivery: Delivery::Card(card),
+        waiting,
         sound_allowed,
         diagnostics,
     }
@@ -295,11 +336,16 @@ mod tests {
 
     /// [`payload`] for a status sent at `ts` (the host's clock).
     fn payload_at(state: &str, ts: i64) -> Value {
+        payload_in("%3", state, ts)
+    }
+
+    /// [`payload_at`] for `pane`.
+    fn payload_in(pane: &str, state: &str, ts: i64) -> Value {
         let status = Status {
             conn: CONN.into(),
             host: "m1-pro".into(),
             sess: Some("work".into()),
-            pane: "%3".into(),
+            pane: pane.into(),
             agent: Some("claude".into()),
             state: state.into(),
             title: Some("Bash: ls".into()),
@@ -413,6 +459,45 @@ mod tests {
             vec!["%3".to_owned()],
             "an old done cleared the question asked after it"
         );
+    }
+
+    /// E7b: the notification service's Swift twin recorded a question's
+    /// place with its standing entry (the app redraws the waiting card from
+    /// it); this one recorded none, and a card redrawn after another pane
+    /// left the wait said the host alone.
+    #[test]
+    fn a_standing_question_keeps_its_place() {
+        let dir = TempDir::new("nse-place");
+        deliver(&payload_at("attention", 1_790_000_500), &[pairing(SECRET, "Mac")], &dir);
+        let entries = PushStandingFile::new(dir.path(PushStandingFile::FILE_NAME)).standing(CONN, Date::now());
+        assert_eq!(entries[0].location.as_deref(), Some("Mac · work"), "{entries:?}");
+    }
+
+    /// B669 (the Swift service's, now this one's): a pushed `done` took
+    /// its pane out of the waiting set but left the connection's waiting
+    /// card as it was. The answer says to redraw it from what still waits
+    /// — the newest question, the count, silent — or to withdraw it.
+    #[test]
+    fn a_finish_redraws_the_waiting_card_or_withdraws_it() {
+        let dir = TempDir::new("nse-waiting");
+        let pairings = [pairing(SECRET, "Mac")];
+        deliver(&payload_in("%3", "attention", 1_790_000_500), &pairings, &dir);
+        deliver(&payload_in("%5", "attention", 1_790_000_510), &pairings, &dir);
+        let id = format!("moshpit.attention.{CONN}");
+        let first = deliver(&payload_in("%5", "done", 1_790_000_600), &pairings, &dir);
+        let Some(Waiting::Redraw { id: redraw_id, card }) = first.waiting else {
+            panic!("no redraw: {:?}", first.waiting)
+        };
+        assert_eq!(redraw_id, id);
+        assert_eq!(card.pane_id, "%3", "the one still waiting");
+        assert_eq!(card.title, "claude needs you");
+        assert!(!card.sound && card.level == InterruptionLevel::Passive, "a redraw rings nothing");
+        assert!(first.diagnostics.iter().any(|l| l == "a finish left 1 waiting — redrew the waiting card"));
+        let last = deliver(&payload_in("%3", "done", 1_790_000_700), &pairings, &dir);
+        assert_eq!(last.waiting, Some(Waiting::Withdraw { id }));
+        // A finish for a pane that wasn't waiting leaves the card alone.
+        let other = deliver(&payload_in("%9", "done", 1_790_000_800), &pairings, &dir);
+        assert_eq!(other.waiting, None);
     }
 
     fn deliver(payload: &Value, pairings: &[PushPairing], dir: &TempDir) -> Received {

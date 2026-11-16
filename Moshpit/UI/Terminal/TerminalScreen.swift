@@ -393,8 +393,8 @@ struct TerminalScreen: View {
                       cursorBlink: settings.cursorBlink)
     }
 
-    /// Push theme + font + cursor into the tmux controller. The single-pane
-    /// path picks these up directly through CoreTerminalHost's bindings.
+    /// Push theme + font + cursor into the tmux controller. The plain path
+    /// takes them through the NSH stage (``TerminalNSHStage/apply(appearance:)``).
     private func applyAppearance() {
         active?.tmuxController?.configureAppearance(
             theme: theme, fontSize: settings.fontSize, fontName: settings.fontName,
@@ -662,25 +662,6 @@ struct TerminalScreen: View {
 
     var body: some View {
         contentWithLifecycle
-        .terminalDirector(keyboard: { keyboardIntent = $0 ? .up : .down }, present: { what in
-            switch what {
-            case "windows": presentSheet { showWindowsSheet = true }
-            case "sessions": presentSheet { showSessionsSheet = true }
-            case "panes": presentSheet { showPaneSheet = true }
-            case "switch": showProtocolSwitchConfirm = true
-            case "diagnostics": showMoshDiagnostics = true
-            case "install": installPackages = active?.herdrControl != nil ? ["herdr"] : ["tmux"]
-            case "folder": active?.openWorkingDirectory()
-            default:
-                installPackages = nil
-                if remoteFolder != nil { remoteFolder = nil }
-                showWindowsSheet = false
-                showSessionsSheet = false
-                showPaneSheet = false
-                showProtocolSwitchConfirm = false
-                showMoshDiagnostics = false
-            }
-        })
         // The shell is keyboard-like chrome — 30pt chips, one-line crumbs, a
         // fixed-height bar — and, like the system keyboard, it does not grow
         // with the reading size. Text still scales one step; the terminal's

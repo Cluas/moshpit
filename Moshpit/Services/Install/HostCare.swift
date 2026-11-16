@@ -18,7 +18,7 @@ import MoshpitKit
 ///  * the device token and the notification permission
 ///    (``PushRegistration``);
 ///  * the App Group's pairings file the notification service reads
-///    (``PushPairingStore``, with its protection class).
+///    (``RustPushPairings``, with its protection class).
 ///
 /// The app tells it what it reads — the settings and the saved connections
 /// — before every ask, and whenever the saved connections change.
@@ -383,22 +383,22 @@ private final class HostCareOnIOS: HostCarePlatform, @unchecked Sendable {
     }
 }
 
-/// The App Group's pairings file, as the core reaches it: through
-/// ``PushPairingStore`` (its rules, its protection, the Rust store when its
-/// switch is on).
+/// The App Group's pairings file, as the core reaches it: through the Rust
+/// store (``RustPushPairings``, its rules and its protection). Nothing with
+/// no container (an unsigned build).
 private final class AppGroupPairings: PairingsFile, @unchecked Sendable {
     func read() -> [PairingRecord] {
-        PushPairingStore.read().map(PairingRecord.init)
+        RustPushPairings.shared?.read() ?? []
     }
 
     func upsert(pairing: PairingRecord) -> Bool {
-        guard let pairing = PushPairing(pairing) else { return false }
-        return PushPairingStore.upsert(pairing)
+        guard UUID(uuidString: pairing.connectionId) != nil else { return false }
+        return RustPushPairings.shared?.upsert(pairing) ?? false
     }
 
     func remove(connectionId: String) -> Bool {
-        guard let id = UUID(uuidString: connectionId) else { return true }
-        return PushPairingStore.remove(connectionId: id)
+        guard UUID(uuidString: connectionId) != nil else { return true }
+        return RustPushPairings.shared?.remove(connectionId: connectionId) ?? true
     }
 }
 

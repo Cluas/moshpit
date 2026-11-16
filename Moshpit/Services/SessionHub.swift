@@ -310,18 +310,6 @@ final class SessionHub {
         /// concurrent keepalive / death callback doesn't fight it by reconnecting.
         @ObservationIgnored var isStopping = false
 
-        /// The session/window/pane the user was viewing, captured before a
-        /// teardown so a reconnect lands back there instead of on tmux's
-        /// most-recently-active (the "doesn't return to my pane" bug, worst with
-        /// multiple sessions). Replayed via the new controller's pendingRestore.
-        /// Persisted PER CONNECTION (not on this object): a protocol switch or
-        /// app relaunch destroys the ActiveSession, and the memory must survive
-        /// that teardown to be of any use on the next connect.
-        private var lastSelection: TmuxSelection? {
-            get { TmuxSelectionStore.load(connection.id) }
-            set { TmuxSelectionStore.save(newValue, for: connection.id) }
-        }
-
         /// Called on the main actor with (srttMs, roaming) from the mosh
         /// transport so the hub can mirror it into `SessionMetrics`.
         @ObservationIgnored var metricsSink: ((Double, Bool) -> Void)?
@@ -481,16 +469,6 @@ final class SessionHub {
         /// queues it (mosh type-ahead).
         func sendPaste(_ text: String) {
             rust?.sendPaste(text)
-        }
-
-        /// The bytes a paste goes out as when no tmux controller encodes it:
-        /// mosh and plain SSH go by the local emulator, with any marker in
-        /// the text taken out (``BracketedPaste/payload(_:bracketed:)``):
-        /// wrapped as it was, a pasted `ESC[201~` ended the paste and the
-        /// line after it ran.
-        private func pastePayload(_ text: String) -> Data {
-            let bracketed = activeTerminal?.modes.bracketedPaste == true
-            return BracketedPaste.payload(text, bracketed: bracketed)
         }
 
         /// Single entry point for user input (keyboard, shortcut bar, paste).

@@ -166,6 +166,40 @@ pub struct FormState {
     /// ([`duplicate`], B532).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub others: Vec<Other>,
+    /// The connection edited names a password or pasted key of its own
+    /// that isn't on this device (B782): its field says so and takes the
+    /// keyboard. Nothing is kept then (`secrets`' stored flags are off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<Missing>,
+}
+
+/// The secret a connection names that this device doesn't hold (B782): a
+/// phone restored from a backup, or set up from another, has every
+/// connection and none of their keychain items, which never leave the
+/// device that saved them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Missing {
+    /// The connection's name as saved (`user@host` with none).
+    pub name: String,
+    /// Its password, or the key pasted into it.
+    pub secret: Auth,
+}
+
+impl Missing {
+    /// What the field it is missing from says under it.
+    pub fn words(&self) -> String {
+        match self.secret {
+            Auth::Password => t!(
+                "The password for %@ isn't on this iPhone. Enter it again.",
+                arg1 = self.name
+            ),
+            Auth::Key => t!(
+                "The private key for %@ isn't on this iPhone. Paste it again.",
+                arg1 = self.name
+            ),
+        }
+    }
 }
 
 /// Another saved connection, as the form compares itself with it (B532).
@@ -1186,7 +1220,7 @@ fn password(draft: &Draft) -> AnyElement {
     let state = draft.state;
     let secrets = move || state.with(|s| s.as_ref().map(|s| s.secrets).unwrap_or_default());
     let filled = draft.secret_filled(|s| &mut s.password);
-    secret_field(
+    let mut field = secret_field(
         t!("Password"),
         "moshpit/connection-password",
         "connection-form-password",
@@ -1196,8 +1230,18 @@ fn password(draft: &Draft) -> AnyElement {
         SecretShown::of(s.password, s.stored_password)
     })
     .on_filled(filled)
-    .test_id("connection-form-password-field")
-    .into_element()
+    .test_id("connection-form-password-field");
+    // Not on this iPhone (B782): it says whose, and takes the keyboard.
+    if let Some(missing) = missing(draft, Auth::Password) {
+        field = field.description(missing.words()).auto_focus();
+    }
+    field.into_element()
+}
+
+/// The secret of `kind` the connection edited names and this device
+/// doesn't hold, if that is what is missing (B782).
+fn missing(draft: &Draft, kind: Auth) -> Option<Missing> {
+    draft.read(|s| s.missing.clone().filter(|m| m.secret == kind))
 }
 
 /// The key row (always: the way into the key picker's generate and import)
@@ -1238,6 +1282,36 @@ fn key_rows(draft: Draft) -> AnyElement {
 /// `fontSize`, `textColor`, `tint`.
 fn pem_editor(draft: &Draft) -> AnyElement {
     let filled = Rc::new(draft.secret_filled(|s| &mut s.pem));
+    // Not on this iPhone (B782): it says whose under the editor, which
+    // takes the keyboard.
+    let missing = missing(draft, Auth::Key);
+    let mut editor = native("moshpit/connection-pem")
+        .w_full()
+        .min_h(px(84.0))
+        .prop("identifier", json!("private-key-editor"))
+        .prop("label", json!(t!("Private Key (PEM)")))
+        .prop("fontSize", move || json!(face::scaled(11.0, font_scale())))
+        .prop("textColor", move || hex("foreground"))
+        .prop("tint", move || hex("primary"))
+        .on_native_event(move |event: &NativeEvent| {
+            if &*event.name == "filled"
+                && let Some(full) = event.data.as_bool()
+            {
+                filled(full);
+            }
+        });
+    if let Some(missing) = &missing {
+        editor = editor
+            .accessibility_description(missing.words())
+            .prop("autoFocus", json!(true));
+    }
+    let note = missing.map(|missing| {
+        TextToken::Footnote
+            .apply(text(missing.words()))
+            .text_color(move || token("muted-foreground"))
+            .accessibility_elements_hidden(true)
+            .test_id("connection-form-pem-missing")
+    });
     view()
         .w_full()
         .px(px(16.0))
@@ -1258,24 +1332,9 @@ fn pem_editor(draft: &Draft) -> AnyElement {
                 .border_curve(BorderCurve::Continuous)
                 .border(px(1.0))
                 .border_color(move || token("border"))
-                .child(
-                    native("moshpit/connection-pem")
-                        .w_full()
-                        .min_h(px(84.0))
-                        .prop("identifier", json!("private-key-editor"))
-                        .prop("label", json!(t!("Private Key (PEM)")))
-                        .prop("fontSize", move || json!(face::scaled(11.0, font_scale())))
-                        .prop("textColor", move || hex("foreground"))
-                        .prop("tint", move || hex("primary"))
-                        .on_native_event(move |event: &NativeEvent| {
-                            if &*event.name == "filled"
-                                && let Some(full) = event.data.as_bool()
-                            {
-                                filled(full);
-                            }
-                        }),
-                ),
+                .child(editor),
         )
+        .children(note)
         .into_element()
 }
 

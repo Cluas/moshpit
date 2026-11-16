@@ -189,8 +189,10 @@ struct AgentsScriptTests {
             .appendingPathComponent("agents-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let standing = PushStandingFile(url: directory.appendingPathComponent("standing-attention.json"))
-        let finishes = PushFinishesFile(url: directory.appendingPathComponent("rung-finishes.json"))
+        let standingURL = directory.appendingPathComponent("standing-attention.json")
+        let finishesURL = directory.appendingPathComponent("rung-finishes.json")
+        // What a push records, written as the notification service writes it.
+        let pushed = PushFilesHandle(standingPath: standingURL.path, finishesPath: finishesURL.path)
         let suite = "test.agents.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { UserDefaults().removePersistentDomain(forName: suite) }
@@ -210,9 +212,9 @@ struct AgentsScriptTests {
             withdraw: { recorder.lines.append("withdraw \($0.replacingOccurrences(of: Self.conn, with: "C"))") },
             requestAuthorization: { recorder.lines.append("auth") })
         let monitor = AgentActivityMonitor(
-            settings: settings, standing: standing,
+            settings: settings, standing: standingURL,
             writeWidget: { recorder.lines.append("widget " + Self.compact($0)) },
-            island: recorder, finishes: finishes, notifier: notifier,
+            island: recorder, finishes: finishesURL, notifier: notifier,
             clock: { clock.now },
             // A scratch suite and an unlocked phone, whatever the test host
             // says: the widget's snapshot waits for that (B603).
@@ -261,12 +263,13 @@ struct AgentsScriptTests {
                 AgentControlBridge.shared.visiblePane = { PaneOnScreen.of(session, foreground: true) }
                 monitor.sweep()
             case "push":
-                _ = standing.noteStanding(conn: Self.conn, entry: .init(
+                _ = pushed.noteStanding(conn: Self.conn, entry: StandingEntryValue(
                     pane: event.pane ?? "", agent: "claude", title: "Bash: npm test",
-                    since: Int(Self.t0 + (event.ts ?? 0)), recordedAt: clock.now), now: clock.now)
+                    since: Int64(Self.t0 + (event.ts ?? 0))), now: clock.now.timeIntervalSince1970)
             case "pushDone":
-                _ = finishes.noteRing(conn: Self.conn, pane: event.pane ?? "",
-                                      endedAt: Int(Self.t0 + (event.ts ?? 0)), now: clock.now)
+                _ = pushed.noteRing(conn: Self.conn, pane: event.pane ?? "",
+                                    endedAt: Int64(Self.t0 + (event.ts ?? 0)),
+                                    now: clock.now.timeIntervalSince1970)
             case "cycle":
                 monitor.cycleHeadline()
             default:
@@ -276,7 +279,7 @@ struct AgentsScriptTests {
         // What the record and the set hold at the end.
         let end = Date(timeIntervalSince1970: Self.t0 + lastT)
         var lines = recorder.lines
-        let waiting = standing.standing(conn: Self.conn, now: end)
+        let waiting = pushed.standing(conn: Self.conn, now: end.timeIntervalSince1970)
             .map { "\($0.pane)@\(Self.number(Double($0.since) - Self.t0))" }.sorted()
         lines.append("standing " + waiting.joined(separator: ","))
         let record = defaults.dictionary(forKey: "island.announcedEpisodes") as? [String: Double] ?? [:]

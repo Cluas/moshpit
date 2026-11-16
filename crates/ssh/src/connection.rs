@@ -20,7 +20,7 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 use crate::auth::{self, Auth, PlatformSignError, PlatformSigner};
 use crate::channel::{Output, Process, PtyRequest};
 use crate::dial;
-use crate::error::SshError;
+use crate::error::{SshError, TunnelRefusal};
 use crate::host_key::{HostKey, HostKeyPolicy, HostKeyRefusal};
 use crate::questions::{SignInQuestion, SignInQuestions, reads_as_password};
 use crate::sftp::Sftp;
@@ -71,8 +71,12 @@ pub struct Ssh {
 struct Inner {
     handle: client::Handle<ClientHandler>,
     target: Target,
-    /// The address the TCP leg reached; `None` through a proxy.
+    /// The address the TCP leg reached; `None` through a proxy or a jump
+    /// host.
     peer: Option<SocketAddr>,
+    /// The jump host's connection this one runs through
+    /// ([`Ssh::connect_through`]), held while this one is.
+    jump: Option<Jump>,
     host_key: HostKey,
     end: watch::Receiver<Option<ConnectionEnd>>,
     closing: Arc<AtomicBool>,
@@ -117,10 +121,58 @@ impl Ssh {
         questions: Option<Arc<dyn SignInQuestions>>,
         options: &ConnectOptions,
     ) -> Result<Ssh, SshError> {
-        let stream = dial::dial(&target.host, target.port, options).await?;
-        let peer_of = |stream: &TcpStream| match options.proxy {
-            None => stream.peer_addr().ok(),
-            Some(_) => None,
+        Self::connect_over(None, target, auth, policy, questions, options).await
+    }
+
+    /// [`Ssh::connect_asking`] to a host reached through `jump`, a
+    /// connection to another host (`ssh -J`): the SSH session runs in a
+    /// `direct-tcpip` channel of `jump`'s, so `target`'s name is the jump
+    /// host's to resolve, and `options.proxy` doesn't apply (the jump's
+    /// own connection went through its proxy, if it has one). Each host's
+    /// key is checked as its own, under its own name and port.
+    ///
+    /// The connection holds `jump` from here ([`Jump`]): `jump` closes
+    /// when nothing holds it any more — this connection closed or dropped,
+    /// a dial through it failed or given up — and `jump` ending ends this
+    /// one at once, saying so in its [`ConnectionEnd`]. This one ending
+    /// on its own leaves `jump` up for a redial through it
+    /// ([`Ssh::jump`]): a jump host asking a one-time code doesn't ask
+    /// again when only the host behind it restarted.
+    pub async fn connect_through(
+        jump: Jump,
+        target: &Target,
+        auth: Auth,
+        policy: Arc<dyn HostKeyPolicy>,
+        questions: Option<Arc<dyn SignInQuestions>>,
+        options: &ConnectOptions,
+    ) -> Result<Ssh, SshError> {
+        Self::connect_over(Some(jump), target, auth, policy, questions, options).await
+    }
+
+    async fn connect_over(
+        jump: Option<Jump>,
+        target: &Target,
+        auth: Auth,
+        policy: Arc<dyn HostKeyPolicy>,
+        questions: Option<Arc<dyn SignInQuestions>>,
+        options: &ConnectOptions,
+    ) -> Result<Ssh, SshError> {
+        let wire = || async {
+            match &jump {
+                None => dial::dial(&target.host, target.port, options)
+                    .await
+                    .map(Wire::Tcp),
+                Some(jump) => jump
+                    .ssh()
+                    .tunnel(&target.host, target.port, options.connect_timeout)
+                    .await
+                    .map(|stream| Wire::Tunnel(Box::pin(stream))),
+            }
+        };
+        let stream = wire().await?;
+        let peer_of = |stream: &Wire| match (stream, &options.proxy) {
+            (Wire::Tcp(stream), None) => stream.peer_addr().ok(),
+            _ => None,
         };
         let peer = peer_of(&stream);
 
@@ -173,7 +225,7 @@ impl Ssh {
                         theirs,
                         ..
                     } if theirs.iter().any(|name| name == OLDER_HOST_KEY.as_str()) => {
-                        let stream = dial::dial(&target.host, target.port, options).await?;
+                        let stream = wire().await?;
                         let peer = peer_of(&stream);
                         let (again, ended) = handler(Some(OLDER_HOST_KEY.as_str()));
                         let handle = client::connect_stream(
@@ -212,11 +264,25 @@ impl Ssh {
             .ok_or_else(|| SshError::Closed {
                 host: target.host.clone(),
             })?;
+        if let Some(jump) = &jump {
+            // The jump host's link gone, this one is cut at once: a stalled
+            // jump would otherwise leave it waiting on a tunnel that never
+            // speaks again. (The watch holds the connection, not a hold on
+            // it: it doesn't keep the jump up.)
+            let (jump, kill, mut ended) = (jump.ssh().clone(), kill.clone(), end_rx.clone());
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = jump.ended() => kill.cancel(),
+                    _ = ended.wait_for(Option::is_some) => {}
+                }
+            });
+        }
         Ok(Ssh {
             inner: Arc::new(Inner {
                 handle,
                 target: target.clone(),
                 peer,
+                jump,
                 host_key,
                 end: end_rx,
                 closing,
@@ -418,8 +484,22 @@ impl Ssh {
     }
 
     /// Closes the connection: a goodbye to the server, then the socket.
-    /// Open channels end as [`crate::Event::Lost`].
+    /// Open channels end as [`crate::Event::Lost`]. The jump host's
+    /// connection it came through goes too, when this was the last to hold
+    /// it ([`Jump`]).
     pub async fn close(&self) {
+        self.close_alone().await;
+        // The last to hold the jump host's connection says goodbye on it
+        // too (dropped, it would only be cut). A jump host is one hop: it
+        // has none of its own.
+        if let Some(jump) = &self.inner.jump
+            && Arc::strong_count(&jump.0) == 1
+        {
+            jump.ssh().close_alone().await;
+        }
+    }
+
+    async fn close_alone(&self) {
         self.inner.closing.store(true, Ordering::SeqCst);
         let mut end = self.inner.end.clone();
         // A dead link can't carry the goodbye (and a session stuck on a
@@ -468,16 +548,91 @@ impl Ssh {
 
     /// How the connection ended, once it has.
     pub fn end(&self) -> Option<ConnectionEnd> {
-        self.inner.end.borrow().clone()
+        let end = self.inner.end.borrow().clone();
+        end.map(|end| self.through_jump(end))
     }
 
     /// Waits until the connection ends and says how.
     pub async fn ended(&self) -> ConnectionEnd {
         let mut end = self.inner.end.clone();
-        match end.wait_for(Option::is_some).await {
+        let end = match end.wait_for(Option::is_some).await {
             Ok(end) => end.clone().unwrap_or_else(lost_silently),
             Err(_) => lost_silently(),
+        };
+        self.through_jump(end)
+    }
+
+    /// The jump host's connection this one runs through, if it does: a
+    /// clone holds it up for a redial through it.
+    pub fn jump(&self) -> Option<&Jump> {
+        self.inner.jump.as_ref()
+    }
+
+    /// `end`, lost because the jump host's link went: said as that, the one
+    /// reason, rather than as this connection's broken tunnel.
+    fn through_jump(&self, end: ConnectionEnd) -> ConnectionEnd {
+        let Some(jump) = &self.inner.jump else {
+            return end;
+        };
+        let jump = jump.ssh();
+        if !end.is_lost() || !jump.is_closed() {
+            return end;
         }
+        let why = match jump.end() {
+            Some(ConnectionEnd::Lost { error }) => error,
+            Some(ConnectionEnd::ServerDisconnected { reason, message }) => {
+                format!("it disconnected ({reason}: {message})")
+            }
+            Some(ConnectionEnd::ClosedByUs) | None => "it closed".to_owned(),
+        };
+        let target = jump.target();
+        ConnectionEnd::Lost {
+            error: format!(
+                "the connection to the jump host {}:{} ended: {why}",
+                target.host, target.port
+            ),
+        }
+    }
+
+    /// A TCP connection from this host to `host:port` (`direct-tcpip`,
+    /// what `ssh -J` asks of a jump host), as a stream, within `timeout`.
+    pub(crate) async fn tunnel(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<russh::ChannelStream<client::Msg>, SshError> {
+        let opened = tokio::time::timeout(
+            timeout,
+            self.inner
+                .handle
+                .channel_open_direct_tcpip(host, port.into(), "127.0.0.1", 0),
+        )
+        .await
+        .map_err(|_| SshError::ConnectTimeout {
+            host: host.to_owned(),
+            port,
+            timeout,
+        })?;
+        let channel = opened.map_err(|e| match e {
+            russh::Error::ChannelOpenFailure(why) => SshError::Tunnel {
+                via: self.host(),
+                host: host.to_owned(),
+                port,
+                reason: match why {
+                    russh::ChannelOpenFailure::AdministrativelyProhibited => {
+                        TunnelRefusal::Prohibited
+                    }
+                    russh::ChannelOpenFailure::ConnectFailed => TunnelRefusal::ConnectFailed,
+                    other => TunnelRefusal::Other(format!("{other:?}")),
+                },
+            },
+            russh::Error::SendError | russh::Error::Disconnect => {
+                SshError::Closed { host: self.host() }
+            }
+            e => SshError::Protocol(e),
+        })?;
+        Ok(channel.into_stream())
     }
 
     pub(crate) fn host(&self) -> String {
@@ -1051,6 +1206,89 @@ impl client::Handler for ClientHandler {
         log::debug!("{}:{}: connection ended: {end:?}", self.host, self.port);
         self.end.send_replace(Some(end));
         Ok(())
+    }
+}
+
+/// A jump host's connection as the connections through it hold it
+/// ([`Ssh::connect_through`]): up while anything holds it, cut when the
+/// last hold goes. Cheap to clone; each clone is a hold.
+#[derive(Clone)]
+pub struct Jump(Arc<JumpHold>);
+
+struct JumpHold(Ssh);
+
+impl Drop for JumpHold {
+    fn drop(&mut self) {
+        self.0.inner.kill.cancel();
+    }
+}
+
+impl Jump {
+    /// Holds `ssh` for connections through it. Nothing else should close
+    /// it: it closes when the last hold goes.
+    pub fn new(ssh: Ssh) -> Self {
+        Self(Arc::new(JumpHold(ssh)))
+    }
+
+    pub fn ssh(&self) -> &Ssh {
+        &self.0.0
+    }
+
+    /// Still up: a dial through it signs in to the jump host no more.
+    pub fn is_alive(&self) -> bool {
+        !self.0.0.is_closed()
+    }
+}
+
+impl From<Ssh> for Jump {
+    fn from(ssh: Ssh) -> Self {
+        Self::new(ssh)
+    }
+}
+
+/// What an SSH session runs over: a socket, or a jump host's tunnel.
+enum Wire {
+    Tcp(TcpStream),
+    Tunnel(Pin<Box<russh::ChannelStream<client::Msg>>>),
+}
+
+impl AsyncRead for Wire {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Wire::Tcp(s) => Pin::new(s).poll_read(cx, buf),
+            Wire::Tunnel(s) => s.as_mut().poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for Wire {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            Wire::Tcp(s) => Pin::new(s).poll_write(cx, buf),
+            Wire::Tunnel(s) => s.as_mut().poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Wire::Tcp(s) => Pin::new(s).poll_flush(cx),
+            Wire::Tunnel(s) => s.as_mut().poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Wire::Tcp(s) => Pin::new(s).poll_shutdown(cx),
+            Wire::Tunnel(s) => s.as_mut().poll_shutdown(cx),
+        }
     }
 }
 

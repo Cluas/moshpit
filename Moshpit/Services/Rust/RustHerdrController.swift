@@ -40,10 +40,6 @@ final class RustHerdrController: MultiplexerControlling {
     /// the Home card names it instead of "No workspaces yet". nil while
     /// healthy.
     private(set) var protocolMismatch: String?
-    /// Which `herdr` the core's commands run and which server is up, kept
-    /// only while the two disagree: the Home row drops its restart button
-    /// when restarting would downgrade.
-    private(set) var versionSkew: HerdrVersionReport?
     /// A restart is under way: the Home row's spinner.
     private(set) var isRestartingServer = false
     /// The push channel carries herdr's events (the poll is a safety net).
@@ -107,16 +103,12 @@ final class RustHerdrController: MultiplexerControlling {
                 since: hook.since.map { Date(timeIntervalSince1970: $0) },
                 command: hook.command, title: hook.title)
         }
-        let skew = model.skewClient.flatMap { client in
-            model.skewServer.map { HerdrVersionReport(client: client, server: $0) }
-        }
         if snapshot != next { snapshot = next }
         if agentHooks != hooks { agentHooks = hooks }
         if agentHooksLoaded != model.agentHooksLoaded { agentHooksLoaded = model.agentHooksLoaded }
         if isRefreshing != model.refreshing { isRefreshing = model.refreshing }
         if serverNotRunning != model.serverNotRunning { serverNotRunning = model.serverNotRunning }
         if protocolMismatch != model.protocolMismatch { protocolMismatch = model.protocolMismatch }
-        if versionSkew != skew { versionSkew = skew }
         if isRestartingServer != model.restarting { isRestartingServer = model.restarting }
         if pushActive != model.pushActive { pushActive = model.pushActive }
         paneCwds = model.paneCwds

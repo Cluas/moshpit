@@ -1,5 +1,5 @@
-//! Settings › Voice Input › Language
-//! (`Moshpit/UI/Settings/VoiceLanguageView.swift`) in NSH: the language
+//! Settings › Voice Input › Language in NSH (its iOS host:
+//! `Moshpit/UI/Settings/VoiceLanguageNSHPage.swift`): the language
 //! dictation listens for. Which list it shows depends on the engine in use:
 //! Apple's engines offer the languages this device can transcribe, one per
 //! session, and Automatic; Whisper offers its own hundred or so, the user's

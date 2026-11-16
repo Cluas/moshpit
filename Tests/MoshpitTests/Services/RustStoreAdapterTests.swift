@@ -166,7 +166,7 @@ struct RustStoreAdapterTests {
         #expect(connections.isAuthoritative)
         #expect(ConnectionStore(defaults: suite.defaults).connections.map(\.id) == [Self.ids[3]])
         #expect(suite.defaults.bool(forKey: DefaultsReadiness.sentinelKey))
-        #expect(mirror.defaults.object(forKey: PushPrefs.detailKey) as? Bool == true)
+        #expect(mirror.defaults.object(forKey: "moshpit.push.showDetail") as? Bool == true)
     }
 
     @Test("a locked launch over data the file still holds changes none of it")
@@ -208,33 +208,44 @@ struct RustStoreAdapterTests {
 
     // MARK: - Pairings
 
-    @Test("push pairings: the notification service reads the store's file, and the store reads 1.0.8's")
+    @Test("push pairings: the store keeps them, and reads the file 1.0.8 wrote")
     func pairings() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("w5b-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
         let ours = dir.appendingPathComponent("rust/push-pairings.json")
         let theirs = dir.appendingPathComponent("108/push-pairings.json")
         let rust = RustPushPairings(url: ours)
-        var one = PushPairing(connectionId: Self.ids[0], hostLabel: "pi · 研", secretHex: String(repeating: "ab", count: 32),
-                              sendToken: "", relayURL: "https://relay.example.com",
-                              createdAt: Date(timeIntervalSinceReferenceDate: 784_000_000.25))
-        let two = PushPairing(connectionId: Self.ids[1], hostLabel: "nas", secretHex: String(repeating: "cd", count: 32),
-                              sendToken: "t", relayURL: "https://relay.example.com", createdAt: Date(timeIntervalSinceReferenceDate: 1),
-                              apnsToken: "ABC", apnsEnv: "sandbox", sendTokenIssuedAt: Date(timeIntervalSinceReferenceDate: 2))
+        var one = PairingRecord(connectionId: Self.ids[0].uuidString, hostLabel: "pi · 研",
+                                secretHex: String(repeating: "ab", count: 32), sendToken: "",
+                                relayUrl: "https://relay.example.com", createdAt: 784_000_000.25,
+                                apnsToken: nil, apnsEnv: nil, sendTokenIssuedAt: nil)
+        let two = PairingRecord(connectionId: Self.ids[1].uuidString, hostLabel: "nas",
+                                secretHex: String(repeating: "cd", count: 32), sendToken: "t",
+                                relayUrl: "https://relay.example.com", createdAt: 1,
+                                apnsToken: "ABC", apnsEnv: "sandbox", sendTokenIssuedAt: 2)
         #expect(rust.upsert(one))
         #expect(rust.upsert(two))
-        #expect(rust.remove(connectionId: Self.ids[5]), "nothing to forget")
+        #expect(rust.remove(connectionId: Self.ids[5].uuidString), "nothing to forget")
         one.sendToken = "minted"
         #expect(rust.upsert(one))
-        #expect(PushPairingFile(url: ours).read() == rust.read())
-        #expect(rust.remove(connectionId: Self.ids[1]))
-        #expect(PushPairingFile(url: ours).read().map(\.connectionId) == [Self.ids[0]])
+        #expect(RustPushPairings(url: ours).read().count == 2)
+        #expect(rust.remove(connectionId: Self.ids[1].uuidString))
+        #expect(RustPushPairings(url: ours).read().map(\.connectionId) == [Self.ids[0].uuidString])
 
-        // A file as every Swift build up to this one wrote it: Foundation's
-        // encoder, one array.
+        // A file as every Swift build up to 1.0.8 wrote it: Foundation's
+        // encoder, one array, dates as seconds since 2001, an absent
+        // optional left out (the notification service reads it through
+        // crates/seal now, E7b).
         try FileManager.default.createDirectory(at: theirs.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try JSONEncoder().encode([one, two]).write(to: theirs)
+        let written = """
+            [{"connectionId":"\(Self.ids[0].uuidString)","hostLabel":"pi · 研","secretHex":"\(String(repeating: "ab", count: 32))",\
+            "sendToken":"minted","relayURL":"https://relay.example.com","createdAt":784000000.25},\
+            {"connectionId":"\(Self.ids[1].uuidString)","hostLabel":"nas","secretHex":"\(String(repeating: "cd", count: 32))",\
+            "sendToken":"t","relayURL":"https://relay.example.com","createdAt":1,"apnsToken":"ABC",\
+            "apnsEnv":"sandbox","sendTokenIssuedAt":2}]
+            """
+        try Data(written.utf8).write(to: theirs)
         #expect(RustPushPairings(url: theirs).read() == [one, two])
 
         let excluded = try ours.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup

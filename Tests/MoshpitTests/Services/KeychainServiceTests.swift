@@ -12,7 +12,7 @@ struct KeychainServiceTests {
     @Test("save → load returns the same password")
     func passwordRoundTrip() async throws {
         let service = KeychainService.inMemory()
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         try await service.savePassword("hunter2", forRef: ref, requireBiometry: false)
         let loaded = try await service.loadPassword(forRef: ref, reason: "test")
         #expect(loaded == "hunter2")
@@ -21,7 +21,7 @@ struct KeychainServiceTests {
     @Test("savePassword overwrites an existing value")
     func passwordOverwrite() async throws {
         let service = KeychainService.inMemory()
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         try await service.savePassword("first", forRef: ref, requireBiometry: false)
         try await service.savePassword("second", forRef: ref, requireBiometry: false)
         let loaded = try await service.loadPassword(forRef: ref, reason: "test")
@@ -33,7 +33,7 @@ struct KeychainServiceTests {
     @Test("private key PEM round-trips through the keychain")
     func privateKeyRoundTrip() async throws {
         let service = KeychainService.inMemory()
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         let pem = """
         -----BEGIN OPENSSH PRIVATE KEY-----
         b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAA
@@ -49,7 +49,7 @@ struct KeychainServiceTests {
     @Test("raw secret round-trip preserves bytes exactly")
     func rawSecretRoundTrip() async throws {
         let service = KeychainService.inMemory()
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         let bytes = Data([0x00, 0x01, 0xFE, 0xFF, 0x42])
         try await service.saveSecret(bytes, forRef: ref, requireBiometry: false)
         let loaded = try await service.loadSecret(forRef: ref, reason: "test")
@@ -61,7 +61,7 @@ struct KeychainServiceTests {
     @Test("delete removes a stored secret")
     func deleteRemovesSecret() async throws {
         let service = KeychainService.inMemory()
-        let ref = service.generateRef()
+        let ref = storeNewKeychainRef()
         try await service.savePassword("toBeDeleted", forRef: ref, requireBiometry: false)
         try await service.delete(forRef: ref)
         await #expect(throws: KeychainError.notFound) {
@@ -91,8 +91,8 @@ struct KeychainServiceTests {
     @Test("two refs hold independent secrets")
     func distinctRefsAreIndependent() async throws {
         let service = KeychainService.inMemory()
-        let ref1 = service.generateRef()
-        let ref2 = service.generateRef()
+        let ref1 = storeNewKeychainRef()
+        let ref2 = storeNewKeychainRef()
         try await service.savePassword("alpha", forRef: ref1, requireBiometry: false)
         try await service.savePassword("beta", forRef: ref2, requireBiometry: false)
         let a = try await service.loadPassword(forRef: ref1, reason: "test")
@@ -101,14 +101,15 @@ struct KeychainServiceTests {
         #expect(b == "beta")
     }
 
-    // MARK: - generateRef uniqueness
+    // MARK: - Ref uniqueness
 
-    @Test("generateRef returns unique opaque IDs")
-    func generateRefUnique() async throws {
-        let service = KeychainService.inMemory()
+    /// Refs come from the Rust store (B810: one set of the refs made this
+    /// launch, the one orphan recovery asks).
+    @Test("refs are unique opaque IDs")
+    func refsAreUnique() async throws {
         var seen = Set<String>()
         for _ in 0..<32 {
-            let ref = service.generateRef()
+            let ref = storeNewKeychainRef()
             #expect(ref.hasPrefix("moshpit.secret."))
             #expect(seen.contains(ref) == false)
             seen.insert(ref)

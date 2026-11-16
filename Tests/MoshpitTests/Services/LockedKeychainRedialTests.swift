@@ -164,6 +164,35 @@ struct LockedKeychainRedialTests {
         #expect(cancelled == SSHError.credentialCancelled.description)
     }
 
+    /// B782: a phone restored from a backup has the connection and not its
+    /// keychain item. The failed connect said to re-sign the app via
+    /// SideStore; it says whose secret isn't here and what to do.
+    @Test("a saved secret that isn't on this iPhone says whose, never SideStore")
+    func missingSecretNamesTheConnection() {
+        var nas = ServerConnection()
+        nas.name = "nas"
+        nas.host = "nas.example.com"
+        nas.username = "me"
+        nas.keychainRef = "moshpit.secret.nas"
+        let unavailable = FailureCauseValue.credentials(why: .unavailable)
+        #expect(RustCopy.failure(kind: .credentials, cause: unavailable, connection: nas)
+                == "The password for nas isn't on this iPhone. Enter it again.")
+        nas.authMethod = .key
+        #expect(RustCopy.failure(kind: .credentials, cause: unavailable, connection: nas)
+                == "The private key for nas isn't on this iPhone. Paste it again.")
+        nas.sshKeyId = UUID()
+        #expect(RustCopy.failure(kind: .credentials, cause: unavailable, connection: nas)
+                == "The key nas signs in with isn't on this iPhone. Open Edit to pick another key.")
+        nas.name = ""
+        nas.authMethod = .password
+        nas.sshKeyId = nil
+        #expect(RustCopy.failure(kind: .credentials, cause: unavailable, connection: nas)
+                == "The password for me@nas.example.com isn't on this iPhone. Enter it again.")
+        let unnamed = RustCopy.failure(kind: .credentials, cause: unavailable)
+        #expect(unnamed == SSHError.credentialUnavailable.description)
+        #expect(!unnamed.contains("SideStore"))
+    }
+
     /// The SSHError `body` failed with; nil when it didn't fail, or failed
     /// with anything else.
     private func failure(_ body: () async throws -> Void) async -> SSHError? {

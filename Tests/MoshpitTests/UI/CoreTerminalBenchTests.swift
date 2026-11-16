@@ -182,7 +182,16 @@ struct CoreTerminalBenchTests {
         let pushed = CACurrentMediaTime() - start
         let last = "\(lineCount - 1) "
         var done = false
-        for _ in 0..<2_000 where !done {
+        // How long the burst may take to show is a device number, printed
+        // below. A software-rendered CI simulator showed it in 33 s, so there
+        // the wait is long enough for "every line arrives, in order" to be
+        // the only gate.
+        #if targetEnvironment(simulator)
+        let polls = 12_000
+        #else
+        let polls = 2_000
+        #endif
+        for _ in 0..<polls where !done {
             try? await Task.sleep(for: .milliseconds(10))
             v.takeFrame()
             done = v.rowText(v.rows.gridRows - 2).hasPrefix(last)

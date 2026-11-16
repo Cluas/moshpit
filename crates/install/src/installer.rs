@@ -882,6 +882,9 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
                     .text(&commands::read_file(InstallManifest::PATH))
                     .await?,
             );
+            // The first builds' push.conf that can't push is no one's
+            // pairing (B638).
+            self.run(commands::REMOVE_INERT_LEGACY_CONF).await?;
             let left = self.text(commands::PAIRINGS_LEFT).await?;
             if !left.is_empty() || !manifest.pairing_entries().is_empty() {
                 return Ok(Some(manifest));
@@ -1001,7 +1004,11 @@ impl<'a, C: HostChannel> HostInstaller<'a, C> {
     ) -> Result<InstallManifest, ChannelError> {
         for component in components {
             if let Some(path) = component.path() {
-                self.run(&commands::remove_file(&path)).await?;
+                let command = match component {
+                    InstallComponent::Pairing { conn, .. } => commands::remove_pairing(&path, conn),
+                    _ => commands::remove_file(&path),
+                };
+                self.run(&command).await?;
             }
         }
         self.update_manifest(|manifest| {

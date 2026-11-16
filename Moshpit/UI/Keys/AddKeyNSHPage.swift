@@ -349,7 +349,7 @@ enum SSHKeyCreation {
             }.value
         }
         generated(key.fingerprint)
-        let ref = keychain.generateRef()
+        let ref = storeNewKeychainRef()
         try await keychain.saveSecret(key.privateBlob, forRef: ref, requireBiometry: request.requireFaceID)
         return SSHKeyRecord(
             name: request.name,

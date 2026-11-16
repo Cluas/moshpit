@@ -20,7 +20,9 @@ use serde_json::json;
 
 use super::{
     Ctx, Intent, agent_word, animate_rows,
-    model::{CardBody, Connection, FailureReason, Link, Mux, card_body},
+    model::{
+        CardBody, Connection, FailureReason, Link, Mux, Unreachable, UnreachableReason, card_body,
+    },
     rows,
     swipe::{self, Action, Tint},
 };
@@ -436,6 +438,42 @@ fn reason_words(reason: FailureReason) -> Option<String> {
     })
 }
 
+/// What didn't answer and why, in full (B801, the alert's words from B740):
+/// the reason with the host (and the port, for a refusal); where the Local
+/// Network switch is, when the permission may be why.
+fn unreachable_words(u: &Unreachable) -> String {
+    let host = u.host.clone();
+    match (u.why, u.local_network) {
+        (UnreachableReason::Refused, _) => t!(
+            "%@ refused the connection on port %@. Check the port, and that SSH is running there.",
+            arg1 = host,
+            arg2 = u.port.to_string()
+        ),
+        (UnreachableReason::NoAddress, true) => t!(
+            "Couldn't find %@ on your local network. Check the name, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.",
+            arg1 = host
+        ),
+        (UnreachableReason::NoAddress, false) => {
+            t!("Couldn't find %@. Check the host name.", arg1 = host)
+        }
+        (_, true) => t!(
+            "Couldn't reach %@ on your local network. Check that it's on, and that Moshpit may use the local network: Settings → Privacy & Security → Local Network.",
+            arg1 = host
+        ),
+        (UnreachableReason::TimedOut, false) => t!(
+            "%@ didn't answer. Check the address, that the host is on, and your VPN if it sits behind one.",
+            arg1 = host
+        ),
+        (UnreachableReason::NoRoute, false) => t!(
+            "There's no route to %@ from this network. Check your connection, and your VPN if the host sits behind one.",
+            arg1 = host
+        ),
+        (UnreachableReason::Other, false) => {
+            t!("Couldn't reach the server. Check the host, port, and that it's online.")
+        }
+    }
+}
+
 /// "Lost 25 minutes ago" (minutes, then hours, then days), "Lost just now"
 /// under a minute.
 fn lost_words(lost_at: f64, now: f64) -> String {
@@ -481,12 +519,27 @@ fn body_view(body: Option<CardBody>, connection: &Connection, ctx: &Ctx) -> AnyE
         Some(CardBody::Disconnecting) => one(row(t!("Disconnecting…"))
             .leading(spinner(SpinnerSize::Sm))
             .test_id(&format!("card-disconnecting-{name}"))),
-        Some(CardBody::Reconnect { lost_at, reason }) => {
+        Some(CardBody::Reconnect {
+            lost_at,
+            reason,
+            unreachable,
+            leg,
+        }) => {
             // When it was lost, and why the last try failed (its reason in
             // the screen's words: the failure's detail is the session
-            // layer's log line, never shown).
+            // layer's log line, never shown). A host that didn't answer is
+            // said in full, on as many lines as it takes (B801).
             let now = ctx.now;
-            let why = reason.and_then(reason_words);
+            let full = unreachable.is_some();
+            let why = match &unreachable {
+                Some(u) => Some(unreachable_words(u)),
+                None => reason.and_then(reason_words),
+            };
+            // A failure on a jump host's leg says which first (F1).
+            let why = match (why, leg) {
+                (Some(why), Some(leg)) => Some(t!("Jump host “%@”: %@", arg1 = leg, arg2 = why)),
+                (why, _) => why,
+            };
             let mut r = row(t!("Reconnect"))
                 .tone(RowTone::Primary)
                 .leading(icon("arrow.clockwise").tone(Tone::Primary));
@@ -501,6 +554,7 @@ fn body_view(body: Option<CardBody>, connection: &Connection, ctx: &Ctx) -> AnyE
                 (None, Some(why)) => r.subtitle(why),
                 (None, None) => r,
             };
+            let r = if full { r.wrap_subtitle() } else { r };
             one(r
                 .on_press(ctx.asking(Intent::Connect(id)))
                 .test_id(&format!("card-dead-{name}")))

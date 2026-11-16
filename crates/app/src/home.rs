@@ -41,7 +41,7 @@ use moshpit_session::{
 };
 use moshpit_ui::home::model::{
     Connection, ConnectionFailure, Control, FailureReason, HomeState, Hook, Link, Mismatch, Mux,
-    PaneInfo, SessionInfo, Transport, WindowInfo, Worktree,
+    PaneInfo, SessionInfo, Transport, Unreachable, UnreachableReason, WindowInfo, Worktree,
 };
 use moshpit_ui::home::{Message, words};
 use moshpit_ui::ui::{mark::Face, tokens::FACES};
@@ -277,9 +277,32 @@ pub fn failure_of(failure: &Failure) -> ConnectionFailure {
         (FailureKind::Proxy, _) => FailureReason::Proxy,
         _ => FailureReason::Other,
     };
+    // What didn't answer and why, for the card to say in full (B801).
+    let unreachable = match &failure.cause {
+        Cause::Unreachable { host, port, why } => Some(Unreachable {
+            host: host.clone(),
+            port: *port,
+            why: match why {
+                UnreachableWhy::Refused => UnreachableReason::Refused,
+                UnreachableWhy::NoAddress => UnreachableReason::NoAddress,
+                UnreachableWhy::TimedOut => UnreachableReason::TimedOut,
+                UnreachableWhy::NoRoute => UnreachableReason::NoRoute,
+                UnreachableWhy::Other => UnreachableReason::Other,
+            },
+            local_network: crate::local_network::may_be_why(host, *why),
+        }),
+        _ => None,
+    };
     ConnectionFailure {
         reason,
         detail: failure.log.clone(),
+        unreachable,
+        // The jump-host feature (F1b) adds `Failure.leg` (the jump host's saved name on a
+        // failure of its leg): copied here once it lands. Its
+        // `Cause::Tunnel` (the jump host couldn't reach the target) maps to
+        // `unreachable: {why: other, local_network: false}` — never the
+        // Local Network hint for a host behind a jump.
+        leg: None,
     }
 }
 

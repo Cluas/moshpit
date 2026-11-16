@@ -535,6 +535,7 @@ fn a_dead_connection_says_when_it_was_lost_and_why_it_failed() {
         kind,
         cause,
         log: "said".into(),
+        leg: None,
         retryable: false,
     };
     let cases = [
@@ -622,6 +623,85 @@ fn a_dead_connection_says_when_it_was_lost_and_why_it_failed() {
     assert!(
         home.connections[0].failure.is_none(),
         "an end is not a failure"
+    );
+}
+
+/// B801: a host that didn't answer carries what and why to the card —
+/// the host and port typed, the reason, and whether the Local Network
+/// permission may be the cause (a local-looking host that didn't answer,
+/// a `.local` name that didn't resolve; never a refusal, the internet or a
+/// tailnet): the card says it in full, as the alert does (B740).
+#[test]
+fn an_unreachable_host_s_card_says_what_and_why() {
+    use moshpit_ui::home::model::{Unreachable, UnreachableReason as Why};
+    let cases = [
+        ("192.168.1.20", UnreachableWhy::NoRoute, Why::NoRoute, true),
+        ("10.0.0.5", UnreachableWhy::TimedOut, Why::TimedOut, true),
+        ("fe80::1%en0", UnreachableWhy::Other, Why::Other, true),
+        (
+            "[fd12:3456::1]",
+            UnreachableWhy::NoRoute,
+            Why::NoRoute,
+            true,
+        ),
+        ("studio", UnreachableWhy::TimedOut, Why::TimedOut, true),
+        (
+            "Studio.Local.",
+            UnreachableWhy::NoAddress,
+            Why::NoAddress,
+            true,
+        ),
+        ("studio", UnreachableWhy::NoAddress, Why::NoAddress, false),
+        ("192.168.1.20", UnreachableWhy::Refused, Why::Refused, false),
+        (
+            "box.example.com",
+            UnreachableWhy::TimedOut,
+            Why::TimedOut,
+            false,
+        ),
+        ("100.64.0.7", UnreachableWhy::NoRoute, Why::NoRoute, false),
+        ("172.32.0.1", UnreachableWhy::NoRoute, Why::NoRoute, false),
+        ("localhost", UnreachableWhy::Refused, Why::Refused, false),
+    ];
+    for (host, why, said_why, local_network) in cases {
+        let mut dead = saved(STUDIO, "studio");
+        dead.session = Some(view(SessionState::Failed(Failure {
+            kind: FailureKind::Unreachable,
+            cause: Cause::Unreachable {
+                host: host.into(),
+                port: 2222,
+                why,
+            },
+            log: "said".into(),
+            retryable: true,
+            leg: None,
+        })));
+        let home = build(&[dead], &no_monitor);
+        let failure = home.connections[0].failure.as_ref().unwrap();
+        assert_eq!(
+            failure.unreachable,
+            Some(Unreachable {
+                host: host.into(),
+                port: 2222,
+                why: said_why,
+                local_network,
+            }),
+            "{host} {why:?}"
+        );
+    }
+    // Any other failure has nothing of the kind.
+    let mut dead = saved(STUDIO, "studio");
+    dead.session = Some(view(SessionState::Failed(Failure {
+        kind: FailureKind::Credentials,
+        cause: Cause::Plain,
+        log: "said".into(),
+        retryable: false,
+        leg: None,
+    })));
+    let home = build(&[dead], &no_monitor);
+    assert_eq!(
+        home.connections[0].failure.as_ref().unwrap().unreachable,
+        None
     );
 }
 

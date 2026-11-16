@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -136,6 +136,9 @@ pub struct Seen {
     /// Session channels open right now, across connections: one closes
     /// when the client's CHANNEL_CLOSE arrives (B720).
     pub open_channels: usize,
+    /// Every `direct-tcpip` open asked for (`ssh -J`'s tunnel), forwarded
+    /// or not: where to.
+    pub tunnels: Vec<(String, u32)>,
 }
 
 /// How the bench's host behaves.
@@ -182,6 +185,11 @@ pub struct Bench {
     /// How long the host takes to accept a session channel (`None`: at
     /// once): a client can give up on an open still on its way.
     pub open_delay: Option<Duration>,
+    /// The places a `direct-tcpip` open reaches, by the name and port the
+    /// client asks for (a jump host's view of its network): a name only
+    /// the host knows stands for a host only it can reach. Any other is
+    /// refused as sshd refuses one it can't connect to.
+    pub tunnels: Vec<(&'static str, u16, SocketAddr)>,
 }
 
 impl Default for Bench {
@@ -203,6 +211,7 @@ impl Default for Bench {
             key_then_password: false,
             max_sessions: None,
             open_delay: None,
+            tunnels: Vec::new(),
         }
     }
 }
@@ -221,6 +230,7 @@ struct Shared {
     shell_commands: bool,
     max_sessions: Option<usize>,
     open_delay: Option<Duration>,
+    tunnels: Vec<(&'static str, u16, SocketAddr)>,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
 }
@@ -274,6 +284,7 @@ impl Host {
                 shell_commands: bench.shell_commands,
                 max_sessions: bench.max_sessions,
                 open_delay: bench.open_delay,
+                tunnels: bench.tunnels.clone(),
                 home: home.path().to_owned(),
                 seen: seen.clone(),
             }),
@@ -327,6 +338,7 @@ impl server::Server for Server {
             sizes: HashMap::new(),
             env: HashMap::new(),
             open_sessions: 0,
+            tunnels: HashSet::new(),
         }
     }
 }
@@ -346,6 +358,8 @@ struct Connection {
     env: HashMap<ChannelId, HashMap<String, String>>,
     /// Session channels open now (against `max_sessions`).
     open_sessions: usize,
+    /// The `direct-tcpip` channels open now (not sessions).
+    tunnels: HashSet<ChannelId>,
     /// The keyboard-interactive answers of this sign-in so far.
     kbd_given: Vec<Vec<String>>,
     /// The key, the first factor, was taken.
@@ -534,11 +548,55 @@ impl server::Handler for Connection {
         Ok(())
     }
 
+    /// `ssh -J`'s tunnel: the place asked for, if it is one of the
+    /// bench's, connected and its bytes carried both ways until either
+    /// side closes.
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: server::ChannelOpenHandle,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.shared
+            .seen
+            .lock()
+            .unwrap()
+            .tunnels
+            .push((host_to_connect.to_owned(), port_to_connect));
+        let to = self
+            .shared
+            .tunnels
+            .iter()
+            .find(|(host, port, _)| *host == host_to_connect && u32::from(*port) == port_to_connect)
+            .map(|(_, _, to)| *to);
+        let Some(Ok(mut tcp)) = (match to {
+            Some(to) => Some(TcpStream::connect(to).await),
+            None => None,
+        }) else {
+            reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+            return Ok(());
+        };
+        self.tunnels.insert(channel.id());
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut stream = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut stream, &mut tcp).await;
+        });
+        Ok(())
+    }
+
     async fn channel_close(
         &mut self,
         channel: ChannelId,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if self.tunnels.remove(&channel) {
+            return Ok(());
+        }
         self.open_sessions = self.open_sessions.saturating_sub(1);
         {
             let mut seen = self.shared.seen.lock().unwrap();

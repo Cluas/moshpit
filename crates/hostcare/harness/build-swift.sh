@@ -17,8 +17,19 @@ out="${1:-$repo/target/hostcare-harness/care-swift}"
 work="$(dirname "$out")/kit"
 src="$(dirname "$out")/src"
 rev="${MOSHPIT_SWIFT_CARE_REV:-81c121a1}"
-kit="$repo/Packages/MoshpitKit/Sources/MoshpitKit"
 mkdir -p "$work" "$src"
+# MoshpitKit's push sources (Log, AppLanguage, Push/*, the two Island files
+# PushRemoteNotification names) as the app last ran them: E7b moved the
+# notification service onto crates/seal and deleted Push/* (8ef981c5, or
+# $MOSHPIT_SWIFT_PUSH_REV).
+push_rev="${MOSHPIT_SWIFT_PUSH_REV:-8ef981c5}"
+kit="$(dirname "$out")/push-kit"
+mkdir -p "$kit/Push" "$kit/Island"
+for name in Log AppLanguage Push/PushSealedBox Push/PushStanding Push/AppGroupFileLock \
+    Push/AgentNotificationCopy Push/PushRemoteNotification Push/PushPrefs Push/PushDiagnostics \
+    Island/AgentNotifications Island/AgentControlBridge; do
+    git -C "$repo" show "$push_rev:Packages/MoshpitKit/Sources/MoshpitKit/$name.swift" >"$kit/$name.swift"
+done
 
 # The pairing file's Swift writer as of the same commit: the app's went with
 # batch C (the Rust store writes it), and PushService here still pairs

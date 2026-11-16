@@ -2271,6 +2271,21 @@ public protocol ConnectionStoreHandleProtocol: AnyObject, Sendable {
      */
     func namesUsingKey(key: String, keychainRef: String?) throws  -> [String]?
     
+    /**
+     * Drop `account`, an item a connection let go of, once no saved
+     * connection and no key record names it — listed until it is
+     * (`secrets::release_item`, B325/B428). B810: who names what is the
+     * core's to tell; the app used to work it out in Swift and pass it in.
+     */
+    func releaseItem(account: String, keys: KeyStoreHandle, keychain: KeychainHost)  -> StoreSecretFate
+    
+    /**
+     * The items earlier launches listed to drop, settled over what the
+     * records name now (`secrets::release_pending`, B428): once a launch,
+     * before orphan recovery.
+     */
+    func releasePending(keys: KeyStoreHandle, keychain: KeychainHost)  -> [StoreSettledRelease]
+    
     func reloadIfNeeded() 
     
     /**
@@ -2453,6 +2468,38 @@ open func namesUsingKey(key: String, keychainRef: String?)throws  -> [String]?  
             self.uniffiCloneHandle(),
         FfiConverterString.lower(key),
         FfiConverterOptionString.lower(keychainRef),$0
+    )
+})
+}
+    
+    /**
+     * Drop `account`, an item a connection let go of, once no saved
+     * connection and no key record names it — listed until it is
+     * (`secrets::release_item`, B325/B428). B810: who names what is the
+     * core's to tell; the app used to work it out in Swift and pass it in.
+     */
+open func releaseItem(account: String, keys: KeyStoreHandle, keychain: KeychainHost) -> StoreSecretFate  {
+    return try!  FfiConverterTypeStoreSecretFate_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_connectionstorehandle_release_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(account),
+        FfiConverterTypeKeyStoreHandle_lower(keys),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
+    )
+})
+}
+    
+    /**
+     * The items earlier launches listed to drop, settled over what the
+     * records name now (`secrets::release_pending`, B428): once a launch,
+     * before orphan recovery.
+     */
+open func releasePending(keys: KeyStoreHandle, keychain: KeychainHost) -> [StoreSettledRelease]  {
+    return try!  FfiConverterSequenceTypeStoreSettledRelease.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_connectionstorehandle_release_pending(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeKeyStoreHandle_lower(keys),
+        FfiConverterTypeKeychainHost_lower(keychain),$0
     )
 })
 }
@@ -7012,6 +7059,192 @@ public func FfiConverterTypePreferencesHost_lower(_ value: PreferencesHost) -> U
 
 
 /**
+ * The waiting set and the rung finishes as the notification service keeps
+ * them (crates/seal since E7b): what a push records, written the way the
+ * service writes it, for the tests that put a push beside the machine.
+ * The app itself only hands the machine their paths.
+ */
+public protocol PushFilesHandleProtocol: AnyObject, Sendable {
+    
+    /**
+     * A pushed finish that rang, as the service records it.
+     */
+    func noteRing(conn: String, pane: String, endedAt: Int64, now: Double)  -> Bool
+    
+    /**
+     * A pushed question, recorded at `now` as the service records it.
+     * True on an edge: nobody else on the connection was waiting.
+     */
+    func noteStanding(conn: String, entry: StandingEntryValue, now: Double)  -> Bool
+    
+    /**
+     * Who is waiting on `conn` at `now`.
+     */
+    func standing(conn: String, now: Double)  -> [StandingEntryValue]
+    
+}
+/**
+ * The waiting set and the rung finishes as the notification service keeps
+ * them (crates/seal since E7b): what a push records, written the way the
+ * service writes it, for the tests that put a push beside the machine.
+ * The app itself only hands the machine their paths.
+ */
+open class PushFilesHandle: PushFilesHandleProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_moshpit_ffi_fn_clone_pushfileshandle(self.handle, $0) }
+    }
+public convenience init(standingPath: String, finishesPath: String) {
+    let handle =
+        try! rustCall() {
+    uniffi_moshpit_ffi_fn_constructor_pushfileshandle_new(
+        FfiConverterString.lower(standingPath),
+        FfiConverterString.lower(finishesPath),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_moshpit_ffi_fn_free_pushfileshandle(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * A pushed finish that rang, as the service records it.
+     */
+open func noteRing(conn: String, pane: String, endedAt: Int64, now: Double) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_pushfileshandle_note_ring(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(conn),
+        FfiConverterString.lower(pane),
+        FfiConverterInt64.lower(endedAt),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+    /**
+     * A pushed question, recorded at `now` as the service records it.
+     * True on an edge: nobody else on the connection was waiting.
+     */
+open func noteStanding(conn: String, entry: StandingEntryValue, now: Double) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_pushfileshandle_note_standing(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(conn),
+        FfiConverterTypeStandingEntryValue_lower(entry),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+    /**
+     * Who is waiting on `conn` at `now`.
+     */
+open func standing(conn: String, now: Double) -> [StandingEntryValue]  {
+    return try!  FfiConverterSequenceTypeStandingEntryValue.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_pushfileshandle_standing(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(conn),
+        FfiConverterDouble.lower(now),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePushFilesHandle: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PushFilesHandle
+
+    public static func lift(_ handle: UInt64) throws -> PushFilesHandle {
+        return PushFilesHandle(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PushFilesHandle) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PushFilesHandle {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PushFilesHandle, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushFilesHandle_lift(_ handle: UInt64) throws -> PushFilesHandle {
+    return try FfiConverterTypePushFilesHandle.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushFilesHandle_lower(_ value: PushFilesHandle) -> UInt64 {
+    return FfiConverterTypePushFilesHandle.lower(value)
+}
+
+
+
+
+
+
+/**
  * The pairings file (`PushPairingFile`, round five's B23 rule: read an
  * entry at a time, carry what can't be read, copy a file that isn't fully
  * readable aside before writing over it, never write over one that can't
@@ -8490,6 +8723,224 @@ public func FfiConverterTypeShortcutStoreHandle_lift(_ handle: UInt64) throws ->
 #endif
 public func FfiConverterTypeShortcutStoreHandle_lower(_ value: ShortcutStoreHandle) -> UInt64 {
     return FfiConverterTypeShortcutStoreHandle.lower(value)
+}
+
+
+
+
+
+
+/**
+ * The platform's reader for the stored private keys only it can open
+ * (iOS: a Secure Enclave key's handle, which only CryptoKit reads), asked
+ * by [`store_recover_orphaned_keys`] about what the core can't read. It is
+ * asked with both stores held, so it must not call back into them.
+ */
+public protocol StoredKeyReader: AnyObject, Sendable {
+    
+    /**
+     * `secret`'s facts if it is a private key this platform reads; `None`
+     * for anything else.
+     */
+    func describe(secret: Data)  -> StoredKeyFacts?
+    
+}
+/**
+ * The platform's reader for the stored private keys only it can open
+ * (iOS: a Secure Enclave key's handle, which only CryptoKit reads), asked
+ * by [`store_recover_orphaned_keys`] about what the core can't read. It is
+ * asked with both stores held, so it must not call back into them.
+ */
+open class StoredKeyReaderImpl: StoredKeyReader, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_moshpit_ffi_fn_clone_storedkeyreader(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_moshpit_ffi_fn_free_storedkeyreader(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * `secret`'s facts if it is a private key this platform reads; `None`
+     * for anything else.
+     */
+open func describe(secret: Data) -> StoredKeyFacts?  {
+    return try!  FfiConverterOptionTypeStoredKeyFacts.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_storedkeyreader_describe(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(secret),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceStoredKeyReader {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceStoredKeyReader = UniffiVTableCallbackInterfaceStoredKeyReader(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeStoredKeyReader.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface StoredKeyReader: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeStoredKeyReader.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface StoredKeyReader: handle missing in uniffiClone")
+            }
+        },
+        describe: { (
+            uniffiHandle: UInt64,
+            secret: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> StoredKeyFacts? in
+                guard let uniffiObj = try? FfiConverterTypeStoredKeyReader.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.describe(
+                     secret: try FfiConverterData.lift(secret)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionTypeStoredKeyFacts.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceStoredKeyReader> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceStoredKeyReader>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitStoredKeyReader() {
+    uniffi_moshpit_ffi_fn_init_callback_vtable_storedkeyreader(UniffiCallbackInterfaceStoredKeyReader.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStoredKeyReader: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<StoredKeyReader>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = StoredKeyReader
+
+    public static func lift(_ handle: UInt64) throws -> StoredKeyReader {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return StoredKeyReaderImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: StoredKeyReader) -> UInt64 {
+         if let rustImpl = value as? StoredKeyReaderImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StoredKeyReader {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: StoredKeyReader, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoredKeyReader_lift(_ handle: UInt64) throws -> StoredKeyReader {
+    return try FfiConverterTypeStoredKeyReader.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoredKeyReader_lower(_ value: StoredKeyReader) -> UInt64 {
+    return FfiConverterTypeStoredKeyReader.lower(value)
 }
 
 
@@ -10334,6 +10785,11 @@ public struct ConnectionDraft: Equatable, Hashable {
      */
     public var emoji: String
     public var stored: StoredCredential
+    /**
+     * The connection's own secret this device doesn't hold (B782,
+     * [`connection_draft_secret_missing`]).
+     */
+    public var missing: MissingSecret?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -10349,7 +10805,11 @@ public struct ConnectionDraft: Equatable, Hashable {
          */moshServerPath: String, useSocksProxy: Bool, socksProxyHost: String, socksProxyPort: String, 
         /**
          * The emoji field as typed; empty: the host key's face.
-         */emoji: String, stored: StoredCredential) {
+         */emoji: String, stored: StoredCredential, 
+        /**
+         * The connection's own secret this device doesn't hold (B782,
+         * [`connection_draft_secret_missing`]).
+         */missing: MissingSecret?) {
         self.editing = editing
         self.name = name
         self.host = host
@@ -10368,6 +10828,7 @@ public struct ConnectionDraft: Equatable, Hashable {
         self.socksProxyPort = socksProxyPort
         self.emoji = emoji
         self.stored = stored
+        self.missing = missing
     }
 
     
@@ -10403,7 +10864,8 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
                 socksProxyHost: FfiConverterString.read(from: &buf), 
                 socksProxyPort: FfiConverterString.read(from: &buf), 
                 emoji: FfiConverterString.read(from: &buf), 
-                stored: FfiConverterTypeStoredCredential.read(from: &buf)
+                stored: FfiConverterTypeStoredCredential.read(from: &buf), 
+                missing: FfiConverterOptionTypeMissingSecret.read(from: &buf)
         )
     }
 
@@ -10426,6 +10888,7 @@ public struct FfiConverterTypeConnectionDraft: FfiConverterRustBuffer {
         FfiConverterString.write(value.socksProxyPort, into: &buf)
         FfiConverterString.write(value.emoji, into: &buf)
         FfiConverterTypeStoredCredential.write(value.stored, into: &buf)
+        FfiConverterOptionTypeMissingSecret.write(value.missing, into: &buf)
     }
 }
 
@@ -12069,6 +12532,70 @@ public func FfiConverterTypeKeyRecord_lower(_ value: KeyRecord) -> RustBuffer {
 
 
 /**
+ * A connection's own secret that this device doesn't hold (B782): its
+ * name as saved, for the note, and which secret.
+ */
+public struct MissingSecret: Equatable, Hashable {
+    public var name: String
+    /**
+     * Its password, or the key pasted into it.
+     */
+    public var secret: StoreAuthMethod
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, 
+        /**
+         * Its password, or the key pasted into it.
+         */secret: StoreAuthMethod) {
+        self.name = name
+        self.secret = secret
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MissingSecret: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMissingSecret: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MissingSecret {
+        return
+            try MissingSecret(
+                name: FfiConverterString.read(from: &buf), 
+                secret: FfiConverterTypeStoreAuthMethod.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MissingSecret, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeStoreAuthMethod.write(value.secret, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMissingSecret_lift(_ buf: RustBuffer) throws -> MissingSecret {
+    return try FfiConverterTypeMissingSecret.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMissingSecret_lower(_ value: MissingSecret) -> RustBuffer {
+    return FfiConverterTypeMissingSecret.lower(value)
+}
+
+
+/**
  * What the picker shows (`Picker`).
  */
 public struct MuxPickerPageState: Equatable, Hashable {
@@ -12744,6 +13271,64 @@ public func FfiConverterTypePortRange_lift(_ buf: RustBuffer) throws -> PortRang
 #endif
 public func FfiConverterTypePortRange_lower(_ value: PortRange) -> RustBuffer {
     return FfiConverterTypePortRange.lower(value)
+}
+
+
+/**
+ * One line the notification service left (`moshpit_seal::diagnostics`):
+ * when, in seconds since 1970, and what.
+ */
+public struct PushDiagnosticLine: Equatable, Hashable {
+    public var at: Double
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(at: Double, text: String) {
+        self.at = at
+        self.text = text
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PushDiagnosticLine: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePushDiagnosticLine: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PushDiagnosticLine {
+        return
+            try PushDiagnosticLine(
+                at: FfiConverterDouble.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PushDiagnosticLine, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.at, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushDiagnosticLine_lift(_ buf: RustBuffer) throws -> PushDiagnosticLine {
+    return try FfiConverterTypePushDiagnosticLine.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushDiagnosticLine_lower(_ value: PushDiagnosticLine) -> RustBuffer {
+    return FfiConverterTypePushDiagnosticLine.lower(value)
 }
 
 
@@ -14856,6 +15441,73 @@ public func FfiConverterTypeSshKeysPageState_lower(_ value: SshKeysPageState) ->
 
 
 /**
+ * One prompt in the waiting set the notification service and the machine
+ * share (`moshpit_seal::standing::Entry`): the pane, who asked and what,
+ * and the episode it belongs to (the host's `@moshpit_since`).
+ */
+public struct StandingEntryValue: Equatable, Hashable {
+    public var pane: String
+    public var agent: String?
+    public var title: String?
+    public var since: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(pane: String, agent: String?, title: String?, since: Int64) {
+        self.pane = pane
+        self.agent = agent
+        self.title = title
+        self.since = since
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension StandingEntryValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStandingEntryValue: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StandingEntryValue {
+        return
+            try StandingEntryValue(
+                pane: FfiConverterString.read(from: &buf), 
+                agent: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                since: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StandingEntryValue, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.pane, into: &buf)
+        FfiConverterOptionString.write(value.agent, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterInt64.write(value.since, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStandingEntryValue_lift(_ buf: RustBuffer) throws -> StandingEntryValue {
+    return try FfiConverterTypeStandingEntryValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStandingEntryValue_lower(_ value: StandingEntryValue) -> RustBuffer {
+    return FfiConverterTypeStandingEntryValue.lower(value)
+}
+
+
+/**
  * What this device's keychain doesn't hold of what the saved records name
  * (`secrets::MissingItems`, B781, B782): connections whose own password
  * or pasted key isn't here, key records whose private key isn't.
@@ -14968,6 +15620,94 @@ public func FfiConverterTypeStoreSettledRelease_lift(_ buf: RustBuffer) throws -
 #endif
 public func FfiConverterTypeStoreSettledRelease_lower(_ value: StoreSettledRelease) -> RustBuffer {
     return FfiConverterTypeStoreSettledRelease.lower(value)
+}
+
+
+/**
+ * What a stored private key the core can't read itself is, as the
+ * platform reads it (B810): the facts its record shows.
+ */
+public struct StoredKeyFacts: Equatable, Hashable {
+    public var algorithm: KeyAlgorithm
+    public var source: KeySource
+    /**
+     * An RSA key's modulus size.
+     */
+    public var bits: Int64?
+    /**
+     * The `authorized_keys` line.
+     */
+    public var publicKey: String
+    /**
+     * `SHA256:…`.
+     */
+    public var fingerprint: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(algorithm: KeyAlgorithm, source: KeySource, 
+        /**
+         * An RSA key's modulus size.
+         */bits: Int64?, 
+        /**
+         * The `authorized_keys` line.
+         */publicKey: String, 
+        /**
+         * `SHA256:…`.
+         */fingerprint: String) {
+        self.algorithm = algorithm
+        self.source = source
+        self.bits = bits
+        self.publicKey = publicKey
+        self.fingerprint = fingerprint
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension StoredKeyFacts: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStoredKeyFacts: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StoredKeyFacts {
+        return
+            try StoredKeyFacts(
+                algorithm: FfiConverterTypeKeyAlgorithm.read(from: &buf), 
+                source: FfiConverterTypeKeySource.read(from: &buf), 
+                bits: FfiConverterOptionInt64.read(from: &buf), 
+                publicKey: FfiConverterString.read(from: &buf), 
+                fingerprint: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StoredKeyFacts, into buf: inout [UInt8]) {
+        FfiConverterTypeKeyAlgorithm.write(value.algorithm, into: &buf)
+        FfiConverterTypeKeySource.write(value.source, into: &buf)
+        FfiConverterOptionInt64.write(value.bits, into: &buf)
+        FfiConverterString.write(value.publicKey, into: &buf)
+        FfiConverterString.write(value.fingerprint, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoredKeyFacts_lift(_ buf: RustBuffer) throws -> StoredKeyFacts {
+    return try FfiConverterTypeStoredKeyFacts.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStoredKeyFacts_lower(_ value: StoredKeyFacts) -> RustBuffer {
+    return FfiConverterTypeStoredKeyFacts.lower(value)
 }
 
 
@@ -27459,6 +28199,30 @@ fileprivate struct FfiConverterOptionTypePreferencesHost: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeStoredKeyReader: FfiConverterRustBuffer {
+    typealias SwiftType = StoredKeyReader?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStoredKeyReader.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStoredKeyReader.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeTransferProgress: FfiConverterRustBuffer {
     typealias SwiftType = TransferProgress?
 
@@ -27619,6 +28383,30 @@ fileprivate struct FfiConverterOptionTypeImportedKey: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeImportedKey.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeMissingSecret: FfiConverterRustBuffer {
+    typealias SwiftType = MissingSecret?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMissingSecret.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMissingSecret.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -27811,6 +28599,30 @@ fileprivate struct FfiConverterOptionTypeStoreMissingItems: FfiConverterRustBuff
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeStoreMissingItems.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeStoredKeyFacts: FfiConverterRustBuffer {
+    typealias SwiftType = StoredKeyFacts?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeStoredKeyFacts.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeStoredKeyFacts.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -28556,6 +29368,31 @@ fileprivate struct FfiConverterSequenceTypePathCandidateRecord: FfiConverterRust
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePushDiagnosticLine: FfiConverterRustBuffer {
+    typealias SwiftType = [PushDiagnosticLine]
+
+    public static func write(_ value: [PushDiagnosticLine], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePushDiagnosticLine.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PushDiagnosticLine] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PushDiagnosticLine]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePushDiagnosticLine.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRemoteEntryValue: FfiConverterRustBuffer {
     typealias SwiftType = [RemoteEntryValue]
 
@@ -28773,6 +29610,31 @@ fileprivate struct FfiConverterSequenceTypeSshKeyRow: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSshKeyRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeStandingEntryValue: FfiConverterRustBuffer {
+    typealias SwiftType = [StandingEntryValue]
+
+    public static func write(_ value: [StandingEntryValue], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeStandingEntryValue.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StandingEntryValue] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [StandingEntryValue]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeStandingEntryValue.read(from: &buf))
         }
         return seq
     }
@@ -29320,6 +30182,29 @@ public func uniffiForeignFutureHandleCountMoshpitFfi() -> Int {
     UNIFFI_FOREIGN_FUTURE_HANDLE_MAP.count
 }
 /**
+ * The notification service's lines at or after `since` (seconds since
+ * 1970), oldest first, from its ring at `path` (the App Group's
+ * `push-diagnostics.json`): a separate process, whose log the app can't
+ * read, so the diagnostics screen merges these in.
+ */
+public func pushDiagnosticsRecent(path: String, since: Double) -> [PushDiagnosticLine]  {
+    return try!  FfiConverterSequenceTypePushDiagnosticLine.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_push_diagnostics_recent(
+        FfiConverterString.lower(path),
+        FfiConverterDouble.lower(since),$0
+    )
+})
+}
+/**
+ * The category the diagnostics screen files those lines under.
+ */
+public func pushDiagnosticsSource() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_push_diagnostics_source($0
+    )
+})
+}
+/**
  * `{"op": "accent", …}` for an accent named `name`, as JSON.
  */
 public func accentEditorMessage(name: String, accentHex: String) -> String  {
@@ -29419,6 +30304,21 @@ public func connectionDraftSavePlan(draft: ConnectionDraft, existing: Connection
         FfiConverterInt64.lower(udpStart),
         FfiConverterInt64.lower(udpEnd),
         FfiConverterString.lower(newRef),$0
+    )
+})
+}
+/**
+ * `draft`, its connection's own password or pasted key not on this device
+ * (B782; `store_missing_items` says which): nothing kept, the field saying
+ * whose (`name`) and taking the keyboard, Save waiting for a new one. A
+ * draft signing in with a managed key, or with nothing of its own, comes
+ * back as it was.
+ */
+public func connectionDraftSecretMissing(draft: ConnectionDraft, name: String) -> ConnectionDraft  {
+    return try!  FfiConverterTypeConnectionDraft_lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_connection_draft_secret_missing(
+        FfiConverterTypeConnectionDraft_lower(draft),
+        FfiConverterString.lower(name),$0
     )
 })
 }
@@ -30064,6 +30964,19 @@ public func pageMessage(message: PageMessage)throws  -> String  {
 })
 }
 /**
+ * Whether the Local Network permission may be why `host` didn't answer
+ * for `why` (B740, B801): the app's alert says it by the same rule the
+ * Home card does (`moshpit_app::local_network`).
+ */
+public func localNetworkMayBeWhy(host: String, why: UnreachableValue) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_local_network_may_be_why(
+        FfiConverterString.lower(host),
+        FfiConverterTypeUnreachableValue_lower(why),$0
+    )
+})
+}
+/**
  * A custom accent theme from one accent, the rest derived.
  */
 public func storeAccentTheme(id: String, name: String, accentHex: String) -> AccentThemeRecord  {
@@ -30208,20 +31121,24 @@ public func storeNormalizedHex(hex: String) -> String  {
 /**
  * Give the private keys earlier builds orphaned key records again:
  * `moshpit.secret.` items no saved connection and no key record names, not
- * made in this process, read without asking, that read as an unencrypted
- * OpenSSH private key (`secrets::recover_orphans`, B232). Nothing is
- * deleted: an orphan may be the only copy of a key whose record a lost list
- * took with it. `name_template` is the record's name with `%@` for the
- * start of its fingerprint (the app's "Recovered key %@", in its language).
- * The app runs it once a launch, the first time both stores can be
- * trusted.
+ * made in this process (the one set [`store_new_keychain_ref`] keeps), not
+ * listed to drop (B428), read without asking, that read as a private key
+ * (`secrets::recover_orphans`, B232). The core reads an unencrypted key
+ * file itself and asks `reader` only about the rest — a Secure Enclave
+ * key's handle, the only copy of that key (B810: the app's Swift recovery
+ * read those, and is gone). Nothing is deleted: an orphan may be the only
+ * copy of a key whose record a lost list took with it. `name_template` is
+ * the record's name with `%@` for the start of its fingerprint (the app's
+ * "Recovered key %@", in its language). The app runs it once a launch,
+ * the first time both stores can be trusted.
  */
-public func storeRecoverOrphanedKeys(connections: ConnectionStoreHandle, keys: KeyStoreHandle, keychain: KeychainHost, nameTemplate: String, now: Double) -> StoreRecovery  {
+public func storeRecoverOrphanedKeys(connections: ConnectionStoreHandle, keys: KeyStoreHandle, keychain: KeychainHost, reader: StoredKeyReader?, nameTemplate: String, now: Double) -> StoreRecovery  {
     return try!  FfiConverterTypeStoreRecovery_lift(try! rustCall() {
     uniffi_moshpit_ffi_fn_func_store_recover_orphaned_keys(
         FfiConverterTypeConnectionStoreHandle_lower(connections),
         FfiConverterTypeKeyStoreHandle_lower(keys),
         FfiConverterTypeKeychainHost_lower(keychain),
+        FfiConverterOptionTypeStoredKeyReader.lower(reader),
         FfiConverterString.lower(nameTemplate),
         FfiConverterDouble.lower(now),$0
     )
@@ -30342,6 +31259,12 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_push_diagnostics_recent() != 57775) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_push_diagnostics_source() != 2847) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_accent_editor_message() != 1244) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -30364,6 +31287,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_save_plan() != 18721) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_connection_draft_secret_missing() != 30976) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_connection_draft_secret_states() != 3762) {
@@ -30549,6 +31475,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_page_message() != 34887) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_func_local_network_may_be_why() != 54429) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_func_store_accent_theme() != 12419) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -30585,7 +31514,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_func_store_normalized_hex() != 37165) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_moshpit_ffi_checksum_func_store_recover_orphaned_keys() != 42524) {
+    if (uniffi_moshpit_ffi_checksum_func_store_recover_orphaned_keys() != 11632) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_store_release() != 36788) {
@@ -30658,6 +31587,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_agentmachine_untrack() != 4933) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_pushfileshandle_note_ring() != 53707) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_pushfileshandle_note_standing() != 58878) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_pushfileshandle_standing() != 53589) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_accenteditorhandle_accent() != 60379) {
@@ -31164,6 +32102,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_names_using_key() != 36813) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_release_item() != 459) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_release_pending() != 25916) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_connectionstorehandle_reload_if_needed() != 25471) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -31308,6 +32252,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_moshpit_ffi_checksum_method_shortcutstorehandle_update() != 18377) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_moshpit_ffi_checksum_method_storedkeyreader_describe() != 58998) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_moshpit_ffi_checksum_method_themestorehandle_all_themes() != 53561) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -31348,6 +32295,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_constructor_agentmachine_new() != 25823) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_constructor_pushfileshandle_new() != 38724) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_constructor_accenteditorhandle_new() != 62273) {
@@ -31407,6 +32357,7 @@ private let initializationResult: InitializationResult = {
     uniffiCallbackInitPetListener()
     uniffiCallbackInitPreferencesHost()
     uniffiCallbackInitSessionEventSink()
+    uniffiCallbackInitStoredKeyReader()
     uniffiCallbackInitTransferProgress()
     return InitializationResult.ok
 }()

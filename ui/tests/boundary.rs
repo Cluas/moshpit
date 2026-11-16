@@ -108,7 +108,7 @@ fn probe() -> (App, Arc<Channel>, std::sync::mpsc::Receiver<String>) {
     let mut config = EngineConfig::new(root);
     config.viewport = nsh_core::Size::new(nsh_core::Points(390.0), nsh_core::Points(844.0));
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:probe").unwrap();
     steady(&mut app);
     (App(app), channel, rx)
@@ -161,7 +161,7 @@ fn the_failure_reads_in_the_apps_language() {
         font_scale: None,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:page-failed").unwrap();
     steady(&mut app);
     let texts = app.screen().texts();

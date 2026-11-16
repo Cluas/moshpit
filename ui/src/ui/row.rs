@@ -415,6 +415,13 @@ fn accessibility_size() -> bool {
     face::category(font_scale()) >= face::AX1
 }
 
+/// A row's line of words at the user's text size: one line, cut, up to the
+/// largest standard size; as many as it needs at an accessibility size,
+/// as iOS wraps them (B753). `0` is no limit.
+fn lines_at_text_size() -> u32 {
+    u32::from(!accessibility_size())
+}
+
 /// The least the value lane keeps beside the title for a value `natural`
 /// points wide (its dot and the dot's gap included): [`VALUE_MIN`], or
 /// less for a shorter value. A short value ("1m") kept 56 pt, and the
@@ -658,7 +665,9 @@ impl Row {
                 }))
                 .into_element()
         } else {
-            title_words.into_element()
+            title_words
+                .number_of_lines(lines_at_text_size)
+                .into_element()
         };
         // The content lane: title, the subtitle under it, and (stacked) the
         // value under them.
@@ -670,32 +679,52 @@ impl Row {
                 // (an accessibility text size), they shorten too, at their
                 // tail, once the name has given way: never clipped bare.
                 let shown = words.clone();
-                content = content.child(
-                    view()
-                        .flex_row()
-                        .min_w(px(0.0))
-                        .child(when(
-                            move || !shown().is_empty(),
-                            move || {
-                                let words = words.clone();
-                                line(
-                                    TextToken::Subhead,
-                                    text(move || format!("{} · ", words())),
-                                    false,
-                                )
-                                .flex_shrink(1.0)
-                                .min_w(px(0.0))
-                                .text_color(move || token("muted-foreground"))
-                            },
-                        ))
-                        .child(
-                            line(TextToken::MonoSubhead, text(move || mono()), true)
-                                // Gives way long before the words do.
-                                .flex_shrink(1000.0)
-                                .min_w(px(0.0))
-                                .text_color(move || token("muted-foreground")),
-                        ),
-                );
+                // At an accessibility text size: the words and the name in
+                // one line of text that wraps (B753), nothing cut.
+                let (all_words, all_mono) = (words.clone(), mono.clone());
+                content = content.child(when(accessibility_size, move || {
+                    let (words, mono) = (all_words.clone(), all_mono.clone());
+                    TextToken::Subhead
+                        .apply(text(move || {
+                            let words = words();
+                            if words.is_empty() {
+                                mono().to_string()
+                            } else {
+                                format!("{words} · {}", mono())
+                            }
+                        }))
+                        .text_color(move || token("muted-foreground"))
+                }));
+                content = content.child(when(
+                    || !accessibility_size(),
+                    move || {
+                        let (shown, words, mono) = (shown.clone(), words.clone(), mono.clone());
+                        view()
+                            .flex_row()
+                            .min_w(px(0.0))
+                            .child(when(
+                                move || !shown().is_empty(),
+                                move || {
+                                    let words = words.clone();
+                                    line(
+                                        TextToken::Subhead,
+                                        text(move || format!("{} · ", words())),
+                                        false,
+                                    )
+                                    .flex_shrink(1.0)
+                                    .min_w(px(0.0))
+                                    .text_color(move || token("muted-foreground"))
+                                },
+                            ))
+                            .child(
+                                line(TextToken::MonoSubhead, text(move || mono()), true)
+                                    // Gives way long before the words do.
+                                    .flex_shrink(1000.0)
+                                    .min_w(px(0.0))
+                                    .text_color(move || token("muted-foreground")),
+                            )
+                    },
+                ));
             }
             (Some(subtitle), None) => {
                 let style = if mono_subtitle {
@@ -707,7 +736,7 @@ impl Row {
                 let words = if wrap_subtitle {
                     style.apply(words)
                 } else {
-                    line(style, words, mono_subtitle)
+                    line(style, words, mono_subtitle).number_of_lines(lines_at_text_size)
                 };
                 content = content.child(words.text_color(move || token("muted-foreground")));
             }
@@ -716,6 +745,7 @@ impl Row {
         if let Some(detail) = detail {
             content = content.child(
                 line(TextToken::Subhead, text(move || detail()), false)
+                    .number_of_lines(lines_at_text_size)
                     .text_color(move || token("muted-foreground")),
             );
         }
@@ -790,6 +820,9 @@ impl Row {
             Accessory::Disclosure(expanded) => Some(expanded.clone()),
             _ => None,
         };
+        // A control (a switch) keeps to the title's first line when the
+        // title wraps (B753); the chevron and the rest stay centred.
+        let control = matches!(accessory, Accessory::Element(_));
         let lane = match accessory {
             Accessory::None => None,
             Accessory::Chevron => Some(
@@ -836,6 +869,16 @@ impl Row {
                 .min_w(px(16.0))
                 .items_center()
                 .justify_center();
+            // At an accessibility text size, at the top, as tall as the
+            // title's first line, the control centred in it. Read as the
+            // row is made: a size changed while it shows takes effect the
+            // next time the row is made (NSH's alignment isn't reactive).
+            if control && accessibility_size() {
+                slot = slot.self_start().min_h(px(face::frame(
+                    TextToken::Body.size(font_scale()),
+                    pixel_ratio(),
+                )));
+            }
             if let Some(lane) = lane {
                 let loading = loading.clone();
                 slot = slot.child(

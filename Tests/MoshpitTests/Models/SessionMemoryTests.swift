@@ -27,10 +27,14 @@ struct SessionMemoryTests {
             return ConnectionStore(defaults: defaults, readiness: DefaultsReadiness { [unowned self] in unlocked })
         }
 
-        /// What the two caches write for `id`, through their own code.
+        /// The key the Rust core keeps `id`'s tmux selection under.
+        static func selectionKey(_ id: UUID) -> String { "moshpit.tmux.lastSelection.\(id.uuidString)" }
+
+        /// What the two caches write for `id`: the tmux selection as the
+        /// core writes it (`crates/store/src/session_memory.rs`), the
+        /// capabilities through their own code.
         @MainActor func remember(_ id: UUID) {
-            TmuxSelectionStore.save(TmuxSelection(session: "$1", window: "@2", pane: "%3"),
-                                    for: id, defaults: defaults)
+            defaults.set(Data(#"{"session":"$1","window":"@2","pane":"%3"}"#.utf8), forKey: Self.selectionKey(id))
             HostCapabilityCache(defaults: defaults)
                 .store(HostCapabilities(hasTmux: true, hasMoshServer: true, os: "Linux", packageManager: nil),
                        for: id)
@@ -38,7 +42,7 @@ struct SessionMemoryTests {
 
         /// Whether each of the two keys is there for `id`.
         @MainActor func remembers(_ id: UUID) -> [Bool] {
-            [TmuxSelectionStore.load(id, defaults: defaults) != nil,
+            [defaults.data(forKey: Self.selectionKey(id)) != nil,
              HostCapabilityCache(defaults: defaults).capabilities(for: id) != nil]
         }
 

@@ -48,7 +48,7 @@ fn start(params: Params) -> (common::App, Arc<Channel>) {
         font_scale: None,
     }
     .apply(&mut config.environment);
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     app.wait_for("id:recent-log").unwrap();
     (common::App(app), channel)
 }

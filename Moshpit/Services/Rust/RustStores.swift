@@ -22,10 +22,18 @@ import MoshpitKit
 
 /// ``ConnectionStore`` on the Rust store.
 final class RustConnectionStore: ConnectionStoreBacking {
+    /// Internal, not private: the calls over both stores take it
+    /// (``RustSSHKeyStore``'s recovery).
     let handle: ConnectionStoreHandle
+    /// Where the list of items to drop lives (B428), and how far it is
+    /// believed: the same preferences as the connections.
+    private let preferences: PreferencesHost
+    private let mode: ReadinessMode
 
     init(preferences: PreferencesHost, mode: ReadinessMode) {
         handle = ConnectionStoreHandle(host: preferences, mode: mode)
+        self.preferences = preferences
+        self.mode = mode
     }
 
     var connections: [ServerConnection] { handle.connections().compactMap(ServerConnection.init) }
@@ -68,6 +76,30 @@ final class RustConnectionStore: ConnectionStoreBacking {
 
     func sweepSessionMemory(keys: [String]) -> [String] {
         handle.sweepSessionMemory(keys: keys)
+    }
+
+    // The keychain items the records name (B232, B428; B810: the core's
+    // alone — no Swift copy of who names what).
+
+    func deleteReleasingSecret(id: UUID, keys: SSHKeyStoreBacking, keychain: KeychainHost) -> StoreSecretFate? {
+        guard let keys = keys as? RustSSHKeyStore else { return nil }
+        return RustStoreCall.value("connections: delete") {
+            try handle.deleteReleasingSecret(id: id.uuidString, keys: keys.handle, keychain: keychain)
+        }
+    }
+
+    func releaseItem(_ account: String, keys: SSHKeyStoreBacking, keychain: KeychainHost) -> StoreSecretFate? {
+        guard let keys = keys as? RustSSHKeyStore else { return nil }
+        return handle.releaseItem(account: account, keys: keys.handle, keychain: keychain)
+    }
+
+    func holdRelease(_ account: String) -> Bool {
+        storeHoldRelease(preferences: preferences, mode: mode, account: account)
+    }
+
+    func releasePending(keys: SSHKeyStoreBacking, keychain: KeychainHost) -> [StoreSettledRelease] {
+        guard let keys = keys as? RustSSHKeyStore else { return [] }
+        return handle.releasePending(keys: keys.handle, keychain: keychain)
     }
 }
 
@@ -118,6 +150,8 @@ extension ServerConnection {
 /// ``SSHKeyStore`` on the Rust store: the records only — every private key
 /// stays in the keychain, named by its record's `keychainRef`.
 final class RustSSHKeyStore: SSHKeyStoreBacking {
+    /// Internal, not private: the calls over both stores take it
+    /// (``RustConnectionStore``'s delete and release).
     let handle: KeyStoreHandle
 
     init(preferences: PreferencesHost, mode: ReadinessMode) {
@@ -149,6 +183,28 @@ final class RustSSHKeyStore: SSHKeyStoreBacking {
                               bits: key.bits.map(Int64.init), publicKey: key.publicKeyLine,
                               fingerprint: key.fingerprint, requireBiometry: requireBiometry)
         } ?? .unknown
+    }
+
+    func recoverOrphans(connections: ConnectionStoreBacking, keychain: KeychainHost,
+                        reader: StoredKeyReader?, nameTemplate: String, now: Date) -> StoreRecovery? {
+        guard let connections = connections as? RustConnectionStore else { return nil }
+        return storeRecoverOrphanedKeys(connections: connections.handle, keys: handle, keychain: keychain,
+                                        reader: reader, nameTemplate: nameTemplate,
+                                        now: now.timeIntervalSinceReferenceDate)
+    }
+
+    func checkDelete(id: UUID, connections: ConnectionStoreBacking) -> StoreKeyCheck? {
+        guard let connections = connections as? RustConnectionStore else { return nil }
+        return RustStoreCall.value("keys: check delete") {
+            try handle.checkDelete(id: id.uuidString, connections: connections.handle)
+        }
+    }
+
+    func deleteKey(id: UUID, connections: ConnectionStoreBacking, keychain: KeychainHost) -> StoreKeyDeletion? {
+        guard let connections = connections as? RustConnectionStore else { return nil }
+        return RustStoreCall.value("keys: delete") {
+            try handle.deleteKey(id: id.uuidString, connections: connections.handle, keychain: keychain)
+        }
     }
 
     func learnFacts(id: UUID, privateKey: String) -> Bool {
@@ -535,11 +591,17 @@ final class RustSettings: AppSettingsBacking {
 // MARK: - Push pairings
 
 /// The push pairings (the App Group's `push-pairings.json`, which the
-/// notification service reads) through the Rust store: the same file and
-/// rules. What the Rust file leaves to its host is done here after every
-/// write — the protection and backup exclusion ``PushPairingFile`` gives
-/// each file it writes, the copies kept beside it too.
-final class RustPushPairings: PushPairingBacking, @unchecked Sendable {
+/// notification service reads, through crates/seal too) through the Rust
+/// store: the same file and rules. What the Rust file leaves to its host is
+/// done here after every write — the file's protection and backup
+/// exclusion, the copies kept beside it too.
+final class RustPushPairings: @unchecked Sendable {
+    /// The App Group's pairings; nil with no container (an unsigned build),
+    /// when nothing can be paired.
+    static let shared: RustPushPairings? = FileManager.default
+        .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id)
+        .map { RustPushPairings(url: $0.appendingPathComponent("push-pairings.json")) }
+
     private let handle: PushPairingFileHandle
     private let url: URL
 
@@ -548,18 +610,18 @@ final class RustPushPairings: PushPairingBacking, @unchecked Sendable {
         handle = PushPairingFileHandle(path: url.path)
     }
 
-    func read() -> [PushPairing] { handle.read().compactMap(PushPairing.init) }
+    func read() -> [PairingRecord] { handle.read() }
 
-    func write(_ pairings: [PushPairing]) -> Bool {
-        settle("write") { try handle.write(pairings: pairings.map(PairingRecord.init)) }
+    func write(_ pairings: [PairingRecord]) -> Bool {
+        settle("write") { try handle.write(pairings: pairings) }
     }
 
-    func upsert(_ pairing: PushPairing) -> Bool {
-        settle("upsert") { try handle.upsert(pairing: PairingRecord(pairing)) }
+    func upsert(_ pairing: PairingRecord) -> Bool {
+        settle("upsert") { try handle.upsert(pairing: pairing) }
     }
 
-    func remove(connectionId: UUID) -> Bool {
-        settle("remove") { try handle.remove(connectionId: connectionId.uuidString) }
+    func remove(connectionId: String) -> Bool {
+        settle("remove") { try handle.remove(connectionId: connectionId) }
     }
 
     private func settle(_ what: String, _ body: () throws -> Bool) -> Bool {
@@ -589,24 +651,6 @@ final class RustPushPairings: PushPairingBacking, @unchecked Sendable {
     }
 }
 
-extension PairingRecord {
-    init(_ p: PushPairing) {
-        self.init(connectionId: p.connectionId.uuidString, hostLabel: p.hostLabel, secretHex: p.secretHex,
-                  sendToken: p.sendToken, relayUrl: p.relayURL, createdAt: p.createdAt.timeIntervalSinceReferenceDate,
-                  apnsToken: p.apnsToken, apnsEnv: p.apnsEnv,
-                  sendTokenIssuedAt: p.sendTokenIssuedAt?.timeIntervalSinceReferenceDate)
-    }
-}
-
-extension PushPairing {
-    init?(_ r: PairingRecord) {
-        guard let id = UUID(uuidString: r.connectionId) else { return nil }
-        self.init(connectionId: id, hostLabel: r.hostLabel, secretHex: r.secretHex, sendToken: r.sendToken,
-                  relayURL: r.relayUrl, createdAt: Date(timeIntervalSinceReferenceDate: r.createdAt),
-                  apnsToken: r.apnsToken, apnsEnv: r.apnsEnv,
-                  sendTokenIssuedAt: r.sendTokenIssuedAt.map(Date.init(timeIntervalSinceReferenceDate:)))
-    }
-}
 
 // MARK: - Calls
 

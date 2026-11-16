@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use moshpit_tmux::controller::{Config, Notification, PinLedger};
-use moshpit_tmux::rig::{Rig, ok};
+use moshpit_tmux::rig::{Rig, err, ok};
 
 #[derive(Clone, Debug)]
 struct FakeClient {
@@ -60,6 +60,11 @@ struct Fake {
     /// The sessions' `@moshpit_owned` / `@moshpit_status_hidden` marks, as
     /// the owned-sessions listing prints them (`$5 owned=1 hidden=…`).
     marks: Vec<String>,
+    /// B773: the phone's group made (`new-session -t`), the sidecar moved
+    /// into it, as tmux 3.6a does; otherwise refused, and the sidecar stays
+    /// on the session itself as it did before groups.
+    groups: bool,
+    made: u32,
 }
 
 type Shared = Rc<RefCell<Fake>>;
@@ -79,16 +84,60 @@ fn responder(fake: Shared) -> moshpit_tmux::rig::Responder {
                 .map(|c| c.render(format))
                 .collect::<Vec<_>>());
         }
+        if command == "display-message -p 'self=#{client_name}'" {
+            // Who this control client is (B459's check of who is on a
+            // session): the sidecar's own.
+            let me = fake
+                .clients
+                .iter()
+                .find(|c| c.control)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            return ok([format!("self={me}")]);
+        }
+        if let Some(rest) = command.strip_prefix("new-session -t ") {
+            if !fake.groups {
+                return err(["sessions should be nested with care"]);
+            }
+            // `new-session -t '$S' -s 'NAME' -P -F ...`: made, and this
+            // (control) client moved into it.
+            let name = rest
+                .split(" -s '")
+                .nth(1)
+                .and_then(|r| r.split('\'').next())
+                .unwrap_or("g")
+                .to_owned();
+            fake.made += 1;
+            let id: &'static str = Box::leak(format!("$9{}", fake.made).into_boxed_str());
+            fake.sessions.push(format!("{id} 1 {name}"));
+            for c in &mut fake.clients {
+                if c.control {
+                    c.session_id = id;
+                    c.session_name = name.clone();
+                }
+            }
+            return ok([id]);
+        }
         if let Some(rest) = command.strip_prefix("switch-client -c ") {
             // tmux moves that client when it gets here in the queue.
             let words: Vec<&str> = rest.split(' ').collect();
             if words.len() == 3 && words[1] == "-t" {
-                let target = words[2];
-                if let Some(row) = fake
-                    .sessions
-                    .iter()
-                    .find(|s| s.starts_with(&format!("{target} ")))
-                {
+                let target = words[2].trim_matches('\'');
+                // `=name`: the session by its exact name (a group's, B773).
+                let found = match target.strip_prefix('=') {
+                    Some(name) => fake
+                        .sessions
+                        .iter()
+                        .find(|s| s.splitn(3, ' ').nth(2) == Some(name))
+                        .cloned(),
+                    None => fake
+                        .sessions
+                        .iter()
+                        .find(|s| s.starts_with(&format!("{target} ")))
+                        .cloned(),
+                };
+                if let Some(row) = found {
+                    let target = row.split(' ').next().unwrap_or(target).to_owned();
                     let name = row.splitn(3, ' ').nth(2).unwrap_or("").to_owned();
                     let id: &'static str = Box::leak(target.to_owned().into_boxed_str());
                     for c in &mut fake.clients {
@@ -132,12 +181,29 @@ impl Sidecar {
         clients: Vec<FakeClient>,
         ledger: Option<PinLedger>,
     ) -> Self {
+        Self::make_with(sessions, windows, clients, ledger, false)
+    }
+
+    /// B773: a tmux that makes the phone's group.
+    fn grouped(sessions: &[&str], windows: &[&str], clients: Vec<FakeClient>) -> Self {
+        Self::make_with(sessions, windows, clients, None, true)
+    }
+
+    fn make_with(
+        sessions: &[&str],
+        windows: &[&str],
+        clients: Vec<FakeClient>,
+        ledger: Option<PinLedger>,
+        groups: bool,
+    ) -> Self {
         let fake = Rc::new(RefCell::new(Fake {
             clients,
             sessions: sessions.iter().map(|s| s.to_string()).collect(),
             windows: windows.iter().map(|s| s.to_string()).collect(),
             panes: Vec::new(),
             marks: Vec::new(),
+            groups,
+            made: 0,
         }));
         let mut rig = Rig::new(Config {
             renders_output: false,
@@ -1120,6 +1186,7 @@ fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
         windows: Vec::new(),
         panes: Vec::new(),
         marks: Vec::new(),
+        ..Fake::default()
     }));
     let on = |fake: &Fake, session: &str| {
         fake.clients
@@ -1269,6 +1336,7 @@ fn the_renderer_lookup_right_behind_the_attachs_zoom_gets_its_own_reply() {
         windows: vec![format!("$1 @0 0 {SPLIT} 1 2 bash")],
         panes: Vec::new(),
         marks: Vec::new(),
+        ..Fake::default()
     }));
     let mut tmux = responder(fake.clone());
     let mut rig = Rig::new(Config {
@@ -1456,6 +1524,7 @@ fn make_marked_with(marks: &[&str], landing: (&str, &str), clients: Vec<FakeClie
         windows: Vec::new(),
         panes: Vec::new(),
         marks: marks.iter().map(|m| m.to_string()).collect(),
+        ..Fake::default()
     }));
     let mut rig = Rig::new(Config {
         renders_output: false,
@@ -1490,5 +1559,144 @@ fn a_sidecars_attach_sends_the_discovery_first() {
         rig.commands[3..]
             .iter()
             .any(|c| c.contains(" owned=#{@moshpit_owned}"))
+    );
+}
+
+// MARK: - The phone's group over mosh (B773)
+
+/// The renderer's session and name, as the fake tmux has it now.
+fn renderer_on(s: &Sidecar, pid: i64) -> String {
+    s.fake
+        .borrow()
+        .clients
+        .iter()
+        .find(|c| c.pid == pid)
+        .map(|c| c.session_name.clone())
+        .unwrap_or_default()
+}
+
+/// B773: the sidecar makes the phone's group of the renderer's session,
+/// lands it on the session's current window, and brings the renderer in
+/// behind — never moving the session itself, which a desktop on it shows.
+#[test]
+fn the_sidecar_brings_the_renderer_into_the_phones_group() {
+    let mut s = Sidecar::grouped(
+        &["$1 2 work"],
+        &[
+            "$1 @3 0 b25d,80x24,0,0,3 0 1 zsh",
+            "$1 @4 1 b25e,80x24,0,0,4 1 1 vim",
+        ],
+        vec![
+            work(true, 45613, "/dev/ttys030"),
+            work(false, 41002, "/dev/ttys010"),
+        ],
+    );
+    s.land("$1", "work");
+    s.attach_renderer(work(false, 45533, "/dev/ttys026"));
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    let commands = s.rig.commands.clone();
+    let made = commands
+        .iter()
+        .position(|c| c.starts_with("new-session -t '$1' -s 'work~mp-"))
+        .unwrap_or_else(|| panic!("{commands:#?}"));
+    let landed = commands
+        .iter()
+        .position(|c| c == "select-window -t @4")
+        .unwrap_or_else(|| panic!("{commands:#?}"));
+    let moved = commands
+        .iter()
+        .position(|c| c.starts_with("switch-client -c /dev/ttys026 -t"))
+        .unwrap_or_else(|| panic!("{commands:#?}"));
+    assert!(made < landed && landed < moved, "{commands:#?}");
+    assert!(renderer_on(&s, 45533).starts_with("work~mp-"));
+    assert_eq!(renderer_on(&s, 41002), "work", "the desktop stays");
+    assert!(
+        !commands
+            .iter()
+            .any(|c| c.starts_with("switch-client -c /dev/ttys010")),
+        "{commands:#?}"
+    );
+    // The person sees the session, not the group.
+    assert_eq!(
+        s.rig.controller.snapshot().active_session_id.as_deref(),
+        Some("$1")
+    );
+    assert_eq!(s.rig.controller.renderer_session_id(), Some("$1"));
+}
+
+/// B773: a session picked on the phone takes the sidecar into a group of
+/// it, and the renderer behind; the desktop stays on its session.
+#[test]
+fn a_session_pick_takes_the_renderer_into_a_group_of_it() {
+    let mut s = Sidecar::grouped(
+        &["$0 1 alpha", "$1 2 work"],
+        &[
+            "$0 @0 0 b25d,80x24,0,0,0 1 1 zsh",
+            "$1 @3 0 b25e,80x24,0,0,3 1 1 vim",
+        ],
+        vec![
+            work(true, 45613, "/dev/ttys030"),
+            work(false, 41002, "/dev/ttys010"),
+        ],
+    );
+    s.land("$1", "work");
+    s.attach_renderer(work(false, 45533, "/dev/ttys026"));
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    let base = s.rig.commands.len();
+    s.switch_session("$0");
+    let sent = s.rig.since(base).to_vec();
+    assert!(
+        sent.iter()
+            .any(|c| c.starts_with("new-session -t '$0' -s 'alpha~mp-")),
+        "{sent:#?}"
+    );
+    assert!(
+        !sent
+            .iter()
+            .any(|c| c.starts_with("switch-client -c /dev/ttys010")),
+        "{sent:#?}"
+    );
+    assert!(
+        renderer_on(&s, 45533).starts_with("alpha~mp-"),
+        "{:?}: {sent:#?}",
+        renderer_on(&s, 45533)
+    );
+    assert_eq!(renderer_on(&s, 41002), "work", "the desktop stays");
+}
+
+/// B773: a session Moshpit made shows no status line on the phone: the
+/// group's, the one on the phone's screen, is turned off.
+#[test]
+fn an_owned_sessions_status_line_is_hidden_on_the_phones_group() {
+    // The marks are on the server before the sidecar starts (B86).
+    let fake = Rc::new(RefCell::new(Fake {
+        clients: vec![work(true, 45613, "/dev/ttys030")],
+        sessions: vec!["$1 2 work".into()],
+        windows: vec!["$1 @3 0 b25d,80x24,0,0,3 1 1 zsh".into()],
+        marks: vec!["$1 owned=1 hidden=".into()],
+        groups: true,
+        ..Fake::default()
+    }));
+    let mut rig = Rig::new(Config {
+        renders_output: false,
+        ..Config::default()
+    });
+    rig.respond(responder(fake.clone()));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $1 work\n");
+    rig.settle();
+    let mut s = Sidecar { rig, fake };
+    s.attach_renderer(work(false, 45533, "/dev/ttys026"));
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    assert!(
+        s.status_commands()
+            .iter()
+            .any(|c| c == "set-option -t '$91' status off"),
+        "{:#?}",
+        s.status_commands()
     );
 }

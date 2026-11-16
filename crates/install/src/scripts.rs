@@ -19,7 +19,7 @@ use crate::manifest::InstallComponent;
 /// two phones on different builds paired with one host rewrote its scripts
 /// (and their agents' hooks) back and forth at every session's start. A
 /// script without the line is older than any that has it.
-pub const SCRIPTS_VERSION: u32 = 3;
+pub const SCRIPTS_VERSION: u32 = 4;
 
 /// What the version line starts with.
 pub const MARKER: &str = "# moshpit-scripts: ";
@@ -77,9 +77,9 @@ mod tests {
     /// the version): a host's newer scripts are kept by version alone
     /// (B633), so the same version must mean the same scripts.
     const PINNED: (u32, &str, &str) = (
-        3,
-        "0dae0c0f9edbebe482d3483068867eee69b3820fae6cbc0a80aa4361bdb9d1db",
-        "2d1dbd43ec90043611c246e06f407731cc4abf3475644e736a0ee993c5f4e48e",
+        4,
+        "354bbd8c12d2997e38190dc873ce24d896c1bfae495ad091e19438a19e6631e5",
+        "71d8dd996f56a60eeca2ca2e3a3e86afbe24c6743620b5ac1271adb36e62b7e0",
     );
 
     #[test]

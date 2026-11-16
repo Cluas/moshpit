@@ -546,8 +546,11 @@ fn the_sidecar_killing_the_renderers_session_keeps_mosh_running() {
         "the sidecar's client exited"
     );
     let clients = server.clients();
+    // On dev, or on the phone's group of it (B773).
     assert!(
-        clients.lines().any(|line| line.ends_with(" dev")),
+        clients
+            .lines()
+            .any(|line| line.ends_with(" dev") || line.contains(" dev~mp-")),
         "clients: {clients}"
     );
     assert_eq!(
@@ -704,6 +707,99 @@ fn a_window_handed_back_after_its_panes_changed_is_not_left_zoomed() {
         "switched away: {}",
         server.zoom_of(&single)
     );
+    let _ = desk.kill();
+    let _ = desk.wait();
+}
+
+/// B773: over mosh the phone sees its session through a group of its own
+/// too, as over SSH (B459). The renderer — mosh-server's `tmux attach` — sat
+/// on the session itself, and the sidecar's window switch moved that
+/// session's current window: a desktop on it was switched along with the
+/// phone (issue #2's kind). The sidecar now makes the phone's group, moves
+/// the renderer into it, and switches windows there: the desktop stays
+/// where it is, and the group goes once the phone does, every window kept.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_the_phones_window_switches_leave_the_desktop_where_it_is() {
+    let server = Server::start("moshgroup");
+    let mut renderer = server.renderer("=main");
+    let pid = server.renderer_pid().unwrap();
+    let mut desk = server.desktop_on("main");
+    let desk_window = server.window_of("main");
+    let mut sidecar = server.sidecar("main", pid);
+    let windows: Vec<String> = server
+        .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(windows.len(), 3);
+    // The renderer's session and window, by its pid.
+    let renderer_on = |server: &Server| -> (String, String) {
+        server
+            .tmux(&[
+                "list-clients",
+                "-F",
+                "#{client_pid} #{session_name} #{window_id}",
+            ])
+            .lines()
+            .find_map(|line| {
+                let mut words = line.split(' ');
+                if words.next()? != pid.to_string() {
+                    return None;
+                }
+                Some((words.next()?.to_owned(), words.next()?.to_owned()))
+            })
+            .unwrap_or_default()
+    };
+    assert!(
+        eventually(10, || renderer_on(&server).0.contains("~mp-")),
+        "the renderer in the phone's group: {:?}\n{}",
+        renderer_on(&server),
+        server.clients()
+    );
+    let others: Vec<&String> = windows.iter().filter(|w| **w != desk_window).collect();
+    for target in [others[0], others[1], others[0]] {
+        let now = sidecar.now();
+        sidecar.controller.select_window(target, now);
+        let moved = sidecar.pump_until(10, |_| renderer_on(&server).1 == *target);
+        sidecar.pump(300);
+        assert!(moved, "the phone on {target}: {:?}", renderer_on(&server));
+        assert_eq!(
+            server.window_of("main"),
+            desk_window,
+            "the desktop's window moved with the phone's switch to {target}"
+        );
+    }
+    assert_eq!(
+        sidecar.controller.snapshot().active_session_id.as_deref(),
+        Some(
+            server
+                .tmux(&["display-message", "-p", "-t", "=main:", "#{session_id}"])
+                .as_str()
+        ),
+        "the phone shows the session, not its group"
+    );
+    // The phone leaves: mosh-server's client ends, then the sidecar's.
+    let _ = renderer.kill();
+    let _ = renderer.wait();
+    let _ = sidecar.child.kill();
+    let _ = sidecar.child.wait();
+    assert!(
+        eventually(10, || !server
+            .tmux(&["ls", "-F", "#{session_name}"])
+            .contains("~mp-")),
+        "the phone's group went with it: {}",
+        server.tmux(&["ls", "-F", "#{session_name}"])
+    );
+    assert_eq!(
+        server
+            .tmux(&["list-windows", "-t", "main", "-F", "#{window_id}"])
+            .lines()
+            .count(),
+        windows.len(),
+        "every window kept"
+    );
+    assert_eq!(server.window_of("main"), desk_window);
     let _ = desk.kill();
     let _ = desk.wait();
 }

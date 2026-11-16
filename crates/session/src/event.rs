@@ -75,6 +75,24 @@ pub enum FailureKind {
     MoshBootstrap,
     /// The connection went away during the attempt.
     Lost,
+    /// The connection's way through another can't be taken (F1): the one
+    /// it went through was deleted, or is more than one hop. Never
+    /// retried, never dialled direct instead; the person picks again.
+    Route,
+}
+
+/// Why a jump host didn't open the way to the host behind it (F1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TunnelWhy {
+    /// It couldn't connect there: no such name on its side, nothing
+    /// listening, no route.
+    ConnectFailed,
+    /// It doesn't forward connections (`AllowTcpForwarding no`).
+    Prohibited,
+    /// No answer in time (the jump host's own dial still going, or a
+    /// silent network behind it).
+    TimedOut,
+    Other,
 }
 
 /// Why nothing answered.
@@ -194,6 +212,16 @@ pub enum Cause {
         timed_out: bool,
     },
     MoshBootstrap(MoshWhy),
+    /// The jump host couldn't reach `host:port` for us (F1; the failure's
+    /// [`Failure::leg`] names it). The host is on the jump host's network,
+    /// not the device's.
+    Tunnel {
+        host: String,
+        port: u16,
+        why: TunnelWhy,
+    },
+    /// See [`FailureKind::Route`].
+    Route(crate::spec::HopBroken),
 }
 
 /// A failed attempt.
@@ -205,6 +233,10 @@ pub struct Failure {
     /// For the log only, in English; never shown to a person, never a
     /// secret.
     pub log: String,
+    /// The jump host's saved name when the failure is on its leg (F1):
+    /// dialling it, its key, its credentials, its answer about the host
+    /// behind it. `None`: the connection's own host.
+    pub leg: Option<String>,
     /// Whether trying again can help on its own: a network that comes back,
     /// a device that gets unlocked. Credentials and refused host keys can't
     /// — retrying them every keepalive tick would re-prompt the host-key
@@ -219,6 +251,7 @@ impl Failure {
             kind,
             cause,
             log: log.into(),
+            leg: None,
             retryable,
         }
     }
@@ -229,6 +262,14 @@ impl Failure {
         Self {
             retryable: false,
             ..Self::new(kind, cause, log)
+        }
+    }
+
+    /// This failure, on the jump host `name`'s leg (F1).
+    pub fn on_jump(self, name: &str) -> Self {
+        Self {
+            leg: Some(name.to_owned()),
+            ..self
         }
     }
 
@@ -376,6 +417,27 @@ impl From<&SshError> for Failure {
                 (FailureKind::Channel, Cause::Channel { timed_out: true })
             }
             SshError::Closed { .. } => (FailureKind::Lost, Cause::Plain),
+            // The jump host's answer about the host behind it; the dial
+            // marks the leg (it knows the jump host's saved name).
+            SshError::Tunnel {
+                host, port, reason, ..
+            } => {
+                let why = match reason {
+                    moshpit_ssh::TunnelRefusal::ConnectFailed => TunnelWhy::ConnectFailed,
+                    moshpit_ssh::TunnelRefusal::Prohibited => TunnelWhy::Prohibited,
+                    _ => TunnelWhy::Other,
+                };
+                let cause = Cause::Tunnel {
+                    host: host.clone(),
+                    port: *port,
+                    why,
+                };
+                // Forwarding switched off holds until someone switches it on.
+                if why == TunnelWhy::Prohibited {
+                    return Failure::permanent(FailureKind::Unreachable, cause, log);
+                }
+                (FailureKind::Unreachable, cause)
+            }
             SshError::Protocol(_) => (
                 FailureKind::Handshake,
                 Cause::Handshake {

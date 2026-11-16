@@ -15,8 +15,9 @@
 //! - A private sshd these tests start as the current user, on a free
 //!   loopback port, with its own host keys, `authorized_keys` and pid file in
 //!   a temp directory (the machine's sshd and `~/.ssh` are left alone):
-//!   every client key type, every host key type, and the SHA-1 `ssh-rsa`
-//!   signature Citadel sends being refused.
+//!   every client key type, every host key type, the SHA-1 `ssh-rsa`
+//!   signature Citadel sends being refused, and one private sshd reached
+//!   through another (`ssh -J`).
 //!
 //!   ```sh
 //!   MOSHPIT_SSH_TEST_SSHD=/usr/sbin/sshd \
@@ -32,7 +33,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moshpit_ssh::{
-    Auth, ConnectionEnd, Event, Exit, KnownHosts, PtyRequest, SftpError, Sig, Ssh, Target,
+    Auth, ConnectionEnd, Event, Exit, Jump, KnownHosts, PtyRequest, SftpError, Sig, Ssh, Target,
     TrustOnFirstUse,
 };
 use support::*;
@@ -505,6 +506,48 @@ async fn private_sshd_takes_every_client_key_type() {
         );
         assert!(log.contains(&fingerprint), "{fingerprint} not in {log}");
     }
+}
+
+/// A private sshd reached through another (F1): real OpenSSH opens the
+/// `direct-tcpip` channel, the target's session runs in it — a command and
+/// SFTP — and closing the target says goodbye on both.
+#[tokio::test]
+#[ignore = "needs an sshd binary; see the module docs"]
+async fn private_sshd_through_another() {
+    let binary = sshd_or_skip!();
+    let bastion = private_sshd(&binary, &["ed25519"]).await;
+    let target = private_sshd(&binary, &["ecdsa256"]).await;
+    let jump = Ssh::connect(
+        &bastion.target(),
+        Auth::key(fixture_key("ed25519")),
+        Arc::new(AcceptAny),
+        &options(),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{e}\n{}", bastion.log()));
+    let ssh = Ssh::connect_through(
+        Jump::new(jump.clone()),
+        &target.target(),
+        Auth::key(fixture_key("ed25519")),
+        Arc::new(AcceptAny),
+        None,
+        &options(),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{e}\n{}\n{}", bastion.log(), target.log()));
+    let out = ssh.run("echo behind").await.unwrap();
+    assert_eq!(out.stdout(), b"behind\n");
+    assert_eq!(ssh.host_key().algorithm(), "ecdsa-sha2-nistp256");
+    let sftp = ssh.sftp().await.unwrap();
+    assert!(sftp.list("/").await.unwrap().iter().any(|e| e.is_directory));
+    ssh.close().await;
+    assert_eq!(ssh.end(), Some(ConnectionEnd::ClosedByUs));
+    assert_eq!(
+        within(5, jump.ended()).await,
+        ConnectionEnd::ClosedByUs,
+        "{}",
+        bastion.log()
+    );
 }
 
 /// Each host key type, presented alone, fingerprints as ssh-keygen prints

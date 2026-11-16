@@ -48,6 +48,43 @@ struct ConnectionCredentialTests {
         #expect(try await keychain.loadPassword(forRef: ref) == "hunter2")
     }
 
+    /// B782: restored onto another iPhone, a connection has its record and
+    /// not its password. Its draft keeps nothing and says whose; the password
+    /// typed goes to the item the record names, and Home's Connect connects
+    /// it again.
+    @Test("A password not on this iPhone: the draft keeps nothing, and a new one goes to its own item")
+    @MainActor
+    func savingAMissingPassword() async throws {
+        let name = "b782.credential.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let store = ConnectionStore(defaults: defaults)
+        let ref = "moshpit.secret.b782-own"
+        let keychain = KeychainService.inMemory(seed: [:])
+        var saved = ServerConnection()
+        saved.name = "nas"
+        saved.host = "nas.example.com"
+        saved.username = "me"
+        saved.keychainRef = ref
+        store.add(saved)
+        store.setSecretMissing([saved.id])
+        #expect(store.secretMissing == [saved.id])
+
+        #expect(ConnectionDraft(saved).stored == .password)
+        let draft = ConnectionDraft(saved, secretMissing: true)
+        #expect(draft.stored == StoredCredential.none)
+        #expect(draft.missing?.name == "nas")
+        #expect(!draft.canSave(keys: [], secrets: ConnectionSecrets()), "Save waits for the password")
+
+        var secrets = ConnectionSecrets()
+        secrets.password = "hunter2"
+        try await draft.save(existing: saved, store: store, keychain: keychain, settings: .shared, keys: [],
+                             secrets: secrets)
+        #expect(store.connections.first?.keychainRef == ref)
+        #expect(try await keychain.loadPassword(forRef: ref) == "hunter2")
+        #expect(store.secretMissing.isEmpty, "it connects again")
+    }
+
     @Test("A new connection: its password in a fresh item, the connection added; a managed key's item never written")
     @MainActor
     func savingANewConnection() async throws {
@@ -113,7 +150,7 @@ struct ConnectionCredentialTests {
                              release: { released.append($0) })
         #expect(released == [own])
         for ref in released {
-            await KeychainReferences.release(ref, connections: store, keys: keyStore, keychain: keychain)
+            store.releaseSecret(ref, keys: keyStore, keychain: keychain.storeHost)
         }
         #expect((try? await keychain.loadPassword(forRef: own)) == nil, "the old password stayed")
         #expect(store.connections.first?.keychainRef == key.keychainRef)

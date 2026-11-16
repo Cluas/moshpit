@@ -254,6 +254,19 @@ final class RustKeychainHost: KeychainHost, @unchecked Sendable {
     }
 }
 
+/// What the core's orphan recovery asks about a stored secret it can't
+/// read itself (B810): a Secure Enclave key's handle, which only CryptoKit
+/// opens (``SSHKeyFactory/describeEnclaveHandle(_:)``). An OpenSSH or PEM
+/// key the core reads on its own and never asks about. Asked with both
+/// stores held, so it reads nothing of theirs.
+final class EnclaveKeyReader: StoredKeyReader {
+    func describe(secret: Data) -> StoredKeyFacts? {
+        guard let key = SSHKeyFactory.describeEnclaveHandle(secret) else { return nil }
+        return StoredKeyFacts(algorithm: .seP256, source: .secureEnclave, bits: key.bits.map(Int64.init),
+                              publicKey: key.publicKeyLine, fingerprint: key.fingerprint)
+    }
+}
+
 /// Host keys trusted for this launch only (a DEBUG seed's private sshd):
 /// laid over the trusted map as the core reads it, and taken out of what
 /// it writes back, so nothing about them is ever stored. Empty in Release.

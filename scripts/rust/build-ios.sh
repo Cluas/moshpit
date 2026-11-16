@@ -8,6 +8,10 @@
 #   scripts/rust/build-ios.sh                              # the device
 #   scripts/rust/build-ios.sh iphonesimulator arm64 x86_64 # the simulator
 #
+# MOSHPIT_RUST_PACKAGE names another package: the notification service
+# extension's own library (moshpit-seal-ffi, E7b), which its target builds
+# the same way and links alone — one Rust library per binary.
+#
 # The cargo profile (Cargo.toml) follows the Xcode configuration: `app` for
 # Release — everything that leaves this Mac, Canary and the App Store,
 # optimised for size with LTO over the whole crate graph — and `app-test`
@@ -103,7 +107,15 @@ case "$profile" in
         exit 1
         ;;
 esac
-echo "note: crates/ffi for ${CONFIGURATION:-a build by hand} with the cargo profile $profile"
+package="${MOSHPIT_RUST_PACKAGE:-moshpit-ffi}"
+case "$package" in
+    moshpit-ffi | moshpit-seal-ffi) ;;
+    *)
+        echo "error: MOSHPIT_RUST_PACKAGE is \"$package\": the app links moshpit-ffi, its notification service moshpit-seal-ffi (scripts/rust/build-ios.sh)" >&2
+        exit 1
+        ;;
+esac
+echo "note: $package for ${CONFIGURATION:-a build by hand} with the cargo profile $profile"
 
 cd "$root"
 for arch in $archs; do
@@ -122,5 +134,5 @@ for arch in $archs; do
         env -i "${env_args[@]}" rustup target add "$target"
     fi
     env -i "${env_args[@]}" nice -n "$niceness" \
-        cargo build --locked -p moshpit-ffi --profile "$profile" --target "$target"
+        cargo build --locked -p "$package" --profile "$profile" --target "$target"
 done

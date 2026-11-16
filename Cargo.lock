@@ -2364,6 +2364,7 @@ dependencies = [
  "moshpit-pet",
  "moshpit-runtime",
  "moshpit-seal",
+ "moshpit-seal-ffi",
  "moshpit-session",
  "moshpit-ssh",
  "moshpit-store",
@@ -2453,6 +2454,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "moshpit-seal-ffi"
+version = "0.1.0"
+dependencies = [
+ "moshpit-seal",
+ "serde_json",
+]
+
+[[package]]
 name = "moshpit-session"
 version = "0.1.0"
 dependencies = [
@@ -2468,6 +2477,7 @@ dependencies = [
  "moshpit-stream",
  "moshpit-term",
  "moshpit-tmux",
+ "russh",
  "tokio",
 ]
 

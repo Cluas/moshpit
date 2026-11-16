@@ -114,7 +114,7 @@ struct KeychainWrites: Sendable {
 ///
 /// Items are stored as Generic Passwords scoped by `service` (defaults to the
 /// bundle id). The keychain `account` is the `keychainRef` opaque ID assigned
-/// by `KeychainService.generateRef()`. When `requireBiometry` is true the
+/// by the Rust store (`storeNewKeychainRef()`). When `requireBiometry` is true the
 /// item is gated by `.userPresence`, which prompts Face ID / Touch ID / device
 /// passcode on every read.
 final class SystemKeychainBackend: KeychainBackend {
@@ -504,8 +504,9 @@ final class InMemoryKeychainBackend: KeychainBackend, @unchecked Sendable {
 /// Stores per-connection secrets (password OR private key PEM blob) in the
 /// Keychain, gated by biometric authentication on read.
 ///
-/// `ServerConnection.keychainRef` holds the opaque ID returned by
-/// `generateRef()`; the actual secret bytes never leave the keychain except
+/// `ServerConnection.keychainRef` holds the opaque ID the Rust store mints
+/// (`storeNewKeychainRef()`, B810: the one set of refs made this launch, the
+/// one orphan recovery asks); the actual secret bytes never leave the keychain except
 /// inside `load(...)`. The service is an `actor` so concurrent SSH attempts
 /// against the same account serialize cleanly.
 actor KeychainService {
@@ -537,48 +538,10 @@ actor KeychainService {
         KeychainService(backend: InMemoryKeychainBackend(seed: seed))
     }
 
-    /// These items as the Rust store reaches them (``KeychainReferences``'
+    /// These items as the Rust store reaches them (the core's
     /// list of items to drop, B428): the same backend, nothing laid over it.
     nonisolated var storeHost: RustKeychainHost {
         RustKeychainHost(backend: backend, launchTrust: nil)
-    }
-
-    // MARK: - References
-
-    /// What every ref ``generateRef()`` makes starts with — the only items
-    /// ``KeychainReferences`` ever looks at on its own.
-    static let refPrefix = "moshpit.secret."
-
-    /// Returns a fresh opaque ref that callers should store in
-    /// `ServerConnection.keychainRef`. UUID-based, lowercase.
-    ///
-    /// Remembered for the life of the process: an item is written under a
-    /// fresh ref BEFORE the record that names it is saved (a key's private
-    /// half, a connection's password), so for a moment nothing references
-    /// it. Nothing made in this launch is ever taken for an orphan here.
-    nonisolated func generateRef() -> String {
-        let ref = Self.refPrefix + UUID().uuidString.lowercased()
-        Self.minted.withLock { _ = $0.insert(ref) }
-        return ref
-    }
-
-    /// Whether `ref` was made by ``generateRef()`` in this process.
-    static func mintedThisLaunch(_ ref: String) -> Bool {
-        minted.withLock { $0.contains(ref) }
-    }
-
-    private static let minted = MintedRefs()
-
-    /// The refs this process made, behind a lock: refs are made on any
-    /// thread.
-    private final class MintedRefs: @unchecked Sendable {
-        private let lock = NSLock()
-        private var refs: Set<String> = []
-
-        func withLock<T>(_ body: (inout Set<String>) -> T) -> T {
-            lock.lock(); defer { lock.unlock() }
-            return body(&refs)
-        }
     }
 
     // MARK: - Password

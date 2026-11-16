@@ -24,7 +24,6 @@ use nsh_core::{
     platform::{Idiom, Os},
 };
 use nsh_engine::EngineConfig;
-use nsh_testing::Headless;
 use serde_json::{Value, json};
 
 /// The next intent the screen told the host, the anchors it reports as it
@@ -73,7 +72,7 @@ fn phone() -> (App, Arc<Channel>, Slops) {
     config.environment.idiom = Idiom::Phone;
     config.environment.pixel_ratio = 3.0;
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
-    let mut app = Headless::start(config).expect("the engine starts");
+    let mut app = common::headless(config);
     let slops = Slops::default();
     let observed = slops.clone();
     app.observe(move |_, batch| observed.apply(batch));

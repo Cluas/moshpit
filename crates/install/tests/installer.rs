@@ -319,7 +319,7 @@ fn a_muted_pairing_says_so_in_a_last_line_and_an_unmuted_one_is_as_before() {
     assert_eq!(installer::push_conf_as(&pairing(), true), format!("{on}NOTIFY=off\n"));
 }
 
-/// `PushPairingTests.noShellPathRemains`.
+/// `PushPairingTests.noShellPathRemains` (the Swift test, until E7b).
 #[test]
 fn nothing_here_can_put_a_secret_into_a_shell_command() {
     let fresh = PushPairing::make(Uuid::new_v4(), "m1-pro", "https://push.example.org", now());
@@ -917,7 +917,8 @@ fn commands_are_the_ones_the_app_sends() {
         "cat \"$HOME/.moshpit/manifest.json\" 2>/dev/null || true"
     );
     assert!(commands[2].starts_with(&format!(
-        "set -e; mkdir -p \"$HOME/.moshpit\"; umask 077; p=\"$HOME/.moshpit/moshpit-push.sh\"; {} \
+        "set -e; umask 077; mkdir -p \"$HOME/.moshpit\"; chmod 700 \"$HOME/.moshpit\"; \
+         p=\"$HOME/.moshpit/moshpit-push.sh\"; {} \
          t=\"$p.moshpit-new.$$\"; trap 'rm -f \"$t\"' EXIT; printf %s 'IyEvYmluL3No",
         commands::RESOLVE
     )));

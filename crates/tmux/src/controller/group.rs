@@ -142,10 +142,10 @@ impl Controller {
     }
 
     /// Our group of `session`, unless one is already ours, tmux refused, or
-    /// a desktop's control client was on it at the attach.
+    /// a desktop's control client was on it at the attach. A mosh sidecar's
+    /// too (B773): the phone's renderer is moved into it.
     pub(super) fn wants_group_for(&self, session: &str) -> bool {
-        self.config.renders_output
-            && !self.group.refused
+        !self.group.refused
             && !self.group.foreign.contains(session)
             && self
                 .group
@@ -184,6 +184,26 @@ impl Controller {
         self.group.current = Some(group);
         self.group.entering = true;
         self.group.landing = true;
+        // B773: a mosh sidecar lands the group where the session is right
+        // away (a group starts on its lowest window), and brings the phone's
+        // renderer in behind, in the same queue: a size probe around the
+        // move reads it (B150). Not listed yet: at the listing's landing.
+        if !self.config.renders_output {
+            let active = self
+                .snapshot
+                .windows
+                .values()
+                .find(|window| window.session_id == session && window.is_active)
+                .map(|window| window.id.clone());
+            match active {
+                Some(window) => {
+                    self.send(format!("select-window -t {window}"));
+                    self.group.landing = false;
+                    self.bring_renderer_into_group();
+                }
+                None => self.sidecar.renderer_awaits_landing = true,
+            }
+        }
     }
 
     /// `<S>~mp-<device>-<n>-<tag>`: S's name in the characters tmux keeps,
@@ -395,6 +415,8 @@ impl Controller {
                     current.id = Some(id.clone());
                 }
                 self.group.group_ids.insert(id);
+                // B773: a sidecar's status line goes with the group's id.
+                self.sync_status_line();
                 if late {
                     // Made after the attach's listings: list again, in the
                     // group (the landing, then the restore).
@@ -440,9 +462,6 @@ impl Controller {
     /// whose session is gone (a client that died between the make and its
     /// option, an old tmux) — never a session without the mark.
     pub(super) fn sweep_groups(&mut self) {
-        if !self.config.renders_output {
-            return;
-        }
         self.send_command(
             format!(
                 "list-sessions -F '#{{session_id}} #{{session_attached}} #{{{GROUP_OF_OPTION}}}'"

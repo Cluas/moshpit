@@ -532,6 +532,39 @@ func TestBadDeviceTokenFallsBackToOtherEnvironment(t *testing.T) {
 	}
 }
 
+// TestGoneOnlyWhenAPNsSaysSo (B784): a 410 from /v1/notify is the host's cue
+// to delete the pairing it sent with, so it must mean APNs said the device is
+// gone — never a retry that could not be made. Production answering
+// BadDeviceToken (a sandbox token) and the sandbox retry failing in transport
+// says nothing about the device: 502, as an unreachable APNs is. Both
+// environments refusing the token is gone.
+func TestGoneOnlyWhenAPNsSaysSo(t *testing.T) {
+	cases := []struct {
+		name    string
+		sandbox *fakeSender
+		want    int
+	}{
+		{"the retry can't reach APNs", &fakeSender{err: fmt.Errorf("dial tcp: i/o timeout")}, http.StatusBadGateway},
+		{"both refuse the token", &fakeSender{resp: apns.Response{StatusCode: 400, Reason: "BadDeviceToken"}}, http.StatusGone},
+		{"the retry says unregistered", &fakeSender{resp: apns.Response{StatusCode: 410, Reason: "Unregistered"}}, http.StatusGone},
+	}
+	for _, tc := range cases {
+		prod := &fakeSender{resp: apns.Response{StatusCode: 400, Reason: "BadDeviceToken"}}
+		r := &relay{master: []byte(testMaster), tokenTTL: 45 * 24 * time.Hour,
+			prod: prod, sandbox: tc.sandbox, throttle: newThrottle(),
+			interruptionLevel: "active", now: time.Now}
+		srv := httptest.NewServer(r.routes())
+		c := testCred(t, srv, "production")
+		resp := notify(t, srv, c.token,
+			sealedBody(t, c, "done", "moshpit.done.x.%1", sealbox.Status{State: "done"}))
+		resp.Body.Close()
+		srv.Close()
+		if resp.StatusCode != tc.want {
+			t.Errorf("%s: status %d, want %d", tc.name, resp.StatusCode, tc.want)
+		}
+	}
+}
+
 // TestMintValidatesShape: the mint endpoint stores nothing, so shape checks are
 // all the resistance it needs — plus proof that what it returns actually
 // authenticates a push.
@@ -663,7 +696,7 @@ func TestShellSenderFansOutToEveryDevice(t *testing.T) {
 
 	cmd := exec.Command("sh", script, "attention", "claude", "may I?")
 	cmd.Env = append(os.Environ(), "HOME="+home, "MOSHPIT_PUSH_HOST=m1-pro",
-		"TMUX_PANE=%3", "TMUX=")
+		"TMUX_PANE=%3", "HERDR_PANE_ID=", "TMUX=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sender failed: %v\n%s", err, out)
 	} else if len(out) > 0 {
@@ -707,6 +740,63 @@ func TestShellSenderFansOutToEveryDevice(t *testing.T) {
 	}
 }
 
+// TestShellSenderDropsAConfTheRelayCallsGone (B784): a phone restored onto a
+// new iPhone pairs again under a new install; the old phone's conf stays on
+// the host, and once that phone is wiped every push spent a relay call on
+// its dead token, forever. On a definite 410 — APNs said the device is gone —
+// a hook's push deletes the conf it sent with and says so in the host's
+// ~/.moshpit/push.log. Any other answer (a 502 here) keeps it: a live phone's
+// pairing is never lost to a bad moment, and a phone that is in fact alive
+// has host care write it again at its next connect.
+func TestShellSenderDropsAConfTheRelayCallsGone(t *testing.T) {
+	script, err := filepath.Abs("../scripts/host/moshpit-push.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("openssl"); err != nil {
+		t.Skip("openssl not installed")
+	}
+	for _, tc := range []struct {
+		name string
+		resp apns.Response
+		gone bool
+	}{
+		{"APNs: unregistered", apns.Response{StatusCode: 410, Reason: "Unregistered"}, true},
+		{"APNs: an error", apns.Response{StatusCode: 500, Reason: "InternalServerError"}, false},
+	} {
+		_, sender, srv := newTestRelay(t)
+		c := testCred(t, srv, "sandbox")
+		sender.resp = tc.resp
+		home := t.TempDir()
+		conf := filepath.Join(home, "old-phone.conf")
+		if err := os.WriteFile(conf, []byte(
+			"RELAY_URL="+srv.URL+"\n"+
+				"SEND_TOKEN="+c.token+"\n"+
+				"SECRET="+testSecret+"\n"+
+				"CONN="+testConn+"\n"+
+				"APNS_TOKEN="+testAPNsToken+"\n"+
+				"APNS_ENV=sandbox\n"+
+				"SEND_IAT="+strconv.FormatInt(c.iat, 10)+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", script, "attention", "claude", "may I")
+		cmd.Env = append(os.Environ(), "HOME="+home, "MOSHPIT_PUSH_CONF="+conf,
+			"MOSHPIT_PUSH_HOST=m1-pro", "TMUX_PANE=%3", "HERDR_PANE_ID=", "TMUX=")
+		if out, err := cmd.CombinedOutput(); err != nil || len(out) > 0 {
+			t.Fatalf("%s: a hook's push must stay silent: %v\n%s", tc.name, err, out)
+		}
+		srv.Close()
+		_, statErr := os.Stat(conf)
+		if kept := statErr == nil; kept == tc.gone {
+			t.Errorf("%s: conf kept = %v, want %v", tc.name, kept, !tc.gone)
+		}
+		log, _ := os.ReadFile(filepath.Join(home, ".moshpit", "push.log"))
+		if said := strings.Contains(string(log), "old-phone.conf"); said != tc.gone {
+			t.Errorf("%s: push.log = %q", tc.name, log)
+		}
+	}
+}
+
 func TestShellSenderInterop(t *testing.T) {
 	script, err := filepath.Abs("../scripts/host/moshpit-push.sh")
 	if err != nil {
@@ -743,7 +833,7 @@ func TestShellSenderInterop(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"MOSHPIT_PUSH_CONF="+conf,
 			"MOSHPIT_PUSH_HOST=m1-pro",
-			"TMUX_PANE=%3",
+			"TMUX_PANE=%3", "HERDR_PANE_ID=",
 			"TMUX=",
 		)
 		out, err := cmd.CombinedOutput()

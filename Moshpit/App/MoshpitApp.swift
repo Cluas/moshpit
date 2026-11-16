@@ -185,10 +185,12 @@ struct MoshpitApp: App {
         // them (B232) — a deleted key's, or one whose record a lost key list
         // took with it: listed in SSH Keys again, once. Recovery deletes
         // nothing, and never offers a listed item back.
+        // The core's, all three (B810): one set of the refs made this
+        // launch, one rule for who names what.
         Task { [store, sshKeys, keychain] in
-            KeychainReferences.settleReleasesOnce(connections: store, keys: sshKeys, keychain: keychain)
-            await KeychainReferences.recoverOrphansOnce(connections: store, keys: sshKeys, keychain: keychain)
-            KeychainReferences.learnKeyFactsOnce(keys: sshKeys, keychain: keychain)
+            store.settleReleasesOnce(keys: sshKeys, keychain: keychain.storeHost)
+            sshKeys.recoverOrphansOnce(connections: store, keychain: keychain.storeHost)
+            sshKeys.learnKeyFactsOnce(keychain: keychain.storeHost)
             await KeychainReferences.moveTrustedHostKeysOnce(keychain: keychain)
             // B781: the keys a restore didn't bring, told again each return.
             KeychainReferences.findMissing(connections: store, keys: sshKeys, keychain: keychain)

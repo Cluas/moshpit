@@ -46,6 +46,27 @@ enum NSHFlow {
         return app
     }
 
+    /// `app` closed and opened again the way a person does it, to find what
+    /// it stored: sent to the background first, then ended, then launched
+    /// without the reset. `terminate()` on an app still in front kills it
+    /// on the spot. UserDefaults writes asynchronously (`synchronize()` is
+    /// documented as waiting for those pending writes), so a setting
+    /// changed a moment before can be lost, and a relaunch reads the old
+    /// value. CI's run on 863f81c did (B820).
+    @MainActor
+    static func relaunch(_ app: XCUIApplication, _ extra: [String] = [],
+                         file: StaticString = #filePath, line: UInt = #line) -> XCUIApplication {
+        XCUIDevice.shared.press(.home)
+        // Suspended once it has nothing left to finish; in the background
+        // at least.
+        let left = app.wait(for: .runningBackgroundSuspended, timeout: 5)
+            || app.state == .runningBackground
+        XCTAssertTrue(left, "the app never left the foreground (state \(app.state.rawValue))",
+                      file: file, line: line)
+        app.terminate()
+        return launch(extra, reset: false)
+    }
+
     /// The seeded session's launch arguments, from the test runner's
     /// environment (`TEST_RUNNER_MOSHPIT_SEED_*` given to xcodebuild arrives
     /// here without the prefix): the local rig's or a staged host's. `nil`

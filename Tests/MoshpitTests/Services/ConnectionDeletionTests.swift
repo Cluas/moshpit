@@ -17,6 +17,38 @@ import MoshpitKit
 @Suite("Deleting a connection")
 struct ConnectionDeletionTests {
 
+    /// The keychain as the core reaches it (B810: the delete's item is the
+    /// core's to drop), in memory, keeping what it was asked to delete.
+    final class Keychain: KeychainHost, @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [String: Data]
+        private(set) var deleted: [String] = []
+
+        init(_ accounts: [String] = []) {
+            items = Dictionary(uniqueKeysWithValues: accounts.map { ($0, Data("secret".utf8)) })
+        }
+
+        func save(account: String, secret: Data, requireBiometry: Bool) throws {
+            lock.withLock { items[account] = secret }
+        }
+
+        func load(account: String, prompt: String) throws -> Data {
+            guard let data = lock.withLock({ items[account] }) else { throw KeychainFailure.NotFound }
+            return data
+        }
+
+        func delete(account: String) throws {
+            lock.withLock {
+                deleted.append(account)
+                items[account] = nil
+            }
+        }
+
+        func exists(account: String) -> Bool { lock.withLock { items[account] != nil } }
+        func accounts() throws -> [String] { lock.withLock { Array(items.keys) } }
+        func loadSilently(account: String) throws -> Data { try load(account: account, prompt: "") }
+    }
+
     /// Records what the delete told care, and when.
     @MainActor final class Recorder: ConnectionCareHandshake {
         var steps: [String] = []
@@ -46,32 +78,31 @@ struct ConnectionDeletionTests {
         func changed(change: HostCareChange) {}
     }
 
-    /// A pairings file of the test's own: written as the app writes it (the
-    /// Rust store), read as the notification service reads it.
+    /// A pairings file of the test's own, through the Rust store the app
+    /// and the notification service both read it with.
     struct TestPairingsFile {
         let url: URL
         private var store: RustPushPairings { RustPushPairings(url: url) }
-        func read() -> [PushPairing] { PushPairingFile(url: url).read() }
-        @discardableResult func write(_ pairings: [PushPairing]) -> Bool { store.write(pairings) }
-        @discardableResult func upsert(_ pairing: PushPairing) -> Bool { store.upsert(pairing) }
-        func remove(connectionId: UUID) -> Bool { store.remove(connectionId: connectionId) }
+        func read() -> [PairingRecord] { store.read() }
+        @discardableResult func write(_ pairings: [PairingRecord]) -> Bool { store.write(pairings) }
+        @discardableResult func upsert(_ pairing: PairingRecord) -> Bool { store.upsert(pairing) }
+        func remove(connectionId: String) -> Bool { store.remove(connectionId: connectionId) }
     }
 
     /// A pairing for connection `id`, its send token not minted yet.
-    static func pairing(_ id: UUID, host: String, relayURL: String = relayURL) -> PushPairing {
-        PushPairing(connectionId: id, hostLabel: host, secretHex: String(repeating: "ab", count: 32),
-                    sendToken: "", relayURL: relayURL, createdAt: Date())
+    static func pairing(_ id: UUID, host: String, relayURL: String = relayURL) -> PairingRecord {
+        PairingRecord(connectionId: id.uuidString, hostLabel: host, secretHex: String(repeating: "ab", count: 32),
+                      sendToken: "", relayUrl: relayURL, createdAt: Date().timeIntervalSinceReferenceDate,
+                      apnsToken: nil, apnsEnv: nil, sendTokenIssuedAt: nil)
     }
 
     /// A pairings file of the test's own, as the core reaches one.
     final class FilePairings: PairingsFile, @unchecked Sendable {
         let file: TestPairingsFile
         init(_ file: TestPairingsFile) { self.file = file }
-        func read() -> [PairingRecord] { file.read().map(PairingRecord.init) }
-        func upsert(pairing: PairingRecord) -> Bool { PushPairing(pairing).map(file.upsert) ?? false }
-        func remove(connectionId: String) -> Bool {
-            UUID(uuidString: connectionId).map(file.remove(connectionId:)) ?? true
-        }
+        func read() -> [PairingRecord] { file.read() }
+        func upsert(pairing: PairingRecord) -> Bool { file.upsert(pairing) }
+        func remove(connectionId: String) -> Bool { file.remove(connectionId: connectionId) }
     }
 
     static let relayURL = "https://relay.example.com"
@@ -105,14 +136,19 @@ struct ConnectionDeletionTests {
                                           keychainRef: "connection-secret")
         store.add(connection)
         let care = Recorder()
+        let keychain = Keychain(["connection-secret"])
 
         try await ConnectionDeletion.delete(
-            connection, from: store, keys: SSHKeyStore(defaults: defaults), care: care,
+            connection, from: store, keys: SSHKeyStore(defaults: defaults), keychain: keychain, care: care,
             tearDown: { care.steps.append("tear down") },
-            dropSecret: { _ in care.steps.append(store.connections.isEmpty ? "secret after" : "secret") },
-            dropShares: { _ in care.steps.append(store.connections.isEmpty ? "shares after" : "shares") })
+            dropShares: { _ in
+                care.steps.append(store.connections.isEmpty ? "shares after" : "shares")
+                care.steps.append(keychain.deleted.isEmpty ? "secret still there" : "secret gone")
+            })
 
-        #expect(care.steps == ["began", "forget", "tear down", "wind down", "secret", "shares", "ended"])
+        #expect(care.steps == ["began", "forget", "tear down", "wind down", "shares", "secret still there", "ended"])
+        // The record and its item go together, the core's one call (B810).
+        #expect(keychain.deleted == ["connection-secret"])
         #expect(store.connections.isEmpty)
     }
 
@@ -130,11 +166,11 @@ struct ConnectionDeletionTests {
         #expect(!ConnectionDeletion.isUnderWay(connection.id))
         var during: [Bool] = []
         try await ConnectionDeletion.delete(
-            connection, from: store, keys: SSHKeyStore(defaults: defaults), care: care,
+            connection, from: store, keys: SSHKeyStore(defaults: defaults),
+            keychain: Keychain(["connection-secret"]), care: care,
             tearDown: { during.append(ConnectionDeletion.isUnderWay(connection.id)) },
-            dropSecret: { _ in during.append(ConnectionDeletion.isUnderWay(connection.id)) },
             dropShares: { _ in during.append(ConnectionDeletion.isUnderWay(connection.id)) })
-        #expect(during == [true, true, true])
+        #expect(during == [true, true])
         #expect(!ConnectionDeletion.isUnderWay(connection.id), "held after the delete")
     }
 
@@ -160,7 +196,7 @@ struct ConnectionDeletionTests {
         let doomedFiles = shares.load().filter { $0.connectionId == doomed.id }.flatMap(\.files)
 
         try await ConnectionDeletion.delete(doomed, from: store, keys: SSHKeyStore(defaults: defaults),
-                                            care: Recorder(), tearDown: {}, dropSecret: { _ in },
+                                            keychain: Keychain(), care: Recorder(), tearDown: {},
                                             dropShares: { shares.removeEntries(for: $0) })
 
         #expect(shares.load().map(\.label) == ["kept"])
@@ -183,20 +219,19 @@ struct ConnectionDeletionTests {
         let care = Recorder()
         care.cannotForget = true
         var tornDown = false
-        var dropped: [String] = []
+        let keychain = Keychain(["connection-secret"])
         var sharesDropped = false
 
         await #expect(throws: PushPairingForgetFailure.self) {
             try await ConnectionDeletion.delete(connection, from: store, keys: SSHKeyStore(defaults: defaults),
-                                                care: care, tearDown: { tornDown = true },
-                                                dropSecret: { dropped.append($0) },
+                                                keychain: keychain, care: care, tearDown: { tornDown = true },
                                                 dropShares: { _ in sharesDropped = true })
         }
         #expect(!sharesDropped, "the queued shares went for a delete that didn't happen")
         #expect(store.connections.map(\.id) == [connection.id],
                 "the connection went, leaving a pairing nothing on screen owns")
         #expect(!tornDown, "the session was ended for a delete that didn't happen")
-        #expect(dropped.isEmpty, "the keychain secret went for a delete that didn't happen")
+        #expect(keychain.deleted.isEmpty, "the keychain secret went for a delete that didn't happen")
         #expect(care.steps == ["began"])
     }
 
@@ -216,11 +251,11 @@ struct ConnectionDeletionTests {
         ]))
 
         try await ConnectionDeletion.delete(doomed, from: store, keys: SSHKeyStore(defaults: defaults),
-                                            care: CoreCareHandshake(core: core(file)),
-                                            tearDown: {}, dropSecret: { _ in }, dropShares: { _ in })
+                                            keychain: Keychain(), care: CoreCareHandshake(core: core(file)),
+                                            tearDown: {}, dropShares: { _ in })
 
         #expect(store.connections.map(\.id) == [kept.id])
-        #expect(file.read().map(\.connectionId) == [kept.id],
+        #expect(file.read().map(\.connectionId) == [kept.id.uuidString],
                 "the deleted connection's push secret is still on the phone")
     }
 
@@ -233,15 +268,14 @@ struct ConnectionDeletionTests {
         let connection = ServerConnection(name: "plain", host: "d.example.com", username: "dev",
                                           keychainRef: "connection-secret")
         store.add(connection)
-        var dropped: [String] = []
+        let keychain = Keychain(["connection-secret"])
 
         try await ConnectionDeletion.delete(connection, from: store, keys: SSHKeyStore(defaults: defaults),
-                                            care: CoreCareHandshake(core: core(file)),
-                                            tearDown: {}, dropSecret: { dropped.append($0) },
-                                            dropShares: { _ in })
+                                            keychain: keychain, care: CoreCareHandshake(core: core(file)),
+                                            tearDown: {}, dropShares: { _ in })
 
         #expect(store.connections.isEmpty)
-        #expect(dropped == ["connection-secret"])
+        #expect(keychain.deleted == ["connection-secret"])
         #expect(!FileManager.default.fileExists(atPath: file.url.path),
                 "forgetting a pairing that never existed wrote a pairings file")
     }

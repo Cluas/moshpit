@@ -62,7 +62,10 @@ WRITE = re.compile(r"^set -e; mkdir -p \"[^\"]*\"; umask 077; printf %s '([A-Za-
 # config keeps its own mode (config-mode, B352): both are documented in
 # crates/install/harness/divergences.json. Compared here by what they
 # write, as Swift's in-place write is.
-ATOMIC_WRITE = re.compile(r"^set -e; mkdir -p \"[^\"]*\"; umask 077; p=\"([^\"]*)\"; .*? t=\"\$p\.moshpit-new\.\$\$\"; "
+# B637: the umask before the directory is made, and a directory under
+# ~/.moshpit made the person's alone (the older form still matches).
+ATOMIC_WRITE = re.compile(r"^set -e; (?:mkdir -p \"[^\"]*\"; umask 077|umask 077; mkdir -p \"[^\"]*\"(?:; chmod 700 \"[^\"]*\")?); "
+                          r"p=\"([^\"]*)\"; .*? t=\"\$p\.moshpit-new\.\$\$\"; "
                           r"trap 'rm -f \"\$t\"' EXIT; (?:n=; if \[ -f \"\$p\" \]; then cp -p \"\$p\" \"\$t\"; else n=1; fi; )?"
                           r"printf %s '([A-Za-z0-9+/=]*)' \| base64 -d > \"\$t\"; (?:\[ -z \"\$n\" \] \|\| )?chmod (\d+) \"\$t\"; "
                           r"mv -f \"\$t\" \"\$p\"$")
