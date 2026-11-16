@@ -57,6 +57,7 @@ final class StreamingDictationCore: @unchecked Sendable {
     private let load: Load
     private let finalPass: FinalPass?
     private let onVolatile: @Sendable (String) -> Void
+    private let onLoadFailure: (@Sendable (String) -> Void)?
     /// How often the pump hands audio to the recognizer and asks it for
     /// words.
     private let tick: Duration
@@ -74,11 +75,16 @@ final class StreamingDictationCore: @unchecked Sendable {
     private var loadTask: Task<Void, Never>?
     private var pumpTask: Task<Void, Never>?
 
+    /// `onLoadFailure` hears, while the dictation still listens, that the
+    /// model didn't load and there is no final pass to write the text: the
+    /// dictation has nothing left to give.
     init(load: @escaping Load, finalPass: FinalPass?, tick: Duration = .milliseconds(150),
+         onLoadFailure: (@Sendable (String) -> Void)? = nil,
          onVolatile: @escaping @Sendable (String) -> Void) {
         self.load = load
         self.finalPass = finalPass
         self.tick = tick
+        self.onLoadFailure = onLoadFailure
         self.onVolatile = onVolatile
     }
 
@@ -102,7 +108,17 @@ final class StreamingDictationCore: @unchecked Sendable {
                 }
                 if !keep { loaded.close() }
             } catch {
-                self?.lock.withLock { self?.loadFailure = String(describing: error) }
+                // Said now, not at the end (B862): the model failing to load
+                // used to come out only from `finish()`, after the panel had
+                // listened for as long as the person spoke, words never
+                // showing, and by then nobody was left to show the failure.
+                guard let self else { return }
+                let reason = error.localizedDescription
+                let report = self.lock.withLock { () -> Bool in
+                    self.loadFailure = reason
+                    return self.finalPass == nil && !self.cancelled && !self.finished
+                }
+                if report { self.onLoadFailure?(reason) }
             }
         }
         pumpTask = Task { [weak self] in

@@ -75,7 +75,12 @@ final class XASRDictationEngine: DictationEngine {
         }
         let script = self.script
         let continuation = updateContinuation
-        let core = StreamingDictationCore(load: load, finalPass: nil) { text in
+        let core = StreamingDictationCore(load: load, finalPass: nil, onLoadFailure: { reason in
+            // The panel shows it and stops the mic; Insert has nothing to
+            // type (B862).
+            Log.voice.error("x-asr load failed: \(reason, privacy: .public)")
+            continuation.finish(throwing: DictationFailure.engine(reason))
+        }) { text in
             continuation.yield(DictationUpdate(
                 finalizedText: "", volatileText: DictationTranscript.converting(text, to: script)))
         }
