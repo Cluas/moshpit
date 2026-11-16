@@ -9,8 +9,9 @@
 //! - no view around it, or around a text, is of no size (B659: VoiceOver
 //!   never reaches what is inside one);
 //! - nothing that isn't in a sideways scroll goes past the screen's edges;
-//! - no text is cut short (more lines, or more width, than it was given)
-//!   or overlaps another, and none goes past a view that clips it.
+//! - no text is cut short (more lines, or more width, than it was given),
+//!   squeezed to no width, or overlaps another, and none goes past a view
+//!   that clips it.
 //!
 //! A text is cut short when, measured as the headless engine lays it out,
 //! it needs more lines than its limit gives it (or, on a line that doesn't
@@ -187,6 +188,28 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
             })
     };
 
+    // Squeezed out: words laid out with no width at all, which the loop
+    // below (shown views only) never sees: a middle-shortened address
+    // beside a badge as wide as its lane.
+    for node in nodes.iter().filter(|n| {
+        !n.hidden
+            && !skipped(n)
+            && n.bounds.size.width.0 < 1.0
+            && n.bounds.size.height.0 > 0.0
+            && n.text
+                .as_ref()
+                .is_some_and(|t| !t.text.text.trim().is_empty())
+            && empty_around(n).is_none()
+            && !sideways(n)
+            && opacity(n) > 0.01
+    }) {
+        found.push(format!(
+            "{}: squeezed to nothing ({:.0} pt)",
+            describe(node),
+            node.bounds.size.width.0
+        ));
+    }
+
     for node in nodes.iter().filter(|n| shown(n) && !skipped(n)) {
         let what = describe(node);
         let presses = screen.press_target(&format!("view:{}", node.id)) == Ok(Some(node.id));
@@ -243,6 +266,13 @@ pub fn audit(app: &Headless, natives: &Natives, width: f32, skip: &[&str]) -> Ve
         // needs more lines (or, on one unwrapped line, more width) than it
         // was given. A head or middle ellipsis (a path) is the design.
         let given = text.content.size.width.0;
+        // Squeezed out: words with no width left to show any of them,
+        // however they would shorten (a middle-shortened address beside
+        // a badge as wide as the lane).
+        if given < 1.0 && !sideways(node) {
+            found.push(format!("{what}: squeezed to nothing ({given:.0} pt)"));
+            continue;
+        }
         // The engine's 0.55 em a Latin character is a tenth wider than San
         // Francisco's (about 0.5 em): a Latin text is given that much more
         // room before it counts as cut. CJK, measured at its width, gets

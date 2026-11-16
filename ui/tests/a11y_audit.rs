@@ -532,3 +532,25 @@ fn no_text_is_drawn_over_another() {
             .collect(),
     );
 }
+
+/// B838, B839: Home is read in full and stays on the screen, in every
+/// language, at both sizes. At AX5 a card's name was cut ("build-box" in
+/// 161 pt, the transport badge beside it), its waiting badge ran off the
+/// screen ("1 件があなた待ち", to x 444 of 402) and left the address no
+/// width at all, and the empty Home's message was cut at two lines.
+#[test]
+fn home_is_read_in_full_at_both_sizes() {
+    none(
+        "Home cut, squeezed or off the screen",
+        findings()
+            .iter()
+            .filter(|f| {
+                f.screen.starts_with("home")
+                    && (f.what.contains("cut short")
+                        || f.what.contains("squeezed")
+                        || f.what.contains("past the screen's edge")
+                        || f.what.contains("clipped by"))
+            })
+            .collect(),
+    );
+}

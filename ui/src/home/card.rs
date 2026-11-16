@@ -183,64 +183,80 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
             }
         })
     });
-    let name_line = view()
-        .flex_row()
-        .items_center()
-        .gap(px(8.0))
-        .min_w(px(0.0))
-        .child(
-            TextToken::Headline
+    // From AX1 the head's two lines wrap (B838): the name takes the lines
+    // it needs and the transport goes under it when the two don't fit; the
+    // address takes its own line and what follows it (the uptime, the
+    // waiting badge) goes under it. At AX5 the transport beside the name
+    // cut "build-box" to 161 pt, and "1 件があなた待ち" ran off the screen
+    // and left the address no width. Below AX1 the lines are as they were.
+    let accessible = computed(|| crate::face::category(font_scale()) >= crate::face::AX1);
+    let lines = dynamic(move || {
+        let wrap = accessible.get();
+        untracked(move || {
+            let mut name_words = TextToken::Headline
                 .apply(text(move || name.get()))
-                .number_of_lines(1u32)
+                .number_of_lines(u32::from(!wrap))
                 .flex_shrink(1.0)
-                .text_color(move || token("foreground")),
-        )
-        .child(dynamic(move || {
-            let (words, fell_back) = connection.with(|c| (transport(c), fell_back(c)));
-            untracked(move || {
-                let badge = badge(words).mono();
-                if fell_back {
-                    badge.variant(BadgeVariant::Warning)
-                } else {
-                    badge
-                }
-            })
-        }));
-    let second_line = view()
-        .flex_row()
-        .items_center()
-        .gap(px(6.0))
-        .min_w(px(0.0))
-        .child(
-            TextToken::MonoSubhead
-                .apply(text(move || address.get()))
-                .number_of_lines(1u32)
-                .text_overflow(EllipsizeMode::Middle)
-                .flex_shrink(1.0)
-                .min_w(px(0.0))
-                .text_color(move || token("muted-foreground")),
-        )
-        .child(when(
-            move || waiting.get() == 0 && up.with(Option::is_some),
-            move || {
-                TextToken::Subhead
-                    .apply(text(move || format!("· {}", up.get().unwrap_or_default())))
-                    .number_of_lines(1u32)
-                    .flex_shrink_0()
-                    .tabular_nums()
-                    .text_color(move || token("muted-foreground"))
-            },
-        ))
-        .child(dynamic(move || {
-            let n = waiting.get();
-            untracked(move || {
-                (n > 0).then(|| {
-                    badge(crate::plural!("%lld waiting", n as i64))
-                        .variant(BadgeVariant::Warning)
-                        .into_element()
+                .text_color(move || token("foreground"));
+            let mut name_line = view().flex_row().items_center().gap(px(8.0)).min_w(px(0.0));
+            if wrap {
+                name_words = name_words.min_w(px(0.0));
+                name_line = name_line.flex_wrap();
+            }
+            let name_line = name_line.child(name_words).child(dynamic(move || {
+                let (words, fell_back) = connection.with(|c| (transport(c), fell_back(c)));
+                untracked(move || {
+                    let badge = badge(words).mono();
+                    if fell_back {
+                        badge.variant(BadgeVariant::Warning)
+                    } else {
+                        badge
+                    }
                 })
-            })
-        }));
+            }));
+            let mut second_line = view().flex_row().items_center().gap(px(6.0)).min_w(px(0.0));
+            if wrap {
+                second_line = second_line.flex_wrap();
+            }
+            let second_line = second_line
+                .child(
+                    TextToken::MonoSubhead
+                        .apply(text(move || address.get()))
+                        .number_of_lines(1u32)
+                        .text_overflow(EllipsizeMode::Middle)
+                        .flex_shrink(1.0)
+                        .min_w(px(0.0))
+                        .text_color(move || token("muted-foreground")),
+                )
+                .child(when(
+                    move || waiting.get() == 0 && up.with(Option::is_some),
+                    move || {
+                        TextToken::Subhead
+                            .apply(text(move || format!("· {}", up.get().unwrap_or_default())))
+                            .number_of_lines(1u32)
+                            .flex_shrink_0()
+                            .tabular_nums()
+                            .text_color(move || token("muted-foreground"))
+                    },
+                ))
+                .child(dynamic(move || {
+                    let n = waiting.get();
+                    untracked(move || {
+                        (n > 0).then(|| {
+                            badge(crate::plural!("%lld waiting", n as i64))
+                                .variant(BadgeVariant::Warning)
+                                .into_element()
+                        })
+                    })
+                }));
+            view()
+                .flex_1()
+                .min_w(px(0.0))
+                .gap(px(2.0))
+                .child(name_line)
+                .child(second_line)
+        })
+    });
     let label = {
         move || -> SharedString {
             let state = if connection.with(|c| c.disconnecting) {
@@ -290,14 +306,7 @@ fn head(connection: ReadSignal<Connection>, ctx: Ctx) -> AnyElement {
         .focus_visible(|s| s.bg(move || token("accent")))
         .test_id(&format!("connection-card-{named}"))
         .child(mark)
-        .child(
-            view()
-                .flex_1()
-                .min_w(px(0.0))
-                .gap(px(2.0))
-                .child(name_line)
-                .child(second_line),
-        );
+        .child(lines);
     let row = view()
         .w_full()
         .flex_row()

@@ -190,7 +190,7 @@ fn page(
                 .apply(text(message))
                 .text_color(move || token("muted-foreground"))
                 .text_center()
-                .number_of_lines(2)
+                .number_of_lines(message_lines)
                 .mt(px(8.0)),
         );
     }
@@ -205,6 +205,17 @@ fn page(
         );
     }
     body
+}
+
+/// The lines an empty state's message takes at the user's text size: two
+/// up to the largest standard size, as many as it needs from AX1 (B839),
+/// as a row's words do (B753). Two cut Home's at AX5 in every language.
+fn message_lines() -> u32 {
+    if crate::face::category(font_scale()) >= crate::face::AX1 {
+        0
+    } else {
+        2
+    }
 }
 
 /// An empty group, laid out as a row of its card: the symbol in the row's
@@ -228,7 +239,7 @@ fn inline(
             TextToken::Footnote
                 .apply(text(message))
                 .text_color(move || token("muted-foreground"))
-                .number_of_lines(2),
+                .number_of_lines(message_lines),
         );
     }
     if let Some(action) = action {

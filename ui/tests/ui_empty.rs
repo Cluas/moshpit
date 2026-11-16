@@ -28,6 +28,11 @@ use nsh_testing::Headless;
 /// The gallery on an iPhone-sized iOS engine, tall enough that every
 /// section is on screen.
 fn gallery() -> App {
+    gallery_at(None)
+}
+
+/// [`gallery`] at text size `font_scale` (the host's; `None`: Large).
+fn gallery_at(font_scale: Option<f32>) -> App {
     let params = Params::default();
     let channel = Channel::open();
     let mut config = EngineConfig::new(Screen::UiGallery.root(&channel, &params));
@@ -39,7 +44,7 @@ fn gallery() -> App {
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
     HostEnvironment {
         locale: params.nsh_locale(),
-        font_scale: None,
+        font_scale,
     }
     .apply(&mut config.environment);
     let mut app = Headless::start(config).expect("the engine starts");
@@ -264,4 +269,34 @@ fn content_that_is_there_from_the_start_shows_with_no_skeleton() {
     assert!(app.screen().matches("id:probe-content").unwrap());
     assert!(!app.screen().matches("id:probe-skeleton").unwrap());
     assert_eq!(starts.count(), 0, "nothing fades in");
+}
+
+/// How many lines the text saying `words` may take (0: as many as it
+/// needs).
+fn line_limit(app: &Headless, words: &str) -> u32 {
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .find_map(|n| {
+            n.text
+                .filter(|t| t.text.text.as_str() == words)
+                .map(|t| t.text.max_lines)
+        })
+        .unwrap_or_else(|| panic!("no text says {words:?}"))
+}
+
+/// B839: an empty state's message takes two lines up to the largest
+/// standard size, and as many as it needs from AX1, as a row's words do
+/// (B753). Two lines cut Home's at AX5 in every language ("Add a machine
+/// you can reach over SSH. Agents running there show up here.").
+#[test]
+fn from_ax1_an_empty_states_message_reads_in_full() {
+    let page = "Add a host to keep your agents within reach.";
+    let inline = "Generate one on this phone, or import one.";
+    let app = gallery();
+    assert_eq!(line_limit(&app, page), 2, "a page's, at Large");
+    assert_eq!(line_limit(&app, inline), 2, "a group's, at Large");
+    let app = gallery_at(Some(2.0));
+    assert_eq!(line_limit(&app, page), 0, "a page's, at AX1");
+    assert_eq!(line_limit(&app, inline), 0, "a group's, at AX1");
 }
