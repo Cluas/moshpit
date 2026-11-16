@@ -13,6 +13,9 @@
 #   <device>  iphone | ipad
 #   locale    en-US (default) zh-Hans zh-Hant ja de-DE es-ES fr-FR ko pt-BR
 #
+# SHOTS_ONLY (01,05): only those of the store's slots, shot and composed;
+# SHOTS_EXTERNAL: shots taken elsewhere, in place of the simulator's.
+#
 # Everything the app shows outside the panes is live: it connects over SSH
 # to the runner, as devbox.example.com (an /etc/hosts line for 127.0.0.1),
 # port 2222, to a tmux on a private socket. Only the panes' contents are
@@ -26,6 +29,8 @@ set -euo pipefail
 
 app="$1"; out="$2"; device="$3"; shift 3
 locales=("$@"); [ "${#locales[@]}" -gt 0 ] || locales=(en-US)
+# SHOTS_ONLY: the store's slots to shoot, by number (01,05), else all of them.
+asked_slots="${SHOTS_ONLY:-all}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 bundle=com.cluas.moshpit
 work="$(mktemp -d)"
@@ -253,31 +258,23 @@ sys.exit(bad)
 PY
 }
 
-# "<test> <locale>" for each shot the captions want that neither the
-# capture nor SHOTS_EXTERNAL has (compose's own lookup).
+# "<test> <locale>" for each asked shot neither the capture nor
+# SHOTS_EXTERNAL has (scripts/shots/slots.py).
 missing_shots() {
-    python3 -I - "$root/scripts/shots/captions" "$device" "$out" "${SHOTS_EXTERNAL:-}" "${locales[@]}" <<'PY'
-import json, os, sys
-captions, device, out, external = sys.argv[1:5]
-TESTS = {"02-pane": "test02Pane", "03-home": "test03Home", "05-overview": "test05Overview",
-         "06-preview": "test06Preview", "07-pet": "test07Pet", "08-keyboard": "test08Keyboard",
-         "04-island": "test90Island", "01-lock": "test91Lock",
-         "panes": "test05Overview", "home-terminal": "test10HomeAndTerminal"}
-for locale in sys.argv[5:]:
-    for caption in json.load(open(os.path.join(captions, f"{locale}.json")))[device]:
-        shot = caption["shot"]
-        places = [os.path.join(out, locale, f"{shot}.png")]
-        if external:
-            places += [os.path.join(external, locale, f"{shot}.png"), os.path.join(external, f"{shot}.png"),
-                       os.path.join(external, "en-US", f"{shot}.png")]
-        if not any(os.path.isfile(p) for p in places) and shot in TESTS:
-            print(TESTS[shot], locale)
-PY
+    python3 -I "$root/scripts/shots/slots.py" missing "$device" "$asked_slots" "$out" "${SHOTS_EXTERNAL:-}" "${locales[@]}"
 }
 
 if [ -n "${SHOTS_XCTESTRUN:-}" ]; then
-    log "$device · ShotsUITest (the store set)"
-    shots_pass "" -- "${locales[@]}"
+    # The tests the asked slots need; none for a slot SHOTS_EXTERNAL has for
+    # every locale (the lock screen and the island on the iPhone).
+    # shellcheck disable=SC2207 # one test per word
+    tests=($(python3 -I "$root/scripts/shots/slots.py" tests "$device" "$asked_slots" "${SHOTS_EXTERNAL:-}" "${locales[@]}"))
+    if [ "${#tests[@]}" -eq 0 ]; then
+        log "$device · nothing for ShotsUITest: every asked shot is an external one"
+    else
+        log "$device · ShotsUITest: ${tests[*]}"
+        shots_pass "" "${tests[@]}" -- "${locales[@]}"
+    fi
     gaps="$(missing_shots)"
     for test in $(cut -d' ' -f1 <<<"$gaps" | sort -u); do
         # shellcheck disable=SC2207 # one locale per word
@@ -300,8 +297,9 @@ sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
 # the island, on a phone), in place of the simulator's.
 log "$device · the store images (scripts/shots/compose.swift)"
 composed=0
+only_args=(); [ "$asked_slots" = all ] || only_args=(--only "$asked_slots")
 xcrun swift "$root/scripts/shots/compose.swift" "$device" "$out" "$out/store" \
-    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} "${locales[@]}" || composed=1
+    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} "${only_args[@]}" "${locales[@]}" || composed=1
 
 [ "$sizes_wrong" -eq 0 ] || fail "some shots are not $px"
 [ "$composed" -eq 0 ] || fail "some store images are missing (above)"

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The store screenshots on GitHub Pages: check that a Screenshots run made
-the whole set, and lay it out as a site.
+the whole set, fetch the set that is live, and lay a set out as a site.
 
-    python3 -I scripts/shots/pages.py check <shots> [--device iphone|ipad]
+    python3 -I scripts/shots/pages.py check <shots> [--device D] [--locales L] [--slots S]
+    python3 -I scripts/shots/pages.py fetch <site URL> <shots>
     python3 -I scripts/shots/pages.py site <shots> <site>
 
 <shots> is the run's output (the workflow's `shots` artifact): the composed
@@ -13,16 +14,24 @@ check: every locale with captions (scripts/shots/captions/), every slot of
 both devices (or the one --device names: each device's job checks its
 own), at the store's size: 1320 × 2868 for the iPhone; 2064 × 2752
 for the iPad, or 2752 × 2064 for a landscape shot. Exit 0 only when all are
-there; otherwise every gap is listed and the exit is 1. The publish job runs
-only after a complete set, so a partial run leaves the last good set live.
+there; otherwise every gap is listed and the exit is 1. A shoot job checks
+its own part: --device, --locales (en-US,ko) and --slots (01,05) narrow it.
+
+fetch: the live set from the site (<site URL>/shots/<device>/<locale>/…)
+into <shots>, as a run leaves it, for a run that shot only part of the set
+to be laid over (the files it made replace the live ones). One the site
+doesn't have is left out, and the check after says so.
 
 site: check, then copy the set to <site>/shots/<iphone|ipad>/<locale>/
 <nn>-<shot>.png (paths that stay put from run to run, for the READMEs to
 link) and write an index page for each.
 """
 
+import concurrent.futures
 import html
 import json
+import urllib.error
+import urllib.request
 import os
 import shutil
 import struct
@@ -65,13 +74,17 @@ def png_size(path):
     return struct.unpack(">II", head[16:24])
 
 
-def check(shots, devices=tuple(DEVICES)):
+def check(shots, devices=tuple(DEVICES), locales=None, numbers=None):
     gaps = []
     for locale, (_, slots) in captions().items():
+        if locales is not None and locale not in locales:
+            continue
         for device, folder in DEVICES.items():
             if device not in devices:
                 continue
             for name, _ in slots[device]:
+                if numbers is not None and int(name[:2]) not in numbers:
+                    continue
                 path = os.path.join(shots, folder, "store", locale, name)
                 if not os.path.isfile(path):
                     gaps.append(f"{device}/{locale}/{name}: missing")
@@ -145,24 +158,81 @@ def site(shots, out):
                 '<title>Moshpit screenshots</title><a href="shots/">Moshpit screenshots</a>\n')
 
 
+def fetch(base, shots):
+    """The live set into <shots>; how many files came, and the ones that didn't."""
+    wanted = [(device, folder, locale, name)
+              for locale, (_, slots) in captions().items()
+              for device, folder in DEVICES.items()
+              for name, _ in slots[device]]
+
+    def one(item):
+        device, folder, locale, name = item
+        url = f"{base.rstrip('/')}/shots/{device}/{locale}/{name}"
+        try:
+            with urllib.request.urlopen(url, timeout=60) as reply:
+                data = reply.read()
+        except (urllib.error.URLError, TimeoutError) as error:
+            return f"{device}/{locale}/{name}: {error}"
+        target = os.path.join(shots, folder, "store", locale, name)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as f:
+            f.write(data)
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(one, wanted))
+    lost = [r for r in results if r]
+    return len(wanted) - len(lost), lost
+
+
+def options(args, names):
+    """Pulls `--name value` pairs out of `args`; None when one is malformed."""
+    found = {}
+    while len(args) > 1 and args[-2] in names:
+        found[args[-2]], args = args[-1], args[:-2]
+    return (args, found) if not any(a.startswith("--") for a in args) else (None, None)
+
+
 def main():
-    args = sys.argv[1:]
-    devices = tuple(DEVICES)
-    if len(args) == 4 and args[0] == "check" and args[2] == "--device" and args[3] in DEVICES:
-        devices, args = (args[3],), args[:2]
-    if not args or len(args) != {"check": 2, "site": 3}.get(args[0]):
+    args, opts = options(sys.argv[1:], ("--device", "--locales", "--slots"))
+    if args is None or not args or len(args) != {"check": 2, "fetch": 3, "site": 3}.get(args[0]) or (
+        opts and args[0] != "check"
+    ):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 64
+    if args[0] == "fetch":
+        got, lost = fetch(args[1], args[2])
+        print(f"pages: fetched {got} images of the live set into {args[2]}")
+        for miss in lost[:20]:
+            print("  not there: " + miss, file=sys.stderr)
+        return 0
+    devices = tuple(DEVICES)
+    if "--device" in opts:
+        if opts["--device"] not in DEVICES:
+            print(f"pages: --device: iphone or ipad, not {opts['--device']}", file=sys.stderr)
+            return 64
+        devices = (opts["--device"],)
+    locales = set(opts["--locales"].replace(",", " ").split()) if "--locales" in opts else None
+    numbers = None
+    if opts.get("--slots", "all") != "all":
+        try:
+            numbers = {int(n) for n in opts["--slots"].replace(",", " ").split()}
+        except ValueError:
+            print(f"pages: --slots: numbers like 01,05, not {opts['--slots']}", file=sys.stderr)
+            return 64
+    if locales is not None and "all" in locales:
+        locales = None
     shots = args[1]
-    gaps = check(shots, devices)
+    gaps = check(shots, devices, locales, numbers)
     if gaps:
         print(f"pages: the set isn't complete ({len(gaps)} gap(s)); nothing is published:", file=sys.stderr)
         for gap in gaps[:80]:
             print("  " + gap, file=sys.stderr)
         return 1
-    total = sum(len(slots[d]) for _, slots in captions().values() for d in devices)
     which = "both devices" if len(devices) == 2 else f"the {devices[0]}"
-    print(f"pages: the set is complete: {total} images, {len(captions())} locales, {which}")
+    print(f"pages: the set is complete ({which}"
+          f"{'' if locales is None else ', ' + ' '.join(sorted(locales))}"
+          f"{'' if numbers is None else ', slots ' + ','.join(f'{n:02d}' for n in sorted(numbers))})")
     if args[0] == "site":
         site(shots, args[2])
         print(f"pages: laid out in {args[2]}/shots/")

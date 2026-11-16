@@ -3,7 +3,7 @@
 // 2064 × 2752 for the iPad, 2752 × 2064 for a landscape iPad shot). Run on the screenshot workflow's macOS runner
 // after scripts/shots/ci-capture.sh, and anywhere else with Xcode's Swift:
 //
-//   swift scripts/shots/compose.swift <device> <raw> <out> [--external <dir>] [locale…]
+//   swift scripts/shots/compose.swift <device> <raw> <out> [--external <dir>] [--only <slots>] [locale…]
 //
 //   <device>    iphone | ipad
 //   <raw>       the capture's shots: <raw>/<locale>/<shot>.png
@@ -13,6 +13,8 @@
 //               <dir>/<shot>.png, else en-US's (<dir>/en-US/<shot>.png)
 //               for a locale not taken yet. One found here is used in
 //               place of the capture's.
+//   --only      the store's slots to compose, by number (01,05): a run that
+//               shot only those (the workflow's `shots` input)
 //   locale      the captions' locales to compose (default: every file in
 //               scripts/shots/captions/)
 //
@@ -89,8 +91,16 @@ if let i = args.firstIndex(of: "--external") {
     external = URL(fileURLWithPath: args[i + 1])
     args.removeSubrange(i...(i + 1))
 }
+var only: Set<Int>?
+if let i = args.firstIndex(of: "--only") {
+    guard i + 1 < args.count else { fail("--only needs slots, like 01,05") }
+    let slots = args[i + 1].split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+    guard !slots.isEmpty else { fail("--only: slots by number, like 01,05, not \(args[i + 1])") }
+    only = Set(slots)
+    args.removeSubrange(i...(i + 1))
+}
 guard args.count >= 3 else {
-    fail("usage: compose.swift <iphone|ipad> <raw> <out> [--external <dir>] [locale…]")
+    fail("usage: compose.swift <iphone|ipad> <raw> <out> [--external <dir>] [--only <slots>] [locale…]")
 }
 let device = args[0]
 let raw = URL(fileURLWithPath: args[1])
@@ -287,7 +297,7 @@ for locale in locales {
     let shots = device == "iphone" ? captions.iphone : captions.ipad
     let folder = out.appendingPathComponent(locale)
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    for (index, caption) in shots.enumerated() {
+    for (index, caption) in shots.enumerated() where only?.contains(index + 1) ?? true {
         let candidates = [
             external?.appendingPathComponent(locale).appendingPathComponent("\(caption.shot).png"),
             external?.appendingPathComponent("\(caption.shot).png"),
