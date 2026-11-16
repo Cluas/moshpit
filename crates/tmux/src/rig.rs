@@ -6,12 +6,27 @@
 
 use std::collections::BTreeMap;
 
-use crate::controller::{Config, Controller, Notification, Output, StreamId, ViewAction};
+use crate::controller::{
+    Config, Controller, Notification, Output, StreamId, VERSION_READ, ViewAction,
+};
 
 /// The rig's clock at the start, in milliseconds.
 pub const START_MS: u64 = 1_000_000;
 /// The Unix time the rig's clock starts at (2026-09-15T…), in milliseconds.
 pub const START_UNIX_MS: i64 = 1_758_000_000_000;
+
+/// The tmux the rig plays, unless a responder answers the version read: one
+/// a phone's group is safe on (B812).
+pub const RIG_TMUX_VERSION: &str = "3.8";
+
+/// The rig's answer to the version read; `None` for anything else.
+fn version_answer(command: &str) -> Option<Answer> {
+    if command == VERSION_READ {
+        ok([format!("v={RIG_TMUX_VERSION}")])
+    } else {
+        None
+    }
+}
 
 /// How tmux answers one command.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -101,7 +116,7 @@ impl Rig {
             commands: Vec::new(),
             answered: 0,
             seen: Vec::new(),
-            responder: Box::new(|_, _| ok(["0 0"])),
+            responder: Box::new(|command, _| version_answer(command).or_else(|| ok(["0 0"]))),
             next_block: 900,
         }
     }
@@ -165,7 +180,9 @@ impl Rig {
             // A fence prints its text, whatever the script says (B273).
             let answer = match fence_text(&command) {
                 Some(text) => ok([text]).unwrap_or_default(),
-                None => (self.responder)(&command, index).unwrap_or_default(),
+                None => (self.responder)(&command, index)
+                    .or_else(|| version_answer(&command))
+                    .unwrap_or_default(),
             };
             self.next_block += 1;
             let mut text = block(self.next_block, &answer.lines, answer.error);

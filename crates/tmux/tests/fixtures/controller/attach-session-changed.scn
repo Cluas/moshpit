@@ -3,6 +3,7 @@ config label=iPhone
 init-size 69 60
 begin
 recv %begin 100 0 0\n%end 100 0 0\n\n%session-changed $0 main\n
+rule ok display-message -p 'v= => v=3.8
 rule ok display-message -p '#{client_name}' => /dev/ttys003
 rule ok list-clients -F '#{client_name}' => /dev/ttys003
 rule ok show-options -wqv => -

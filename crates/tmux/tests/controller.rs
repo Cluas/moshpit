@@ -229,17 +229,19 @@ fn a_fresh_attach_polls_hooks_behind_the_tree() {
     // Then the session's layouts are read on both sides of our first size
     // report (B150), then the boot pre-reads for the size lease go ahead
     // of discovery.
-    assert_eq!(rig.commands[0], "display-message -p 'self=#{client_name}'");
-    assert!(rig.commands[1].starts_with("list-clients -F 'cc="));
-    assert_eq!(rig.commands[2], "show-options -sqv @moshpit_cc");
+    // B812: the server's version before all of it (a group only from 3.8).
+    assert_eq!(rig.commands[0], moshpit_tmux::controller::VERSION_READ);
+    assert_eq!(rig.commands[1], "display-message -p 'self=#{client_name}'");
+    assert!(rig.commands[2].starts_with("list-clients -F 'cc="));
+    assert_eq!(rig.commands[3], "show-options -sqv @moshpit_cc");
     let layouts = format!(
         "list-windows -t '$0' -F '{}'",
         moshpit_tmux::controller::SIZE_PROBE_FORMAT
     );
-    assert_eq!(rig.commands[3], layouts);
-    assert!(rig.commands[4].starts_with("refresh-client -C 80x24"));
-    assert_eq!(rig.commands[5], layouts);
-    assert!(rig.commands[6].starts_with("display-message -p '#{client_name}'"));
+    assert_eq!(rig.commands[4], layouts);
+    assert!(rig.commands[5].starts_with("refresh-client -C 80x24"));
+    assert_eq!(rig.commands[6], layouts);
+    assert!(rig.commands[7].starts_with("display-message -p '#{client_name}'"));
 }
 
 // MARK: - sizes
@@ -982,8 +984,9 @@ fn new_pane_in_an_off_screen_window_switches_first() {
     let mut rig = attached();
     discover(&mut rig, TWO_SESSIONS);
     rig.with(|c, now| c.new_pane_in_window("@1", now));
-    // B459: the hop is into the phone's own group of `$1`.
-    let hop = rig.index_of("new-session -t '$1'").unwrap();
+    // No `%session-changed` in this rig, so no version read: the hop is the
+    // plain one (B812). The group's own hop is `group.rs`'s.
+    let hop = rig.index_of("switch-client -t $1").unwrap();
     let select = rig.index_of("select-window -t @1").unwrap();
     let split = rig.index_of("split-window -t %1").unwrap();
     let zoom = rig.index_of("resize-pane -Z -t @1").unwrap();

@@ -4,6 +4,7 @@ init-size 70 35
 client-name moshpit-a
 attach
 recv %begin 100 0 0\n%end 100 0 0\n\n
+rule ok display-message -p 'v= => v=3.8
 rule ok list-clients -F '#{client_name}' => moshpit-a\nmoshpit-b
 rule ok show-options -wqv => moshpit-b|iPad|1757999998
 rule ok list-sessions => $0 1 main

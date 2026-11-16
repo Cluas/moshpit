@@ -54,7 +54,10 @@ use crate::format::{
 use crate::hooks::AgentHook;
 use crate::model::{PaneInfo, Selection, SessionInfo, Snapshot, WindowInfo, id_cmp};
 
-pub use group::{GROUP_MARK, GROUP_OF_OPTION, is_group_name};
+pub use group::{
+    GROUP_MARK, GROUP_OF_OPTION, GROUPS_FROM, VERSION_READ, groups_are_safe_on, is_group_name,
+    tmux_version,
+};
 use group::{GroupState, PhoneGroup};
 pub use input::{InputFlags, PixelScroll, ScrollRoute, click_bytes, wheel_bytes, wheel_cell};
 pub use sidecar::{OWNED_OPTION, STATUS_HIDDEN_OPTION};
@@ -467,6 +470,8 @@ enum Reply {
         name: String,
     },
     /// The attach's check of who is on the session (B459): our name...
+    /// `#{version}` (B812).
+    ServerVersion,
     GroupCheckSelf,
     /// ...the clients...
     GroupCheckClients,
@@ -1456,6 +1461,7 @@ impl Controller {
             Reply::GroupMade { group } => self.group_made(group, response),
             Reply::GroupSweep => self.groups_swept(response),
             Reply::ForeignGroup { id, name } => self.foreign_group_answered(&id, &name, response),
+            Reply::ServerVersion => self.server_version_answered(response),
             Reply::GroupCheckSelf => self.group_check_self_answered(response),
             Reply::GroupCheckClients => self.group_check_clients_answered(response),
             Reply::GroupCheckMarks { session, name } => {
@@ -1573,6 +1579,7 @@ impl Controller {
             // out, and the attach still counts as fresh when it lands.
             self.group.fresh_pending |= !self.snapshot.is_attached;
             self.snap().is_attached = true;
+            self.read_server_version();
             self.send_command(
                 format!("display-message -p -t '{session_id}' '#{{{GROUP_OF_OPTION}}}'"),
                 Reply::ForeignGroup {
@@ -1582,7 +1589,12 @@ impl Controller {
             );
             return;
         }
-        let group = self.wants_group_for(session_id);
+        // B812: the echo of a switch made before the version was known.
+        let echo = self.group.unversioned_switches > 0;
+        if echo {
+            self.group.unversioned_switches -= 1;
+        }
+        let group = !echo && self.group_possible(session_id);
         self.attach_to_session(session_id, name, group);
     }
 
@@ -1595,10 +1607,12 @@ impl Controller {
             .map(|line| trim_whitespaces(line).to_owned())
             .filter(|s| !response.is_error && s.starts_with('$') && is_valid_id(s));
         match session {
-            Some(session) => {
+            Some(session) if self.group.supported == Some(true) => {
                 let base = name.split(GROUP_MARK).next().unwrap_or_default().to_owned();
                 self.enter_group(&session, &base);
             }
+            // B812: a tmux a group can crash: onto the session itself.
+            Some(session) => self.send(format!("switch-client -t {session}")),
             None => self.attach_to_session(id, name, false),
         }
     }
@@ -1634,11 +1648,13 @@ impl Controller {
         if self.attached_at.is_none() {
             self.attached_at = Some(self.now);
         }
-        if group && fresh_attach {
+        self.read_server_version();
+        if group && (fresh_attach || self.group.supported.is_none()) {
             // B459: who is on the session first (a desktop's control client
-            // keeps the phone off a group); the group, if any, follows.
+            // keeps the phone off a group); the group, if any, follows. B812:
+            // so does a first attach whose version is still on its way.
             self.check_for_foreign_control(session_id, name);
-        } else if group {
+        } else if group && self.group.supported == Some(true) {
             // Before anything else, so all that follows runs there.
             self.enter_group(session_id, name);
         }
@@ -1673,6 +1689,8 @@ impl Controller {
             if fresh_attach {
                 // B86: which sessions Moshpit made, from the server.
                 self.read_owned_sessions();
+                // B773, B812: the groups a phone left (none ends by itself).
+                self.sweep_groups();
             }
             self.locate_renderer();
         }
@@ -2631,7 +2649,12 @@ impl Controller {
                     .unwrap_or_default();
                 self.enter_group(session_id, &name);
             } else {
-                self.send(format!("switch-client -t {session_id}"));
+                self.switch_without_group(session_id);
+                // B812: the group this client leaves ends with the move.
+                if let Some(left) = self.group.current.take().and_then(|group| group.id) {
+                    self.send(format!("kill-session -t '{left}'"));
+                    self.group.group_ids.remove(&left);
+                }
             }
             // B770: handed back as a window switch hands it back — its pin,
             // our lease, the layout found — once the phone no longer sizes

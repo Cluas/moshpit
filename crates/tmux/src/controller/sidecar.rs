@@ -44,6 +44,9 @@ pub(super) struct SidecarState {
     /// B773: the renderer goes into our group once the group has landed
     /// where its session is.
     pub renderer_awaits_landing: bool,
+    /// B812: the group the sidecar left, ended once the renderer has left
+    /// it too.
+    pub group_left: Option<String>,
 }
 
 /// The session option that marks a session Moshpit made (B86): the mark
@@ -259,7 +262,7 @@ impl Controller {
                 .unwrap_or_default();
             self.enter_group(session, &name);
         } else {
-            self.send(format!("switch-client -t {session}"));
+            self.switch_without_group(session);
         }
         self.refresh_windows_and_panes(false, None);
     }
@@ -291,6 +294,10 @@ impl Controller {
             None => format!("'={}'", group.name),
         };
         self.send(format!("switch-client -c {} -t {target}", renderer.name));
+        // B812: the group both have now left, behind the move.
+        if let Some(left) = self.sidecar.group_left.take() {
+            self.send(format!("kill-session -t '{left}'"));
+        }
     }
 
     /// The window the sidecar may size: the active one, when it is on the
@@ -401,7 +408,7 @@ impl Controller {
                 self.sidecar.renderer_awaits_landing = false;
             }
         } else {
-            self.send(format!("switch-client -t {session}"));
+            self.switch_without_group(session);
         }
         self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
         if !moving.is_empty()
