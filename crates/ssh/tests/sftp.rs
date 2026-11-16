@@ -248,6 +248,29 @@ async fn a_download_arrives_whole_with_progress() {
     assert_eq!(host.seen().open_handles, 0);
 }
 
+/// B813: a download of a file that says it is empty never ended — a link
+/// named like an image to `/dev/zero` (or a FIFO, or a device) was read until
+/// the phone was full, and opening its folder fetched it for a thumbnail
+/// without a tap. It is read as what it says it is: empty.
+#[tokio::test]
+async fn a_file_that_says_it_is_empty_downloads_as_empty() {
+    let host = Host::start(Bench::default()).await;
+    std::os::unix::fs::symlink("/dev/zero", host.home.join("endless.png")).unwrap();
+    let sftp = connect(&host).await.sftp().await.unwrap();
+    let local = Scratch::new("endless");
+    let destination = local.join("endless.png");
+    let copied = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        sftp.download("endless.png", &destination, &mut |_| true),
+    )
+    .await
+    .expect("the download of an empty-sized file never ended")
+    .unwrap();
+    assert_eq!(copied, 0);
+    assert_eq!(std::fs::metadata(&destination).unwrap().len(), 0);
+    assert_eq!(host.seen().open_handles, 0);
+}
+
 /// B463: sshd starts the SFTP server through the account's shell, and an
 /// rc file that prints for every shell (bash reads `~/.bashrc` for sshd's
 /// `-c`) puts its text in front of the server's greeting. That text read as
