@@ -1765,10 +1765,14 @@ extension TerminalScreen {
         if let controller = ghost ?? active.tmuxController {
             if ghost != nil || controller.snapshot.isAttached { return (.terminal, nil) }
             if isReconnect && (connState != .live || active.awaitingFirstFrame) { return (.blank, nil) }
-            // Missing is the host's probe's answer: known. No sessions isn't
-            // yet: the attach may only be on its way.
+            // Missing is the host's probe's answer: known. No sessions is
+            // known once the core asked the server (has-session: B228, the
+            // control client's exit: B786); until then the attach may only
+            // be on its way. It waited out the grace whatever the core knew:
+            // seconds of a blank terminal before the answer (B789).
             let missing = active.capabilities?.hasTmux == false
-            return (.empty, .init(mux: .tmux, missing: missing, settled: missing))
+            let known = missing || active.moshServerHadNoSession
+            return (.empty, .init(mux: .tmux, missing: missing, settled: known))
         }
         if let herdr = active.herdrControl, herdr.serverNotRunning {
             // The server answered that it isn't running: known.

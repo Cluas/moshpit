@@ -556,6 +556,47 @@ fn an_answer_the_host_knows_shows_at_once() {
     channel.close();
 }
 
+/// B789: the empty state is the pane's own, a centred column: the symbol
+/// over the words over New Session, each centred in the pane. It was a
+/// group's inline one, the symbol before the words and all of it on the
+/// leading edge of a block left of centre.
+#[test]
+fn the_empty_state_is_a_centred_column() {
+    let (mut app, channel, _) = open(Params::default());
+    show(&mut app, &channel, &no_sessions(true));
+    app.wait_for_within(
+        "id:multiplexer-create-first-session",
+        Duration::from_millis(300),
+    )
+    .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
+    let nodes = app.screen().layout_nodes();
+    let bounds = |selector: &str| {
+        let id = app.screen().id(selector).unwrap();
+        nodes
+            .iter()
+            .find(|node| node.id == id)
+            .unwrap_or_else(|| panic!("{selector} is laid out"))
+            .bounds
+    };
+    let centre = |b: nsh_core::Bounds<nsh_core::Points>| b.origin.x.0 + b.size.width.0 / 2.0;
+    let pane = bounds("id:terminal-empty-state");
+    let words = bounds("text:No tmux sessions on studio");
+    let button = bounds("id:multiplexer-create-first-session");
+    for (what, b) in [("the words", words), ("New Session", button)] {
+        assert!(
+            (centre(b) - centre(pane)).abs() < 1.0,
+            "{what} centred at {} in a pane centred at {}",
+            centre(b),
+            centre(pane)
+        );
+    }
+    assert!(
+        button.origin.y.0 >= words.origin.y.0 + words.size.height.0,
+        "New Session under the words"
+    );
+    channel.close();
+}
+
 /// An answer the host doesn't know yet (the attach may only be on its way)
 /// still waits out the attach handshake's seconds, and the host saying it
 /// knows mid-wait ends the wait there.
