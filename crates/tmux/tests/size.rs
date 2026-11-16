@@ -1655,7 +1655,7 @@ fn the_hand_back_replays_a_record_only_over_a_layout_of_ours() {
     ));
     let script = hand_back(&mut rig);
     let read = script
-        .find("l0=$(tmux display-message -p -t @0")
+        .find("l0=$(tmux -C display-message -p -t @0")
         .unwrap_or_else(|| panic!("{script}"));
     let unpin = script
         .find("tmux set-option -u -w -t @0 window-size")
@@ -1664,7 +1664,7 @@ fn the_hand_back_replays_a_record_only_over_a_layout_of_ours() {
     // The app's Swift controller builds the same string
     // (`pinHandBackScript`, TmuxSessionControllerTests).
     let steps = [
-        "l0=$(tmux display-message -p -t @0 '#{window_layout}' 2>/dev/null)".to_owned(),
+        "l0=$(tmux -C display-message -p -t @0 '#{window_layout}' </dev/null 2>/dev/null | grep -v '^%' | head -n 1)".to_owned(),
         "tmux set-option -u -w -t @0 window-size".to_owned(),
         format!(
             "case \"$l0\" in \"{SPLIT}\"|\"{SQUASHED}\"|\"{SQUASHED_SHORTER}\") \

@@ -985,8 +985,12 @@ impl Controller {
                 continue;
             }
             let read = format!("l{index}");
+            // B776: as a control client reads it. tmux 3.8 writes a plain
+            // client's `#{window_layout}` as JSON, which no record of ours
+            // is; `-C` keeps the format the records were taken in, its
+            // reply framed by `%begin`/`%end` lines.
             reads.push(format!(
-                "{read}=$({tmux} display-message -p -t {window} '#{{window_layout}}' 2>/dev/null)"
+                "{read}=$({tmux} -C display-message -p -t {window} '#{{window_layout}}' </dev/null 2>/dev/null | grep -v '^%' | head -n 1)"
             ));
             let patterns: Vec<String> = std::iter::once(&pristine.layout)
                 .chain(&pristine.ours)
