@@ -28760,6 +28760,30 @@ fileprivate struct FfiConverterOptionTypePlistValue: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePortRange: FfiConverterRustBuffer {
+    typealias SwiftType = PortRange?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePortRange.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePortRange.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeRemoteFileRecord: FfiConverterRustBuffer {
     typealias SwiftType = RemoteFileRecord?
 
@@ -31374,6 +31398,19 @@ public func pageMessage(message: PageMessage)throws  -> String  {
 })
 }
 /**
+ * The UDP range `from`–`to` as typed, by the UDP range page's rule
+ * (`moshpit_ui::settings::udp_ports`: whole numbers, spaces around them
+ * ignored, each a port, from no later than to); none when it is not one.
+ */
+public func settingsUdpPorts(from: String, to: String) -> PortRange?  {
+    return try!  FfiConverterOptionTypePortRange.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_settings_udp_ports(
+        FfiConverterString.lower(from),
+        FfiConverterString.lower(to),$0
+    )
+})
+}
+/**
  * Whether the Local Network permission may be why `host` didn't answer
  * for `why` (B740, B801): the app's alert says it by the same rule the
  * Home card does (`moshpit_app::local_network`).
@@ -31940,6 +31977,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_page_message() != 34887) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_settings_udp_ports() != 27974) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_local_network_may_be_why() != 54429) {

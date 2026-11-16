@@ -126,6 +126,16 @@ pub struct PortRange {
     pub end: i64,
 }
 
+/// The UDP range `from`–`to` as typed, by the UDP range page's rule
+/// (`moshpit_ui::settings::udp_ports`: whole numbers, spaces around them
+/// ignored, each a port, from no later than to); none when it is not one.
+#[uniffi::export]
+pub fn settings_udp_ports(from: String, to: String) -> Option<PortRange> {
+    moshpit_ui::settings::udp_ports(&from, &to)
+        .ok()
+        .map(|[start, end]| PortRange { start, end })
+}
+
 /// Where the list scrolls to (`{"op": "reveal"}`, the screen's `Anchor`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum SettingsRevealAnchor {

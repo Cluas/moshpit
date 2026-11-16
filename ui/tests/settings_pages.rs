@@ -70,6 +70,12 @@ fn the_udp_range_rule_is_the_swiftui_editors() {
         ("-1", "10", Err(PortsError::OutOfBounds(Side::From))),
         ("10", "65536", Err(PortsError::OutOfBounds(Side::To))),
         ("61000", "60000", Err(PortsError::Inverted)),
+        // The app's Swift suite's (UDPPortRange, gone to this rule, E7c).
+        (" 60000 ", "61000", Ok([60000, 61000])),
+        ("5000", "5000", Ok([5000, 5000])),
+        ("abc", "61000", Err(PortsError::NotNumeric(Side::From))),
+        ("0", "61000", Err(PortsError::OutOfBounds(Side::From))),
+        ("1", "70000", Err(PortsError::OutOfBounds(Side::To))),
     ] {
         assert_eq!(udp_ports(from, to), want, "{from:?}–{to:?}");
     }

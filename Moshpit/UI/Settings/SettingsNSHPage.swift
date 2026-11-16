@@ -428,11 +428,13 @@ final class SettingsModel {
             guard let appearance = AppAppearance(rawValue: id) else { return false }
             settings.appearance = appearance
         case .udpRange(let range):
-            // The UDP range's page checked it (`udp_ports`); checked again.
-            guard case .success(let (start, end)) = UDPPortRange.validate(
-                from: String(range.start), to: String(range.end)) else { return false }
-            settings.udpRangeStart = start
-            settings.udpRangeEnd = end
+            // The UDP range's page checked it (`udp_ports`); checked again,
+            // by the same rule.
+            guard let ports = settingsUdpPorts(from: String(range.start), to: String(range.end)) else {
+                return false
+            }
+            settings.udpRangeStart = Int(ports.start)
+            settings.udpRangeEnd = Int(ports.end)
         case .cursorBlink(let on): settings.cursorBlink = on
         case .trailOnPredict(let on): settings.trailOnPredict = on
         case .keyboardOnOpen(let on): settings.raiseKeyboardOnOpen = on

@@ -2617,6 +2617,11 @@ RustBuffer uniffi_moshpit_ffi_fn_func_page_event(RustBuffer screen, RustBuffer j
 RustBuffer uniffi_moshpit_ffi_fn_func_page_message(RustBuffer message, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SETTINGS_UDP_PORTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_SETTINGS_UDP_PORTS
+RustBuffer uniffi_moshpit_ffi_fn_func_settings_udp_ports(RustBuffer from, RustBuffer to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_LOCAL_NETWORK_MAY_BE_WHY
 int8_t uniffi_moshpit_ffi_fn_func_local_network_may_be_why(RustBuffer host, RustBuffer why, RustCallStatus *_Nonnull out_status
@@ -3465,6 +3470,12 @@ uint16_t uniffi_moshpit_ffi_checksum_func_page_event(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_PAGE_MESSAGE
 uint16_t uniffi_moshpit_ffi_checksum_func_page_message(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SETTINGS_UDP_PORTS
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_SETTINGS_UDP_PORTS
+uint16_t uniffi_moshpit_ffi_checksum_func_settings_udp_ports(void
     
 );
 #endif
