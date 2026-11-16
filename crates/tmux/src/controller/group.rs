@@ -245,7 +245,6 @@ impl Controller {
         ));
         if let Some(left) = &left {
             self.group.group_ids.remove(left);
-            self.sidecar.dead_groups.insert(left.clone());
         }
         if self.config.renders_output {
             // This client was its only one, and has moved.
