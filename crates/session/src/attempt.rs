@@ -1349,7 +1349,7 @@ mod tests {
         );
         let commands = pin_debt_commands(&spec, &ledger, Some(4242));
         let steps = [
-            "l0=$(tmux display-message -p -t @0 '#{window_layout}' 2>/dev/null)".to_owned(),
+            "l0=$(tmux -C display-message -p -t @0 '#{window_layout}' </dev/null 2>/dev/null | grep -v '^%' | head -n 1)".to_owned(),
             moshpit_tmux::boot::renderer_detach_by_server_command("tmux", 4242),
             "tmux set-option -u -w -t @0 window-size".to_owned(),
             format!(

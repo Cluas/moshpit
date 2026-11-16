@@ -321,6 +321,10 @@ xcrun simctl spawn "$udid" log show --last 90m --style compact \
     --predicate 'subsystem BEGINSWITH "com.cluas.moshpit"' > "$out/app-$device.log" 2>/dev/null || true
 # sshd (run by root) wrote its log as root.
 sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
+# Each SSH exec the app ran on the host, timed (stage-host.sh), on a runner.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    sudo cat /Users/dev/.moshpit-exec.log > "$out/exec-$device.log" 2>/dev/null || true
+fi
 
 # ── The store images ───────────────────────────────────────────────────
 
@@ -329,9 +333,11 @@ sudo cat "$work/host/sshd.log" > "$out/sshd-$device.log" 2>/dev/null || true
 # the island, on a phone), in place of the simulator's.
 log "$device · the store images (scripts/shots/compose.swift)"
 composed=0
+# (An empty array under set -u is an error in macOS's bash 3.2: hence the
+# ${a[@]+…} form, which is nothing when it's empty.)
 only_args=(); [ "$asked_slots" = all ] || only_args=(--only "$asked_slots")
 xcrun swift "$root/scripts/shots/compose.swift" "$device" "$out" "$out/store" \
-    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} "${only_args[@]}" "${locales[@]}" || composed=1
+    ${SHOTS_EXTERNAL:+--external "$SHOTS_EXTERNAL"} ${only_args[@]+"${only_args[@]}"} "${locales[@]}" || composed=1
 
 [ "$sizes_wrong" -eq 0 ] || fail "some shots are not $px"
 [ "$composed" -eq 0 ] || fail "some store images are missing (above)"

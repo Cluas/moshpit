@@ -1656,7 +1656,7 @@ fn the_hand_back_replays_a_record_only_over_a_layout_of_ours() {
     ));
     let script = hand_back(&mut rig);
     let read = script
-        .find("l0=$(tmux display-message -p -t @0")
+        .find("l0=$(tmux -C display-message -p -t @0")
         .unwrap_or_else(|| panic!("{script}"));
     let unpin = script
         .find("tmux set-option -u -w -t @0 window-size")
@@ -1665,7 +1665,7 @@ fn the_hand_back_replays_a_record_only_over_a_layout_of_ours() {
     // The app's Swift controller builds the same string
     // (`pinHandBackScript`, TmuxSessionControllerTests).
     let steps = [
-        "l0=$(tmux display-message -p -t @0 '#{window_layout}' 2>/dev/null)".to_owned(),
+        "l0=$(tmux -C display-message -p -t @0 '#{window_layout}' </dev/null 2>/dev/null | grep -v '^%' | head -n 1)".to_owned(),
         "tmux set-option -u -w -t @0 window-size".to_owned(),
         format!(
             "case \"$l0\" in \"{SPLIT}\"|\"{SQUASHED}\"|\"{SQUASHED_SHORTER}\") \
@@ -1701,48 +1701,58 @@ fn a_rearrangement_by_someone_else_is_not_a_layout_of_ours() {
 
 /// The script, run by a shell against a stand-in tmux that answers the read
 /// with the window's layout and logs the rest: replayed over ours, left
-/// alone over the desktop's rearrangement.
+/// alone over the desktop's rearrangement. B776: tmux 3.8 writes a plain
+/// client's `#{window_layout}` as JSON (`{"V":2,…}`), a control client's
+/// as before; read plainly, it matched no layout of ours, and the window
+/// was left zoomed at the phone's layout. The stand-in plays both.
 #[test]
 fn the_hand_back_script_runs_as_it_reads() {
-    for (current, replayed) in [(SQUASHED, true), (REARRANGED, false)] {
-        let mut rig = pinned_split(&format!("3 0 %0 {SPLIT}"));
-        rig.push(&format!("%layout-change @0 {SQUASHED} {SQUASHED} *\n"));
-        let dir = std::env::temp_dir().join(format!(
-            "moshpit-r34-hand-back-{}-{}",
-            std::process::id(),
-            u8::from(replayed)
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let log = dir.join("log");
-        let fake = dir.join("tmux");
-        std::fs::write(
-            &fake,
-            format!(
-                "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1\" in display-message) printf '%s\\n' '{current}';; esac\n",
-                log.display()
-            ),
-        )
-        .unwrap();
-        std::process::Command::new("chmod")
-            .args(["+x", &fake.display().to_string()])
-            .status()
+    const JSON: &str = r#"{"V":2,"L":{"t":"p","w":70,"h":35,"x":0,"y":0,"a":true,"i":0,"I":"%0"}}"#;
+    for tmux_38 in [false, true] {
+        for (current, replayed) in [(SQUASHED, true), (REARRANGED, false)] {
+            let mut rig = pinned_split(&format!("3 0 %0 {SPLIT}"));
+            rig.push(&format!("%layout-change @0 {SQUASHED} {SQUASHED} *\n"));
+            let dir = std::env::temp_dir().join(format!(
+                "moshpit-r34-hand-back-{}-{}-{}",
+                std::process::id(),
+                u8::from(tmux_38),
+                u8::from(replayed)
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let log = dir.join("log");
+            let fake = dir.join("tmux");
+            let plain = if tmux_38 { JSON } else { current };
+            std::fs::write(
+                &fake,
+                format!(
+                    "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$*\" in\n\
+                     \"-C display-message\"*) printf '%%begin 1 1 0\\n%s\\n%%end 1 1 0\\n%%exit\\n' '{current}';;\n\
+                     display-message*) printf '%s\\n' '{plain}';;\nesac\n",
+                    log.display()
+                ),
+            )
             .unwrap();
-        let script = rig
-            .with(|c, _| c.pin_hand_back_script(&fake.display().to_string(), &[]))
-            .unwrap();
-        let status = std::process::Command::new("/bin/sh")
-            .args(["-c", &script])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let ran = std::fs::read_to_string(&log).unwrap();
-        assert_eq!(
-            ran.contains(&format!("select-layout -t @0 {SPLIT}")),
-            replayed,
-            "over {current}: {ran}"
-        );
-        assert!(ran.contains("set-option -u -w -t @0 window-size"), "{ran}");
-        let _ = std::fs::remove_dir_all(&dir);
+            std::process::Command::new("chmod")
+                .args(["+x", &fake.display().to_string()])
+                .status()
+                .unwrap();
+            let script = rig
+                .with(|c, _| c.pin_hand_back_script(&fake.display().to_string(), &[]))
+                .unwrap();
+            let status = std::process::Command::new("/bin/sh")
+                .args(["-c", &script])
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let ran = std::fs::read_to_string(&log).unwrap();
+            assert_eq!(
+                ran.contains(&format!("select-layout -t @0 {SPLIT}")),
+                replayed,
+                "tmux 3.8 {tmux_38}, over {current}: {ran}"
+            );
+            assert!(ran.contains("set-option -u -w -t @0 window-size"), "{ran}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 }
