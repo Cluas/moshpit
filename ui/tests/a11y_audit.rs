@@ -532,3 +532,34 @@ fn no_text_is_drawn_over_another() {
             .collect(),
     );
 }
+
+/// B834: at the default text size, in every language, the pane overview's
+/// words are read in full. A window card's state line ("Needs you · 2
+/// panes") and a pane's state ("Needs you") were one line each, in a card
+/// 127 pt wide and a pane 72 pt wide: Japanese, Korean, German and French
+/// lost their ends.
+#[test]
+fn the_overview_is_read_in_full_at_the_default_size() {
+    none(
+        "cut short on the overview",
+        findings()
+            .iter()
+            .filter(|f| !f.ax5 && f.screen == "overview" && f.what.contains("cut short"))
+            .collect(),
+    );
+}
+
+/// B836: the pane overview stays on the screen at the largest text size.
+/// Its count's badge ("1 waiting") follows the user's text size past the
+/// chrome's extra large, and beside the windows' and panes' count it ran
+/// off the screen's side in French, Japanese and Korean.
+#[test]
+fn the_overview_stays_on_the_screen_at_ax5() {
+    none(
+        "past the screen's edge on the overview",
+        findings()
+            .iter()
+            .filter(|f| f.screen == "overview" && f.what.contains("past the screen's edge"))
+            .collect(),
+    );
+}

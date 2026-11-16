@@ -884,8 +884,13 @@ fn summary(model: Memo<Overview>) -> AnyElement {
                 crate::plural!("%lld windows", windows as i64)
             };
             let panes = crate::plural!("%lld panes", panes as i64);
+            // The badge goes under the count when the two don't fit
+            // (B836): it follows the user's text size past the chrome's
+            // extra large, and at the largest, "1 件があなた待ち" alone is
+            // most of the screen's width.
             let mut row = view()
                 .flex_row()
+                .flex_wrap()
                 .items_center()
                 .gap(px(8.0))
                 .min_h(px(28.0))
@@ -995,9 +1000,21 @@ fn card_view(
     let boxed = panes_box(cells, more_view, card.cells.len(), open);
     let panes = |n: i64| crate::plural!("%lld panes", n);
     let (line, status) = card_line(card, now, words, &panes);
-    let mut second = view().flex_row().items_center().gap(px(6.0)).min_w(px(0.0));
+    // The state's words take a second line rather than lose their end
+    // (B834): a card on a phone is some 127 pt wide, and "あなた待ち · 2個の
+    // ペイン" or "Wartet auf dich · 2 Panels" is wider. The chrome's text
+    // stops growing at extra large, where two lines hold every language's.
+    // The dot keeps to the first line.
+    let mut second = view().flex_row().items_start().gap(px(6.0)).min_w(px(0.0));
     if let Some(status) = status {
-        second = second.child(status_dot(status));
+        let first = TextToken::Footnote.size(1.0);
+        second = second.child(
+            view()
+                .flex_shrink_0()
+                .h(move || px(crate::face::line(super::size(first))))
+                .justify_center()
+                .child(status_dot(status)),
+        );
     }
     let line_tone = status.map_or("muted-foreground", tone);
     // Screen readers hear a lone pane's minutes as minutes (B653).
@@ -1010,8 +1027,9 @@ fn card_view(
     };
     second = second.child(
         chrome_text(TextToken::Footnote, line)
-            .number_of_lines(1u32)
+            .number_of_lines(2u32)
             .flex_shrink(1.0)
+            .min_w(px(0.0))
             .label(said)
             .text_color(move || token(line_tone)),
     );
@@ -1199,9 +1217,11 @@ fn cell_view(
                 .text_color(move || token("foreground")),
         );
     if let Some((words, status, line_tone)) = state {
+        // Two lines, as the card's (B834): a pane on a phone is some 72 pt
+        // wide, and German's "Wartet auf dich" is wider.
         v = v.child(
             chrome_text(TextToken::Caption, words)
-                .number_of_lines(1u32)
+                .number_of_lines(2u32)
                 .text_color(move || token(line_tone)),
         );
         v = v.child(
