@@ -593,6 +593,7 @@ impl Renderer {
     /// (`--takeover`) — on the very pane another device has, that is the
     /// person taking it back.
     pub fn pick(&mut self, terminal: &str, now: u64) {
+        self.follow_until = None;
         self.lost_pick = None;
         self.regained = None;
         match &self.down {

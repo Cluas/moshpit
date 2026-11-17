@@ -123,6 +123,10 @@ async fn herdr_over_mosh(bench: &mut Bench, relay: &Relay, herdr: &PrivateHerdr)
 #[ignore = "needs sshd, mosh-server, herdr and python3; see the module docs"]
 async fn a_stalled_herdr_control_connection_over_mosh_is_noticed_in_seconds() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let kept = kept();
     let herdr = PrivateHerdr::start();
     let home = herdr.home.display().to_string();

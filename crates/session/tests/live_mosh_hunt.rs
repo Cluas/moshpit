@@ -117,7 +117,11 @@ async fn a_killed_mosh_server_is_dialed_again() {
         term.text()
     );
     let sessions = tmux.run(&["list-sessions", "-F", "#{session_name}"]);
-    assert_eq!(sessions.trim(), "gone", "the same session, no new one");
+    let sessions: Vec<&str> = sessions
+        .lines()
+        .filter(|name| !moshpit_tmux::controller::is_group_name(name))
+        .collect();
+    assert_eq!(sessions, ["gone"], "the same session, no new one");
     let banners = bench
         .seen
         .iter()
@@ -205,6 +209,10 @@ fn dropped_notices(bench: &Bench, id: SessionId) -> usize {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd, tmux and mosh-server"]
 async fn a_quiet_control_plane_is_replaced_at_a_roam_and_a_command_meanwhile_lands() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-quiet");
@@ -247,6 +255,10 @@ async fn a_quiet_control_plane_is_replaced_at_a_roam_and_a_command_meanwhile_lan
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd, tmux and mosh-server"]
 async fn a_command_held_past_the_bound_is_dropped_and_said_once_the_plane_is_back() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-held");
@@ -330,6 +342,10 @@ async fn heal_and_redial(bench: &mut Bench, relay: &Relay) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd and tmux"]
 async fn a_tmux_command_given_while_redialling_lands_on_the_next_attach() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-redial");
@@ -356,6 +372,10 @@ async fn a_tmux_command_given_while_redialling_lands_on_the_next_attach() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd and tmux"]
 async fn a_tmux_command_held_past_the_bound_through_a_redial_is_dropped_and_said() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-redial-late");
@@ -389,6 +409,10 @@ async fn a_tmux_command_held_past_the_bound_through_a_redial_is_dropped_and_said
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd and tmux"]
 async fn a_tmux_command_given_while_a_return_asks_the_socket_lands_after_it() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-return");
@@ -424,6 +448,10 @@ async fn a_tmux_command_given_while_a_return_asks_the_socket_lands_after_it() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd, tmux and mosh-server"]
 async fn a_tmux_command_given_while_mosh_is_redialled_lands_on_the_new_plane() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::named("hunt-redial-mosh");
@@ -665,6 +693,10 @@ async fn a_return_given_with_a_paste_reaches_a_herdr_pane_apart() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs sshd and mosh-server"]
 async fn the_return_path_banner_goes_when_mosh_hears_the_server_again() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let mut bench = Bench::with(sshd.addr(), Timing::default());
     let mut wanted = spec(sshd.port);

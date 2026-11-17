@@ -215,6 +215,10 @@ fn view_of(bench: &Bench, id: SessionId) -> Option<moshpit_session::HerdrView> {
 #[ignore = "needs sshd, mosh-server, herdr and python3; see the module docs"]
 async fn herdr_push_comes_back_after_the_control_connection_is_redialled() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     if !PrivateHerdr::available() {
         eprintln!("skipped: no herdr");
         return;

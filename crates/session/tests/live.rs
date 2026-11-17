@@ -170,6 +170,10 @@ async fn ssh_new_host_is_asked_once_and_a_refusal_is_not_retried() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_a_yes_given_after_the_host_hung_up_connects_without_a_failure() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let known = Arc::new(moshpit_ssh::KnownHosts::in_memory(Default::default()));
@@ -227,6 +231,10 @@ async fn ssh_a_yes_given_after_the_host_hung_up_connects_without_a_failure() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_a_redial_goes_where_the_connection_was_saved_to_point() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let started = Relay::start(sshd.addr()).await;
     let saved = Relay::start(sshd.addr()).await;
@@ -273,6 +281,10 @@ async fn ssh_a_redial_goes_where_the_connection_was_saved_to_point() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_a_cut_connection_is_redialled_onto_the_same_channel() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let mut bench = Bench::with(
@@ -333,6 +345,10 @@ async fn ssh_a_cut_connection_is_redialled_onto_the_same_channel() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_a_silent_link_is_caught_by_the_keepalive() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let mut bench = Bench::with(
@@ -363,6 +379,10 @@ async fn ssh_a_silent_link_is_caught_by_the_keepalive() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_the_way_back_from_the_background() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     // The frozen dial below must not be let go by its own timeout: one far
@@ -428,6 +448,10 @@ async fn ssh_the_way_back_from_the_background() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_a_size_given_during_the_redial_reaches_the_new_shell() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], relay.port));
@@ -479,6 +503,10 @@ async fn ssh_a_size_given_during_the_redial_reaches_the_new_shell() {
 #[ignore = "needs sshd; see the module docs"]
 async fn ssh_input_while_not_live_is_dropped_not_replayed() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let mut bench = Bench::with(
@@ -612,6 +640,10 @@ async fn tmux_never_creates_a_session() {
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_a_drop_reattaches_and_held_input_reaches_its_pane() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::new();
@@ -685,6 +717,10 @@ async fn tmux_a_drop_reattaches_and_held_input_reaches_its_pane() {
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_pins_are_handed_back_even_when_the_redial_never_landed() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::new();
@@ -830,6 +866,10 @@ async fn mosh_falls_back_to_ssh_without_a_server() {
 #[ignore = "needs sshd and mosh-server; see the module docs"]
 async fn mosh_dead_return_path_offers_ssh_and_reaps_the_unreached_server() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let mut timing = quick();
     timing.mosh.return_path_deadline_ms = 3_000;
@@ -885,6 +925,10 @@ async fn mosh_dead_return_path_offers_ssh_and_reaps_the_unreached_server() {
 #[ignore = "needs sshd and mosh-server; see the module docs"]
 async fn mosh_survives_a_blackhole_and_never_kills_a_server_it_reached() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let mut bench = Bench::with(sshd.addr(), quick());
     let id = bench.sessions.connect(mosh_spec(sshd.port));
@@ -916,9 +960,9 @@ async fn mosh_survives_a_blackhole_and_never_kills_a_server_it_reached() {
     assert!(term.wait_for("fresh-6", 20).await, "{}", term.text());
     // Both ran, once each, the one typed first first.
     let text = term.text();
-    assert_eq!(text.matches("\nstale-4").count(), 1, "{text}");
-    assert_eq!(text.matches("\nfresh-6").count(), 1, "{text}");
-    assert!(text.find("\nstale-4") < text.find("\nfresh-6"), "{text}");
+    assert_eq!(text.matches("stale-4").count(), 1, "{text}");
+    assert_eq!(text.matches("fresh-6").count(), 1, "{text}");
+    assert!(text.find("stale-4") < text.find("fresh-6"), "{text}");
     bench.drain();
     assert_eq!(
         bench.states(id),
@@ -1287,6 +1331,10 @@ async fn tmux_the_chrome_reads_a_view_marks_and_pins_follow_the_screen() {
 async fn ssh_injected_faults_are_redialled() {
     use moshpit_session::LinkFault;
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let mut bench = Bench::with(sshd.addr(), quick());
     let id = bench.sessions.connect(spec(sshd.port));

@@ -1112,6 +1112,24 @@ fn a_workspace_the_phone_makes_is_followed() {
     assert_eq!(rig.client.attached_pane(), Some(focused.as_str()));
 }
 
+/// B683: an explicit pane pick supersedes any earlier `follow_asked_focus`
+/// window that had not yet seen another focus report, so a later desktop
+/// focus change cannot steal the phone away from the pane just picked.
+#[test]
+fn a_pane_pick_cancels_an_unseen_focus_follow() {
+    let mut rig = attached();
+    rig.act(Action::NewPane);
+    rig.act(Action::SelectPane("w1:p1".to_owned()));
+    rig.run(100);
+    rig.host.focused = Some("w1:p2".to_owned());
+    rig.run(600);
+    assert_eq!(rig.client.attached_pane(), Some("w1:p1"));
+    assert_eq!(
+        rig.client.snapshot().active_pane_id.as_deref(),
+        Some("w1:p1")
+    );
+}
+
 #[test]
 fn an_unanswered_release_still_switches_but_typing_waits_for_the_paint() {
     let mut rig = attached();

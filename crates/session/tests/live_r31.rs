@@ -104,8 +104,14 @@ async fn a_first_session_named_with_a_line_break_is_refused_and_none_is_made() {
         )
     );
     assert!(answer == "Ok(())" || answer == "()", "{answer}");
+    let theirs = || -> Vec<String> {
+        tmux.sessions()
+            .into_iter()
+            .filter(|name| !moshpit_tmux::controller::is_group_name(name))
+            .collect()
+    };
     assert!(
-        eventually(10, || tmux.sessions() == vec!["r31".to_owned()]).await,
+        eventually(10, || theirs() == vec!["r31".to_owned()]).await,
         "{:?}",
         tmux.sessions()
     );

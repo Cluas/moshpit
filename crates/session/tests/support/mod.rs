@@ -652,6 +652,22 @@ impl Tmux {
             .map(str::to_owned)
             .collect()
     }
+
+    pub fn session_status(&self, name: &str) -> String {
+        self.run(&["show-options", "-t", &format!("{name}:"), "-v", "status"])
+    }
+
+    /// The status line on what the phone shows of `name`: the session's own,
+    /// or from tmux 3.8 its group's (`name~mp-…`, B773), off when either is.
+    pub fn viewed_status(&self, name: &str) -> String {
+        let group = format!("{name}{}", moshpit_tmux::controller::GROUP_MARK);
+        self.sessions()
+            .into_iter()
+            .filter(|session| session.starts_with(&group))
+            .map(|session| self.session_status(&session))
+            .find(|status| status == "off")
+            .unwrap_or_else(|| self.session_status(name))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -920,6 +936,12 @@ pub fn alive(pid: i64) -> bool {
         return false;
     }
     true
+}
+
+/// Fault-injection live tests (relay cut/stall, UDP blackhole, `LinkFault`,
+/// suspension) run only when `MOSHPIT_E2E_FAULTS=1` (`scripts/e2e/run.sh`).
+pub fn faults_enabled() -> bool {
+    std::env::var("MOSHPIT_E2E_FAULTS").is_ok_and(|v| v == "1")
 }
 
 /// Stops the mosh-server a session reported when dropped.

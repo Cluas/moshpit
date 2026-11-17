@@ -541,6 +541,19 @@ fn the_desktops_focus_moves_the_loop_only_at_first() {
     assert_eq!(rig.host.landed, ["t-1", "t-3"], "the person's own move does");
 }
 
+#[test]
+fn a_pane_pick_cancels_an_unseen_focus_follow() {
+    let mut rig = Rig::new();
+    rig.report("t-1");
+    rig.run_for(50);
+    assert_eq!(rig.host.landed, ["t-1"]);
+    rig.renderer.follow_focus(rig.now);
+    rig.pick("t-1");
+    rig.report("t-2");
+    rig.run_for(100);
+    assert_eq!(rig.host.landed, ["t-1"]);
+}
+
 // MARK: - Round twenty-five (B208)
 
 #[test]
