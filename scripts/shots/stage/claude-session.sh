@@ -12,12 +12,12 @@
 # stay docked cleanly above Moshpit's key bar at every viewport height.
 dir="$(cd "$(dirname "$0")" && pwd)"
 if [ -x "$dir/claude" ]; then
-    exec "$dir/claude"
+    exec "$dir/claude" "$@"
 fi
 
 bin="${TMPDIR:-/tmp}/moshpit-claude-stage-$(id -u)"
 mkdir -p "$bin"
 if [ ! -x "$bin/claude" ]; then
-    cc -O2 "$dir/claude-stage.c" -o "$bin/.claude.$$" && mv -f "$bin/.claude.$$" "$bin/claude"
+    cc -O2 -Wall -Wextra -Werror "$dir/claude-stage.c" -o "$bin/.claude.$$" && mv -f "$bin/.claude.$$" "$bin/claude"
 fi
-exec "$bin/claude"
+exec "$bin/claude" "$@"

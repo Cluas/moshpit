@@ -1,12 +1,26 @@
-> the loss spikes at step 2k, fix the warmup
+> the loss spikes around step 2k when batch size ramps up — fix the learning-rate warmup in schedule.py
 
-● The warmup ends at step 2,000 while the batch is still growing.
-  I'll stretch it to 4,000 and decay with a cosine.
+● The linear warmup ends at step 2,000 while gradient accumulation is still ramping the effective batch size, so the step size overshoots. I'll stretch warmup to 4,000 steps and decay into a cosine floor.
+
+● Read(schedule.py)
+  ⎿  Read 31 lines
+
+● Read(train.py)
+  ⎿  Read 84 lines
 
 ● Update(schedule.py)
-  ⎿  Updated 2 additions and 1 removal
+  ⎿  Updated schedule.py with 6 additions and 3 removals
+
+● Bash(pytest -q tests/test_schedule.py)
+  ⎿  4 passed in 0.38s
 
 ● Bash(python train.py --steps 6000 --log-every 500)
-  ⎿  step 500   loss 3.912
-     step 1000  loss 3.104
-     step 1500  loss 2.788
+  ⎿  step 500   lr 6.25e-5  grad_norm 0.94  loss 3.912
+     step 1000  lr 1.25e-4  grad_norm 0.88  loss 3.104
+     step 1500  lr 1.88e-4  grad_norm 0.81  loss 2.788
+     step 2000  lr 2.50e-4  grad_norm 0.76  loss 2.541
+     step 2500  lr 3.12e-4  grad_norm 0.74  loss 2.369
+     step 3000  lr 3.75e-4  grad_norm 0.71  loss 2.218
+     step 3500  lr 4.38e-4  grad_norm 0.69  loss 2.104
+
+● Step 2,000 passed cleanly without the gradient norm spike; waiting for the 4,000-step warmup peak to finish…

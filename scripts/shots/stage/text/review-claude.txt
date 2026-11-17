@@ -1,13 +1,33 @@
-> add tests for backoff.js: the cap, the jitter, the retry count
+> add unit tests for backoff.js covering the 30s cap, full-jitter bounds, and retry exhaustion on 429 bursts
 
-● I'll cover the cap, the jitter bounds and the retry count.
+● I'll inspect src/backoff.js and src/queue.js first, then cover the 30s cap, full-jitter bounds, and dead-letter handoff after the final attempt.
+
+● Read(src/backoff.js)
+  ⎿  Read 24 lines
+
+● Read(src/queue.js)
+  ⎿  Read 42 lines
 
 ● Write(test/backoff.test.js)
-  ⎿  58 lines
+  ⎿  Wrote 58 lines to test/backoff.test.js
 
 ● Bash(npx vitest run test/backoff.test.js)
-  ⎿  ✓ caps the wait at 30s
-     ✓ keeps jitter inside ±20%
-     ✓ gives up after the last try
+  ⎿  ✓ caps exponential backoff at 30_000ms across long retry streaks
+     ✓ keeps sampled delays inside [0, min(capMs, baseMs * 2 ** attempt)]
+     ✓ hands exhausted 429 bursts to the dead-letter queue after 3 tries
 
-● Now the queue: a dropped event should be retried once more…
+● Read(test/queue.test.js)
+  ⎿  Read 64 lines
+
+● Update(test/queue.test.js)
+  ⎿  Updated test/queue.test.js with 19 additions and 2 removals
+
+● Bash(npx vitest run test/queue.test.js test/webhook.test.js)
+  ⎿  ✓ deduplicates replayed Stripe webhook ids across concurrent workers
+     ✓ preserves Retry-After headers when upstream returns HTTP 429
+     ✓ drains 128 queued events without dropping inflight deliveries
+
+● Update(test/replay.test.js)
+  ⎿  Updated test/replay.test.js with 14 additions and 1 removal
+
+● Running the full queue and webhook replay suite to verify that retried events stay idempotent under sustained burst load…

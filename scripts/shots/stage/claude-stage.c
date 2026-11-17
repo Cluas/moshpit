@@ -5,9 +5,12 @@
  *   claude                   Edit confirmation dialog + persistent bottom composer
  *   claude --working <file>  Active turn log from <file> + persistent bottom composer
  *
- * Designed to keep the 4-row composer docked to the bottom edge across every
- * tmux pane size (SIGWINCH) and reset pending composer drafts cleanly on Esc,
- * Ctrl-U, Ctrl-C, Enter, or a 10s idle timeout.
+ * Queries the PTY's actual rows and columns (TIOCGWINSZ) on startup and on every
+ * SIGWINCH, dynamically reflowing prompts, assistant prose, tool calls, tool
+ * results, inline diffs, and the confirmation/draft-hidden footer to fill the
+ * terminal width while keeping the 4-row composer docked to the bottom edge.
+ * Pending composer drafts reset cleanly on Esc, Ctrl-U, Ctrl-C, Enter, or a 10s
+ * idle timeout.
  */
 
 #include <ctype.h>
@@ -27,11 +30,11 @@
 
 #define MAX_LINES 256
 #define MAX_SEGS 12
+#define SEG_TEXT_CAP 512
 #define MAX_DRAFT 255
 #define IDLE_RESET_MS 10000
 
 /* 24-bit TrueColor ANSI SGR foreground/background codes matching dark theme */
-#define FG_DEFAULT   "\033[39m"
 #define FG_WHITE     "\033[38;2;242;242;242m"
 #define FG_CLAWD     "\033[38;2;215;119;87m"
 #define FG_DIM       "\033[38;2;153;153;153m"
@@ -51,7 +54,7 @@ typedef struct {
     const char *fg;
     const char *bg;
     int bold;
-    char text[256];
+    char text[SEG_TEXT_CAP];
 } Seg;
 
 typedef struct {
@@ -198,24 +201,6 @@ static void add_simple(Line *lines, int *count, const char *fg, int bold, const 
     add_seg(ln, fg, NULL, bold, text);
 }
 
-static void add_dot_line(Line *lines, int *count, const char *dot_fg, const char *rest_fg,
-                         const char *text) {
-    Line *ln = push_line(lines, count);
-    if (!ln) return;
-    add_seg(ln, dot_fg, NULL, 0, "\xe2\x97\x8f ");
-    add_seg(ln, rest_fg, NULL, 0, text);
-}
-
-static void add_tool_call(Line *lines, int *count, const char *tool, const char *args) {
-    Line *ln = push_line(lines, count);
-    if (!ln) return;
-    add_seg(ln, FG_BLUE, NULL, 0, "\xe2\x97\x8f ");
-    add_seg(ln, FG_WHITE, NULL, 1, tool);
-    add_seg(ln, FG_WHITE, NULL, 0, "(");
-    add_seg(ln, FG_DIM, NULL, 0, args);
-    add_seg(ln, FG_WHITE, NULL, 0, ")");
-}
-
 static void add_result_line(Line *lines, int *count, const char *prefix, const char *text) {
     Line *ln = push_line(lines, count);
     if (!ln) return;
@@ -223,7 +208,201 @@ static void add_result_line(Line *lines, int *count, const char *prefix, const c
     add_seg(ln, FG_DIM, NULL, 0, text);
 }
 
-/* Emit up to max_cols display cells of a Line, truncating safely at UTF-8 boundaries. */
+static void emit_wrapped_text(Line *lines, int *count, int cols,
+                              const char *first_fg, int first_bold,
+                              const char *prefix_fg, const char *prefix,
+                              const char *cont_indent, const char *text) {
+    int plen = utf8_cols(prefix);
+    int ilen = utf8_cols(cont_indent);
+    int first = 1;
+    const char *p = text;
+
+    while (*p && *count < MAX_LINES) {
+        int lead_cols = first ? plen : ilen;
+        int room = cols - lead_cols;
+        if (room < 8) room = 8;
+
+        const char *scan = p;
+        const char *last_space = NULL;
+        int cur = 0;
+        while (*scan && cur < room) {
+            if (*scan == ' ') last_space = scan;
+            int step = utf8_cp_len((unsigned char)*scan);
+            for (int k = 0; k < step && *scan; k++) scan++;
+            cur++;
+        }
+
+        const char *cut = (*scan == '\0' || *scan == ' ')
+                              ? scan
+                              : (last_space && last_space > p ? last_space : scan);
+        Line *ln = push_line(lines, count);
+        if (!ln) break;
+
+        if (first && prefix[0] != '\0') {
+            add_seg(ln, prefix_fg ? prefix_fg : first_fg, NULL, first_bold, prefix);
+        } else if (!first && cont_indent[0] != '\0') {
+            add_seg(ln, first_fg, NULL, 0, cont_indent);
+        }
+
+        size_t chunk_len = (size_t)(cut - p);
+        if (chunk_len >= SEG_TEXT_CAP) chunk_len = SEG_TEXT_CAP - 1;
+        if (chunk_len > 0) {
+            char tmp[SEG_TEXT_CAP];
+            memcpy(tmp, p, chunk_len);
+            tmp[chunk_len] = '\0';
+            add_seg(ln, first_fg, NULL, first_bold && first && prefix[0] == '\0', tmp);
+        }
+
+        p = cut;
+        while (*p == ' ') p++;
+        first = 0;
+        if (!*p) break;
+    }
+}
+
+static void emit_tool_call(Line *lines, int *count, int cols,
+                           const char *tool, const char *args) {
+    int head_cols = 2 + utf8_cols(tool) + 1; /* "● " + tool + "(" */
+    int args_cols = utf8_cols(args);
+    if (head_cols + args_cols + 1 <= cols) {
+        Line *ln = push_line(lines, count);
+        if (!ln) return;
+        add_seg(ln, FG_BLUE, NULL, 0, "\xe2\x97\x8f ");
+        add_seg(ln, FG_WHITE, NULL, 1, tool);
+        add_seg(ln, FG_WHITE, NULL, 0, "(");
+        add_seg(ln, FG_DIM, NULL, 0, args);
+        add_seg(ln, FG_WHITE, NULL, 0, ")");
+        return;
+    }
+
+    const char *cont = "     ";
+    int cont_cols = 5;
+    int first = 1;
+    const char *p = args;
+    while (*p && *count < MAX_LINES) {
+        int lead = first ? head_cols : cont_cols;
+        int rem_cols = utf8_cols(p);
+        /* Reserve 1 col for closing ')' when the rest fits on this line */
+        if (lead + rem_cols + 1 <= cols) {
+            Line *ln = push_line(lines, count);
+            if (!ln) break;
+            if (first) {
+                add_seg(ln, FG_BLUE, NULL, 0, "\xe2\x97\x8f ");
+                add_seg(ln, FG_WHITE, NULL, 1, tool);
+                add_seg(ln, FG_WHITE, NULL, 0, "(");
+            } else {
+                add_seg(ln, FG_DIM, NULL, 0, cont);
+            }
+            add_seg(ln, FG_DIM, NULL, 0, p);
+            add_seg(ln, FG_WHITE, NULL, 0, ")");
+            break;
+        }
+
+        int room = cols - lead;
+        if (room < 6) room = 6;
+        const char *scan = p;
+        const char *last_break = NULL;
+        int cur = 0;
+        while (*scan && cur < room) {
+            if (*scan == ' ') last_break = scan;
+            int step = utf8_cp_len((unsigned char)*scan);
+            for (int k = 0; k < step && *scan; k++) scan++;
+            cur++;
+        }
+        const char *cut = (*scan == '\0' || *scan == ' ')
+                              ? scan
+                              : (last_break && last_break > p ? last_break : scan);
+        Line *ln = push_line(lines, count);
+        if (!ln) break;
+        if (first) {
+            add_seg(ln, FG_BLUE, NULL, 0, "\xe2\x97\x8f ");
+            add_seg(ln, FG_WHITE, NULL, 1, tool);
+            add_seg(ln, FG_WHITE, NULL, 0, "(");
+        } else {
+            add_seg(ln, FG_DIM, NULL, 0, cont);
+        }
+        size_t chunk_len = (size_t)(cut - p);
+        if (chunk_len >= SEG_TEXT_CAP) chunk_len = SEG_TEXT_CAP - 1;
+        if (chunk_len > 0) {
+            char tmp[SEG_TEXT_CAP];
+            memcpy(tmp, p, chunk_len);
+            tmp[chunk_len] = '\0';
+            add_seg(ln, FG_DIM, NULL, 0, tmp);
+        }
+        p = cut;
+        while (*p == ' ') p++;
+        first = 0;
+        if (!*p) {
+            add_seg(ln, FG_WHITE, NULL, 0, ")");
+            break;
+        }
+    }
+}
+
+static void emit_code_line(Line *lines, int *count, int cols,
+                           const char *fill_bg, const char *gutter_fg,
+                           const char *gutter, const char *marker,
+                           const char *cont_gutter,
+                           const char *code_fg, const char *code) {
+    int gcols = utf8_cols(gutter) + utf8_cols(marker);
+    int ccols = utf8_cols(cont_gutter);
+    int first = 1;
+    const char *p = code;
+
+    if (!*p) {
+        Line *ln = push_line(lines, count);
+        if (!ln) return;
+        ln->fill_bg = fill_bg;
+        add_seg(ln, gutter_fg, fill_bg, 0, gutter);
+        if (marker && *marker) add_seg(ln, code_fg, fill_bg, 0, marker);
+        return;
+    }
+
+    while (*p && *count < MAX_LINES) {
+        int lead = first ? gcols : ccols;
+        int room = cols - lead;
+        if (room < 8) room = 8;
+
+        const char *scan = p;
+        const char *last_space = NULL;
+        int cur = 0;
+        while (*scan && cur < room) {
+            if (*scan == ' ') last_space = scan;
+            int step = utf8_cp_len((unsigned char)*scan);
+            for (int k = 0; k < step && *scan; k++) scan++;
+            cur++;
+        }
+
+        const char *cut = (*scan == '\0' || *scan == ' ')
+                              ? scan
+                              : (last_space && last_space > p ? last_space : scan);
+        Line *ln = push_line(lines, count);
+        if (!ln) break;
+        ln->fill_bg = fill_bg;
+        if (first) {
+            add_seg(ln, gutter_fg, fill_bg, 0, gutter);
+            if (marker && *marker) add_seg(ln, code_fg, fill_bg, 0, marker);
+        } else {
+            add_seg(ln, gutter_fg, fill_bg, 0, cont_gutter);
+        }
+
+        size_t chunk_len = (size_t)(cut - p);
+        if (chunk_len >= SEG_TEXT_CAP) chunk_len = SEG_TEXT_CAP - 1;
+        if (chunk_len > 0) {
+            char tmp[SEG_TEXT_CAP];
+            memcpy(tmp, p, chunk_len);
+            tmp[chunk_len] = '\0';
+            add_seg(ln, code_fg, fill_bg, 0, tmp);
+        }
+
+        p = cut;
+        while (*p == ' ') p++;
+        first = 0;
+        if (!*p) break;
+    }
+}
+
+/* Emit up to cols display cells of a Line, truncating safely at UTF-8 boundaries. */
 static void render_line(OutBuf *ob, const Line *ln, int cols) {
     if (ln->rule_utf8[0] != '\0') {
         ob_str(ob, "\033[0m");
@@ -290,43 +469,46 @@ static int build_confirmation_body(Line *lines, int cols, int draft_len) {
 
     add_blank(lines, &count);
 
-    /* User turn */
-    ln = push_line(lines, &count);
-    add_seg(ln, FG_WHITE, NULL, 1, "\xe2\x9d\xaf ");
-    add_seg(ln, FG_WHITE, NULL, 0, "make the webhook retry back off and cap it");
+    /* User turn: dynamically wrapped across the terminal's actual columns */
+    emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_WHITE, "\xe2\x9d\xaf ", "  ",
+                      "webhook retries hammer 429 endpoints and drop bursts \xe2\x80\x94 "
+                      "add full-jitter backoff and cap the wait at 30s");
 
     add_blank(lines, &count);
 
     /* Assistant intro */
-    add_dot_line(lines, &count, FG_GREEN, FG_WHITE,
-                 "I'll make retry back off and cap the wait.");
+    emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_GREEN, "\xe2\x97\x8f ", "  ",
+                      "I'll benchmark burst drops in src/retry.js, then add "
+                      "full-jitter exponential backoff capped at 30s.");
 
     add_blank(lines, &count);
 
-    /* Tool steps (<= 49 cols each; keeps "     Wrote bench/latency.png" intact) */
-    add_tool_call(lines, &count, "Search", "pattern: \"retry\", path: \"src\"");
-    add_result_line(lines, &count, "  \xe2\x8e\xbf  ", "Found 4 files (ctrl+o to expand)");
-    add_tool_call(lines, &count, "Read", "src/retry.js");
-    add_result_line(lines, &count, "  \xe2\x8e\xbf  ", "Read 6 lines");
-    add_tool_call(lines, &count, "Bash", "npm run bench -- --events 1000");
-    add_result_line(lines, &count, "  \xe2\x8e\xbf  ", "p99 9.8s, 41 of 1000 events dropped");
+    /* Tool steps (keeps "     Wrote bench/latency.png" on its own ASCII row for B817/test06) */
+    emit_tool_call(lines, &count, cols, "Search", "pattern: \"retry|backoff\", path: \"src\"");
+    emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "  \xe2\x8e\xbf  ", "     ",
+                      "Found 4 files (src/retry.js, src/webhook.js, src/queue.js, test/retry.test.js)");
+    emit_tool_call(lines, &count, cols, "Bash", "npm run bench -- --events 1000 --burst 32");
+    emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "  \xe2\x8e\xbf  ", "     ",
+                      "p99 9.8s \xc2\xb7 41 of 1000 events dropped on HTTP 429 bursts");
     add_result_line(lines, &count, "     ", "Wrote bench/latency.png");
 
     add_blank(lines, &count);
 
-    add_dot_line(lines, &count, FG_GREEN, FG_WHITE,
-                 "It retries 3\xc3\x97 with no delay, dropping bursts.");
-    add_tool_call(lines, &count, "Write", "src/backoff.js");
-    add_result_line(lines, &count, "  \xe2\x8e\xbf  ", "Wrote 24 lines to src/backoff.js");
-    add_tool_call(lines, &count, "Update", "src/retry.js");
+    emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_GREEN, "\xe2\x97\x8f ", "  ",
+                      "src/retry.js fires all three attempts with zero delay, burning the "
+                      "retry budget inside one second on a 429 burst. I'll cap full-jitter "
+                      "exponential backoff at 30s.");
+    emit_tool_call(lines, &count, cols, "Write", "src/backoff.js");
+    emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "  \xe2\x8e\xbf  ", "     ",
+                      "Wrote 24 lines to src/backoff.js (500ms base, 30_000ms cap, full jitter)");
+    emit_tool_call(lines, &count, cols, "Update", "src/retry.js");
 
     if (draft_len > 0) {
         /* 2.1.326 draftHiddenCue collapses the inline dialog while typing in the composer */
         add_blank(lines, &count);
-        add_simple(lines, &count, FG_DIM, 0,
-                   "  Claude has a question for you \xe2\x80\x94 it shows once");
-        add_simple(lines, &count, FG_DIM, 0,
-                   "  you send or clear what you're typing.");
+        emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "  ", "  ",
+                          "Claude has a question for you \xe2\x80\x94 it shows once "
+                          "you send or clear what you're typing.");
         return count;
     }
 
@@ -337,27 +519,16 @@ static int build_confirmation_body(Line *lines, int cols, int draft_len) {
     add_simple(lines, &count, FG_WHITE, 1, " src/retry.js");
     add_rule(lines, &count, FG_SUBTLE, "\xe2\x95\x8c");
 
-    ln = push_line(lines, &count);
-    add_seg(ln, FG_DIM, NULL, 0, "   1  ");
-    add_seg(ln, FG_WHITE, NULL, 0, "function retry(fn, times = 3) {");
-
-    ln = push_line(lines, &count);
-    add_seg(ln, FG_DIM, NULL, 0, "   2    ");
-    add_seg(ln, FG_WHITE, NULL, 0, "for (let i = 0; i < times; i++) {");
-
-    ln = push_line(lines, &count);
-    ln->fill_bg = BG_DEL;
-    add_seg(ln, FG_DIM, BG_DEL, 0, "   3 ");
-    add_seg(ln, FG_DEL, BG_DEL, 0, "-    return fn();");
-
-    ln = push_line(lines, &count);
-    ln->fill_bg = BG_ADD;
-    add_seg(ln, FG_DIM, BG_ADD, 0, "   3 ");
-    add_seg(ln, FG_ADD, BG_ADD, 0, "+    return backoff(fn, times, 30_000);");
-
-    ln = push_line(lines, &count);
-    add_seg(ln, FG_DIM, NULL, 0, "   4    ");
-    add_seg(ln, FG_WHITE, NULL, 0, "}");
+    emit_code_line(lines, &count, cols, NULL, FG_DIM, "   1  ", "", "        ",
+                   FG_WHITE, "export async function retry(fn, times = 3) {");
+    emit_code_line(lines, &count, cols, NULL, FG_DIM, "   2    ", "", "          ",
+                   FG_WHITE, "for (let i = 0; i < times; i++) {");
+    emit_code_line(lines, &count, cols, BG_DEL, FG_DIM, "   3 ", "-    ", "          ",
+                   FG_DEL, "return await fn();");
+    emit_code_line(lines, &count, cols, BG_ADD, FG_DIM, "   3 ", "+    ", "          ",
+                   FG_ADD, "return await backoff(fn, i, { baseMs: 500, capMs: 30_000 });");
+    emit_code_line(lines, &count, cols, NULL, FG_DIM, "   4    ", "", "          ",
+                   FG_WHITE, "}");
 
     add_rule(lines, &count, FG_SUBTLE, "\xe2\x95\x8c");
 
@@ -369,69 +540,12 @@ static int build_confirmation_body(Line *lines, int cols, int draft_len) {
     ln = push_line(lines, &count);
     add_seg(ln, FG_PERM, NULL, 1, " \xe2\x9d\xaf 1. Yes");
 
-    if (cols >= 56) {
-        add_simple(lines, &count, FG_WHITE, 0,
-                   "   2. Yes, allow all edits during this session (shift+tab)");
-    } else {
-        add_simple(lines, &count, FG_WHITE, 0,
-                   "   2. Yes, allow all edits during this session");
-        add_simple(lines, &count, FG_WHITE, 0,
-                   "      (shift+tab)");
-    }
+    emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_WHITE, "   ", "      ",
+                      "2. Yes, allow all edits during this session (shift+tab)");
     add_simple(lines, &count, FG_WHITE, 0, "   3. No");
     add_simple(lines, &count, FG_DIM, 0, " Esc to cancel \xc2\xb7 Tab to amend");
 
     return count;
-}
-
-static void emit_wrapped_text(Line *lines, int *count, int cols,
-                              const char *first_fg, int first_bold,
-                              const char *prefix_fg, const char *prefix,
-                              const char *cont_indent, const char *text) {
-    int plen = utf8_cols(prefix);
-    int ilen = utf8_cols(cont_indent);
-    int first = 1;
-    const char *p = text;
-
-    while (*p && *count < MAX_LINES) {
-        int lead_cols = first ? plen : ilen;
-        int room = cols - lead_cols;
-        if (room < 8) room = 8;
-
-        const char *scan = p;
-        const char *last_space = NULL;
-        int cur = 0;
-        while (*scan && cur < room) {
-            if (*scan == ' ') last_space = scan;
-            int step = utf8_cp_len((unsigned char)*scan);
-            for (int k = 0; k < step && *scan; k++) scan++;
-            cur++;
-        }
-
-        const char *cut = (*scan == '\0') ? scan : (last_space && last_space > p ? last_space : scan);
-        Line *ln = push_line(lines, count);
-        if (!ln) break;
-
-        if (first && prefix[0] != '\0') {
-            add_seg(ln, prefix_fg ? prefix_fg : first_fg, NULL, first_bold, prefix);
-        } else if (!first && cont_indent[0] != '\0') {
-            add_seg(ln, first_fg, NULL, 0, cont_indent);
-        }
-
-        size_t chunk_len = (size_t)(cut - p);
-        if (chunk_len >= sizeof(ln->segs[0].text)) chunk_len = sizeof(ln->segs[0].text) - 1;
-        if (chunk_len > 0) {
-            char tmp[256];
-            memcpy(tmp, p, chunk_len);
-            tmp[chunk_len] = '\0';
-            add_seg(ln, first_fg, NULL, first_bold && first && prefix[0] == '\0', tmp);
-        }
-
-        p = cut;
-        while (*p == ' ') p++;
-        first = 0;
-        if (!*p) break;
-    }
 }
 
 static int build_working_body(Line *lines, const char *path, int cols) {
@@ -442,7 +556,7 @@ static int build_working_body(Line *lines, const char *path, int cols) {
         return count;
     }
 
-    char raw[1024];
+    char raw[2048];
     while (fgets(raw, sizeof(raw), f) && count < MAX_LINES) {
         size_t len = strlen(raw);
         while (len > 0 && (raw[len - 1] == '\n' || raw[len - 1] == '\r')) {
@@ -456,25 +570,30 @@ static int build_working_body(Line *lines, const char *path, int cols) {
         } else if (strncmp(raw, "\xe2\x97\x8f ", 4) == 0) {
             const char *body = raw + 4;
             const char *paren = strchr(body, '(');
-            if (paren && paren > body && strchr(paren, ')') && utf8_cols(raw) <= cols) {
+            const char *close = paren ? strrchr(paren, ')') : NULL;
+            if (paren && paren > body && close && close[1] == '\0') {
                 char tool[64];
                 size_t tlen = (size_t)(paren - body);
                 if (tlen > 0 && tlen < sizeof(tool) && !memchr(body, ' ', tlen)) {
                     memcpy(tool, body, tlen);
                     tool[tlen] = '\0';
-                    Line *ln = push_line(lines, &count);
-                    if (ln) {
-                        add_seg(ln, FG_BLUE, NULL, 0, "\xe2\x97\x8f ");
-                        add_seg(ln, FG_WHITE, NULL, 1, tool);
-                        add_seg(ln, FG_DIM, NULL, 0, paren);
-                    }
+                    char args[1024];
+                    size_t alen = (size_t)(close - (paren + 1));
+                    if (alen >= sizeof(args)) alen = sizeof(args) - 1;
+                    memcpy(args, paren + 1, alen);
+                    args[alen] = '\0';
+                    emit_tool_call(lines, &count, cols, tool, args);
                     continue;
                 }
             }
             emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_GREEN, "\xe2\x97\x8f ", "  ",
                               body);
-        } else if (strncmp(raw, "  \xe2\x8e\xbf", 5) == 0 || strncmp(raw, "     ", 5) == 0) {
-            emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "", "     ", raw);
+        } else if (strncmp(raw, "  \xe2\x8e\xbf  ", 7) == 0) {
+            emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "  \xe2\x8e\xbf  ", "     ",
+                              raw + 7);
+        } else if (strncmp(raw, "     ", 5) == 0) {
+            emit_wrapped_text(lines, &count, cols, FG_DIM, 0, FG_DIM, "     ", "     ",
+                              raw + 5);
         } else {
             emit_wrapped_text(lines, &count, cols, FG_WHITE, 0, FG_WHITE, "", "  ", raw);
         }
@@ -558,7 +677,6 @@ static void draw_screen(const char *working_path, const char *draft, int draft_l
         ob_str(&ob, "\033[0m\033[K\033[?7h");
     }
 
-    /* Park hardware cursor inside the composer row (kept hidden via DECTCEM) */
     int cursor_col = 3 + (draft_len > 0 ? (draft_len < cols - 4 ? draft_len : cols - 4) : 0);
     ob_fmt(&ob, "\033[%d;%dH\033[?2026l", base + 1, cursor_col);
 

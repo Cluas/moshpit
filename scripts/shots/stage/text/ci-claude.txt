@@ -1,7 +1,26 @@
-> plan the bucket move to the new region
+> plan the artifact bucket move to the new region without breaking existing state references
 
-● Reading the state first: 14 resources, 2 of them buckets.
+● Reading the Terraform state and module outputs first: 14 managed resources, 2 of them S3 buckets with lifecycle rules and KMS grants attached.
+
+● Read(main.tf)
+  ⎿  Read 38 lines
+
+● Read(outputs.tf)
+  ⎿  Read 19 lines
+
+● Write(moved.tf)
+  ⎿  Wrote 12 lines to moved.tf (moved blocks for artifacts and logs buckets)
+
+● Update(main.tf)
+  ⎿  Updated main.tf with 8 additions and 4 removals
+
+● Bash(terraform validate)
+  ⎿  Success! The configuration is valid.
 
 ● Bash(terraform plan -out move.plan)
-  ⎿  Refreshing state... [id=artifacts]
-     Plan: 2 to add, 0 to change, 2 to destroy.
+  ⎿  Refreshing state... [id=artifacts-prod]
+     Refreshing state... [id=build-logs-prod]
+     Refreshing state... [id=ci-runner-policy]
+     Plan: 2 to add, 1 to change, 0 to destroy.
+
+● Checking replication lag and bucket policy principals before writing the rollout checklist…
