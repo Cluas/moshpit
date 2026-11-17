@@ -12,17 +12,34 @@ on:
   push:
     branches: [main]
   pull_request:
+  # By hand: again (a flaky simulator boot), or a report's scenario on the
+  # app as it was before its fix (E2E-3, Tests/MoshpitUITests/ReportsUITest):
+  # `app_ref` builds the app from that commit's tree with this ref's UI
+  # tests and staging, so the scenario is seen red there with no branch for
+  # it; `ui_only` runs only the UI tests named.
   workflow_dispatch:
+    inputs:
+      app_ref:
+        description: "Build the app from this commit (this ref's UI tests and staging); empty: this ref"
+        type: string
+        default: ""
+      ui_only:
+        description: "Only these UI tests, separated by spaces (ReportsUITest/testB841…); empty: all"
+        type: string
+        default: ""
 
 # Cancel superseded runs on the same ref so a fast-follow push doesn't pay for
-# a stale build.
+# a stale build. A run of an earlier commit's app is its own group: it never
+# cancels the ref's own run, nor one of another commit.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.app_ref || 'self' }}
   cancel-in-progress: true
 
 jobs:
   rust:
     name: Rust core (cargo test)
+    # Not for an earlier commit's app: its scenarios are the question.
+    if: ${{ !inputs.app_ref }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,6 +92,7 @@ jobs:
   # bundle is unsigned.
   android:
     name: Android (unit tests, release bundle)
+    if: ${{ !inputs.app_ref }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -146,6 +164,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # A dispatch's `app_ref`: that commit's whole tree (the app, the Rust
+      # core, project.yml), then this ref's UI tests and the staging they
+      # need (scripts/shots) put back over it.
+      - name: The app from an earlier commit
+        if: ${{ inputs.app_ref }}
+        env:
+          APP_REF: ${{ inputs.app_ref }}
+        run: |
+          keep="$RUNNER_TEMP/keep"
+          mkdir -p "$keep"
+          cp -R Tests/MoshpitUITests scripts/shots "$keep/"
+          git fetch --no-tags --depth=1 origin "$APP_REF"
+          git checkout --force --detach FETCH_HEAD
+          rm -rf Tests/MoshpitUITests scripts/shots
+          cp -R "$keep/MoshpitUITests" Tests/
+          cp -R "$keep/shots" scripts/
+          git log -1 --format='The app as at %h: %s'
+
       # The app DEPLOYS to iOS 18 but must COMPILE against the iOS 26 SDK:
       # voice input references the SpeechAnalyzer/SpeechTranscriber family
       # (DictationEngines.swift), which older SDKs simply don't declare —
@@ -176,6 +212,11 @@ jobs:
           grep -qxF "$SIMULATOR" <<< "$iphones" || SIMULATOR=$(tail -1 <<< "$iphones")
           echo "Testing on: $SIMULATOR"
           echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
+          # The iPad's scenarios (the split view): a 13-inch iPad Pro.
+          IPAD=$(xcrun simctl list devices available |
+            sed -nE 's/^ +(iPad Pro 13-inch \((M5|M4)\)) \([0-9A-F-]{36}\).*/\1/p' | sort -r | head -1)
+          echo "iPad: ${IPAD:-none}"
+          echo "IPAD=$IPAD" >> "$GITHUB_ENV"
 
       # tmux for the host the session flows reach (below).
       - name: Install xcodegen and tmux
@@ -288,6 +329,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Unit tests
+        if: ${{ !inputs.app_ref }}
         run: |
           xcodebuild test-without-building \
             -project Moshpit.xcodeproj \
@@ -302,11 +344,18 @@ jobs:
       # freshly booted simulator; any other failure is the flows' own.
       - name: UI tests
         if: success() || failure()
+        env:
+          UI_ONLY: ${{ inputs.ui_only }}
         run: |
           boot() {
             xcrun simctl boot "$SIMULATOR" 2>/dev/null || true
             xcrun simctl bootstatus "$SIMULATOR" -b
           }
+          only=(-only-testing:MoshpitUITests)
+          if [ -n "$UI_ONLY" ]; then
+            only=()
+            for t in $UI_ONLY; do only+=("-only-testing:MoshpitUITests/$t"); done
+          fi
           run_ui() {
             set -o pipefail
             xcodebuild test-without-building \
@@ -314,7 +363,7 @@ jobs:
               -scheme Moshpit \
               -destination "platform=iOS Simulator,name=$SIMULATOR" \
               -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
-              -only-testing:MoshpitUITests \
+              "${only[@]}" \
               CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ui-tests.log"
           }
           boot
@@ -327,6 +376,22 @@ jobs:
           else
             exit 1
           fi
+
+      # The iPad's scenarios, on the same build and staged host: the split
+      # view's (B843). After the iPhone's flows, on a booted iPad.
+      - name: UI tests on the iPad
+        if: ${{ (success() || failure()) && env.IPAD != '' && (!inputs.ui_only || contains(inputs.ui_only, 'B843')) }}
+        run: |
+          xcrun simctl boot "$IPAD" 2>/dev/null || true
+          xcrun simctl bootstatus "$IPAD" -b
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Moshpit.xcodeproj \
+            -scheme Moshpit \
+            -destination "platform=iOS Simulator,name=$IPAD" \
+            -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
+            -only-testing:MoshpitUITests/ReportsUITest/testB843TheTerminalBesideTheSidebarShowsItsPane \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ui-tests-ipad.log"
 
       - name: Take the staged host down
         if: always()
