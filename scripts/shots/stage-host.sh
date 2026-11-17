@@ -237,6 +237,9 @@ cp "$root"/scripts/shots/stage/text/*.txt "$kit/text/"
 # The pane scripts beside the texts, where the session's user reads them.
 mkdir -p "$kit/scripts"
 cp "$root"/scripts/shots/stage/{hold,claude-session,build-session,link-turn}.sh "$kit/scripts/"
+cp "$root/scripts/shots/stage/claude-stage.c" "$kit/scripts/"
+cc -O2 -Wall -Wextra -Werror "$root/scripts/shots/stage/claude-stage.c" -o "$kit/scripts/claude"
+chmod 755 "$kit/scripts/claude"
 install_kit
 text="$box/text"
 scripts="$box/scripts"

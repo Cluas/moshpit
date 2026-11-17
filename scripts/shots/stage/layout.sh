@@ -21,7 +21,7 @@ stage_layout() {
     tmux new-session -d -s work -x 120 -y 40 -c "$stage/payments-api" -n claude \
         "exec sh $scripts/claude-session.sh"
     tmux new-window -t work -n build -c "$stage/payments-api" "exec sh $scripts/build-session.sh"
-    tmux new-window -t work -n review -c "$stage/payments-api" "exec sh $hold claude $text/review-claude.txt"
+    tmux new-window -t work -n review -c "$stage/payments-api" "exec $scripts/claude --working $text/review-claude.txt"
     tmux split-window -h -l 45% -t work:review -c "$stage/payments-api" "exec sh $hold vitest $text/review-vitest.txt"
     tmux split-window -v -t work:review.1 -c "$stage/payments-api" "exec sh $hold tail $text/review-tail.txt"
     tmux select-pane -t work:review.0
@@ -39,13 +39,13 @@ stage_layout() {
     # gpu-01: a training run (claude at work) and an eval waiting on gemini's
     # question.
     gpu kill-server 2>/dev/null || true
-    gpu new-session -d -s train -x 120 -y 40 -c "$stage/trainer" -n claude "exec sh $hold claude $text/train-claude.txt"
+    gpu new-session -d -s train -x 120 -y 40 -c "$stage/trainer" -n claude "exec $scripts/claude --working $text/train-claude.txt"
     gpu new-window -t train -n eval -c "$stage/trainer" "exec sh $hold gemini $text/train-gemini.txt"
     gpu select-window -t train:claude
 
     # build-box: an infra plan (claude at work) and a CI bump codex finished.
     build kill-server 2>/dev/null || true
-    build new-session -d -s ci -x 120 -y 40 -c "$stage/infra" -n deploy "exec sh $hold claude $text/ci-claude.txt"
+    build new-session -d -s ci -x 120 -y 40 -c "$stage/infra" -n deploy "exec $scripts/claude --working $text/ci-claude.txt"
     build new-window -t ci -n codex -c "$stage/dashboard" "exec sh $hold codex $text/ci-codex.txt"
     build select-window -t ci:deploy
 }

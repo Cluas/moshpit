@@ -419,17 +419,23 @@ final class ShotsUITest: XCTestCase {
         for locale in Self.locales {
             let app = launch(locale, Self.terminal(session, size: 13))
             guard waitLive(app, locale) else { app.terminate(); continue }
+            // Reset any prior composer draft cleanly via Esc before raising the keyboard
+            // (UIKeyInput drops 0x15 / Ctrl-U across CJK keyboards).
+            let esc = app.nsh("shortcut-esc")
+            if esc.waitForExistence(timeout: 2), esc.isHittable {
+                esc.tap()
+                settle(0.4)
+            }
             app.tapNSH("keyboard-toggle")
             if app.keyboards.firstMatch.waitForExistence(timeout: 15) {
                 settle(1)
-                // A reply going in, so the shot isn't 02's again.
-                // The pane's tty echoes and nothing reads it, so each locale's
-                // text piled up on the staged screen (and under 02's shot).
-                // Ctrl-U (kill line) wipes the pending input and its echo.
-                app.typeText("\u{15}add a test for the jitter cap")
+                app.typeText("add a test for the jitter cap")
                 settle(2)
                 keep(locale, "08-keyboard")
-                app.typeText("\u{15}")
+                if esc.exists, esc.isHittable {
+                    esc.tap()
+                    settle(0.4)
+                }
             } else {
                 XCTFail("\(locale.name): the keyboard never came up")
             }

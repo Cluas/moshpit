@@ -175,6 +175,9 @@ xcrun swift "$root/scripts/shots/stage/latency-chart.swift" "$stage/payments-api
     || fail "the staged chart wasn't drawn"
 cp "$root"/scripts/shots/stage/text/*.txt "$text/"
 cp "$root"/scripts/shots/stage/{hold,claude-session,build-session}.sh "$scripts/"
+cp "$root/scripts/shots/stage/claude-stage.c" "$scripts/"
+cc -O2 -Wall -Wextra -Werror "$root/scripts/shots/stage/claude-stage.c" -o "$scripts/claude"
+chmod 755 "$scripts/claude"
 
 stage_layout
 stamp_all
