@@ -229,6 +229,22 @@
       "rust_outcome": "WRITE $HOME/.moshpit/push.d/<conn>.a0a0a0a0b1b1b1b1.conf (the harness's install), manifest key pairing.<conn>.a0a0a0a0b1b1b1b1",
       "severity": "high: one of two phones on a host gets no pushes, which one depending on who connected last",
       "committed_cases": "Regenerated from Rust and checked by a script against full-command runs before and after: 24 flow pairing lines and 1 divergence line move only by the conf's path and the manifest key gaining the install (manifests compared as JSON; the input's legacy entry kept when not this conf). Two cases added at the end of cases.txt: this phone's legacy conf moved, and another phone's left."
+    },
+    {
+      "id": "probe-posix-sh",
+      "swift": "HostCapabilities.probeCommand (command -v tmux mosh-server herdr python3)",
+      "symptom": "Under POSIX dash (/bin/sh on Debian and Ubuntu), `command -v` inspects only its first operand and ignores the rest: on Debian and Ubuntu hosts, mosh-server, herdr, python3 and every package manager after apt-get always read as missing (B875).",
+      "trigger": "Probing any Debian/Ubuntu or other POSIX dash host over non-interactive SSH exec.",
+      "minimal_input": "probe",
+      "swift_before": "PATH=\"$PATH:...\" command -v tmux mosh-server herdr python3; echo \"::$(uname -s)::$(PATH=\"$PATH:...\" command -v apt-get dnf yum pacman apk brew 2>/dev/null | head -1)\"",
+      "fix": "Each binary and package manager is probed individually in a POSIX `for` loop (`for c in ...; do PATH=... command -v \"$c\" 2>/dev/null || true; done`), preserving `HostCapabilities::parse` output format while working identically on dash, bash and zsh.",
+      "rust_outcome": "for c in tmux mosh-server herdr python3; do PATH=\"$PATH:...\" command -v \"$c\" 2>/dev/null || true; done; echo \"::$(uname -s)::$(for p in apt-get dnf yum pacman apk brew; do PATH=\"$PATH:...\" command -v \"$p\" 2>/dev/null && break; done || true)\"",
+      "evidence": [
+        "src/capabilities.rs: probe_command_finds_multiple_tools_under_posix_sh",
+        "Ubuntu container dash check: old probe printed only tmux, new probe printed tmux, mosh-server, herdr and python3"
+      ],
+      "severity": "high: mosh-server and herdr misreported as missing on Ubuntu/Debian hosts",
+      "committed_cases": "Updated line 2 of cases.swift.txt (`probe`) from Rust; divergences.swift.txt keeps the frozen Swift probeCommand line."
     }
   ],
   "notes": [
