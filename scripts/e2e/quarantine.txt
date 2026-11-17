@@ -3,4 +3,3 @@
 #   <test name, as nextest prints it after the binary> | <bug> | <reason>
 # A test comes off this list when its bug is fixed; one that has passed on
 # every leg for a while is a reason to look at the bug.
-a_sidecar_session_switch_hands_both_sessions_back_with_the_phone_alone | B874 | flakes on tmux 3.8 under load: the second session's first window keeps the phone's pinned size
