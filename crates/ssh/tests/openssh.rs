@@ -952,12 +952,26 @@ fn pids_holding_file(path: &Path) -> Vec<u32> {
 }
 
 fn pid_alive(pid: u32) -> bool {
-    Command::new("kill")
+    let signaled = Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .is_ok_and(|status| status.success())
+        .is_ok_and(|status| status.success());
+    if !signaled {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        && let Some(rparen) = stat.rfind(')')
+        && matches!(
+            stat[rparen + 1..].trim_start().as_bytes().first(),
+            Some(b'Z' | b'X' | b'x')
+        )
+    {
+        return false;
+    }
+    true
 }
 
 /// B870: dropping a private sshd while a session is open (a forked session
