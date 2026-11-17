@@ -1397,3 +1397,42 @@ async fn borrowing_the_sessions_ssh() {
     drop(first);
     let _ = bench.sessions.disconnect(id).await;
 }
+
+/// B870: dropping the private test `Sshd` with an active PTY session must
+/// reap detached `setsid` session children still holding `sshd.log` open.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd; see the module docs"]
+async fn sshd_drop_reaps_detached_session_children() {
+    need_sshd!();
+    let sshd = Sshd::start().await;
+    let listener = sshd.pid();
+    let log_path = sshd.log_path();
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let id = bench.sessions.connect(spec(sshd.port));
+    bench.connected(id).await;
+    let (_, panes) = bench.panes(id, 10).await;
+    let _term = Term::attach(shell(&panes).stream);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let workers: Vec<u32> = pids_holding_file(&log_path)
+        .into_iter()
+        .filter(|&pid| pid != listener)
+        .collect();
+    assert!(
+        !workers.is_empty(),
+        "expected detached session worker holding {}",
+        log_path.display()
+    );
+    drop(sshd);
+    let survivors: Vec<u32> = workers
+        .into_iter()
+        .filter(|&pid| alive(i64::from(pid)))
+        .collect();
+    if !survivors.is_empty() {
+        for &pid in &survivors {
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .output();
+        }
+        panic!("B870: Sshd workers survived Drop: {survivors:?}");
+    }
+}
