@@ -237,6 +237,10 @@ async fn back(bench: &mut Bench, id: SessionId) {
 #[ignore = "needs sshd; see the module docs"]
 async fn f1_a_session_signs_in_to_its_jump_host_once() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start_configured(&[], &["Subsystem sftp internal-sftp"]).await;
     let behind = Relay::start(sshd.addr()).await;
     let bastion = Bastion::start(SocketAddr::from(([127, 0, 0, 1], behind.port)), false).await;
@@ -276,6 +280,10 @@ async fn f1_a_session_signs_in_to_its_jump_host_once() {
 #[ignore = "needs sshd; see the module docs"]
 async fn f1_the_jump_host_going_redials_both_legs() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let bastion = Bastion::start(sshd.addr(), false).await;
     let front = Relay::start(bastion.addr).await;
@@ -303,6 +311,10 @@ async fn f1_the_jump_host_going_redials_both_legs() {
 #[ignore = "needs sshd; see the module docs"]
 async fn f1_the_jump_hosts_second_factor_is_asked_once() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let behind = Relay::start(sshd.addr()).await;
     let bastion = Bastion::start(SocketAddr::from(([127, 0, 0, 1], behind.port)), true).await;
@@ -384,6 +396,10 @@ async fn f1_both_host_keys_are_asked_in_order() {
 #[ignore = "needs sshd; see the module docs"]
 async fn f1_a_deleted_jump_host_never_falls_back_to_a_direct_dial() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let front = Relay::start(sshd.addr()).await;
     for why in [HopBroken::Deleted, HopBroken::Chained] {

@@ -215,6 +215,10 @@ fn reaper(bench: &Bench, id: SessionId) -> Reaper {
 #[ignore = "needs sshd, mosh-server and herdr; see the module docs"]
 async fn herdr_over_mosh_on_the_core() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let mut herdr = PrivateHerdr::start();
     let (a, b) = two_panes(&herdr);
     let home = herdr.home.display().to_string();
@@ -355,8 +359,10 @@ async fn herdr_over_mosh_on_the_core() {
     assert!(eventually(10, || herdr.read(&fresh).contains("five-42")).await);
     assert!(!screen.text().contains("not found"), "a shell ran a line");
 
-    // UDP goes silent: a reply is never said sent; nothing of it lands once
-    // the path heals after mosh's keystroke lifetime.
+    // UDP goes silent: a reply never confirms while silent (`!sent`),
+    // while keys already entered into mosh's stream keep arriving in order
+    // once the path heals (B618: live sessions keep unacked keys, as
+    // mosh-client does).
     bench.udp.faults.blackhole(true);
     let asked = Instant::now();
     let reply = bench
@@ -373,7 +379,8 @@ async fn herdr_over_mosh_on_the_core() {
     tokio::time::sleep(Duration::from_secs(4)).await;
     screen.write(b"echo healed-$((6*7))\r");
     assert!(eventually(15, || herdr.read(&fresh).contains("healed-42")).await);
-    let silent_landed = herdr.read(&fresh).contains("silent-42");
+    let pane_text = herdr.read(&fresh);
+    let silent_landed = pane_text.contains("silent-42");
 
     eprintln!(
         "herdr over mosh (Rust core): loop on the focused pane {connect_ms} ms after connect \
@@ -386,7 +393,11 @@ async fn herdr_over_mosh_on_the_core() {
         e95 / 1000,
         emax / 1000
     );
-    assert!(!silent_landed, "a reply said not sent landed later");
+    assert!(silent_landed, "queued reply landed once the path healed (B618)");
+    assert!(
+        pane_text.find("silent-42") < pane_text.find("healed-42"),
+        "queued reply landed before later input:\n{pane_text}"
+    );
     let _ = bench.sessions.disconnect(id).await;
 }
 

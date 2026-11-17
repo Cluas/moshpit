@@ -1932,6 +1932,9 @@ impl Client {
     /// Focus one pane (`selectPane`): the frame channel goes there at once,
     /// from the id in hand, while the lane tells the server.
     fn select_pane(&mut self, pane: &str) {
+        // Explicit pane pick supersedes any pending server-focus follow from
+        // an earlier tab/window/pane creation (B683).
+        self.follow_focus_until = None;
         self.pane_switch_generation += 1;
         self.pane_switch_in_flight = true;
         self.pick_asked_again = false;

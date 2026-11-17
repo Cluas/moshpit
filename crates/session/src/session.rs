@@ -2630,6 +2630,10 @@ impl Actor {
     ) {
         self.next_epoch += 1;
         let epoch = self.next_epoch;
+        let has_sessions = layouts_before_renderer
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty());
+        let tmux_cmd = self.spec.tmux_command().to_owned();
         let grid = self.grid;
         self.control = Some(Control {
             generation,
@@ -2666,8 +2670,41 @@ impl Actor {
         }
         let me = self.me.clone();
         let timeout = self.timing.channel_timeout;
-        let program = self.sidecar_program(None);
+        let shell = crate::attempt::shell_after(&self.spec);
         tokio::spawn(async move {
+            // Let mosh's renderer claim the most recent unattached session first,
+            // then attach the `-CC` sidecar to that exact session (`-t '$N'`) so
+            // bare `tmux -CC attach` doesn't skip the now-attached session for an
+            // older unattached one.
+            let mut preferred = None;
+            if has_sessions && let Some(pid) = server_pid {
+                let wait_cmd = moshpit_tmux::boot::exec(&format!(
+                    "for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+                     p=$(pgrep -P {pid} 2>/dev/null || ps -A -o pid= -o ppid= 2>/dev/null | awk '$2 == {pid} {{ print $1 }}'); \
+                     if [ -n \"$p\" ]; then \
+                       s=$({tmux_cmd} list-clients -F '#{{client_pid}} #{{session_id}}' 2>/dev/null | awk -v p=\"$p\" '$1 == p {{ print $2; exit }}'); \
+                       if [ -n \"$s\" ]; then printf '%s\\n' \"$s\"; break; fi; \
+                     fi; \
+                     sleep 0.03; \
+                     done; true"
+                ));
+                if let Ok(Ok(output)) =
+                    tokio::time::timeout(Duration::from_secs(1), ssh.run(&wait_cmd)).await
+                {
+                    let found = String::from_utf8_lossy(&output.stdout()).trim().to_owned();
+                    if found.starts_with('$')
+                        && found.len() > 1
+                        && found.bytes().skip(1).all(|b| b.is_ascii_digit())
+                    {
+                        preferred = Some(SidecarReturn {
+                            id: found,
+                            name: None,
+                        });
+                    }
+                }
+            }
+            let program =
+                moshpit_tmux::boot::sidecar_attach_program(&tmux_cmd, preferred.as_ref(), &shell);
             let result = sidecar_terminal(&ssh, timeout, program)
                 .await
                 .map(|pty| (ssh.clone(), pty));

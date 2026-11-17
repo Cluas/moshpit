@@ -170,17 +170,19 @@ async fn ssh_tmux_a_full_screen_program_across_the_attach_gets_the_first_tick() 
         tokio::time::sleep(Duration::from_millis(300)).await;
         let out = dir.join("wheel.in");
         let _ = std::fs::remove_file(&out);
+        let alt_arg = alt.to_string();
+        let spin_arg = spin.to_string();
         tmux.run(&[
             "respawn-pane",
             "-k",
             "-t",
             "scx",
-            &format!(
-                "{} {} {alt} 1 {spin} {}",
-                claude.display(),
-                app.display(),
-                out.display()
-            ),
+            claude.to_str().unwrap(),
+            app.to_str().unwrap(),
+            &alt_arg,
+            "1",
+            &spin_arg,
+            out.to_str().unwrap(),
         ]);
         tokio::time::sleep(Duration::from_millis(800)).await;
         let mut bench = Bench::with(sshd.addr(), moshpit_session::Timing::default());

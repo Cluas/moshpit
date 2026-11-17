@@ -265,6 +265,10 @@ async fn a_detached_control_client_attaches_again() {
 #[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
 async fn mosh_with_a_tmux_that_crashed_while_away_ends() {
     need_sshd!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let tmux = Tmux::named("moshpit-b787a");
     let sshd = Sshd::start().await;
     stamped(&tmux);

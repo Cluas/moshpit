@@ -1,0 +1,77 @@
+name: E2E (live core)
+
+# Every ignored live test in the workspace against real OpenSSH, mosh-server,
+# herdr, and source-built tmux 3.6a / 3.8 under both PATH layouts:
+#   - `path`:     /usr/local/bin/tmux (standard Linux non-interactive PATH)
+#   - `homebrew`: /opt/homebrew/bin/tmux only (Mac-like probed PATH only)
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 19 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.tmux }} / ${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tmux: ["3.6a", "3.8"]
+        variant: ["path", "homebrew"]
+    env:
+      MOSHPIT_E2E_FAULTS: "1"
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Install host tools (sshd, mosh-server, herdr, Go 1.24)
+        run: scripts/e2e/host-setup.sh
+
+      - name: Install cargo-nextest
+        run: scripts/e2e/install-nextest.sh
+
+      - name: Cache cargo and target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: e2e-cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: |
+            e2e-cargo-${{ runner.os }}-
+
+      - name: Cache built tmux ${{ matrix.tmux }}
+        uses: actions/cache@v6
+        with:
+          path: /opt/e2e/tmux-${{ matrix.tmux }}
+          key: e2e-tmux-${{ runner.os }}-${{ matrix.tmux }}-${{ hashFiles('scripts/e2e/build-tmux.sh') }}
+
+      - name: Run live suite (${{ matrix.tmux }}, ${{ matrix.variant }})
+        run: scripts/e2e/run.sh "${{ matrix.tmux }}" "${{ matrix.variant }}"
+
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-junit-${{ matrix.tmux }}-${{ matrix.variant }}
+          path: target/nextest/e2e/junit.xml
+          if-no-files-found: warn
+          retention-days: 7

@@ -104,13 +104,12 @@ impl Phone {
             }
             let now = self.now();
             self.controller.tick(now);
+            let mut commands = Vec::new();
             for output in self.controller.drain_outputs() {
                 match output {
                     Output::Command(command) => {
-                        let line = format!("{command}\n");
-                        if self.stdin.write_all(line.as_bytes()).is_err() {
-                            return;
-                        }
+                        commands.extend_from_slice(command.as_bytes());
+                        commands.push(b'\n');
                     }
                     Output::PaneOutput { pane, bytes, .. } => {
                         self.panes
@@ -120,6 +119,11 @@ impl Phone {
                     }
                     _ => {}
                 }
+            }
+            // Write one turn's backfill + resync commands in a single buffer so
+            // tmux -C reads and executes them back-to-back (B585).
+            if !commands.is_empty() && self.stdin.write_all(&commands).is_err() {
+                return;
             }
             std::thread::sleep(Duration::from_millis(5));
         }

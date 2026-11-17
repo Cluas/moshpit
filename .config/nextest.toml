@@ -1,0 +1,12 @@
+# The live (E2E-1) tests: scripts/e2e/run.sh runs them with `--profile e2e`.
+# No retries: a test that needs a second go is a flake, and a flake goes on
+# scripts/e2e/quarantine.txt with its bug number, not behind a retry.
+[profile.e2e]
+fail-fast = false
+retries = 0
+slow-timeout = { period = "120s", terminate-after = 4 }
+
+[profile.e2e.junit]
+path = "junit.xml"
+store-success-output = false
+store-failure-output = true

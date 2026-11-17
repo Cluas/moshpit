@@ -105,12 +105,95 @@ pub struct Sshd {
 
 impl Drop for Sshd {
     fn drop(&mut self) {
-        let group = format!("-{}", self.child.id());
-        for signal in ["-TERM", "-KILL"] {
-            let _ = Command::new("kill").args([signal, "--", &group]).output();
-        }
-        let _ = self.child.wait();
+        reap_sshd_tree(&mut self.child, &self.dir.join("sshd.log"));
     }
+}
+
+/// Find every other process still holding `path` open (`/proc` on Linux,
+/// `lsof` on macOS) so detached `setsid` sshd session workers can be reaped
+/// alongside the listener process group (B870).
+pub fn pids_holding_file(path: &Path) -> Vec<u32> {
+    let self_pid = std::process::id();
+    #[cfg(target_os = "linux")]
+    {
+        let deleted = format!("{} (deleted)", path.display());
+        let mut pids = Vec::new();
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return pids;
+        };
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            if pid == self_pid {
+                continue;
+            }
+            let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+                continue;
+            };
+            for fd in fds.flatten() {
+                let Ok(target) = std::fs::read_link(fd.path()) else {
+                    continue;
+                };
+                if target == path || target.to_string_lossy() == deleted {
+                    pids.push(pid);
+                    break;
+                }
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let out = ["lsof", "/usr/sbin/lsof"]
+            .into_iter()
+            .find_map(|bin| Command::new(bin).args(["-t", "--"]).arg(path).output().ok());
+        let Some(out) = out else {
+            return Vec::new();
+        };
+        let mut pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .filter(|&pid| pid != self_pid)
+            .collect();
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+}
+
+fn reap_sshd_tree(child: &mut Child, log_path: &Path) {
+    let listener = child.id();
+    let _ = child.kill();
+    let group = format!("-{listener}");
+    for signal in ["-TERM", "-KILL"] {
+        let _ = Command::new("kill")
+            .args([signal, "--", &group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output();
+    }
+    for _ in 0..2 {
+        let holders = pids_holding_file(log_path);
+        if holders.is_empty() {
+            break;
+        }
+        for signal in ["-TERM", "-KILL"] {
+            for pid in &holders {
+                let _ = Command::new("kill")
+                    .args([signal, &pid.to_string()])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .output();
+            }
+            if signal == "-TERM" {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    let _ = child.wait();
 }
 
 impl Sshd {
@@ -187,8 +270,12 @@ impl Sshd {
         panic!("sshd didn't start: {}", sshd.log());
     }
 
+    pub fn log_path(&self) -> PathBuf {
+        self.dir.join("sshd.log")
+    }
+
     pub fn log(&self) -> String {
-        std::fs::read_to_string(self.dir.join("sshd.log")).unwrap_or_default()
+        std::fs::read_to_string(self.log_path()).unwrap_or_default()
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -565,6 +652,22 @@ impl Tmux {
             .map(str::to_owned)
             .collect()
     }
+
+    pub fn session_status(&self, name: &str) -> String {
+        self.run(&["show-options", "-t", &format!("{name}:"), "-v", "status"])
+    }
+
+    /// The status line on what the phone shows of `name`: the session's own,
+    /// or from tmux 3.8 its group's (`name~mp-…`, B773), off when either is.
+    pub fn viewed_status(&self, name: &str) -> String {
+        let group = format!("{name}{}", moshpit_tmux::controller::GROUP_MARK);
+        self.sessions()
+            .into_iter()
+            .filter(|session| session.starts_with(&group))
+            .map(|session| self.session_status(&session))
+            .find(|status| status == "off")
+            .unwrap_or_else(|| self.session_status(name))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -813,11 +916,32 @@ pub fn kill(pid: i64) {
 }
 
 pub fn alive(pid: i64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    let signaled = pid > 0
+        && Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+    if !signaled {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        && let Some(rparen) = stat.rfind(')')
+        && matches!(
+            stat[rparen + 1..].trim_start().as_bytes().first(),
+            Some(b'Z' | b'X' | b'x')
+        )
+    {
+        return false;
+    }
+    true
+}
+
+/// Fault-injection live tests (relay cut/stall, UDP blackhole, `LinkFault`,
+/// suspension) run only when `MOSHPIT_E2E_FAULTS=1` (`scripts/e2e/run.sh`).
+pub fn faults_enabled() -> bool {
+    std::env::var("MOSHPIT_E2E_FAULTS").is_ok_and(|v| v == "1")
 }
 
 /// Stops the mosh-server a session reported when dropped.

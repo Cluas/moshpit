@@ -645,6 +645,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
     // pass gives up on the command at its deadline, not when, or if, the
     // host answers.
     std::fs::write(home_path.join(".zshenv"), "sleep 6\n").unwrap();
+    std::fs::write(home_path.join(".bashrc"), "sleep 6\n").unwrap();
     let hung = Driver::new(
         HostCare::new(
             Config {
@@ -693,6 +694,7 @@ async fn install_care_and_uninstall_against_a_private_host_and_relay() {
         "the pass read the host: it never hung"
     );
     std::fs::remove_file(home_path.join(".zshenv")).unwrap();
+    std::fs::remove_file(home_path.join(".bashrc")).unwrap();
 
     let commands = phone.commands.lock().unwrap().len();
     eprintln!(

@@ -365,6 +365,10 @@ async fn borrowed_against_a_dial_per_feature() {
 #[ignore = "needs sshd; see the module docs"]
 async fn a_borrow_follows_the_session_through_a_reconnect() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let home = Home::new();
     let out = Scratch::new("out");
     // A file big enough to be mid-way when the cut lands.

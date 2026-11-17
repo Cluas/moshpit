@@ -858,6 +858,10 @@ fn text_of(case: &Case) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd, tmux, mosh-server and herdr; see the module docs"]
 async fn resume_timeline() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     if !Sshd::available() {
         eprintln!("skipped: no {SSHD}");
         return;
@@ -899,6 +903,10 @@ fn number(row: &str, name: &str) -> Option<u64> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn in_place_keeps_what_survived_and_redials_what_did_not() {
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     if !Sshd::available() {
         eprintln!("skipped: no {SSHD}");
         return;
@@ -927,7 +935,11 @@ async fn in_place_keeps_what_survived_and_redials_what_did_not() {
         (1_400..3_000).contains(&reconnecting),
         "after the 1.5 s question: {redialled}"
     );
-    assert_eq!(field(&redialled, "discarded"), Some("1"), "{redialled}");
+    // B396 (`session.rs:release_held`): for a multiplexer pane, input typed
+    // during the failed probe waits in `pending` for the reconnected pane
+    // rather than being discarded.
+    assert_eq!(field(&redialled, "discarded"), Some("0"), "{redialled}");
+    assert_eq!(field(&redialled, "lost_typed"), Some("false"), "{redialled}");
     assert!(number(&redialled, "first_frame").is_some(), "{redialled}");
     assert_eq!(field(&redialled, "echo_new"), Some("true"), "{redialled}");
     assert!(

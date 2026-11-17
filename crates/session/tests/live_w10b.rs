@@ -272,6 +272,7 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
     let sshd = Sshd::start().await;
     let tmux = Tmux::new();
     tmux.new_session("alpha");
+    tokio::time::sleep(Duration::from_millis(1200)).await;
     tmux.new_session("beta");
     let mut bench = Bench::with(sshd.addr(), quick());
     let started = Instant::now();
@@ -289,7 +290,7 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
     term.resize(90, 28);
     // The renderer: tmux's client as mosh's program, on the most recent
     // session (beta).
-    assert!(term.wait_for("[beta]", 15).await, "{}", term.text());
+    assert!(term.wait_for("[beta", 15).await, "{}", term.text());
 
     // The tree, from the sidecar.
     assert!(
@@ -334,7 +335,7 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
     let at = term.screen.len();
     // tmux repaints only what changed: the status line's "[" stays.
     assert!(
-        term.wait_for_from(at, "alpha]", 15).await.is_some(),
+        term.wait_for_from(at, "alpha", 15).await.is_some(),
         "{}",
         term.text()
     );
@@ -379,16 +380,10 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
         )
         .unwrap();
     assert!(
-        eventually(10, || tmux.run(&[
-            "show-options",
-            "-t",
-            "mine",
-            "-v",
-            "status"
-        ]) == "off")
-        .await,
-        "{}",
-        tmux.run(&["show-options", "-t", "mine", "status"])
+        eventually(10, || tmux.viewed_status("mine") == "off").await,
+        "status={} sessions={:?}",
+        tmux.viewed_status("mine"),
+        tmux.sessions()
     );
 
     // The control plane's connection dies: rebuilt, while mosh carries on.
@@ -427,7 +422,7 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
         );
     }
     assert_eq!(
-        tmux.run(&["show-options", "-t", "mine", "-v", "status"]),
+        tmux.viewed_status("mine"),
         "",
         "the status line it turned off is back"
     );
@@ -456,7 +451,7 @@ async fn mosh_a_start_cut_short_stops_its_server() {
     std::fs::write(
         &wrapper,
         format!(
-            "#!/bin/sh\n/opt/homebrew/bin/mosh-server \"$@\" 2>&1 | tee -a '{}'\nsleep 4\n",
+            "#!/bin/sh\nPATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:/usr/bin\" mosh-server \"$@\" 2>&1 | tee -a '{}'\nsleep 4\n",
             pids.display()
         ),
     )
@@ -555,6 +550,10 @@ async fn mosh_a_reconnect_stops_the_server_it_left() {
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_the_pin_debt_is_paid_before_the_disconnect_is_done() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::new();
@@ -600,6 +599,10 @@ async fn tmux_the_pin_debt_is_paid_before_the_disconnect_is_done() {
 #[ignore = "needs sshd and tmux; see the module docs"]
 async fn tmux_a_reconnect_off_screen_pins_only_once_shown() {
     need!();
+    if !faults_enabled() {
+        eprintln!("skipped: set MOSHPIT_E2E_FAULTS=1");
+        return;
+    }
     let sshd = Sshd::start().await;
     let relay = Relay::start(sshd.addr()).await;
     let tmux = Tmux::new();

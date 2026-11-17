@@ -266,7 +266,7 @@ async fn sidecar_switch(with_desktop: bool) {
     let tmux = Tmux::named("moshpit-r34");
     desktop_session(&tmux, "b");
     let desktop = with_desktop.then(|| Desktop::attach(&tmux, "b", 200, 60));
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
     // The most recent session: where mosh's tmux client attaches.
     desktop_session(&tmux, "a");
     let before = layouts(&tmux, &["a", "b"]);
@@ -462,22 +462,6 @@ async fn the_renderer_is_identified_on_every_connect() {
 
 // MARK: 5. Sessions Moshpit made, known from the server (B86)
 
-fn session_status(tmux: &Tmux, name: &str) -> String {
-    tmux.run(&["show-options", "-t", &format!("{name}:"), "-v", "status"])
-}
-
-/// The status line on what the phone shows of `name`: the session's own,
-/// or from tmux 3.8 its group's (`name~mp-…`, B773), off when either is.
-fn viewed_status(tmux: &Tmux, name: &str) -> String {
-    let group = format!("{name}{}", moshpit_tmux::controller::GROUP_MARK);
-    tmux.run(&["list-sessions", "-F", "#{session_name}"])
-        .lines()
-        .filter(|session| session.starts_with(&group))
-        .map(|session| session_status(tmux, session))
-        .find(|status| status == "off")
-        .unwrap_or_else(|| session_status(tmux, name))
-}
-
 /// B86: the phone over mosh makes a session ("mine"); the sidecar turns its
 /// status line off while the phone is on it. The app is killed there: none
 /// of its code runs again (its runtime stopped, its connections cut, its
@@ -530,9 +514,9 @@ async fn a_killed_app_does_not_leave_its_sessions_status_line_off() {
     let (runtime, server) = first.join().unwrap();
     let _reaper = Reaper(server);
     assert!(
-        eventually(15, || viewed_status(&tmux, "mine") == "off").await,
+        eventually(15, || tmux.viewed_status("mine") == "off").await,
         "the first launch never turned mine's status line off: {:?}",
-        viewed_status(&tmux, "mine")
+        tmux.viewed_status("mine")
     );
     let marks = tmux.run(&[
         "list-sessions",
@@ -552,7 +536,7 @@ async fn a_killed_app_does_not_leave_its_sessions_status_line_off() {
         "the killed app's clients are still attached: {}",
         tmux.run(&["list-clients", "-F", "#{client_name}"])
     );
-    let left = session_status(&tmux, "mine");
+    let left = tmux.session_status("mine");
     // The next launch.
     let sshd = Sshd::start().await;
     let mut bench = Bench::with(sshd.addr(), quick());
@@ -568,8 +552,8 @@ async fn a_killed_app_does_not_leave_its_sessions_status_line_off() {
         .sessions
         .tmux(id, TmuxAction::SelectSession(work))
         .unwrap();
-    let back = eventually(15, || session_status(&tmux, "mine").is_empty()).await;
-    let after = session_status(&tmux, "mine");
+    let back = eventually(15, || tmux.session_status("mine").is_empty()).await;
+    let after = tmux.session_status("mine");
     hang_up(&mut bench, id, &reaper).await;
     eprintln!(
         "B86: marks after the first launch {marks:?}; mine's status after the kill {left:?}; \

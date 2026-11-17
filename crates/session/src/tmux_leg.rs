@@ -836,12 +836,12 @@ impl Task {
     fn pump(&mut self) -> bool {
         let mut dead = false;
         let mut tree = false;
+        let mut commands = Vec::new();
         while let Some(output) = self.controller.poll_output() {
             match output {
                 Output::Command(command) => {
-                    let mut line = command.into_bytes();
-                    line.push(b'\n');
-                    let _ = self.writes.send(Write::Bytes(line));
+                    commands.extend_from_slice(command.as_bytes());
+                    commands.push(b'\n');
                 }
                 Output::PaneOutput { stream, bytes, .. } => {
                     if let Some((_, channel)) = self.streams.get(&stream) {
@@ -920,11 +920,13 @@ impl Task {
             // Its commands go out with this pump's.
             while let Some(output) = self.controller.poll_output() {
                 if let Output::Command(command) = output {
-                    let mut line = command.into_bytes();
-                    line.push(b'\n');
-                    let _ = self.writes.send(Write::Bytes(line));
+                    commands.extend_from_slice(command.as_bytes());
+                    commands.push(b'\n');
                 }
             }
+        }
+        if !commands.is_empty() {
+            let _ = self.writes.send(Write::Bytes(commands));
         }
         for done in self.flushes.drain(..) {
             let _ = self.writes.send(Write::Flush(done));
