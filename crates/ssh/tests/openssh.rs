@@ -372,9 +372,43 @@ struct PrivateSshd {
 
 impl Drop for PrivateSshd {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        reap_sshd_tree(&mut self.child, &self.dir.join("sshd.log"));
     }
+}
+
+/// Kill the sshd listener process group first, then sweep any detached session
+/// children (which call `setsid` and leave the group) still holding `sshd.log`
+/// open before `Scratch::drop` deletes the directory (B870).
+fn reap_sshd_tree(child: &mut Child, log_path: &Path) {
+    let listener = child.id();
+    let _ = child.kill();
+    let group = format!("-{listener}");
+    for signal in ["-TERM", "-KILL"] {
+        let _ = Command::new("kill")
+            .args([signal, "--", &group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output();
+    }
+    for _ in 0..2 {
+        let holders = pids_holding_file(log_path);
+        if holders.is_empty() {
+            break;
+        }
+        for signal in ["-TERM", "-KILL"] {
+            for pid in &holders {
+                let _ = Command::new("kill")
+                    .args([signal, &pid.to_string()])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .output();
+            }
+            if signal == "-TERM" {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    let _ = child.wait();
 }
 
 impl PrivateSshd {
@@ -454,6 +488,7 @@ async fn private_sshd_authorizing(binary: &Path, host_keys: &[&str], more: &str)
         pid = dir.join("sshd.pid").display(),
         keys = dir.join("authorized_keys").display(),
     ));
+    use std::os::unix::process::CommandExt;
     std::fs::write(dir.join("sshd_config"), config).unwrap();
     let child = Command::new(binary)
         .args(["-D", "-f"])
@@ -461,6 +496,7 @@ async fn private_sshd_authorizing(binary: &Path, host_keys: &[&str], more: &str)
         .arg("-E")
         .arg(dir.join("sshd.log"))
         .stdin(Stdio::null())
+        .process_group(0)
         .spawn()
         .unwrap();
     let sshd = PrivateSshd { port, dir, child };
@@ -861,4 +897,110 @@ async fn private_sshd_takes_a_key_imported_in_every_form() {
             "ssh-rsa"
         ]
     );
+}
+
+fn pids_holding_file(path: &Path) -> Vec<u32> {
+    let self_pid = std::process::id();
+    #[cfg(target_os = "linux")]
+    {
+        let deleted = format!("{} (deleted)", path.display());
+        let mut pids = Vec::new();
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return pids;
+        };
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            if pid == self_pid {
+                continue;
+            }
+            let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+                continue;
+            };
+            for fd in fds.flatten() {
+                let Ok(target) = std::fs::read_link(fd.path()) else {
+                    continue;
+                };
+                if target == path || target.to_string_lossy() == deleted {
+                    pids.push(pid);
+                    break;
+                }
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let out = ["lsof", "/usr/sbin/lsof"]
+            .into_iter()
+            .find_map(|bin| Command::new(bin).args(["-t", "--"]).arg(path).output().ok());
+        let Some(out) = out else {
+            return Vec::new();
+        };
+        let mut pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .filter(|&pid| pid != self_pid)
+            .collect();
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+}
+
+fn pid_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// B870: dropping a private sshd while a session is open (a forked session
+/// worker having called `setsid` and still holding `sshd.log`) must reap the
+/// whole tree, not leave detached workers alive behind `Drop`.
+#[tokio::test]
+#[ignore = "needs an sshd binary; see the module docs"]
+async fn private_sshd_drop_reaps_detached_session_children() {
+    let binary = sshd_or_skip!();
+    let sshd = private_sshd(&binary, &["ed25519"]).await;
+    let listener_pid = sshd.child.id();
+    let log_path = sshd.dir.join("sshd.log");
+    let ssh = Ssh::connect(
+        &sshd.target(),
+        Auth::key(fixture_key("ed25519")),
+        Arc::new(AcceptAny),
+        &options(),
+    )
+    .await
+    .unwrap();
+    let mut request = PtyRequest::new(80, 24);
+    request.command = Some("sleep 30".to_owned());
+    let _proc = ssh.terminal(&request).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let holders = pids_holding_file(&log_path);
+    let workers: Vec<u32> = holders
+        .iter()
+        .copied()
+        .filter(|&pid| pid != listener_pid)
+        .collect();
+    assert!(
+        !workers.is_empty(),
+        "expected sshd session worker holding {}; holders={holders:?}",
+        log_path.display()
+    );
+    drop(sshd);
+    let survivors: Vec<u32> = workers.into_iter().filter(|&pid| pid_alive(pid)).collect();
+    if !survivors.is_empty() {
+        for &pid in &survivors {
+            let _ = Command::new("kill")
+                .args(["-KILL", &pid.to_string()])
+                .output();
+        }
+        panic!("B870: sshd workers survived Drop: {survivors:?}");
+    }
 }

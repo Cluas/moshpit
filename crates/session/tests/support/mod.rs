@@ -105,12 +105,95 @@ pub struct Sshd {
 
 impl Drop for Sshd {
     fn drop(&mut self) {
-        let group = format!("-{}", self.child.id());
-        for signal in ["-TERM", "-KILL"] {
-            let _ = Command::new("kill").args([signal, "--", &group]).output();
-        }
-        let _ = self.child.wait();
+        reap_sshd_tree(&mut self.child, &self.dir.join("sshd.log"));
     }
+}
+
+/// Find every other process still holding `path` open (`/proc` on Linux,
+/// `lsof` on macOS) so detached `setsid` sshd session workers can be reaped
+/// alongside the listener process group (B870).
+pub fn pids_holding_file(path: &Path) -> Vec<u32> {
+    let self_pid = std::process::id();
+    #[cfg(target_os = "linux")]
+    {
+        let deleted = format!("{} (deleted)", path.display());
+        let mut pids = Vec::new();
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return pids;
+        };
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            if pid == self_pid {
+                continue;
+            }
+            let Ok(fds) = std::fs::read_dir(entry.path().join("fd")) else {
+                continue;
+            };
+            for fd in fds.flatten() {
+                let Ok(target) = std::fs::read_link(fd.path()) else {
+                    continue;
+                };
+                if target == path || target.to_string_lossy() == deleted {
+                    pids.push(pid);
+                    break;
+                }
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let out = ["lsof", "/usr/sbin/lsof"]
+            .into_iter()
+            .find_map(|bin| Command::new(bin).args(["-t", "--"]).arg(path).output().ok());
+        let Some(out) = out else {
+            return Vec::new();
+        };
+        let mut pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .filter(|&pid| pid != self_pid)
+            .collect();
+        pids.sort_unstable();
+        pids.dedup();
+        pids
+    }
+}
+
+fn reap_sshd_tree(child: &mut Child, log_path: &Path) {
+    let listener = child.id();
+    let _ = child.kill();
+    let group = format!("-{listener}");
+    for signal in ["-TERM", "-KILL"] {
+        let _ = Command::new("kill")
+            .args([signal, "--", &group])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output();
+    }
+    for _ in 0..2 {
+        let holders = pids_holding_file(log_path);
+        if holders.is_empty() {
+            break;
+        }
+        for signal in ["-TERM", "-KILL"] {
+            for pid in &holders {
+                let _ = Command::new("kill")
+                    .args([signal, &pid.to_string()])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .output();
+            }
+            if signal == "-TERM" {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    let _ = child.wait();
 }
 
 impl Sshd {
@@ -187,8 +270,12 @@ impl Sshd {
         panic!("sshd didn't start: {}", sshd.log());
     }
 
+    pub fn log_path(&self) -> PathBuf {
+        self.dir.join("sshd.log")
+    }
+
     pub fn log(&self) -> String {
-        std::fs::read_to_string(self.dir.join("sshd.log")).unwrap_or_default()
+        std::fs::read_to_string(self.log_path()).unwrap_or_default()
     }
 
     pub fn addr(&self) -> SocketAddr {
