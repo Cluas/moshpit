@@ -85,6 +85,13 @@ final class ShotsUITest: XCTestCase {
         guard !Self.locales.isEmpty else {
             throw XCTSkip("screenshot run only (SHOTS_LOCALES in the runner's environment)")
         }
+        // Every shot starts in portrait. A landscape test (test10) that failed
+        // before its app came up leaves the interface landscape even after its
+        // `defer` turns the device back, and the retry pass's portrait shots
+        // were then taken sideways.
+        if XCUIDevice.shared.orientation != .portrait {
+            XCUIDevice.shared.orientation = .portrait
+        }
     }
 
     @MainActor
