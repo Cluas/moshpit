@@ -37,3 +37,10 @@ moshpit-herdr = { path = "../herdr" }
 # Names compare in one Unicode form (B332: "café" composed on the phone,
 # decomposed on an old Mac disk).
 unicode-normalization = "0.1.26"
+
+[dev-dependencies]
+# tests/e2e2.rs, the scenario driver: the real session core against a private
+# sshd and tmux (the live tests' bench, `crates/session/tests/support`).
+moshpit-ssh = { path = "../ssh" }
+moshpit-stream = { path = "../stream" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "time", "sync", "macros", "io-util", "process"] }
