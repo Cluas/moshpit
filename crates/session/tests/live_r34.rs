@@ -266,7 +266,7 @@ async fn sidecar_switch(with_desktop: bool) {
     let tmux = Tmux::named("moshpit-r34");
     desktop_session(&tmux, "b");
     let desktop = with_desktop.then(|| Desktop::attach(&tmux, "b", 200, 60));
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
     // The most recent session: where mosh's tmux client attaches.
     desktop_session(&tmux, "a");
     let before = layouts(&tmux, &["a", "b"]);

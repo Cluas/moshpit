@@ -1225,6 +1225,13 @@ const SQUASHED_TWO: &str = "51b0,60x20,0,0{30x20,0,0,3,29x20,31,0[29x10,31,0,4,2
 /// Two sessions of a 3-pane window each, the phone's renderer on `$1`: a
 /// window is at the phone's grid while the renderer sits on its session.
 fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
+    split_sessions_with(false, Rc::new(RefCell::new(true)))
+}
+
+fn split_sessions_with(
+    groups: bool,
+    show_target: Rc<RefCell<bool>>,
+) -> (Sidecar, Rc<RefCell<Vec<String>>>) {
     let fake = Rc::new(RefCell::new(Fake {
         clients: vec![
             work(true, 45613, "client-45613"),
@@ -1234,17 +1241,19 @@ fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
         windows: Vec::new(),
         panes: Vec::new(),
         marks: Vec::new(),
+        groups,
         ..Fake::default()
     }));
     let on = |fake: &Fake, session: &str| {
-        fake.clients
-            .iter()
-            .any(|c| !c.control && c.session_id == session)
+        fake.clients.iter().any(|c| {
+            !c.control && (c.session_id == session || fake.group_of(c.session_id) == session)
+        })
     };
     let replays = Rc::new(RefCell::new(Vec::new()));
     let seen = replays.clone();
     let mut inner = responder(fake.clone());
     let state = fake.clone();
+    let target_visible = show_target;
     let mut rig = Rig::new(Config {
         renders_output: false,
         ..Config::default()
@@ -1272,10 +1281,11 @@ fn two_split_sessions() -> (Sidecar, Rc<RefCell<Vec<String>>>) {
                 return ok([format!("@1 3 0 %0 {one}"), format!("@2 3 0 %3 {two}")]);
             }
             if command.starts_with("list-windows") {
-                return ok([
-                    format!("$1 @1 0 {one} 1 3 one"),
-                    format!("$2 @2 0 {two} 1 3 two"),
-                ]);
+                let mut rows = vec![format!("$1 @1 0 {one} 1 3 one")];
+                if *target_visible.borrow() {
+                    rows.push(format!("$2 @2 0 {two} 1 3 two"));
+                }
+                return ok(rows);
             }
             if command.starts_with("display-message -p -t '@1' '#{window_layout}'") {
                 return ok([one]);
@@ -1859,4 +1869,155 @@ fn before_tmux_3_8_a_rebuilt_sidecar_takes_the_renderer_onto_the_session() {
         Some("$1")
     );
     assert_eq!(s.rig.controller.renderer_session_id(), Some("$1"));
+}
+
+/// B874: when another window (`@9`) is locally active at the moment of the
+/// switch (or `renderer_window_id()` returns `None`), `@1` in the left
+/// session's `resized_windows` is still unpinned before its layout replay.
+#[test]
+fn sidecar_switch_unpins_all_resized_windows_when_renderer_window_differs() {
+    let (mut s, replays) = two_split_sessions();
+    s.rig.with(|c, now| c.sync_mosh_window(60, 20, now));
+    s.rig.settle();
+    assert!(s.rig.controller.resized_windows().contains("@1"));
+    // Simulate active_window_id pointing at another session's window so
+    // `renderer_window_id()` returns `None` right as `select_session("$2")` fires.
+    s.rig.push("%session-window-changed $1 @9\n");
+    s.rig.settle();
+    assert!(s.rig.controller.resized_windows().contains("@1"));
+    let from = s.rig.commands.len();
+    s.switch_session("$2");
+    let commands = s.rig.since(from).to_vec();
+    let unpin = commands
+        .iter()
+        .position(|c| c == "set-option -u -w -t @1 window-size")
+        .unwrap_or_else(|| panic!("expected @1 unpinned: {commands:?}"));
+    let replay = commands
+        .iter()
+        .position(|c| c == &format!("select-layout -t '@1' '{WIDE_ONE}'"))
+        .unwrap_or_else(|| panic!("expected @1 replayed: {commands:?}"));
+    assert!(unpin < replay, "{commands:?}");
+    assert_eq!(replays.borrow().len(), 1);
+    let ledger = s.rig.controller.take_pin_ledger();
+    assert!(!ledger.resized_windows.contains("@1"), "{ledger:?}");
+}
+
+/// B874: in grouped mode (tmux 3.8+), when the target session's active
+/// window has not landed in `snapshot.windows` yet (`renderer_awaits_landing`),
+/// handing back the left session waits until `bring_renderer_into_group()`
+/// moves the renderer into the target group and kills the old group.
+#[test]
+fn sidecar_switch_defers_hand_back_while_renderer_awaits_group_landing() {
+    let show_target = Rc::new(RefCell::new(false));
+    let (mut s, replays) = split_sessions_with(true, show_target.clone());
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    s.rig.with(|c, now| c.sync_mosh_window(60, 20, now));
+    s.rig.settle();
+    assert!(s.rig.controller.resized_windows().contains("@1"));
+
+    let from = s.rig.commands.len();
+    s.switch_session("$2");
+    let before_land = s.rig.since(from).to_vec();
+    assert!(
+        before_land
+            .iter()
+            .any(|c| c.starts_with("new-session -t '$2' -s 'play~mp-")),
+        "{before_land:#?}"
+    );
+    assert!(
+        !before_land
+            .iter()
+            .any(|c| c.starts_with("switch-client -c /dev/ttys026")),
+        "renderer waits for target landing: {before_land:#?}"
+    );
+    assert!(
+        !before_land
+            .iter()
+            .any(|c| c == "set-option -u -w -t @1 window-size" || c.starts_with("select-layout")),
+        "must not hand back $1 before renderer leaves: {before_land:#?}"
+    );
+
+    *show_target.borrow_mut() = true;
+    s.rig.push("%window-add @2\n");
+    s.rig.settle();
+    let all = s.rig.since(from).to_vec();
+    let moved = all
+        .iter()
+        .position(|c| c == "switch-client -c /dev/ttys026 -t '$92'")
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    let killed = all
+        .iter()
+        .position(|c| c.starts_with("kill-session -t '$91'"))
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    let unpin = all
+        .iter()
+        .position(|c| c == "set-option -u -w -t @1 window-size")
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    let replay = all
+        .iter()
+        .position(|c| c == &format!("select-layout -t '@1' '{WIDE_ONE}'"))
+        .unwrap_or_else(|| panic!("{all:#?}"));
+    assert!(
+        moved < killed && killed < unpin && unpin < replay,
+        "{all:#?}"
+    );
+    assert_eq!(replays.borrow().len(), 1);
+    let ledger = s.rig.controller.take_pin_ledger();
+    assert!(!ledger.resized_windows.contains("@1"), "{ledger:?}");
+    assert!(!ledger.pristine_layouts.contains_key("@1"), "{ledger:?}");
+}
+
+/// B874: if `GroupCheckMarks` already created `$2`'s group while `SidecarSwitch`
+/// was in flight, `SidecarSwitch` brings the renderer into that group and
+/// does not fall back to an ungrouped `switch-client -t $2`.
+#[test]
+fn sidecar_switch_moves_renderer_when_group_already_exists_for_target() {
+    let fake = Rc::new(RefCell::new(Fake {
+        clients: vec![
+            work(true, 45613, "client-45613"),
+            work(false, 45533, "/dev/ttys026"),
+        ],
+        sessions: vec!["$1 1 work".into(), "$2 0 play".into()],
+        windows: vec![
+            format!("$1 @1 0 {SQUASHED_ONE} 1 3 one"),
+            format!("$2 @2 0 {WIDE_TWO} 1 3 two"),
+        ],
+        groups: true,
+        ..Fake::default()
+    }));
+    let mut rig = Rig::new(Config {
+        renders_output: false,
+        ..Config::default()
+    });
+    rig.respond(responder(fake.clone()));
+    rig.attach();
+    // Answer initial discovery (`ServerVersion`, `list-sessions`, `list-windows`, etc.)
+    // so `snapshot` holds `$1` and `$2`, then push `%session-changed $1 work`
+    // (which starts `check_for_foreign_control` for `$1`).
+    rig.settle();
+    rig.push("%session-changed $1 work\n");
+    // Before `GroupCheckMarks` is answered, tell the sidecar who the renderer is
+    // and switch to `$2` (`select_session` updates `active_session_id = $2` and
+    // queues `LocateRenderer` + `SidecarSwitch` behind `GroupCheckMarks`).
+    rig.with(|c, now| {
+        c.expect_renderer_pid(45533, now);
+        c.select_session("$2", now);
+    });
+    // `GroupCheckMarks` answers first: sees `picked == true` (`active_session_id == $2`),
+    // enters `$2`'s group (`play~mp-...`), and leaves the renderer on `$1` until
+    // `SidecarSwitch` answers right behind it.
+    rig.settle();
+    let s = Sidecar { rig, fake };
+    assert!(
+        !s.rig.commands.iter().any(|c| c == "switch-client -t $2"),
+        "must not fall back to ungrouped switch: {:#?}",
+        s.rig.commands
+    );
+    assert!(
+        renderer_on(&s, 45533).starts_with("play~mp-"),
+        "renderer moved into $2's group: {} ({:#?})",
+        renderer_on(&s, 45533),
+        s.rig.commands
+    );
 }

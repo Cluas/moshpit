@@ -830,9 +830,27 @@ impl Controller {
     /// windows are nobody's, and a replay resizes them to their record for
     /// good).
     pub(super) fn hand_back_left_session(&mut self, session: &str, window: Option<&str>) {
-        if let Some(window) = window
-            && self.size.resized_windows.remove(window)
-        {
+        // B874: unpin every resized window of `session` (plus `window` if passed):
+        // during group switches `renderer_window_id()` can read `None`, and
+        // leaving `window-size = manual` pinned makes the replay below refit
+        // the layout to the phone's 60x20 grid instead of restoring it.
+        let mut pinned: Vec<String> = self
+            .size
+            .resized_windows
+            .iter()
+            .filter(|candidate| {
+                window == Some(candidate.as_str())
+                    || self
+                        .snapshot
+                        .windows
+                        .get(*candidate)
+                        .is_some_and(|info| info.session_id == session)
+            })
+            .cloned()
+            .collect();
+        pinned.sort_by(|a, b| id_cmp(a, b));
+        for window in pinned {
+            self.size.resized_windows.remove(&window);
             self.send(format!("set-option -u -w -t {window} window-size"));
         }
         let mut recorded: Vec<String> = self
@@ -1779,6 +1797,9 @@ impl Controller {
         self.size.active_window_at_foreign_width = false;
         self.timers.cancel(&Slot::ForeignQuietRepin);
         self.sidecar.renderer_locate_in_flight = false;
+        self.sidecar.renderer_awaits_landing = false;
+        self.sidecar.group_left = None;
+        self.sidecar.pending_hand_back = None;
         self.size.leases.clear();
         self.size.pending_attach_lease = None;
         self.size.probes_in_flight.clear();
