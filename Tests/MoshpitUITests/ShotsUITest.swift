@@ -14,8 +14,8 @@ import XCTest
 /// Home's Needs You across three hosts (03), the Dynamic Island expanded
 /// (04), the pane overview (05), a file the agent wrote, previewed (06),
 /// the companion talking (07), the key bar with the keyboard up (08). The
-/// iPad's two: the overview (panes) and Home beside a terminal
-/// (home-terminal).
+/// iPad's two, both in its landscape split view beside Home's sidebar: the
+/// pane overview (panes) and a live terminal (home-terminal).
 ///
 /// Every shot waits on its page's id, and a terminal shot on the session
 /// being live with nothing over it (no connecting poster, no reconnect
@@ -72,12 +72,15 @@ final class ShotsUITest: XCTestCase {
     @MainActor private static var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     /// A terminal shot: the staged session, its text larger than the
-    /// default 9 pt on the phone (too small to read on a store page, dry
-    /// run 4): `size`, a size the Settings stepper offers. The staged turn
-    /// is wrapped to read at 13 pt's 54 columns.
+    /// default 9 pt (too small to read on a store page, dry run 4): `size`,
+    /// a size the Settings stepper offers, passed as `<real>` so
+    /// `NSArgumentDomain` hands `RustSettings` a `Double` rather than a
+    /// `String` (`Plist::String` falls back to 9 pt). The staged turn
+    /// reflows dynamically to the terminal's actual columns.
     @MainActor
-    private static func terminal(_ session: [String], size: Int = 11) -> [String] {
-        session + (phone ? ["-moshpit.settings.fontSize", "\(size)"] : [])
+    private static func terminal(_ session: [String], size: Int? = nil) -> [String] {
+        let points = size ?? (phone ? 11 : 15)
+        return session + ["-moshpit.settings.fontSize", "<real>\(points).0</real>"]
     }
 
     override func setUpWithError() throws {
@@ -85,10 +88,10 @@ final class ShotsUITest: XCTestCase {
         guard !Self.locales.isEmpty else {
             throw XCTSkip("screenshot run only (SHOTS_LOCALES in the runner's environment)")
         }
-        // Every shot starts in portrait. A landscape test (test10) that failed
-        // before its app came up leaves the interface landscape even after its
-        // `defer` turns the device back, and the retry pass's portrait shots
-        // were then taken sideways.
+        // Every shot starts in portrait. A landscape test (iPad's test05 or
+        // test10) that failed before its app came up leaves the interface
+        // landscape even after its `defer` turns the device back, and a retry
+        // pass's portrait shots would then be taken sideways.
         if XCUIDevice.shared.orientation != .portrait {
             XCUIDevice.shared.orientation = .portrait
         }
@@ -263,6 +266,21 @@ final class ShotsUITest: XCTestCase {
         return true
     }
 
+    /// Opens devbox's terminal in the iPad's landscape split view, keeping
+    /// Home's sidebar visible beside the detail column.
+    @MainActor
+    private func openPadSplitTerminal(_ app: XCUIApplication, _ locale: Locale) -> Bool {
+        guard waitNeedsYou(app, locale) else { return false }
+        let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
+        if head.waitForExistence(timeout: 30) { head.tap() }
+        guard waitLive(app, locale) else { return false }
+        if !app.nsh("home-needs-you").exists {
+            app.nsh("terminal-sidebar").tap()
+            settle(0.6)
+        }
+        return true
+    }
+
     // MARK: Inside the app
 
     /// 02: the pane that asked: Claude Code's permission prompt, the key
@@ -303,14 +321,31 @@ final class ShotsUITest: XCTestCase {
     }
 
     /// 05 (and the iPad's panes): the pane overview, every window of the
-    /// session as a card, the split one with its three panes. A tap on the
-    /// window segment opens it once the tree is live.
+    /// session as a card, the split one with its three panes. On iPad it
+    /// opens in the landscape split view's detail column beside Home's
+    /// sidebar rather than in a standalone phone stack. A tap on the window
+    /// segment opens it once the tree is live.
     @MainActor
     func test05Overview() throws {
-        guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
+        let seed: [String]
+        if Self.phone {
+            guard let session = NSHFlow.seededSession() else { throw XCTSkip("no staged host") }
+            seed = Self.terminal(session, size: 13)
+        } else {
+            guard let home else { throw XCTSkip("no SHOTS_HOME_FIXTURE") }
+            seed = Self.terminal(home)
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        defer {
+            if !Self.phone { XCUIDevice.shared.orientation = .portrait }
+        }
         for locale in Self.locales {
-            let app = launch(locale, Self.terminal(session))
-            guard waitLive(app, locale) else { app.terminate(); continue }
+            if !Self.phone, !XCUIDevice.shared.orientation.isLandscape {
+                XCUIDevice.shared.orientation = .landscapeLeft
+            }
+            let app = launch(locale, seed)
+            let ready = Self.phone ? waitLive(app, locale) : openPadSplitTerminal(app, locale)
+            guard ready else { app.terminate(); continue }
             let shot = Self.phone ? "05-overview" : "panes"
             // The page, its bar's Done or its summary: whichever the tree
             // shows (dry run 4 waited on the page's own id and saw nothing).
@@ -323,6 +358,10 @@ final class ShotsUITest: XCTestCase {
             let area = app.nsh("terminal-pane-area")
             for _ in 0..<9 { area.swipeLeft(); settle(1.2) }
             for _ in 0..<9 { area.swipeRight(); settle(0.8) }
+            if !Self.phone, !app.nsh("home-needs-you").exists {
+                app.nsh("terminal-sidebar").tap()
+                settle(0.6)
+            }
             app.nsh("terminal-crumb-window").tap()
             // Dry run 5: the overview opens (its debug shot shows it) but
             // isn't in the accessibility tree yet, so its ids can't be
@@ -331,6 +370,15 @@ final class ShotsUITest: XCTestCase {
             let seen = first(app, of: page, within: 4)
             print("SHOTS overview \(locale.name): \(seen ? "its ids showed" : "kept without its ids (not in the accessibility tree)")")
             settle(1.5)
+            if !Self.phone {
+                let sidebar = app.nsh("home-needs-you")
+                XCTAssertTrue(sidebar.exists, "\(locale.name): Home's sidebar left the split view on panes")
+                let sessionPill = app.nsh("terminal-overview-session")
+                if sessionPill.exists {
+                    XCTAssertGreaterThan(sessionPill.frame.minX, sidebar.frame.maxX,
+                                         "\(locale.name): the overview \(sessionPill.frame) is under the sidebar \(sidebar.frame)")
+                }
+            }
             keep(locale, shot)
             app.terminate()
         }
@@ -460,13 +508,11 @@ final class ShotsUITest: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
         for locale in Self.locales {
-            let app = launch(locale, home)
-            guard waitNeedsYou(app, locale) else { app.terminate(); continue }
-            let head = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'devbox'")).firstMatch
-            if head.waitForExistence(timeout: 30) { head.tap() }
-            if waitLive(app, locale) {
-                // The sidebar back beside it, if opening hid it.
-                if !app.nsh("home-needs-you").exists { app.nsh("terminal-sidebar").tap() }
+            if !XCUIDevice.shared.orientation.isLandscape {
+                XCUIDevice.shared.orientation = .landscapeLeft
+            }
+            let app = launch(locale, Self.terminal(home))
+            if openPadSplitTerminal(app, locale) {
                 settle(1.5)
                 // B843: the terminal's page beside the sidebar, not under it
                 // (it was the window's whole width, its crumb and text behind

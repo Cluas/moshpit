@@ -13,7 +13,7 @@ store images in <shots>/iphone-6.9/store/<locale>/<nn>-<shot>.png and
 check: every locale with captions (scripts/shots/captions/), every slot of
 both devices (or the one --device names: each device's job checks its
 own), at the store's size: 1320 × 2868 for the iPhone; 2064 × 2752
-for the iPad, and 2752 × 2064 for its landscape shot (slots.LANDSCAPE). Exit 0 only when all are
+for the iPad, and 2752 × 2064 for its landscape shots (slots.LANDSCAPE). Exit 0 only when all are
 there; otherwise every gap is listed and the exit is 1. A shoot job checks
 its own part: --device, --locales (en-US,ko) and --slots (01,05) narrow it.
 
