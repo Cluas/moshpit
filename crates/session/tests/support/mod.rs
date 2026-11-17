@@ -900,11 +900,26 @@ pub fn kill(pid: i64) {
 }
 
 pub fn alive(pid: i64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    let signaled = pid > 0
+        && Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+    if !signaled {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        && let Some(rparen) = stat.rfind(')')
+        && matches!(
+            stat[rparen + 1..].trim_start().as_bytes().first(),
+            Some(b'Z' | b'X' | b'x')
+        )
+    {
+        return false;
+    }
+    true
 }
 
 /// Stops the mosh-server a session reported when dropped.
