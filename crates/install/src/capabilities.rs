@@ -12,10 +12,12 @@ pub const EXTRA_PATH_DIRS: &str =
     "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:$HOME/.local/bin";
 
 /// The probe whose output [`HostCapabilities::parse`] reads.
+/// Each tool is probed individually because POSIX `command -v` in dash
+/// (Debian/Ubuntu `/bin/sh`) only accepts a single operand and ignores the rest.
 pub fn probe_command() -> String {
     format!(
-        "PATH=\"$PATH:{EXTRA_PATH_DIRS}\" command -v tmux mosh-server herdr python3; \
-         echo \"::$(uname -s)::$(PATH=\"$PATH:{EXTRA_PATH_DIRS}\" command -v apt-get dnf yum pacman apk brew 2>/dev/null | head -1)\""
+        "for c in tmux mosh-server herdr python3; do PATH=\"$PATH:{EXTRA_PATH_DIRS}\" command -v \"$c\" 2>/dev/null || true; done; \
+         echo \"::$(uname -s)::$(for p in apt-get dnf yum pacman apk brew; do PATH=\"$PATH:{EXTRA_PATH_DIRS}\" command -v \"$p\" 2>/dev/null && break; done || true)\""
     )
 }
 
@@ -336,8 +338,44 @@ mod tests {
 
     #[test]
     fn the_probe_asks_for_herdr_and_searches_local_bin() {
-        assert!(probe_command().contains("command -v tmux mosh-server herdr"));
+        let cmd = probe_command();
+        assert!(cmd.contains("for c in tmux mosh-server herdr python3"));
+        assert!(cmd.contains("command -v \"$c\""));
         assert!(EXTRA_PATH_DIRS.contains("$HOME/.local/bin"));
+    }
+
+    #[test]
+    fn probe_command_finds_multiple_tools_under_posix_sh() {
+        use std::os::unix::fs::PermissionsExt;
+        let uniq = format!(
+            "moshpit-probe-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(uniq);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["tmux", "mosh-server", "herdr", "python3", "pacman"] {
+            let bin = dir.join(name);
+            std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path_env = format!("{}:/bin:/usr/bin", dir.display());
+        let out = std::process::Command::new("/bin/sh")
+            .args(["-c", &probe_command()])
+            .env("PATH", path_env)
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(out.status.success(), "{out:?}");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let caps = HostCapabilities::parse(&stdout);
+        assert!(caps.has_tmux, "missing tmux: {stdout}");
+        assert!(caps.has_mosh_server, "missing mosh-server: {stdout}");
+        assert!(caps.has_herdr, "missing herdr: {stdout}");
+        assert!(caps.has_python3, "missing python3: {stdout}");
+        assert_eq!(caps.package_manager, Some(PackageManager::Pacman), "{stdout}");
     }
 
     #[test]
