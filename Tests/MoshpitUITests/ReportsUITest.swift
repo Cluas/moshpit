@@ -136,13 +136,26 @@ final class ReportsUITest: XCTestCase {
             return nil
         }
         field.tap()
+        // The edit menu can come and go while the field settles: a Paste seen
+        // then gone before the tap failed the test (CI, e931d10b). Tap it only
+        // once it has stayed, and bring the menu back if it went.
         let paste = app.menuItems["Paste"]
-        if !paste.waitForExistence(timeout: 2) { field.tap() }
-        guard paste.waitForExistence(timeout: 5) else {
+        var pastedIn = false
+        for _ in 0 ..< 3 {
+            if paste.waitForExistence(timeout: 3) {
+                settle(0.3)
+                if paste.exists, paste.isHittable {
+                    paste.tap()
+                    pastedIn = true
+                    break
+                }
+            }
+            field.tap()
+        }
+        guard pastedIn else {
             XCTFail("the prompt's field offers no Paste")
             return nil
         }
-        paste.tap()
         settle(0.5)
         let text = field.value as? String
         app.alerts.buttons["Cancel"].firstMatch.tap()

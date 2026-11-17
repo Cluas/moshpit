@@ -153,7 +153,7 @@ jobs:
   build-test:
     name: Build & Test (iOS Simulator)
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     env:
       # Local SPM checkout dir so downloaded packages can be cached across runs
