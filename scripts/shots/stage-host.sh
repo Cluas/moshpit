@@ -22,6 +22,13 @@
 # (gpu-01.example.com, build.example.com), each with a tmux of its own
 # (-L moshpit-shots-gpu, -L moshpit-shots-build): their wrappers are
 # MOSHPIT_SEED_TMUX_BIN_GPU and _BUILD.
+# Two tmux of devbox's for the users' reports the UI flows replay
+# (Tests/MoshpitUITests/ReportsUITest.swift), apart from "work" so a flow
+# that kills one leaves every other flow its session: -L moshpit-e2e with
+# no server at all (the flows make its sessions, and kill them), and
+# -L moshpit-e2e-link with one session, "link", whose pane holds an address
+# Claude Code broke over two rows (stage/link-turn.sh, B841). Their
+# wrappers are MOSHPIT_SEED_TMUX_BIN_E2E and _LINK.
 # On a CI runner the session signs in as `dev`, a user made for the run, as
 # every fixture names the person: Home's card says dev@devbox.example.com,
 # not the runner's own login, and the repos sit in its home
@@ -75,7 +82,7 @@ if [ "$cmd" = restamp ]; then
 fi
 
 if [ "$cmd" = stop ]; then
-    for wrapper in stage-tmux stage-tmux-gpu stage-tmux-build; do
+    for wrapper in stage-tmux stage-tmux-gpu stage-tmux-build stage-tmux-e2e stage-tmux-link; do
         [ -x "$box/$wrapper" ] && as_user "$box/$wrapper" kill-server 2>/dev/null || true
     done
     [ -f "$work/sshd.pid" ] && sudo kill "$(cat "$work/sshd.pid")" 2>/dev/null || true
@@ -184,6 +191,8 @@ EOF
 wrap stage-tmux moshpit-shots
 wrap stage-tmux-gpu moshpit-shots-gpu
 wrap stage-tmux-build moshpit-shots-build
+wrap stage-tmux-e2e moshpit-e2e
+wrap stage-tmux-link moshpit-e2e-link
 tmux() { t_dev "$@"; }
 gpu() { t_gpu "$@"; }
 build() { t_build "$@"; }
@@ -227,7 +236,7 @@ mkdir -p "$kit/text"
 cp "$root"/scripts/shots/stage/text/*.txt "$kit/text/"
 # The pane scripts beside the texts, where the session's user reads them.
 mkdir -p "$kit/scripts"
-cp "$root"/scripts/shots/stage/{hold,claude-session,build-session}.sh "$kit/scripts/"
+cp "$root"/scripts/shots/stage/{hold,claude-session,build-session,link-turn}.sh "$kit/scripts/"
 install_kit
 text="$box/text"
 scripts="$box/scripts"
@@ -235,6 +244,12 @@ hold="$scripts/hold.sh"
 
 stage_layout
 stamp_all
+# The reports' tmux: moshpit-e2e with no server; moshpit-e2e-link's one
+# session at a width Claude Code's 60 columns fit.
+as_user "$box/stage-tmux-e2e" kill-server 2>/dev/null || true
+as_user "$box/stage-tmux-link" kill-server 2>/dev/null || true
+as_user "$box/stage-tmux-link" new-session -d -s link -x 120 -y 40 -c "$stage" "exec sh $scripts/link-turn.sh"
+as_user "$box/stage-tmux-link" list-panes -a -F 'devbox (link) #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 tmux list-panes -a -F 'devbox #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 gpu list-panes -a -F 'gpu-01 #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
 build list-panes -a -F 'build-box #{session_name}:#{window_name} #{pane_id} #{pane_current_command}' >&2
@@ -250,4 +265,6 @@ MOSHPIT_SEED_MUX=tmux
 MOSHPIT_SEED_TMUX_BIN=$box/stage-tmux
 MOSHPIT_SEED_TMUX_BIN_GPU=$box/stage-tmux-gpu
 MOSHPIT_SEED_TMUX_BIN_BUILD=$box/stage-tmux-build
+MOSHPIT_SEED_TMUX_BIN_E2E=$box/stage-tmux-e2e
+MOSHPIT_SEED_TMUX_BIN_LINK=$box/stage-tmux-link
 EOF
