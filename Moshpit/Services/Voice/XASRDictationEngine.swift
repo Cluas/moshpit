@@ -22,6 +22,7 @@ final class XASRDictationEngine: DictationEngine {
 
     private let load: StreamingDictationCore.Load
     private let script: DictationTranscript.ChineseScript?
+    private let isInstalled: @Sendable () -> Bool
     private let updateContinuation: AsyncThrowingStream<DictationUpdate, Error>.Continuation
     private let converter = DictationBufferConverter()
     private static let targetFormat = AVAudioFormat(
@@ -41,10 +42,12 @@ final class XASRDictationEngine: DictationEngine {
     /// `load` opens the model for this dictation; the app's is
     /// ``XASRDictationEngine/opener(hotwords:)``.
     init(load: @escaping StreamingDictationCore.Load, label: String,
-         script: DictationTranscript.ChineseScript? = nil) {
+         script: DictationTranscript.ChineseScript? = nil,
+         isInstalled: @escaping @Sendable () -> Bool = { WhisperModelStore.isInstalled(XASR.variant) }) {
         self.load = load
         self.label = label
         self.script = script
+        self.isInstalled = isInstalled
         (updates, updateContinuation) = AsyncThrowingStream.makeStream()
     }
 
@@ -65,7 +68,7 @@ final class XASRDictationEngine: DictationEngine {
     func prepare(onProgress: @escaping @Sendable (DictationPreparation) -> Void) async throws {
         onProgress(.loading)
         Log.voice.info("voice prepare: model=\(XASR.variant, privacy: .public)\(ProcessMemory.logSuffix, privacy: .public)")
-        guard WhisperModelStore.isInstalled(XASR.variant) else { throw DictationFailure.noWhisperModel }
+        guard isInstalled() else { throw DictationFailure.noWhisperModel }
     }
 
     func start() async throws {

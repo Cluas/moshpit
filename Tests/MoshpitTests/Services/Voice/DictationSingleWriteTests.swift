@@ -87,7 +87,7 @@ struct DictationSingleWriteTests {
         struct Corrupt: Error {}
         let audio = Fakes.FakeAudioSource()
         let controller = VoiceDictationController(engineFactory: { _, _ in
-            [XASRDictationEngine(load: { throw Corrupt() }, label: "X-ASR")]
+            [XASRDictationEngine(load: { throw Corrupt() }, label: "X-ASR", isInstalled: { true })]
         }, audioSource: audio)
         await controller.start(DictationRequest())
         for _ in 0 ..< 3 { audio.onBuffer?(try buffer()) }

@@ -13,6 +13,12 @@ $sudo apt-get install -y -qq --no-install-recommends \
     openssh-server openssh-client mosh zsh python3 \
     build-essential pkg-config libevent-dev libncurses-dev bison \
     curl ca-certificates git iptables iproute2 procps psmisc locales lsof sudo >/dev/null
+# Ubuntu's /etc/zsh/zshrc runs compinit unconditionally, prompting on runner
+# dirs that are group-writable and stalling interactive zsh test panes.
+if [ -d /etc/zsh ]; then
+    grep -qs '^skip_global_compinit=1$' /etc/zsh/zshenv 2>/dev/null ||
+        echo 'skip_global_compinit=1' | $sudo tee -a /etc/zsh/zshenv >/dev/null
+fi
 # The tmux under test is placed by use-tmux.sh; none other may answer.
 $sudo apt-get remove -y -qq tmux >/dev/null 2>&1 || true
 # Remove distro golang-go if present; push-relay requires Go 1.24+.

@@ -123,6 +123,7 @@ fn rounds() -> usize {
 /// An sshd whose sessions' HOME and ZDOTDIR are `home`, where `rc` is the
 /// zsh rc.
 async fn sshd_with(home: &Path, rc: &str) -> Sshd {
+    std::fs::write(home.join(".zshenv"), "skip_global_compinit=1\n").unwrap();
     std::fs::write(home.join(".zshrc"), rc).unwrap();
     let home = home.display().to_string();
     Sshd::start_with(&[("HOME", &home), ("ZDOTDIR", &home)]).await

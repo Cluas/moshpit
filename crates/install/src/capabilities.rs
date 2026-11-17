@@ -361,10 +361,14 @@ mod tests {
             std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
             std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let path_env = format!("{}:/bin:/usr/bin", dir.display());
+        let uname = dir.join("uname");
+        std::fs::write(&uname, "#!/bin/sh\necho Linux\n").unwrap();
+        std::fs::set_permissions(&uname, std::fs::Permissions::from_mode(0o755)).unwrap();
         let out = std::process::Command::new("/bin/sh")
             .args(["-c", &probe_command()])
-            .env("PATH", path_env)
+            .env_clear()
+            .env("PATH", &dir)
+            .env("HOME", &dir)
             .output()
             .unwrap();
         let _ = std::fs::remove_dir_all(&dir);
@@ -375,6 +379,7 @@ mod tests {
         assert!(caps.has_mosh_server, "missing mosh-server: {stdout}");
         assert!(caps.has_herdr, "missing herdr: {stdout}");
         assert!(caps.has_python3, "missing python3: {stdout}");
+        assert_eq!(caps.os, "Linux", "{stdout}");
         assert_eq!(caps.package_manager, Some(PackageManager::Pacman), "{stdout}");
     }
 

@@ -1089,6 +1089,9 @@ impl PrivateHerdr {
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join("bin")).unwrap();
         std::fs::copy("/bin/cat", home.join("bin/claude")).unwrap();
+        // Ubuntu's /etc/zsh/zshrc runs compinit before ~/.zshrc unless skipped,
+        // blocking interactive test shells on runner-owned insecure dirs.
+        std::fs::write(home.join(".zshenv"), "skip_global_compinit=1\n").unwrap();
         std::fs::write(home.join(".zshrc"), "PROMPT='%% '\nunsetopt BEEP\n").unwrap();
         let home = home.canonicalize().unwrap();
         let mut herdr = PrivateHerdr {
