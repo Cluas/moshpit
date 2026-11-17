@@ -57,6 +57,11 @@ pub(super) struct SidecarState {
     /// and so on without end. Ids are never reused, so rows naming them are
     /// stale for good.
     pub dead_groups: BTreeSet<String>,
+    /// B874: the session the renderer just left, held until
+    /// [`Controller::bring_renderer_into_group`] moves the renderer into the
+    /// new group so tmux doesn't re-squash the left session while the
+    /// phone's renderer still sits on it.
+    pub pending_hand_back: Option<(String, Option<String>)>,
 }
 
 /// The session option that marks a session Moshpit made (B86): the mark
@@ -308,9 +313,13 @@ impl Controller {
         }
         self.sidecar.renderer_awaits_landing = false;
         let Some(renderer) = self.sidecar.renderer_client.clone() else {
+            self.flush_pending_hand_back(None);
             return;
         };
         if self.sidecar.renderer_session_id.as_deref() != Some(group.session.as_str()) {
+            if self.sidecar.renderer_session_id.is_none() {
+                self.flush_pending_hand_back(None);
+            }
             return;
         }
         let target = match &group.id {
@@ -328,6 +337,15 @@ impl Controller {
             self.send(format!("kill-session -t '{left}'"));
         }
         self.end_renderer_group();
+        self.flush_pending_hand_back(Some(&group.session));
+    }
+
+    pub(super) fn flush_pending_hand_back(&mut self, current_session: Option<&str>) {
+        if let Some((left, left_window)) = self.sidecar.pending_hand_back.take()
+            && current_session != Some(left.as_str())
+        {
+            self.hand_back_left_session(&left, left_window.as_deref());
+        }
     }
 
     /// The renderer on `group`, a group of `session` we don't hold: it
@@ -465,8 +483,13 @@ impl Controller {
         if !moving.is_empty() {
             self.probe_switch_layouts(session);
         }
+        let already_in_group = self
+            .group
+            .current
+            .as_ref()
+            .is_some_and(|group| group.session == session);
         let grouped = self.wants_group_for(session);
-        if !grouped {
+        if !grouped && !already_in_group {
             for name in &moving {
                 self.send(format!("switch-client -c {name} -t {session}"));
             }
@@ -486,14 +509,38 @@ impl Controller {
             if moving.is_empty() {
                 self.sidecar.renderer_awaits_landing = false;
             }
+        } else if already_in_group {
+            // B874: another path (such as GroupCheckMarks) already created
+            // this session's group before SidecarSwitch answered; keep it
+            // and bring the renderer in now rather than switching out.
+            if moving.is_empty() {
+                self.sidecar.renderer_awaits_landing = false;
+            } else {
+                self.bring_renderer_into_group();
+            }
         } else {
             self.switch_without_group(session);
         }
         self.sidecar.session_switches = self.sidecar.session_switches.wrapping_add(1);
-        if !moving.is_empty()
-            && let Some(left) = left.filter(|left| left != session)
-        {
-            self.hand_back_left_session(&left, left_window.as_deref());
+        if !moving.is_empty() {
+            if (grouped || already_in_group) && self.sidecar.renderer_awaits_landing {
+                match &self.sidecar.pending_hand_back {
+                    Some((orig, _)) if orig == session => {
+                        self.sidecar.pending_hand_back = None;
+                    }
+                    Some(_) => {}
+                    None => {
+                        if let Some(left) = left.filter(|left| left != session) {
+                            self.sidecar.pending_hand_back = Some((left, left_window));
+                        }
+                    }
+                }
+            } else {
+                self.flush_pending_hand_back(Some(session));
+                if let Some(left) = left.filter(|left| left != session) {
+                    self.hand_back_left_session(&left, left_window.as_deref());
+                }
+            }
         }
     }
 

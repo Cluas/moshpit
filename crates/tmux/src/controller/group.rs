@@ -228,12 +228,14 @@ impl Controller {
         // session").
         let exact = format!("'={}:'", group.name);
         // The group this client leaves: ended behind the move (B812: no
-        // `destroy-unattached` ends it for us).
-        let left = self
-            .group
-            .current
-            .as_ref()
-            .and_then(|current| current.id.clone());
+        // `destroy-unattached` ends it for us). When `id` is still in flight
+        // from an overlapping switch, target the exact session name `={name}`.
+        let left = self.group.current.as_ref().map(|current| {
+            current
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("={}", current.name))
+        });
         self.send_command(
             format!("new-session -t '{session}' -s {quoted} -P -F '#{{session_id}}'"),
             Reply::GroupMade {
@@ -243,9 +245,9 @@ impl Controller {
         self.send(format!(
             "set-option -t {exact} {GROUP_OF_OPTION} '{session}'"
         ));
-        if let Some(left) = &left {
+        if let Some(left) = left.as_deref().filter(|id| id.starts_with('$')) {
             self.group.group_ids.remove(left);
-            self.sidecar.dead_groups.insert(left.clone());
+            self.sidecar.dead_groups.insert(left.to_owned());
         }
         if self.config.renders_output {
             // This client was its only one, and has moved.
@@ -257,7 +259,11 @@ impl Controller {
             // renderer has moved too ([`Self::bring_renderer_into_group`]),
             // else left to the next attach's sweep — a kill under the
             // renderer detached it, and ended the mosh session (B583).
-            self.sidecar.group_left = left;
+            if let Some(prev) = std::mem::replace(&mut self.sidecar.group_left, left) {
+                self.send(format!(
+                    "if-shell -F -t '{prev}' '#{{==:#{{session_attached}},0}}' \"kill-session -t '{prev}'\""
+                ));
+            }
         }
         self.group.current = Some(group);
         self.group.entering = true;
@@ -545,6 +551,13 @@ impl Controller {
             .map(|line| moshpit_herdr::text::trim_whitespaces(line).to_owned())
             .filter(|id| !response.is_error && id.starts_with('$') && is_valid_id(id));
         if self.group.current.as_ref().map(|g| &g.name) != Some(&group.name) {
+            // Stale reply for a superseded group: mark dead and reap if unattached.
+            if let Some(id) = id {
+                self.sidecar.dead_groups.insert(id.clone());
+                self.send(format!(
+                    "if-shell -F -t '{id}' '#{{==:#{{session_attached}},0}}' \"kill-session -t '{id}'\""
+                ));
+            }
             return;
         }
         let taken = response.is_error
@@ -599,6 +612,25 @@ impl Controller {
                 // A switch that went by the group: the plain switch instead.
                 if self.group.client_on.as_deref() != Some(group.session.as_str()) {
                     self.send(format!("switch-client -t {}", group.session));
+                }
+                if !self.config.renders_output {
+                    let awaited = std::mem::take(&mut self.sidecar.renderer_awaits_landing);
+                    if self.sidecar.renderer_session_id.as_deref() == Some(group.session.as_str())
+                        && let Some(renderer) = self.sidecar.renderer_client.clone()
+                    {
+                        if awaited {
+                            self.send(format!(
+                                "switch-client -c {} -t {}",
+                                renderer.name, group.session
+                            ));
+                        }
+                        if let Some(left) = self.sidecar.group_left.take() {
+                            self.send(format!(
+                                "if-shell -F -t '{left}' '#{{==:#{{session_attached}},0}}' \"kill-session -t '{left}'\""
+                            ));
+                        }
+                        self.flush_pending_hand_back(Some(&group.session));
+                    }
                 }
                 if late {
                     self.group.deciding = false;
