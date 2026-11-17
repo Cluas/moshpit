@@ -136,16 +136,20 @@ final class ReportsUITest: XCTestCase {
             return nil
         }
         field.tap()
-        // The edit menu can come and go while the field settles: a Paste seen
-        // then gone before the tap failed the test (CI, e931d10b). Tap it only
-        // once it has stayed, and bring the menu back if it went.
+        // The edit menu can come and go while the field settles. And the
+        // Paste over the alert's field has no activation point XCTest will
+        // accept: an element tap on it reads the alert as an interruption and
+        // its handler cancels our prompt (CI, 4f70e8bf). So the tap goes to
+        // the item's frame, once the item has stayed.
         let paste = app.menuItems["Paste"]
         var pastedIn = false
         for _ in 0 ..< 3 {
             if paste.waitForExistence(timeout: 3) {
                 settle(0.3)
-                if paste.exists, paste.isHittable {
-                    paste.tap()
+                let frame = paste.frame
+                if paste.exists, !frame.isEmpty {
+                    app.coordinate(withNormalizedOffset: .zero)
+                        .withOffset(CGVector(dx: frame.midX, dy: frame.midY)).tap()
                     pastedIn = true
                     break
                 }
