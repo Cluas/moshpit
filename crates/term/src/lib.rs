@@ -106,6 +106,12 @@ pub struct Options {
     pub image_cache: Option<ImageCache>,
     /// What a clear of the main screen keeps.
     pub scroll_on_clear: ScrollOnClear,
+    /// The bytes are mosh's: diffs of the server's screen, which keeps a
+    /// two-column character printed in the last column there (autowrap
+    /// off, or wrapping only at the next print). Off, the terminal wraps it
+    /// first, as xterm and tmux do (docs/WEZTERM-PATCHES.md W5); on a mosh
+    /// screen that lays it, and the server's later diffs, a line off.
+    pub mosh_host: bool,
 }
 
 impl Default for Options {
@@ -126,6 +132,7 @@ impl Default for Options {
             history_image_bytes: 32 << 20,
             image_cache: None,
             scroll_on_clear: ScrollOnClear::EraseDisplay,
+            mosh_host: false,
         }
     }
 }
@@ -178,6 +185,8 @@ struct Config {
     generation: usize,
     /// [`ScrollOnClear::Tmux`].
     tmux_clears: bool,
+    /// Not [`Options::mosh_host`].
+    wrap_wide_at_margin: bool,
 }
 
 impl TerminalConfiguration for Config {
@@ -217,6 +226,9 @@ impl TerminalConfiguration for Config {
     }
     fn scroll_on_clear_from_home(&self) -> bool {
         self.tmux_clears
+    }
+    fn wrap_wide_at_margin(&self) -> bool {
+        self.wrap_wide_at_margin
     }
     fn max_image_bytes(&self) -> usize {
         self.max_image_bytes
@@ -735,6 +747,7 @@ impl Terminal {
             kitty_image_storage: options.kitty_image_storage,
             generation: 0,
             tmux_clears: options.scroll_on_clear == ScrollOnClear::Tmux,
+            wrap_wide_at_margin: !options.mosh_host,
         });
         let mut term = wezterm_term::Terminal::new(
             term_size(cols, rows, &options),
@@ -1376,6 +1389,7 @@ impl Terminal {
             kitty_image_storage: self.options.kitty_image_storage,
             generation: self.config.generation + 1,
             tmux_clears: self.options.scroll_on_clear == ScrollOnClear::Tmux,
+            wrap_wide_at_margin: !self.options.mosh_host,
         });
         self.config = config.clone();
         self.term.set_config(config);
@@ -1982,6 +1996,14 @@ impl Terminal {
     pub fn set_scroll_on_clear(&mut self, mode: ScrollOnClear) {
         if self.options.scroll_on_clear != mode {
             self.options.scroll_on_clear = mode;
+            self.reconfigure();
+        }
+    }
+
+    /// The bytes are mosh's ([`Options::mosh_host`]); from the next byte on.
+    pub fn set_mosh_host(&mut self, on: bool) {
+        if self.options.mosh_host != on {
+            self.options.mosh_host = on;
             self.reconfigure();
         }
     }

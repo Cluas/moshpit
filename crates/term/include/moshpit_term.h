@@ -13,7 +13,7 @@ extern "C" {
 
 /// Bumped whenever anything below changes shape: a view checks
 /// `mp_term_abi_version() == MP_TERM_ABI_VERSION` before it uses the core.
-#define MP_TERM_ABI_VERSION 17
+#define MP_TERM_ABI_VERSION 18
 uint32_t mp_term_abi_version(void);
 
 typedef struct MpTerm MpTerm;
@@ -171,6 +171,10 @@ size_t mp_term_drop_unplaced_images(const MpTerm *_Nonnull t);
 /// scroll-on-clear keeps (ESC [2J, and ESC [J from the top left, the clear a
 /// tmux pane sends). Off: a terminal of its own (ESC [2J only).
 void mp_term_set_tmux_clears(const MpTerm *_Nonnull t, bool on);
+/// `t` is fed mosh's frames: a two-column character printed in the last
+/// column stays there, as on the server's screen the frames are diffs of,
+/// instead of wrapping first as xterm and tmux do.
+void mp_term_set_mosh_host(const MpTerm *_Nonnull t, bool on);
 /// Bytes `t`'s stored kitty images take (debug probes).
 size_t mp_term_kitty_image_bytes(const MpTerm *_Nonnull t);
 void mp_term_feed(const MpTerm *_Nonnull t, const uint8_t *_Nonnull bytes, size_t len);

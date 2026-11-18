@@ -274,8 +274,11 @@ impl<'a> Performer<'a> {
             // margin goes to the next line first, as in xterm and tmux, and
             // the cell it leaves is erased; it was written at the last
             // column and ran past the margin, its second half off screen.
+            // A switch (`wrap_wide_at_margin`): mosh's diffs assume the
+            // upstream way and would be laid a line off.
             let width = self.left_and_right_margins.end;
             if print_width > 1
+                && self.config.wrap_wide_at_margin()
                 && self.dec_auto_wrap
                 && self.cursor.x + print_width > width
                 && self.cursor.x > self.left_and_right_margins.start

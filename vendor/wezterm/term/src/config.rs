@@ -244,6 +244,15 @@ pub trait TerminalConfiguration: Downcast + std::fmt::Debug + Send + Sync {
         false
     }
 
+    /// Moshpit (W5): a two-column character printed with the cursor in the
+    /// last column, autowrap on, goes to the start of the next line first,
+    /// as in xterm and tmux. Upstream writes it in the last column (its
+    /// second half off screen) and wraps at the next print. Off for a host
+    /// whose bytes are diffs of a screen kept as upstream keeps it (mosh's).
+    fn wrap_wide_at_margin(&self) -> bool {
+        false
+    }
+
     /// Moshpit: ED 2 (erase the display) on the main screen moves what it
     /// showed into the history first, as tmux's `scroll-on-clear` does.
     /// Upstream erases it.

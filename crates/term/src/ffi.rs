@@ -23,7 +23,7 @@ pub type MpTermWaker = unsafe extern "C" fn(ctx: *mut c_void);
 
 /// `MP_TERM_ABI_VERSION` (moshpit_term.h): bumped whenever the C ABI
 /// changes shape, so a view refuses a stale library instead of misreading it.
-pub const ABI_VERSION: u32 = 17;
+pub const ABI_VERSION: u32 = 18;
 
 /// The `MP_TERM_ABI_VERSION` this library was built with.
 #[unsafe(no_mangle)]
@@ -462,6 +462,19 @@ pub unsafe extern "C" fn mp_term_set_tmux_clears(t: *const MpTerm, on: bool) {
         crate::ScrollOnClear::EraseDisplay
     };
     guard((), || t.with(|term| term.set_scroll_on_clear(mode)))
+}
+
+/// `t` is fed mosh's frames: a two-column character printed in the last
+/// column stays there, as on the server's screen the frames are diffs of,
+/// instead of wrapping first as xterm and tmux do. After the bytes parsed
+/// so far.
+///
+/// # Safety
+/// `t` live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mp_term_set_mosh_host(t: *const MpTerm, on: bool) {
+    let t = term!(t);
+    guard((), || t.with(|term| term.set_mosh_host(on)))
 }
 
 /// Bytes `t`'s stored kitty images take (debug probes).

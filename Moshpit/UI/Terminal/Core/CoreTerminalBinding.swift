@@ -64,6 +64,10 @@ extension CoreTerminalView {
         default: 0
         }
         mp_term_predict_attach(term, mode, engine?.trail ?? false)
+        // A predictor is attached exactly while mosh feeds this terminal
+        // (with any mode, `never` too): its frames are diffs of a screen
+        // that keeps a wide character printed in the last column there.
+        mp_term_set_mosh_host(term, engine != nil)
         if let engine { mp_term_predict_srtt(term, engine.srttMs) }
         takeFrame()
     }

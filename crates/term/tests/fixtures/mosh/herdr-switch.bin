@@ -1,0 +1,749 @@
+[r[0m[H[2J[?25l[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[2;1H[?25h[0m[?2004l[?1003l[?1002l[?1001l[?1000l[?1004l[?1015l[?1006l[?1005l[?2004h[?1003h[?1006h[?25l[1;1H[0;38;5;83mA19 ⏺ Read 测试 表格对齐 ⏺ Read 表格对齐[0m          
+[0;38;5;90mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;97mA28 ✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residue
+[0;38;5;104mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;111mA29 the quick brown fox 表格对齐 fn main() fn main
+[0;38;5;118mA50 测试 测试 分析代码 表格对齐 residue 测试[0m      
+[0;38;5;125mA18 the quick brown fox 表格对齐 the quick brown f
+[0;38;5;132mA01 fn main() ⏺ Read[0m                              
+[0;38;5;139mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Rea
+[0;38;5;146mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;153mA50 测试 测试 分析代码 表格对齐 residue 测试[0m      
+[0;38;5;160mA43 ── 表格对齐 the quick brown fox 分析代码 resid
+[0;38;5;167mA02 中文输出 ⏺ Read 中文输出 分析代码 ✻ 思考中 res
+[0;38;5;174mA11 ── 分析代码 ── ✻ 思考中 测试[0m                  
+[0;38;5;181mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;188mA15 ✻ 思考中 ✻ 思考中 residue the quick brown fox 
+[0;38;5;195mA20 中文输出 the quick brown fox fn main() the qui
+[0;38;5;202mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read the
+[0;38;5;209mA11 ── 分析代码 ── ✻ 思考中 测试[0m                  
+[0;38;5;216mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;23mA30 residue fn main() ── ── ✻ 思考中 中文输出 测试
+[0;38;5;30mA35 the quick brown fox 表格对齐 ──[0m               
+[0;38;5;37mA40 分析代码 ── fn main() ✻ 思考中 ──[0m             
+[0;38;5;44mA04 分析代码 ── the quick brown fox the quick brow
+[0;38;5;51mA20 中文输出 the quick brown fox fn main() the qui
+[0;38;5;58mA58 中文输出 表格对齐 表格对齐 分析代码 表格对齐 ─
+[0;38;5;65mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0m──────────────────────────────────────────────────
+[0;1m> [0mA 输入框 tick=93                                
+  ? for shortcuts · A                             [29;19H[1;1H[0;38;5;20mA07 residue 测试 分析代码 ── 分析代码 ⏺ Read ⏺ Re
+[0;38;5;27mA01 fn main() ⏺ Read[0m                              
+[0;38;5;34mA02 中文输出 ⏺ Read 中文输出 分析代码 ✻ 思考中 re[0m 
+[0;38;5;41mA58 中文输出 表格对齐 表格对齐 分析代码 表格对齐 
+[0;38;5;48mA22 分析代码 ✻ 思考中 the quick brown fox 中文输[0m  
+[0;38;5;55mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read th
+[0;38;5;62mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;69mA06 测试 ✻ 思考中 residue the quick brown fox res
+[0;38;5;76mA56 ── residue 分析代码 中文输出 residue ⏺ Read [0m  
+[0;38;5;83mA19 ⏺ Read 测试 表格对齐 ⏺ Read 表格对齐[0m          
+[0;38;5;90mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 
+[0;38;5;97mA28 ✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residu[0m 
+[0;38;5;104mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;111mA29 the quick brown fox 表格对齐 fn main() fn mai
+[0;38;5;118mA50 测试 测试 分析代码 表格对齐 residue 测试
+[0;38;5;125mA18 the quick brown fox 表格对齐 the quick brown [0m 
+[0;38;5;132mA01 fn main() ⏺ Read[0m                              
+[0;38;5;139mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;146mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 
+[0;38;5;153mA50 测试 测试 分析代码 表格对齐 residue 测试[0m      
+[0;38;5;160mA43 ── 表格对齐 the quick brown fox 分析代码 resi[0m 
+[0;38;5;167mA02 中文输出 ⏺ Read 中文输出 分析代码 ✻ 思考中 re
+[0;38;5;174mA11 ── 分析代码 ── ✻ 思考中 测试[0m     
+[0;38;5;181mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;188mA15 ✻ 思考中 ✻ 思考中 residue the quick brown fox[0m 
+[0;38;5;195mA20 中文输出 the quick brown fox fn main() the qu[0m 
+[0;38;5;202mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read th[0m 
+[29;19H[11;2H[0;38;5;90m0[11;5H── 中文输出 表格对齐 f[11;28H main() residue[0m      [29;18H4[10;3H[0;38;5;83m4[10;5H── fn main() 分析代码 th[10;30H quick brown fox fn [29;18H[0m5[8;2H[0;38;5;69m2[8;5H分析代码 分析代码 ✻ 思考中 分析代码 ⏺[8;43HRead th[9;2H[0;38;5;76m34[9;5H分析代码 the quick brown fox[9;42H测试 the[29;18H[0m8[3;2H[0;38;5;34m35[3;5Hthe quick brown[3;21Hfox 表格对齐 ──[0m              [29;18H9[15;3H[0;38;5;118m4[15;5H中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[29;17H[0m100[3;2H[0;38;5;34m56[3;5H── res[3;12Hdue 分析代码[3;25H中文输出[3;34Hresidue ⏺ Read [19;2H[0;38;5;146m05[19;5H── ⏺ Read ⏺ Read 测试 测试 the quick brown fo[29;19H[0m2[26;3H[0;38;5;195m6[26;5H分析代码[26;14H分析代码 ✻ 思考中 分析代码 ⏺ Read[26;48Hth[29;19H[0m3[21;2H[0;38;5;160m28[21;5H✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residu[29;19H[0m4[6;3H[0;38;5;55m0[6;5H中文输出[6;14Hthe quick brown fox fn main() the[6;48Hqu[13;3H[0;38;5;104m4[13;5H分析代码 the quick brown fox residue 测试 the[17;2H[0;38;5;132m45[17;5H⏺ Re[17;10Hd fn[17;15Hmain() fn main() 表格对齐 residue [24;2H[0;38;5;181m06[24;5H测试 ✻ 思考中 residue the quick brown fox res[25;2H[0;38;5;188m00[25;5H⏺[25;7HRead ── ⏺ Read 表格对齐[25;31H✻ 思考中[0m           [29;19H9[7;2H[0;38;5;62m56[7;5H── residue 分析代码 中文输出 residue ⏺ Read [29;18H[0m10[1;2H[0;38;5;20m11[1;5H── 分析代码 ── ✻ 思考中 测试[0m                 [7;2H[0;38;5;62m38[7;5H✻ 思考中 分析代码 表格对齐 fn ma[7;38Hn()[7;42H测试 ⏺[7;49HR[9;2H[0;38;5;76m26[9;14H分析代码 ✻ 思考中 分析代码 ⏺ Read th[10;2H[0;38;5;83m06[10;5H测试 ✻ 思考中 residue[10;47Hres[11;2H[0;38;5;90m35[11;5Hthe quick brown fox 表格对齐 ──[0m       [18;2H[0;38;5;139m21[18;5H表格对齐[18;14H✻ 思考中 ⏺ Read[18;30H中文输出 ✻ 思考中[18;48H──[29;19H[0m6[12;2H[0;38;5;97m50[12;5H测试 测试 分析代码 表格对齐 residue 测试[0m     [29;19H7[5;2H[0;38;5;48m04[5;14H── the quick[5;27Hbrown[5;33Hfox the quick bro[8;3H[0;38;5;69m1[8;5H表格对齐[8;14H✻ 思考中[8;23H⏺[8;25HRead 中文输出 ✻[8;41H思考中[8;48H──[19;2H[0;38;5;146m11[19;8H分析代码[19;17H── ✻[19;22H思考中 测试[0m                 [23;2H[0;38;5;174m29[23;5Hthe quick brown fox 表格对齐 fn main() fn mai[24;3H[0;38;5;181m9[24;5Hfn main() 中文输出 分析代码 表格对齐 中文输出[29;18H[0m22[2;2H[0;38;5;27m29[2;5Hthe quick[2;15Hbrown fox 表格对齐 fn main() fn mai[24;2H[0;38;5;181m44[24;5H表格对齐 分析代码 residue 表格对齐 测试[0m      [29;19H4[20;3H[0;38;5;153m4[20;5H中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[29;19H[0m5[17;2H[0;38;5;132m58[17;5H中文输出 表格对齐 表格对齐[17;32H分析代码[17;41H表格对齐 [29;19H[0m6[6;2H[0;38;5;55m54[6;14H── ✻ 思考中 the[6;30Hquick brow[6;41H fox ⏺[6;48HRe[29;19H[0m7[1;1H[0;38;5;20mB07[1;5H⏺ Read 表格对齐 ✻ 思考中 分析代码 residue
+[0;38;5;27mB04[2;5H测试 中文输出 fn main()[0m                      
+[0;38;5;34mB17[3;5H表格对齐 测试 ✻ 思考[3;27H ✻ 思考中 测试[3;42H──[0m     
+[0;38;5;41mB[4;3H1[4;5H分析代码[4;14Hthe quick brown fox ✻ 思考中[0m        
+[0;38;5;48mB36[5;5H✻ 思考中[5;14H✻ 思考中 fn main()[5;34Hn main() residue
+[0;38;5;55mB15[6;5H⏺ Read fn main() ⏺ Read ⏺ Read[6;36H中文输出 测试 
+[0;38;5;62mB59[7;5H测试 测试 ── fn main() ⏺ Read[7;35Hfn main() fn ma
+[0;38;5;69mB[8;3H4[8;5H测试 residue 测试[8;23H分析代码 表格对齐[8;41Hresidue[0m  
+[0;38;5;76mB57[9;5H⏺ Read residue 分析代码 ──[9;32H测试 表格对齐 ⏺[9;48HRe
+[0;38;5;83mB23[10;5Hresidue ⏺ Read ⏺ Read[10;27H⏺ Read[0m                 
+[0;38;5;90mB26[11;5Hresid[11;11He ── ⏺ Read 中文输出 测试 表格对齐 测试
+[0;38;5;97mB42[12;5H⏺ Read 分析代码 fn[12;24Hmain() the quick[12;41Hbrown fox
+[0;38;5;104mB08[13;5H表格对齐[13;14H── 测试 fn mai[13;29H()[0m                   
+[0;38;5;111mB48[14;5H✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 
+[0;38;5;118mB26[15;5Hresidue ─[15;15H ⏺ Read [15;25H文输出 测试 表格对齐[15;46H测试
+[0;38;5;125mB51[16;5H分析代码 the quick brown fox[16;34H✻ 思考中[0m        
+[0;38;5;132mB02[17;5H测试 the[17;14Hquick brown fox[0m                     
+[0;38;5;139mB59[18;5H测试 测试 ── fn main() ⏺[18;30HRead fn main() fn[18;48Hma
+[0;38;5;146mB49[19;5Hresidue 表格对齐[19;22H分析代码[0m   
+[0;38;5;153mB09[20;5Hresidue ✻ 思考中 分析代码 分析代码 ✻[20;42H思考中 [0m 
+[0;38;5;160mB15[21;5H⏺[21;7HRead fn main() ⏺ Read ⏺ Read [21;38H文输出 测试 
+[0;38;5;167mB4[22;5H⏺ Read 分析代码[22;21Hfn main() the quick[22;41Hbrown fox
+[0;38;5;174mB57[23;5H⏺ Read residue 分析代码 ── 测试[23;37H表格对齐 ⏺ Re
+[0;38;5;181mB23[24;5Hresidue ⏺ Read ⏺ Read ⏺ Read[0m           
+[0;38;5;188mB54[25;5H── 测试 ⏺[25;15HRead[0m                    
+[0;38;5;195mB50[26;5H中文输出[26;14H表格对齐[26;23H中文输出[26;32Hfn main() resi[26;47Hue 
+[0;38;5;202mB59[27;5H测试 测试 ── fn main() ⏺ Read fn main() fn[27;48Hma[29;3H[0mB[29;18H33[30;21HB[29;20H[13;2H[0;38;5;104m57[13;5H⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[21;2H[0;38;5;160m58[21;5H中文输出 ⏺ Read ⏺ Read the quick brown fox ✻[29;19H[0m5[6;2H[0;38;5;55m57[6;12Hresidue 分析代码[6;29H── 测试 表格对齐 ⏺ Re[29;19H[0m6[27;2H[0;38;5;202m25[27;5H表格对齐 residue 测试 fn[27;30Hmain() ── ✻ 思考中 t[29;19H[0m7[12;2H[0;38;5;97m17[12;5H表格对齐 测试 ✻[12;21H思考中 ✻ 思考中 测试 ──[0m      [29;19H8[9;2H[0;38;5;76m21[9;5H分析代码 ✻ 思考中 ✻ 思考中[9;32H中文输出[0m          [29;19H9[10;3H[0;38;5;83m9[10;5Hthe q[10;11Hick[10;15Hbrown fox ── 测试 fn main() the qui[29;18H[0m40[4;2H[0;38;5;41m30[4;33H[0m         [29;19H1[9;2H[0;38;5;76m42[9;5H⏺ Read 分析代码 fn main() the quick brown fox[29;19H[0m2[2;3H[0;38;5;27m3[2;5H表格对齐 表格对齐[0m      [10;2H[0;38;5;83m18[10;5H✻ 思考中 ⏺ Read[0m                              [21;2H[0;38;5;160m01[21;5H── fn main() ✻ 思考中[0m                        [24;2H[0;38;5;181m18[24;5H✻ 思考中 ⏺ Read[0m             [29;19H7[3;2H[0;38;5;34m46[3;5Hthe quick brown[3;21Hfox ──[3;37Hresidue the q[7;2H[0;38;5;62m22[7;5Hthe quick[7;15Hbrow[7;21Hfox 分析代码 ── ✻ 思考中 表格[9;2H[0;38;5;76m31[9;5Hthe quick brown[9;22Hox the quick[9;35Hbrown[9;41Hfox 分析[0m [16;2H[0;38;5;125m45[16;5H测试 residu[16;18Hresidue[0m                 [20;2H[0;38;5;153m10[20;5H表格对齐 表格对齐 中文输出 fn main()[20;42Hthe quic[25;2H[0;38;5;188m01[25;8Hfn main() ✻ 思考中[29;18H[0m53[4;2H[0;38;5;41m01[4;5H── fn main()[4;18H✻ 思考中[0m       [29;19H4[3;2H[0;38;5;34m21[3;5H分析代码 ✻ 思考中 ✻[3;25H思考中 中文输出[0m          [7;2H[0;38;5;62m18[7;5H✻ 思考中 ⏺ Read[0m                              [11;2H[0;38;5;90m43[11;5Hfn main() 分析代码 中文输出 测试 表格对齐 ✻ [0m [20;2H[0;38;5;153m59[20;5H测试 测试 ── fn main() ⏺ Read[20;35Hfn main() fn ma[27;2H[0;38;5;202m31[27;5Hthe quick brown fox the quick brown fox 分析[0m [29;18H60[1;2H[0;38;5;20m54[1;5H── 测试 ⏺ Read[0m                           [2;3H[0;38;5;27m9[2;5Hresidue ✻ 思考中 分析代码 分析代码 ✻ 思考中 [6;2H[0;38;5;55m20[6;5Hresidue ✻ 思考中 ⏺ Read[6;29H表格对齐 ⏺ Read the q[8;3H[0;38;5;69m9[8;5Hthe quick brown fox ── 测试 fn main() the qui[26;2H[0;38;5;195m12[26;5H⏺ Read ✻[26;14H思考中 residue 中文输出 residue[0m     [29;19H6[7;2H[0;38;5;62m35[7;5Hfn main() 中文输出 表格对齐 测试 表格对齐 the[29;19H[0m7[1;1H[0;38;5;20mA33[1;5H⏺ Read 分析代码 表格对齐 ✻ 思考中
+[0;38;5;27mA[2;3H0[2;5H⏺ Read ──[2;15H⏺ Read[2;22H表格对齐[2;31H✻ 思考中[0m          
+[0;38;5;34mA00[3;5H⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m 
+[0;38;5;41mA58[4;5H中文输出 表格对齐 表格对齐 分析代码 表格对齐 
+[0;38;5;48mA04[5;5H分析代码[5;14H── the quick brown[5;34Hox the quick bro
+[0;38;5;55mA34[6;5H分析代码 the quick[6;24Hbrown fox residue 测试 the
+[0;38;5;62mA47[7;5H✻ 思考中 residue 测试 ── 测试 分析代码 ✻ 思考
+[0;38;5;69mA[8;3H1[8;5H表格对齐 ✻ 思考中 ⏺[8;25HRead 中文输出 ✻ 思考中 ──
+[0;38;5;76mA27[9;5H表格对齐 分析代码 测试 分析代码[0m             
+[0;38;5;83mA56[10;5H── residue[10;16H分析代码 中文输出
+[0;38;5;153mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read 
+[0;38;5;160mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Rea
+[0;38;5;167mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;174mA29 the quick brown fox 表格对齐 fn main() fn main
+[0;38;5;181mA28 ✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residue
+[0;38;5;188mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中
+[0;38;5;195mA37 分析代码 fn main() 测试 fn main() 表格对齐 ⏺ R
+[0;38;5;202mA10 测试 ✻ 思考中 中文输出 ✻ 思考中 ⏺ Read the qui
+[0;38;5;209mA49 residue 中文输出 fn main() ✻ 思考中
+[0;38;5;216mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;23mA38 ✻ 思考中 分析代码 表格对齐 fn main() 测试 ⏺ Re
+[0;38;5;30mA35 the quick brown fox 表格对齐 ──[0m              
+[0;38;5;37mA46 表格对齐 表格对齐[0m                            
+[0;38;5;44mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;51mA13 ── 分析代码 分析代码 ✻ 思考中
+[0;38;5;58mA29 the quick brown fox 表格对齐 fn main() fn main
+[0;38;5;65mA45 ⏺ Read fn main() fn main() 表格对齐 residue 中
+[29;3H[0mA[29;19H8[30;21HA[10;33H[0;38;5;83m residue ⏺ Read 
+[0;38;5;90mA47 ✻ 思考中 residue 测试 ── 测试 分析代码 ✻ 思考[0m 
+[0;38;5;97mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;104mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;111mA15 ✻ 思考中 ✻ 思考中 residue the quick brown fox[0m 
+[0;38;5;118mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;125mA18 the quick brown fox 表格对齐 the quick brown 
+[0;38;5;132mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;139mA21 表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ──[0m 
+[0;38;5;146mA31 fn main() ⏺ Read 测试[0m              
+[0;38;5;153mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read[0m 
+[0;38;5;160mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;167mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 
+[0;38;5;174mA29 the quick brown fox 表格对齐 fn main() fn mai
+[0;38;5;181mA28 ✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residu[0m 
+[0;38;5;188mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中
+[0;38;5;195mA15 ✻ 思考中 ✻ 思考中 residue the quick brown fox[0m 
+[0;38;5;202mA10 测试 ✻ 思考中 中文输出 ✻ 思考中 ⏺ Read the qu[0m 
+[29;18H70[5;3H[0;38;5;48m8[5;5H── 中文输出[5;17H表格对齐 fn main() residue[0m       [8;2H[0;38;5;69m39[8;5H分析代码[8;14H分析代码[8;30H── ⏺ Read ── fn main[10;2H[0;38;5;83m27[10;5H表格对齐 分析代码 测试 分析代码[0m             [19;2H[0;38;5;146m43[19;5H──[19;8H表格对齐[19;17Hthe quick brown fox 分析代码 resi[21;2H[0;38;5;160m17[21;5H测试 ── 表格对齐 residu[21;30H── ──[0m               [29;19H6[8;2H[0;38;5;69m46[8;5H表格对齐[8;14H表格对齐[0m                            [9;2H[0;38;5;76m54[9;5H中文输出[9;14H── ✻ 思考中 the quick brown fox ⏺ Re[29;19H[0m8[5;2H[0;38;5;48m1[5;5Hthe quick brown fox 表格对齐 the quick brown [9;2H[0;38;5;76m01[9;5Hfn main() ⏺[9;17HRead[0m                             [14;2H[0;38;5;111m20[14;5H中文输出[14;14Hthe quick brown fox fn main() the qu[15;2H[0;38;5;118m1[15;5H── fn main() 分析代码 the quick brown fox fn [16;2H[0;38;5;125m43[16;5H── 表格对齐 the[16;21Hquick brown fox 分析代码 resi[27;2H[0;38;5;202m47[27;5H✻ 思考中 residue 测试 ──[27;30H测试 分析代码[27;44H✻ 思考[29;18H[0m84[15;2H[0;38;5;118m49[15;5Hresidue 中文输出 fn main() ✻ 思考中[0m          [29;19H5[11;2H[0;38;5;90m52[11;5H分析代码[11;14H中文输出 表格对齐 the quick brown fo[15;2H[0;38;5;118m10[15;5H测试 ✻ 思考中 中文输出 ✻ 思考中 ⏺ Read the qu[19;2H[0;38;5;146m28[19;5H✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residu[20;2H[0;38;5;153m2[20;5H分析代码[20;14H✻ 思考中 the quick brown[20;39Hfox 中文输[0m [23;2H[0;38;5;174m11[23;5H── 分析代码 ── ✻ 思考中 测试[0m                 [29;18H90[18;2H[0;38;5;139m34[18;5H分析代码[18;14Hthe quick brown[18;30Hfox residue 测试 the[29;19H[0m1[12;2H[0;38;5;97m03[12;5H── ── 测试 中文输出 ⏺ R[12;29Had 测试[0m              [13;2H[0;38;5;104m43[13;5H── 表格对齐[13;17Hthe quick brown[13;33Hfox 分析代码 resi[19;2H[0;38;5;146m56[19;5H── residue 分析代码[19;25H中文输出 residue ⏺[19;44HR[19;46Had [0m [20;2H[0;38;5;153m18[20;5Hthe quick brown fox 表格对齐 the quick brown [21;2H[0;38;5;160m05[21;5H── ⏺[21;10HRead ⏺ Read[21;22H测试 测试 the quick brown fo[22;3H[0;38;5;167m5[22;5H⏺ Read fn main() fn main() 表格对齐 residue[29;19H[0m7[19;2H[0;38;5;146m24[19;5H⏺ Read 分析代码 中文输出[0m                    [29;19H8[2;2H[0;38;5;27m35[2;5Hthe quick[2;15Hbrown fox 表格对齐 ──[0m   [3;2H[0;38;5;34m15[3;5H✻[3;7H思考中 ✻ 思考中 residue[3;31Hthe quick brown fox[5;2H[0;38;5;48m52[5;5H分析代码 中文输出 表格对齐 the quick brown fo[18;3H[0;38;5;139m7[18;14Hfn main()[18;24H测试 fn main() 表格对齐 ⏺ [20;2H[0;38;5;153m46[20;5H表格对齐 表格对齐[0m                            [21;3H[0;38;5;160m1[21;5Hfn[21;8Hmain()[21;21H[0m                             [29;17H204[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;83mB44 ⏺ Read 表格对齐 测试 fn main() residue[0m        
+[0;38;5;90mB19 测试 the quick brown fox 表格对齐 fn main() ⏺ 
+[0;38;5;97mB47 分析代码 residue ⏺ Read the quick brown fox 中
+[0;38;5;104mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Rea
+[0;38;5;111mB54 ── 测试 ⏺ Read[0m                                
+[0;38;5;118mB26 residue ── ⏺ Read 中文输出 测试 表格对齐 测试 
+[0;38;5;125mB32 分析代码 fn main()[0m                            
+[1;1H[0;38;5;20mB54 ── 测试 ⏺ Read[0m                        
+[0;38;5;27mB35 fn main() 中文输出 表格对齐 测试 表格对齐 the[0m 
+[0;38;5;34mB30 分析代码 the quick brown fox[0m                  
+[0;38;5;41mB01 ── fn main() ✻ 思考中[0m                         
+[0;38;5;48mB36 ✻ 思考中 ✻ 思考中 fn main() fn main() residue
+[0;38;5;55mB32 分析代码 fn main()[0m                            
+[0;38;5;62mB35 fn main() 中文输出 表格对齐 测试 表格对齐 the
+[0;38;5;69mB55 测试 分析代码[0m                                 
+[0;38;5;76mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;83mB44 ⏺ Read 表格对齐 测试 fn main() residue[0m        
+[0;38;5;90mB19 测试 the quick brown fox 表格对齐 fn main() ⏺[0m 
+[0;38;5;97mB34 ── ── 分析代码 ⏺ Read fn main() ✻ 思考中[0m      
+[0;38;5;104mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[0m 
+[0;38;5;111mB54 ── 测试 ⏺ Read[0m                                
+[0;38;5;118mB26 residue ── ⏺ Read 中文输出 测试 表格对齐 测试[0m 
+[0;38;5;125mB32 分析代码 fn main()[0m                            
+[0;38;5;132mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue[0m      
+[0;38;5;139mB59 测试 测试 ── fn main() ⏺ Read fn main() fn ma[0m 
+[0;38;5;146mB43 fn main() 分析代码 中文输出 测试 表格对齐 ✻ [0m  
+[0;38;5;153mB59 测试 测试 ── fn main() ⏺ Read fn main() fn ma[0m 
+[0;38;5;160mB58 中文输出 ⏺ Read ⏺ Read the quick brown fox ✻ [0m 
+[0;38;5;167mB42 ⏺ Read 分析代码 fn main() the quick brown fox[0m 
+[0;38;5;174mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;181mB18 ✻ 思考中 ⏺ Read[0m                               
+[0;38;5;188mB09 residue ✻ 思考中 分析代码 分析代码 ✻ 思考中 [0m  
+[0;38;5;195mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue[0m      
+[0;38;5;202mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 t[0m 
+──────────────────────────────────────────────────
+[0;1m> [0mB 输入框 tick=209                               
+  ? for shortcuts · B                             [29;20H[21;3H[0;38;5;160m0[21;14H表格对齐[21;23H中文输出[21;32Hfn main() residue[29;18H[0m10[23;2H[0;38;5;174m59[23;10H测试 ──[23;18Hfn main() ⏺ Read fn main() fn ma[29;19H[0m1[14;3H[0;38;5;111m7[14;5H⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[29;19H[0m2[6;2H[0;38;5;55m17[6;5H表格对齐[6;14H测试 ✻ 思考中 ✻ 思考中 测试 ──[7;2H[0;38;5;62m11[7;5H表格对齐 中文输出[0m                            [10;2H[0;38;5;83m35[10;5Hfn m[10;10Hin() 中文输出 表格对齐 测试 表格对齐 the[21;2H[0;38;5;160m11[21;5H表格对齐[21;14H中文输出[0m                            [25;2H[0;38;5;188m43[25;5Hfn main()[25;15H分析代码 中文输出 测试 表格对齐 ✻[29;19H[0m8[3;2H[0;38;5;34m42[3;5H⏺ Read 分析代码 fn[3;24Hmain() the quick brown fox[6;2H[0;38;5;55m59[6;5H测试 测试 ── fn[6;21Hmain()[6;28H⏺[6;30HRead fn main() fn ma[16;2H[0;38;5;125m16[16;5H── ✻ 思考中[16;17H测试 表格对齐 fn main() residue ─[17;2H[0;38;5;132m03[17;5H表格对齐[17;14H表格对齐[0m                       [22;2H[0;38;5;167m29[22;5Hthe quick brown[22;22Hox ── 测试 fn main() the[22;47Hqui[29;18H[0m24[9;2H[0;38;5;76m4[9;5H⏺ Read 表格对齐 测试 fn main() residu[9;43H[0m     [12;2H[0;38;5;97m26[12;5Hresidue ── ⏺ Read 中文输出 测试[12;37H表格对齐 测试[19;3H[0;38;5;146m7[19;5H分析代码 residue ⏺[19;24HRead the[19;33Hquick brown fox[21;2H[0;38;5;160m03[21;14H表格对齐[26;3H[0;38;5;195m5[26;12Hfn main() ⏺ Read[26;29H⏺ Read 中文输出 测试 [29;18H[0m30[2;2H[0;38;5;27m19[2;5H测试 the quick brown fox 表格对齐 fn main() ⏺[6;2H[0;38;5;55m16[6;5H── ✻[6;10H思考中 测试 表格对齐 fn main() residue ─[8;2H[0;38;5;69m11[8;5H表格对齐 中文输出[10;2H[0;38;5;83m06[10;15H分析代码[10;24Hthe quick brown fox 分析代[29;19H[0m6[7;2H[0;38;5;62m06[7;5Hfn main() 分析代码 the quick brown fox 分析代[14;2H[0;38;5;111m06[14;5Hfn m[14;10Hin() 分析代码 the quick brown fox 分析代[22;2H[0;38;5;167m07[22;5H⏺ Read 表格对齐[22;21H✻ 思考中 分析代码 residu[22;46H[0m    [23;2H[0;38;5;174m2[23;5Hthe quick[23;15Hbrow[23;21Hfox ──[23;28H测试 fn main() the qui[26;2H[0;38;5;195m39[26;5H✻[26;7H思考中 res[26;18Hdue[26;22H──[0m                          [29;18H42[5;2H[0;38;5;48m25[5;5H表格对齐[5;14Hresidue 测试 fn main() ── ✻ 思考中 t[29;19H[0m3[1;1H[0;38;5;20mA4[1;5H表格对齐 分析代码 residue 表格对齐 测试
+[0;38;5;27mA40[2;5H分析代码[2;14H── fn[2;20Hmain() ✻ 思考中 ──[0m            
+[0;38;5;34mA09[3;5Hfn m[3;10Hin() 中文输出[3;24H分析代码 表格对齐 中文输出
+[0;38;5;41mA14[4;18H分析代码 the quick brown fox fn 
+[0;38;5;48mA51[5;5H⏺ Read fn ma[5;18Hn()[5;22Hresidue[5;30H中文输出 fn[5;42Hmain()[5;49Hr
+[0;38;5;55mA24[6;5H⏺ Read 分析代码 中文输出[0m                     
+[0;38;5;62mA48[7;5H中文输出 ⏺ Read fn[7;24Hmain() 表格对齐[7;40H表格对齐 [0m 
+[0;38;5;69mA00[8;5H⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中
+[0;38;5;76mA08[9;5H── 中文输出 表格对齐
+[0;38;5;83mA55[10;15Hresidue the quick brown fox[0m        
+[0;38;5;90mA3[11;5H分析代码[11;14H分析代码 ⏺ Read[11;30H── ⏺ Read ── fn main
+[0;38;5;97mA03[12;5H── ── 测试[12;16H中文输出 ⏺ Read[12;36H[0m              
+[0;38;5;104mA01[13;5Hfn m[13;10Hin() ⏺ R[13;19Had[0m                             
+[0;38;5;111mA4[14;5H表格对齐 表格对齐[0m                            
+[0;38;5;118mA10[15;5H测试 ✻ 思考中 中文输出 ✻ 思考中[15;37H⏺ Read the qu
+[0;38;5;125mA43[16;8H表格对齐[16;17Hthe quick brown fox 分析代码 r[16;48Hsi
+[0;38;5;132mA44[17;14H分析代码 residue 表格对齐 测试
+[0;38;5;139mA4[18;5Hresidue 中文输出 fn main() ✻ 思考中[0m          
+[0;38;5;146mA08[19;5H── 中文输出 表格对齐 fn[19;29Hmain() residue[0m      
+[0;38;5;153mA45[20;5H⏺ Read fn[20;15Hmain() fn main() 表格对齐 residue [0m 
+[0;38;5;160mA24[21;5H⏺ Read 分析代码 中文输出
+[0;38;5;167mA45[22;12Hfn main() fn main() 表格对齐 residue 
+[0;38;5;174mA11[23;5H── 分析代码 ── ✻ 思考中 测试[0m                 
+[0;38;5;181mA25[24;5H── residue[24;16Hthe quick brown fox ⏺ Read ──
+[0;38;5;188mA59[25;15Hresidue ⏺ Read 分析代码 ── 表格对齐
+[0;38;5;195mA[26;3H0[26;5Hresidue fn main() [26;24H─ ── ✻ 思考中 中文输出 测
+[0;38;5;202mA47[27;5H✻ 思考中[27;27H──[27;30H测试 分析代码 ✻ 思考[29;3H[0mA[29;19H7[30;21HA[29;20H[10;2H[0;38;5;83m0[10;5H──[10;8H⏺ Read[10;15H⏺ Read 测试[10;27H测试 the quick brown fo[17;3H[0;38;5;132m0[17;5H分析代码[17;14H── fn main() ✻ 思考中 ──[0m      [20;2H[0;38;5;153m22[20;5H分析代码 ✻ 思考中 the quick brown fox 中文输[25;2H[0;38;5;188m41[25;5H测试 ✻ 思考中 th[25;23Hquick brown fox[0m            [29;18H52[1;2H[0;38;5;20m06[1;5H测试 ✻ 思考中 residue th[1;31Hquick brown fox res[9;3H[0;38;5;76m7[9;5Hresidue 测试 分析代码 ── 分析代码 ⏺ R[9;43Had ⏺ Re[15;2H[0;38;5;118m52[15;5H分析代码 中文输出 表格对齐 the quick brown[15;48Hfo[19;3H[0;38;5;146m3[19;8H── 测试 中文输出 ⏺ Read 测试[0m       [26;2H[0;38;5;195m17[26;5H测试 ──[26;13H表格对齐 residue ── ──[0m              [29;19H8[6;2H[0;38;5;55m18[6;5Hthe quick brown[6;21Hfox 表格对齐 the quick brown [29;19H[0m9[1;2H[0;38;5;20m34[1;5H分析代码 the quick brown fox residue 测试[1;47Hthe[13;3H[0;38;5;104m0[13;5H⏺ Re[13;10Hd ──[13;21H 表格对齐 ✻ 思考中[17;2H[0;38;5;132m57[17;5Hresidue 测试 ── ✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ [19;2H[0;38;5;146m38[19;5H✻ 思考中 分析代码 表格对齐[19;32Hfn main() 测试 ⏺ R[23;2H[0;38;5;174m49[23;5Hresidue 中文输出[23;22Hfn main() ✻ 思考中[29;18H[0m64[14;2H[0;38;5;111m08[14;5H── 中文输出 表格对齐 fn main() residue[29;19H[0m5[4;3H[0;38;5;41m2[4;5H分析代码 ✻ 思考中[0m                            [13;2H[0;38;5;104m14[13;5H── fn main() 分析代码 the[13;31Hquick brown fox fn [17;2H[0;38;5;132m32[17;5Hthe q[17;11Hick brown[17;21Hfox residue fn main() residue[19;2H[0;38;5;146m41[19;5H测试 ✻ 思考中 the[19;23Hquick brow[19;35Hfox[0m            [20;2H[0;38;5;153m56[20;5H── residue[20;16H分析代码 中文输出 [20;35Hesidue ⏺ Read [27;2H[0;38;5;202m56[27;5H── residue 分析代码 中文输出 residue ⏺[27;44HRead [0m [29;18H71[10;2H[0;38;5;83m53[10;8H── residue the quick brown fox 表格对齐[10;48H中[29;19H[0m2[12;3H[0;38;5;97m2[12;5H中文输出 ⏺[12;16HRead 中文输出 分析代码 ✻ 思考中 re[15;2H[0;38;5;118m26[15;14H分析代码[15;23H✻ 思考中[15;32H分析代码 ⏺ Read[15;48Hth[16;3H[0;38;5;125m1[16;5H测试 ✻ 思考中 the quick brown fox[0m            [21;2H[0;38;5;160m39[21;5H分析代码 分析代码 ⏺ Read ── ⏺ Read ── fn main[22;2H[0;38;5;167m19[22;12H测试 表格对齐 ⏺ Read 表格对齐[0m        [29;19H8[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;83mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Rea
+[0;38;5;90mB44 ⏺ Read 表格对齐 测试 fn main() residue[0m        
+[0;38;5;97mB39 ✻ 思考中 residue ──[0m                           
+[0;38;5;104mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;111mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;118mB20 residue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the qu
+[0;38;5;125mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 分
+[0m [0;38;5;132m17 表格对齐 测试 ✻ 思考中 ✻ 思考中 测试 ──[0m       
+[0;38;5;139mB59 测试 测试 ── fn main() ⏺ Read fn main() fn mai
+[0;38;5;146mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 分
+[0m [0;38;5;153m24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;160mB03 表格对齐 表格对齐[0m                             
+[0;38;5;167mB40 residue fn main() the quick brown fox ✻ 思考中
+[0;38;5;174mB02 测试 the quick brown fox[0m                      
+[0;38;5;181mB18 ✻ 思考中 ⏺ Read[0m                               
+[0;38;5;188mB01 ── fn main() ✻ 思考中[0m                         
+[0;38;5;195mB16 ── ✻ 思考中 测试 表格对齐 fn main() residue ──
+[0;38;5;202mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 th
+[0;38;5;209mB53 表格对齐 ⏺ Read ── residue ✻ 思考中 residue[0m   
+[0;38;5;216mB19 测试 the quick brown fox 表格对齐 fn main() ⏺ 
+[0;38;5;23mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;30mB46 the quick brown fox ── ✻ 思考中 residue the qu
+[0;38;5;37mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue[0m      
+[0;38;5;44mB30 分析代码 the quick brown fox[0m                  
+[0;38;5;51mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 分
+[0m [0;38;5;58m58 中文输出 ⏺ Read ⏺ Read the quick brown fox ✻ 思
+[0m [0;38;5;65m52 the quick brown fox ⏺ Read fn main() ✻ 思考中 
+[0m──────────────────────────────────────────────────
+[0;1m> [0mB 输入框 tick=285                               
+  ? for shortcuts · B                             [29;20H[1;1H[0;38;5;20mB08 表格对齐 ── 测试 fn main()[0m                    
+[0;38;5;27mB11 表格对齐 中文输出[0m                     
+[0;38;5;34mB51 分析代码 the quick brown fox ✻ 思考中
+[0;38;5;41mB58 中文输出 ⏺ Read ⏺ Read the quick brown fox ✻ 
+[0;38;5;48mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 t
+[0;38;5;55mB40 residue fn main() the quick brown fox ✻ 思考[0m  
+[0;38;5;62mB06 fn main() 分析代码 the quick brown fox 分析代[0m 
+[0;38;5;69mB54 ── 测试 ⏺ Read[0m                         
+[0;38;5;76mB31 the quick brown fox the quick brown fox 分析[0m  
+[0;38;5;83mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[0m 
+[0;38;5;90mB44 ⏺ Read 表格对齐 测试 fn main() residue[0m     
+[0;38;5;97mB39 ✻ 思考中 residue ──
+[0;38;5;104mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;111mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue
+[0;38;5;118mB20 residue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the q
+[0;38;5;125mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 
+[0;38;5;132mB17 表格对齐 测试 ✻ 思考中 ✻ 思考中 测试 ──[0m       
+[0;38;5;139mB59 测试 测试 ── fn main() ⏺ Read fn main() fn ma[0m 
+[0;38;5;146mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 
+[0;38;5;153mB24 测试 residue 测试 分析代码 表格对齐 residue[0m   
+[0;38;5;160mB03 表格对齐 表格对齐[0m                          
+[0;38;5;167mB40 residue fn main() the quick brown fox ✻ 思考[0m  
+[0;38;5;174mB02 测试 the quick brown fox[0m                
+[0;38;5;181mB18 ✻ 思考中 ⏺ Read[0m             
+[0;38;5;188mB01 ── fn main() ✻ 思考中[0m                         
+[0;38;5;195mB16 ── ✻ 思考中 测试 表格对齐 fn main() residue ─[0m 
+[0;38;5;202mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 t[0m 
+[29;20H[20;2H[0;38;5;153m41[20;5Hfn main() 表格对齐[0m                         [29;19H6[18;2H[0;38;5;139m46[18;5Hthe quick[18;15Hbrow[18;21Hfox ──[18;28H✻[18;30H思考中 res[18;41Hdue[18;45Hthe q[29;19H[0m7[5;2H[0;38;5;48m40[5;5Hresidue fn main() the[5;27Hquick brown fox ✻ 思考[0m [29;19H8[27;2H[0;38;5;202m09[27;5Hresidue ✻ 思考中[27;22H分析代码 分析代码[27;49H[0m [29;19H9[6;2H[0;38;5;55m09[6;13H✻ 思考中 分析代码 分析代码 ✻ 思考中 [18;2H[0;38;5;139m14[18;25H✻ 思考中 the qu[18;41Hck brown [29;18H[0m92[2;3H[0;38;5;27m2[2;5H⏺ Read ✻[2;14H思考中 residue 中文输出 residue[29;19H[0m3[12;2H[0;38;5;97m2[12;5Hthe quick brown fox ── 测试 fn main() the qui[29;19H[0m4[27;2H[0;38;5;202m51[27;5H分析代码 the quick brown fox ✻ 思考中[0m       [29;19H5[1;2H[0;38;5;20m39[1;5H✻ 思考中[1;14Hresidue[1;22H──[0m       [5;2H[0;38;5;48m57[5;5H⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[12;2H[0;38;5;97m43[12;5Hfn main()[12;15H分析代码 中文输出[12;33H测试 表格对齐[12;47H✻ [0m [26;2H[0;38;5;195m25[26;5H表格对齐 residue[26;22H测试 fn main() ── ✻ 思考中[26;49Ht[29;17H[0m300[13;2H[0;38;5;104m19[13;10Hthe q[13;16Hick brown fox 表格对齐 fn ma[13;45Hn() ⏺[20;3H[0;38;5;153m7[20;5H分析代码 residue ⏺ Read the quick brown fox [22;2H[0;38;5;167m03[22;5H表格对齐 表格对齐[0m                           [26;2H[0;38;5;195m00[26;5H✻ 思考中[26;14H中文输出 the[26;27Hquick brown fox 分析代[0m [27;2H[0;38;5;202m47[27;14Hresid[27;20He ⏺[27;24HRead the quick brown fox [29;19H[0m6[9;2H[0;38;5;76m57[9;5H⏺ Read residue 分析代码[9;29H── 测试 表格对齐 ⏺ Re[23;2H[0;38;5;174m18[23;5H✻ 思考中[23;14H⏺ Read[0m         [29;19H8[6;3H[0;38;5;55m8[6;5H表格对齐 ── 测试[6;22Hfn main()[0m                  [29;19H9[23;2H[0;38;5;174m32[23;5H分析代码[23;14Hfn m[23;19Hin()[29;18H[0m10[15;2H[0;38;5;118m31[15;5Hthe q[15;11Hick[15;15Hbrown fox the[15;29Hquick brown fox[15;45H分析[0m [29;19H1[24;2H[0;38;5;181m47[24;5H分析代码[24;14Hresidue ⏺ Read the quick brown fox [29;19H[0m2[22;2H[0;38;5;167m52[22;5Hthe quick brown fox ⏺ Read fn main() ✻ 思考中[29;19H[0m3[26;3H[0;38;5;195m3[26;5H表格对齐[26;14H表格对齐[0m                           [29;19H4[4;2H[0;38;5;41m09[4;5Hresidue ✻ 思考中 分析代码 分析代码 ✻ 思考中 [0m [6;2H[0;38;5;55m1[6;5H✻ 思考中[6;14H⏺ Read[0m           [8;3H[0;38;5;69m9[8;5H测试 测试[8;15H── fn main() ⏺ Read fn main() fn ma[14;2H[0;38;5;111m12[14;12H✻ 思考中[14;21Hresidue 中文输出 residue[0m [21;3H[0;38;5;160m5[21;14H中文输出 中文输出 中文输出[29;19H[0m9[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;20mA57 residue 测试 ── ✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ [0m 
+[0;38;5;27mA32 the quick brown fox residue fn main() residue[0m 
+[0;38;5;34mA47 ✻ 思考中 residue 测试 ── 测试 分析代码 ✻ 思考[0m 
+[0;38;5;41mA12 分析代码 ✻ 思考中[0m                             
+[0;38;5;48mA28 ✻ 思考中 中文输出 ⏺ Read ✻ 思考中 测试 residu[0m 
+[0;38;5;55mA18 the quick brown fox 表格对齐 the quick brown [0m 
+[0;38;5;62mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 [0m  
+[0;38;5;69mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;76mA07 residue 测试 分析代码 ── 分析代码 ⏺ Read ⏺ Re[0m 
+[0;38;5;83mA01 fn main() ⏺ Read[0m                              
+[0;38;5;90mA10 测试 ✻ 思考中 中文输出 ✻ 思考中 ⏺ Read the qu[0m 
+[0;38;5;97mA06 测试 ✻ 思考中 residue the quick brown fox res[0m 
+[0;38;5;104mA14 ── fn main() 分析代码 the quick brown fox fn [0m 
+[0;38;5;111mA34 分析代码 the quick brown fox residue 测试 the[0m 
+[0;38;5;118mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read th[0m 
+[0;38;5;125mA41 测试 ✻ 思考中 the quick brown fox[0m             
+[0;38;5;132mA51 ⏺ Read fn main() residue 中文输出 fn main() r[0m 
+[0;38;5;139mA27 表格对齐 分析代码 测试 分析代码[0m               
+[0;38;5;146mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;153mA36 表格对齐 fn main() 测试 ── 表格对齐[0m           
+[0;38;5;160mA14 ── fn main() 分析代码 the quick brown fox fn [0m 
+[0;38;5;167mA19 ⏺ Read 测试 表格对齐 ⏺ Read 表格对齐[0m          
+[0;38;5;174mA12 分析代码 ✻ 思考中[0m                             
+[0;38;5;181mA22 分析代码 ✻ 思考中 the quick brown fox 中文输[0m  
+[0;38;5;188mA27 表格对齐 分析代码 测试 分析代码[0m               
+[0;38;5;195mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;202mA15 ✻ 思考中 ✻ 思考中 residue the quick brown fox[0m 
+──────────────────────────────────────────────────
+[0;1m> [0mA 输入框 tick=325                               
+  ? for shortcuts · A                             [29;20H[3;2H[0;38;5;34m04[3;5H分析代码[3;14H── the quick[3;27Hbrown fox the quick bro[29;19H[0m6[27;2H[0;38;5;202m3[27;5Hthe quick brown fox 表格对齐 ──[0m              [29;19H7[16;2H[0;38;5;125m3[16;5Hfn main() ⏺ Read 测试[0m            [29;19H8[6;2H[0;38;5;55m42[6;5H表格对齐 the quick brown fox[6;34H测试 测试[6;44H⏺ Read[7;2H[0;38;5;62m57[7;5Hresidue 测试 ──[7;21H✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ [12;2H[0;38;5;97m41[12;19Hthe q[12;25Hick brown fox[0m            [16;3H[0;38;5;125m8[16;5H✻ 思考中 分析代码 表格对齐 fn main() 测试 ⏺ R[24;2H[0;38;5;181m07[24;5Hresidue 测试 分析代码[24;27H── 分析代码[24;39H⏺ Read ⏺ Re[29;18H[0m33[18;2H[0;38;5;139m15[18;5H✻ 思考中[18;14H✻ 思考中[18;23Hresidue the quick brown fox[29;19H[0m4[3;3H[0;38;5;34m7[3;5Hresidue 测试 分析代码[3;27H── 分析代码 ⏺[3;41HRead ⏺ Re[29;19H[0m5[4;2H[0;38;5;41m2[4;22H the quick brown fox 中文输[18;2H[0;38;5;139m29[18;5Hthe quick brown fox 表格对齐 fn main() f[18;47Hmai[19;2H[0;38;5;146m5[19;5H⏺ Re[19;10Hd fn[19;15Hmain()[19;22Hresidue 中文输出 fn main() r[21;2H[0;38;5;160m07[21;5Hresidue 测试[21;27H── 分析代码 ⏺ Read ⏺ Re[22;2H[0;38;5;167m47[22;5H✻[22;7H思考中 residue 测试 ── 测试 分析代码 ✻ 思考[27;2H[0;38;5;202m06[27;5H测试 ✻ 思考中 residue the quick brown fox res[29;18H[0m41[4;2H[0;38;5;41m18[4;5Hthe quick brown fox 表格对齐 the quick brown [5;2H[0;38;5;48m12[5;5H分析代码[5;14H✻ 思考中[0m                            [11;2H[0;38;5;90m04[11;5H分析代码 ── the quick brown fox[11;37Hthe quick bro[14;3H[0;38;5;111m5[14;5Hthe quick brown fox 表格对齐[14;34H──[0m              [20;2H[0;38;5;153m20[20;5H中文输出[20;14Hthe quick[20;24Hbrown fox fn main() the qu[21;2H[0;38;5;160m49[21;13H中文输出 fn main() ✻ 思考中[0m          [29;19H7[4;2H[0;38;5;41m00[4;5H⏺ Read ──[4;15H⏺ Read 表格对齐 ✻ 思考中[0m           [5;2H[0;38;5;48m08[5;5H── 中文输出 表格对齐 fn main() residue[11;3H[0;38;5;90m0[11;5H⏺ Read ── ⏺[11;17HRead 表格对齐 ✻[11;33H思考中[0m           [17;3H[0;38;5;132m2[17;5H分析代码 中文输出 表格对齐 the quick[17;42Hbrown fo[19;2H[0;38;5;146m29[19;5Hthe quick[19;15Hbrown fox 表格对齐 fn mai[19;41H() f[19;46H mai[25;2H[0;38;5;188m0[25;5Hresidue 测试 分析代码 ── 分析代码 ⏺ Read ⏺ Re[29;18H[0m53[1;2H[0;38;5;20m32[1;5Hthe q[1;11Hick brown[1;21Hfox residue fn main() residue[4;2H[0;38;5;41m21[4;5H表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ──[12;2H[0;38;5;97m57[12;5Hresidue 测试 ── ✻[12;23H思考中 ✻ 思考中 ✻ 思考中 ✻ [13;2H[0;38;5;104m37[13;5H分析代码 fn main() 测试 fn main() 表格对齐 ⏺[18;2H[0;38;5;139m56[18;5H── res[18;12Hdue 分析代码[18;25H中文输出[18;34Hresidue ⏺[18;44HRead [0m [29;19H8[1;1H[0;38;5;83mB27 分析代码 表格对齐 表格对齐 ──[0m                
+[0;38;5;90mB44 ⏺ Read 表格对齐 测试 fn main() residue[0m       
+[0;38;5;97mB06 fn main() 分析代码 the quick brown fox 分析代码
+[0m [0;38;5;104m19 测试 the quick brown fox 表格对齐 fn main() ⏺ 
+[0;38;5;111mB49 residue 表格对齐 分析代码[0m             
+[0;38;5;118mB00 ✻ 思考中 中文输出 the quick brown fox 分析代码
+[0;38;5;125mB02 测试 the quick brown fox[0m                     
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[7;50H[1;1H[0;38;5;20mB39 ✻ 思考中 residue ──[0m          
+[0;38;5;27mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue
+[0;38;5;34mB34 ── ── 分析代码 ⏺ Read fn main() ✻ 思考中[0m      
+[0;38;5;41mB03 表格对齐 表格对齐[0m                             
+[0;38;5;48mB01 ── fn main() ✻ 思考中[0m    
+[0;38;5;55mB06 fn main() 分析代码 the quick brown fox 分析代[0m 
+[0;38;5;62mB06 fn main() 分析代码 the quick brown fox 分析代
+[0;38;5;69mB59 测试 测试 ── fn main() ⏺ Read fn main() fn ma[0m 
+[0;38;5;76mB43 fn main() 分析代码 中文输出 测试 表格对齐 ✻ [0m  
+[0;38;5;83mB27 分析代码 表格对齐 表格对齐 ──[0m                 
+[0;38;5;90mB06 fn main() 分析代码 the quick brown fox 分析代[0m 
+[0;38;5;97mB06 fn main() 分析代码 the quick brown fox 分析代[0m 
+[0;38;5;104mB19 测试 the quick brown fox 表格对齐 fn main() ⏺[0m 
+[0;38;5;111mB49 residue 表格对齐 分析代码[0m                     
+[0;38;5;118mB35 fn main() 中文输出 表格对齐 测试 表格对齐 the[0m 
+[0;38;5;125mB02 测试 the quick brown fox[0m                      
+[0;38;5;132mB30 分析代码 the quick brown fox[0m                  
+[0;38;5;139mB33 ✻ 思考中 fn main() ⏺ Read residue[0m             
+[0;38;5;146mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;153mB26 residue ── ⏺ Read 中文输出 测试 表格对齐 测试[0m 
+[0;38;5;160mB32 分析代码 fn main()[0m                            
+[0;38;5;167mB51 分析代码 the quick brown fox ✻ 思考中[0m         
+[0;38;5;174mB27 分析代码 表格对齐 表格对齐 ──[0m                 
+[0;38;5;181mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;188mB52 the quick brown fox ⏺ Read fn main() ✻ 思考中[0m 
+[0;38;5;195mB03 表格对齐 表格对齐[0m                             
+[0;38;5;202mB19 测试 the quick brown fox 表格对齐 fn main() ⏺[0m 
+──────────────────────────────────────────────────
+[0;1m> [0mB 输入框 tick=368                               
+  ? for shortcuts · B                             [29;20H[2;3H[0;38;5;27m1[2;5H表格对齐[2;14H中文输出[0m                       [11;2H[0;38;5;90m48[11;5H✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 [15;3H[0;38;5;118m1[15;5Hthe quick[15;15Hbrown fox the quick brown fox 分析[0m [19;2H[0;38;5;146m21[19;5H分析代码 ✻ 思考中[19;23H✻ 思考中 中文输出[0m      [20;2H[0;38;5;153m50[20;5H中文输出 表格对齐[20;32Hfn main() residue [24;2H[0;38;5;181m4[24;5H分析代码 residue ⏺ Read the quick[24;39Hbrown fox [29;18H[0m74[9;2H[0;38;5;76m14[9;5Hthe quick[9;15Hbrown fox ✻ 思考中 the[9;38Hquick brown [11;2H[0;38;5;90m55[11;5H测试 分析代码[0m                                [15;2H[0;38;5;118m13[15;5Hresid[15;11He the quick brown[15;29Hfox fn mai[15;40H()[0m       [21;2H[0;38;5;160m1[21;5H⏺ Read ✻[21;14H思考中 residue 中文输出 residue[27;2H[0;38;5;202m3[27;5H✻ 思考中[27;14Hresidue ──[0m                          [29;19H9[8;2H[0;38;5;69m41[8;5Hfn main()[8;15H表格对齐[0m                           [9;2H[0;38;5;76m28[9;5H✻ 思考中 ── residue[0m                          [15;2H[0;38;5;118m41[15;5Hfn main() 表格对齐[0m                   [18;2H[0;38;5;139m05[18;5H表格对齐[18;14H中文输出 中文输出 中文输出[26;2H[0;38;5;195m20[26;5Hresidue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the q[27;2H[0;38;5;202m07[27;5H⏺[27;7HRead 表格对齐 ✻ 思考中 分析代码 residue[29;18H[0m85[21;2H[0;38;5;160m2[21;5Hthe quick brown[21;21Hfox 分析代码 ── ✻ 思考中 表格[29;19H[0m6[4;2H[0;38;5;41m3[4;5H✻ 思考中[4;14Hfn main() ⏺ Read residue[6;2H[0;38;5;55m21[6;5H分析代码 ✻ 思考中 ✻ 思考中 中文输出[0m          [12;2H[0;38;5;97m48[12;5H✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 [13;2H[0;38;5;104m35[13;5Hfn main() 中文输出 表格对齐 测试 表格对齐 the[17;2H[0;38;5;132m25[17;5H表格对齐[17;14Hresid[17;20He 测试 f[17;30Hmain() ── ✻ 思考中 t[29;18H[0m91[25;2H[0;38;5;188m08[25;5H表格对齐 ── 测试 fn[25;25Hmain()[0m                   [29;19H2[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;83mA46 表格对齐 表格对齐[0m                             
+[0;38;5;90mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;97mA57 residue 测试 ── ✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ 思
+[0m [0;38;5;104m37 分析代码 fn main() 测试 fn main() 表格对齐 ⏺ R
+[0;38;5;111mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Rea
+[0;38;5;118mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read the
+[0;38;5;125mA38 ✻ 思考中 分析代码 表格对齐 fn main() 测试 ⏺ Re
+[0;38;5;132mA52 分析代码 中文输出 表格对齐 the quick brown fox
+[0;38;5;139mA56 ── residue 分析代码 中文输出 residue ⏺ Read 中
+[0;38;5;146mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read 
+[0;38;5;153mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;160mA43 ── 表格对齐 the quick brown fox 分析代码 resid
+[0;38;5;167mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 表
+[0;38;5;174mA17 测试 ── 表格对齐 residue ── ──[0m                
+[0;38;5;181mA25 ── residue the quick brown fox ⏺ Read ──[0m      
+[0;38;5;188mA22 分析代码 ✻ 思考中 the quick brown fox 中文输出
+[0;38;5;195mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;202mA22 分析代码 ✻ 思考中 the quick brown fox 中文输出
+[0;38;5;209mA46 表格对齐 表格对齐[0m                             
+[0;38;5;216mA16 residue residue ⏺ Read 中文输出 ✻ 思考中 中文输
+[0m [0;38;5;23m54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Rea
+[0;38;5;30mA04 分析代码 ── the quick brown fox the quick brow
+[0;38;5;37mA34 分析代码 the quick brown fox residue 测试 the 
+[0;38;5;44mA19 ⏺ Read 测试 表格对齐 ⏺ Read 表格对齐[0m          
+[0;38;5;51mA49 residue 中文输出 fn main() ✻ 思考中[0m           
+[0;38;5;58mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;65mA40 分析代码 ── fn main() ✻ 思考中 ──[0m             
+──────────────────────────────────────────────────
+[0;1m> [0mA 输入框 tick=401                               
+  ? for shortcuts · A                             [29;20H[1;1H[0;38;5;20mA31 fn main() ⏺ Read 测试
+[0;38;5;27mA07 residue 测试 分析代码 ── 分析代码 ⏺ Read ⏺ Re
+[0;38;5;34mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read[0m 
+[0;38;5;41mA12 分析代码 ✻ 思考中[0m                             
+[0;38;5;48mA14 ── fn main() 分析代码 the quick brown fox fn [0m 
+[0;38;5;55mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read[0m 
+[0;38;5;62mA57 residue 测试 ── ✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ [0m 
+[0;38;5;69mA58 中文输出 表格对齐 表格对齐 分析代码 表格对齐 [0m 
+[0;38;5;76mA41 测试 ✻ 思考中 the quick brown fox[0m             
+[0;38;5;83mA46 表格对齐 表格对齐[0m                             
+[0;38;5;90mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中
+[0;38;5;97mA57 residue 测试 ── ✻ 思考中 ✻ 思考中 ✻ 思考中 ✻ [0m 
+[0;38;5;104mA37 分析代码 fn main() 测试 fn main() 表格对齐 ⏺ [0m 
+[0;38;5;111mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re
+[0;38;5;118mA26 分析代码 分析代码 ✻ 思考中 分析代码 ⏺ Read th
+[0;38;5;125mA09 fn main() 中文输出 分析代码 表格对齐 中文输出[0m 
+[0;38;5;132mA52 分析代码 中文输出 表格对齐 the quick brown fo
+[0;38;5;139mA56 ── residue 分析代码 中文输出 residue ⏺ Read [0m  
+[0;38;5;146mA42 表格对齐 the quick brown fox 测试 测试 ⏺ Read
+[0;38;5;153mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;160mA43 ── 表格对齐 the quick brown fox 分析代码 resi[0m 
+[0;38;5;167mA48 中文输出 ⏺ Read fn main() 表格对齐 表格对齐 [0m  
+[0;38;5;174mA17 测试 ── 表格对齐 residue ── ──[0m                
+[0;38;5;181mA25 ── residue the quick brown fox ⏺ Read ──
+[0;38;5;188mA22 分析代码 ✻ 思考中 the quick brown fox 中文输
+[0;38;5;195mA31 fn main() ⏺ Read 测试[0m             
+[0;38;5;202mA22 分析代码 ✻ 思考中 the quick brown fox 中文输[29;19H[0m2[20;2H[0;38;5;153m20[20;5H中文输出 the quick brown fox fn main() the qu[29;19H[0m3[20;3H[0;38;5;153m7[20;5H表格对齐[20;14H分析代码 测试 分析代码[0m              [29;19H4[6;2H[0;38;5;55m20[6;5H中文输出[6;34Hfn main()[6;44Hthe qu[29;19H[0m5[3;2H[0;38;5;34m38[3;5H✻ 思考中[3;14H分析代码 表格对齐 fn main() 测试 ⏺ R[9;2H[0;38;5;76m5[9;5H⏺ Read[9;12Hfn main() res[9;26Hdue 中文输出 fn main() r[18;2H[0;38;5;139m07[18;5Hresidue 测试 分析代码 ── 分析代码 ⏺ Read ⏺ Re[21;3H[0;38;5;160m9[21;5Hresidue 中文输出 fn main() ✻ 思考中[0m          [25;2H[0;38;5;188m46[25;5H表格对齐[25;14H表格对齐[0m                           [29;18H10[8;2H[0;38;5;69m04[8;5H分析代码[8;14H── the quick brown fox the[8;41Hquick bro[29;19H[0m1[4;2H[0;38;5;41m28[4;5H✻ 思考中[4;14H中文输出 ⏺ Read ✻ 思考中 测试 residu[8;2H[0;38;5;69m39[8;14H分析代码 ⏺ Read ──[8;33H⏺ Read ── fn main[9;2H[0;38;5;76m47[9;5H✻[9;7H思考中 res[9;18Hdue[9;22H测试 ──[9;30H测试 分析代码 ✻ 思考[16;2H[0;38;5;125m1[16;5H⏺ Re[16;10Hd 测试 表格对齐 ⏺ Read[16;41H[0m         [17;2H[0;38;5;132m34[17;14Hthe quick brown fox residue[17;42H测试 the[20;2H[0;38;5;153m30[20;5Hresidue fn main()[20;23H── ── ✻ 思考中 中文输出 测[29;19H[0m7[26;2H[0;38;5;195m1[26;5H──[26;8H分析代码[26;17H── ✻[26;22H思考中 测试[29;19H[0m8[8;2H[0;38;5;69m21[8;5H表格对齐[8;14H✻ 思考中[8;30H中文输出 ✻ 思考中 ──[10;2H[0;38;5;83m37[10;5H分析代码[10;14Hfn main() 测试 fn main() 表格对齐 ⏺ [12;2H[0;38;5;97m11[12;5H── 分析代码 ─[12;19H ✻ 思考中 测试[0m                 [15;2H[0;38;5;118m35[15;5Hthe quick brown fox[15;25H表格对齐 ──[0m              [16;2H[0;38;5;125m22[16;5H分析代码 ✻ 思考中 the quick[16;33Hbrown fox 中文输[22;2H[0;38;5;167m14[22;5H── fn main() 分析代码 the[22;31Hquick brown fox fn [29;18H[0m24[2;2H[0;38;5;27m36[2;5H表格对齐 fn main() 测试 ── 表格对齐[0m          [29;19H5[5;2H[0;38;5;48m46[5;5H表格对齐 表格对齐[0m                            [6;2H[0;38;5;55m54[6;14H── ✻ 思考中 the[6;30Hquick brow[6;41H fox ⏺[6;48HRe[10;2H[0;38;5;83m19[10;5H⏺ Read 测试[10;17H表格对齐 ⏺ Read 表格对齐[0m         [23;2H[0;38;5;174m25[23;5H── residue the quick brown fox ⏺ Read ──[29;18H[0m30[2;2H[0;38;5;27m18[2;5Hthe quick brown fox 表格对齐 the quick brown [29;19H[0m1[4;2H[0;38;5;41m4[4;5H中文输出[4;14H⏺ Read fn main() 表格对齐 表格对齐 [0m [7;2H[0;38;5;62m44[7;5H表格对齐 分析代码[7;23Hresidue 表格对齐 测试[0m      [8;2H[0;38;5;69m38[8;5H✻ 思考中[8;14H分析代码[8;23H表格对齐 fn main() 测试 ⏺ R[14;2H[0;38;5;111m05[14;5H── ⏺ Read ⏺[14;17HRead 测试 测试 the[14;36Hquick[14;42Hbrown[14;48Hfo[17;2H[0;38;5;132m40[17;14H── fn main() ✻ 思考中 ──[0m            [29;19H6[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;20mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;27mB28 ✻ 思考中 ── residue[0m                           
+[0;38;5;34mB47 分析代码 residue ⏺ Read the quick brown fox [0m  
+[0;38;5;41mB08 表格对齐 ── 测试 fn main()[0m                    
+[0;38;5;48mB15 ⏺ Read fn main() ⏺ Read ⏺ Read 中文输出 测试 [0m 
+[0;38;5;55mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[0m 
+[0;38;5;62mB37 residue 测试 ✻ 思考中 测试 residue fn main() [0m 
+[0;38;5;69mB45 测试 residue residue[0m                          
+[0;38;5;76mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 [0m 
+[0;38;5;83mB30 分析代码 the quick brown fox[0m                  
+[0;38;5;90mB22 the quick brown fox 分析代码 ── ✻ 思考中 表格[0m 
+[0;38;5;97mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 [0m 
+[0;38;5;104mB35 fn main() 中文输出 表格对齐 测试 表格对齐 the[0m 
+[0;38;5;111mB47 分析代码 residue ⏺ Read the quick brown fox [0m  
+[0;38;5;118mB27 分析代码 表格对齐 表格对齐 ──[0m                 
+[0;38;5;125mB50 中文输出 表格对齐 中文输出 fn main() residue [0m 
+[0;38;5;132mB02 测试 the quick brown fox[0m                      
+[0;38;5;139mB37 residue 测试 ✻ 思考中 测试 residue fn main() [0m 
+[0;38;5;146mB00 ✻ 思考中 中文输出 the quick brown fox 分析代[0m  
+[0;38;5;153mB17 表格对齐 测试 ✻ 思考中 ✻ 思考中 测试 ──[0m       
+[0;38;5;160mB20 residue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the q[0m 
+[0;38;5;167mB15 ⏺ Read fn main() ⏺ Read ⏺ Read 中文输出 测试 [0m 
+[0;38;5;174mB03 表格对齐 表格对齐[0m                             
+[0;38;5;181mB47 分析代码 residue ⏺ Read the quick brown fox [0m  
+[0;38;5;188mB15 ⏺ Read fn main() ⏺ Read ⏺ Read 中文输出 测试 [0m 
+[0;38;5;195mB21 分析代码 ✻ 思考中 ✻ 思考中 中文输出[0m           
+[0;38;5;202mB32 分析代码 fn main()[0m                            
+──────────────────────────────────────────────────
+[0;1m> [0mB 输入框 tick=443                               
+  ? for shortcuts · B                             [29;20H[8;2H[0;38;5;69m5[8;10H分析代码[0m       [22;3H[0;38;5;167m6[22;5H── ✻ 思考中 测试[22;22H表格对齐[22;31Hfn main() residue ─[29;19H[0m5[12;2H[0;38;5;97m13[12;5Hresidue the quick[12;23Hbrown fox fn main()[0m        [29;19H6[24;2H[0;38;5;181m32[24;14Hfn main()[0m                          [29;19H7[27;2H[0;38;5;202m4[27;5H⏺ Read 分析代码 fn main() the quick brown fox[29;19H[0m8[4;2H[0;38;5;41m26[4;5Hresidue ─[4;15H ⏺ Read 中文输出 测试 表格对齐 测试[29;19H[0m9[3;2H[0;38;5;34m39[3;5H✻ 思考中[3;22H──[0m                         [4;2H[0;38;5;41m33[4;5H✻ 思考中 fn main() ⏺ Read residue[0m            [5;2H[0;38;5;48m02[5;5H测试 the quick brown fox[0m                     [6;3H[0;38;5;55m6[6;5Hfn m[6;10Hin() ⏺ R[6;19Had 测试 residue 测试 the quick [15;2H[0;38;5;118m19[15;5H测试 the[15;14Hquick brown fox 表格对齐 fn main() ⏺[17;3H[0;38;5;132m0[17;5H✻ 思考中[17;14H中文输出 the quick brown fox 分析代[29;18H[0m55[2;2H[0;38;5;27m13[2;5Hresidue the[2;17Hquick brown fox fn main()[16;2H[0;38;5;125m41[16;5Hfn main() 表格对齐[0m                           [29;19H8[5;2H[0;38;5;48m37[5;5Hresidue 测试 ✻[5;20H思考中 测试 residue fn main() [29;19H[0m9[21;2H[0;38;5;160m0[21;5H✻ 思考中 中文输出 th[21;26H quick brown fox 分析代[0m [29;18H60[1;2H[0;38;5;20m15[1;12Hfn main() ⏺ Read ⏺ Read 中文输出 测试 [15;2H[0;38;5;118m22[15;5Hthe quick brown f[15;23Hx 分析代码 ── ✻[15;39H思考中 表格[16;2H[0;38;5;125m16[16;5H──[16;8H✻ 思考中 测试 表格对齐 fn main() residue ─[19;2H[0;38;5;146m12[19;5H⏺[19;7HRead ✻[19;14H思考中 residue 中文输出 residue[0m    [21;3H[0;38;5;160m7[21;5H⏺[21;7HRead 表格对齐 ✻[21;23H思考中 分析代码[21;39Hresidue[0m   [29;19H5[6;2H[0;38;5;55m27[6;5H分析代码 表格对齐 表格对齐 ──[0m                [20;2H[0;38;5;153m48[20;5H✻ 思考中[20;14H表格对齐 表格对齐 表格对齐 ✻ 思考中 [29;19H[0m7[11;2H[0;38;5;90m46[11;25H── ✻ 思考中[11;37Hresidue the q[29;19H[0m8[17;2H[0;38;5;132m59[17;5H测试 测试 ── fn main() ⏺ Read fn main() fn ma[29;19H[0m9[6;2H[0;38;5;55m55[6;5H测试 分析代码[0m                [29;18H70[7;2H[0;38;5;62m03[7;5H表格对齐 表格对齐[0m                            [29;19H1[1;1H[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[1;1H[0;38;5;83mA34 分析代码 the quick brown fox residue 测试 the 
+[0;38;5;90mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;97mA30 residue fn main() ── ── ✻ 思考中 中文输出 测试
+[0;38;5;104mA39 分析代码 分析代码 ⏺ Read ── ⏺ Read ── fn main(
+[0;38;5;111mA05 ── ⏺ Read ⏺ Read 测试 测试 the quick brown fox
+[0;38;5;118mA11 ── 分析代码 ── ✻ 思考中 测试[0m                [1;1H[0;38;5;20mA31 fn main() ⏺ Read 测试[0m                         
+[0;38;5;27mA12 分析代码 ✻ 思考中[0m                 
+[0;38;5;34mA32 the quick brown fox residue fn main() residue[0m 
+[0;38;5;41mA44 表格对齐 分析代码 residue 表格对齐 测试[0m       
+[0;38;5;48mA46 表格对齐 表格对齐[0m                             
+[0;38;5;55mA54 中文输出 ── ✻ 思考中 the quick brown fox ⏺ Re[0m 
+[0;38;5;62mA45 ⏺ Read fn main() fn main() 表格对齐 residue [0m  
+[0;38;5;69mA23 residue 分析代码[0m                              
+[0;38;5;76mA10 测试 ✻ 思考中 中文输出 ✻ 思考中 ⏺ Read the qu[0m 
+[0;38;5;83mA34 分析代码 the quick brown fox residue 测试 the[0m 
+[0;38;5;90mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;97mA30 residue fn main() ── ── ✻ 思考[0;38;5;160mesidue ⏺ Read 中
+[0;38;5;167mA21 表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ── 
+[0;38;5;174mA25 ── residue the quick brown fox ⏺ Read ──[0m      
+[0;38;5;181mA55 fn main() residue the quick brown fox[0m         
+[0;38;5;188mA14 ── fn main() 分析代码 the quick brown fox fn m
+[0;38;5;195mA02 中文输出 ⏺ Read 中文输出 分析代码 ✻ 思考中 res
+[0;38;5;202mA12 分析代码 ✻ 思考中[0m                             
+[0;38;5;209mA46 表格对齐 表格对齐[0m                             
+[0;38;5;216mA21 表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ── 
+[0;38;5;23mA12 分析代码 ✻ 思考中[0m                             
+[0;38;5;30mA14 ── fn main() 分析代码 the quick brown fox fn m
+[0;38;5;37mA49 residue 中文输出 fn main() ✻ 思考中[0m           
+[0;38;5;44mA19 ⏺ Read 测试 表格对齐 ⏺ Read 表格对齐[0m          
+[0;38;5;51mA21 表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ── 
+[0;38;5;58mA00 ⏺ Read ── ⏺ Read 表格对齐 ✻ 思考中[0m            
+[0;38;5;65mA30 residue fn main() ── ── ✻ 思考中 中文输出 测试
+[0m──────────────────────────────────────────────────
+[0;1m> [0mA 输入框 tick=480                               
+  ? for shortcuts · A                             [12;35H[0;38;5;97m中 中文输出 测[0m  
+[0;38;5;104mA39 分析代码 分析代码 ⏺ Read ── ⏺ Read ── fn main[0m 
+[0;38;5;111mA05 ── ⏺ Read ⏺ Read 测试 测试 the quick brown fo
+[0;38;5;118mA11 ── 分析代码 ── ✻ 思考中 测试[0m         
+[0;38;5;125mA41 测试 ✻ 思考中 the quick brown fox[0m             
+[0;38;5;132mA49 residue 中文输出 fn main() ✻ 思考中[0m           
+[0;38;5;139mA18 the quick brown fox 表格对齐 the quick brown 
+[0;38;5;146mA30 residue fn main() ── ── ✻ 思考中 中文输出 测
+[0;38;5;153mA41 测试 ✻ 思考中 the quick brown fox[0m             
+[0;38;5;160mA56 ── residue 分析代码 中文输出 residue ⏺ Read 
+[0;38;5;167mA21 表格对齐 ✻ 思考中 ⏺ Read 中文输出 ✻ 思考中 ──[0m 
+[0;38;5;174mA25 ── residue the quick brown fox ⏺ Read ──
+[0;38;5;181mA55 fn main() residue the quick brown fox
+[0;38;5;188mA14 ── fn main() 分析代码 the quick brown fox fn [0m 
+[0;38;5;195mA02 中文输出 ⏺ Read 中文输出 分析代码 ✻ 思考中 re
+[0;38;5;202mA33 ⏺ Read 分析代码 表格对齐 ✻ 思考中[0m             
+[29;19H1[27;2H[0;38;5;202m40[27;5H分析代码 ── fn main() ✻ 思考中 ──[29;19H[0m2[3;2H[0;38;5;34m23[3;5Hresid[3;11He 分析代码[0m                             [29;19H3[6;2H[0;38;5;55m33[6;5H⏺ Read 分析代码 表格对齐[6;30H✻ 思考中[0m            [7;2H[0;38;5;62m02[7;5H中文输出 ⏺ Read 中文输出 分析代码 ✻[7;41H思考中 re[18;2H[0;38;5;139m59[18;5Hfn main()[18;15Hresidue ⏺[18;25HRead 分析代码 ── 表格对齐[21;3H[0;38;5;160m5[21;5Hfn[21;8Hmain() residue the quick b[21;35Hown fox[0m       [22;2H[0;38;5;167m10[22;5H测试 ✻ 思考中 中文输出 ✻[22;30H思考中 ⏺[22;39HRead the[22;48Hqu[25;2H[0;38;5;188m27[25;5H表格对齐 分析代码 测试 分析代码[0m              [29;19H9[2;2H[0;38;5;27m25[2;5H── residue[2;16Hthe quick brown fox ⏺ Read ──[6;2H[0;38;5;55m22[6;5H分析代码 ✻ 思考中 the quick brown fox 中文输[12;2H[0;38;5;97m49[12;13H中文输出 fn main() ✻ 思考[12;40H[0m         [22;2H[0;38;5;167m31[22;5Hfn main() ⏺ Read 测试[0m                        [26;2H[0;38;5;195m10[26;5H测试 ✻ 思考中 中文输出 ✻[26;30H思考中 ⏺[26;39HRead the[26;48Hqu[29;18H[0m95[8;2H[0;38;5;69m59[8;5Hfn main() residue ⏺ Read 分析代码 ── 表格对齐[29;19H[0m6[18;2H[0;38;5;139m44[18;5H表格对齐 分析代码[18;23Hresidue 表格对齐 测试[0m      [19;2H[0;38;5;146m52[19;5H分析代码 中文输出[19;23H表格对齐 the quick brown fo[21;2H[0;38;5;160m19[21;5H⏺ Re[21;10Hd 测试 表格对齐 ⏺ Read[21;33H表格对齐[0m [22;3H[0;38;5;167m4[22;5H分析代码 the quick brown fox residue 测试 the[23;3H[0;38;5;174m8[23;5H✻ 思考中 中文输出 ⏺ Read ✻[23;32H思考中 测试 residu[25;2H[0;38;5;188m44[25;23Hresidue 表格对齐 测试[29;17H[0m502[23;2H[0;38;5;174m03[23;5H── ── 测试 中文输出[23;25H⏺ Read[23;32H测试[0m              [29;19H3[12;2H[0;38;5;97m5[12;5Hfn main() residue ⏺[12;25HRead 分析代码 ── 表格对齐[29;19H[0m4[20;2H[0;38;5;153m14[20;5H── fn main() 分析代码 the quick brown fox fn [29;19H[0m5[21;2H[0;38;5;160m22[21;5H分析代码 ✻ 思考中 the quick[21;33Hbrown fox 中文输[29;19H[0m6[25;2H[0;38;5;188m33[25;5H⏺ Read 分析代码 表格对齐 ✻ 思考中[0m      [29;19H7[3;2H[0;38;5;34m46[3;5H表格对齐 表格对齐[6;2H[0;38;5;55m35[6;5Hthe quick brown fox 表格对齐 ──[0m             [7;2H[0;38;5;62m2[7;5H分析代码[7;14H✻[7;16H思考中 the quick brown[7;39Hfox 中文输[0m [12;2H[0;38;5;97m48[12;5H中文输出 ⏺ Rea[12;20H fn main() 表格对齐 表格对齐 [0m [16;2H[0;38;5;125m38[16;5H✻ 思考中 分析代码[16;23H表格对齐 f[16;35Hmain() 测试 ⏺ R[29;18H[0m12[19;2H[0;38;5;146m09[19;5Hfn main() 中文输出 分析代码 表格对齐[19;42H中文输出[29;19H[0m3[10;2H[0;38;5;83m07[10;5Hresidue 测试[10;18H分析代码 ──[10;30H分析代码 ⏺ Read ⏺ R[29;19H[0m4[8;2H[0;38;5;69m12[8;5H分析代码 ✻ 思考中[0m                            [29;19H5[1;1H[0;38;5;83mB19 测试 the quick brown fox 表格对齐 fn main() ⏺ 
+[0;38;5;90mB46 the quick brown fox ── ✻ 思考中 residue the qu
+[0;38;5;97mB45 测试 residue residue
+[0;38;5;104mB28 ✻ 思考中 ── residue[0m                    
+[0;38;5;111mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 th
+[0;38;5;118mB22 the quick brown fox 分析代码 ── ✻ 思考中 表格对
+[0m [0;38;5;125m16 ── ✻ 思考中 测试 表格对齐 fn main() residue ─[0m[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[7;50H[0;38;5;125m─
+[0;38;5;132mB00 ✻ 思考中 中文输出 the quick brown fox 分析代码
+[0;38;5;139mB37 residue 测试 ✻ 思考中 测试 residue fn main() ─
+[0;38;5;146mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue[0m      
+[0;38;5;153mB49 residue 表格对齐 分析代码[0m                     
+[0;38;5;160mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;167mB20 residue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the qu
+[0;38;5;174mB41 fn main() 表格对齐[0m                            
+[0;38;5;181mB55 测试 分析代码[0m                                 
+[0;38;5;188mB09 residue ✻ 思考中 分析代码 分析代码 ✻ 思考中 中
+[0;38;5;195mB28 ✻ 思考中 ── residue[0m                           
+[0;38;5;202mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;209mB03 表格对齐 表格对齐[0m                             
+[0;38;5;216mB06 fn main() 分析代码 the quick brown fox 分析代码
+[0m [0;38;5;23m51 分析代码 the quick brown fox ✻ 思考中[0m         
+[0;38;5;30mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[0;38;5;37mB23 residue ⏺ Read ⏺ Read ⏺ Read[0m                  
+[0;38;5;44mB52 the quick brown fox ⏺ Read fn main() ✻ 思考中 
+[0;38;5;51mB47 分析代码 residue ⏺ Read the quick brown fox 中
+[0;38;5;58mB36 ✻ 思考中 ✻ 思考中 fn main() fn main() residue 
+[0;38;5;65mB26 residue ── ⏺ Read 中文输出 测试 表格对齐 测试 
+[0m──────────────────────────────────────────────────
+[0;1m> [0mB 输入框 tick=517                               
+  ? for shortcuts · B                             [29;20H[1;1H[0;38;5;20mB39 ✻ 思考中 residue ──[0m                           
+[0;38;5;27mB57 ⏺ Read residue 分析代码 ── 测试 表格对齐 ⏺ Re[0m 
+[0;38;5;34mB11 表格对齐 中文输出[0m   
+[0;38;5;41mB08 表格对齐 ── 测试 fn main()
+[0;38;5;48mB31 the quick brown fox the quick brown fox 分析[0m  
+[0;38;5;55mB03 表格对齐 表格对齐[0m                             
+[0;38;5;62mB03 表格对齐 表格对齐[0m                             
+[0;38;5;69mB56 fn main() ⏺ Read 测试 residue 测试 the quick [0m 
+[0;38;5;76mB48 ✻ 思考中 表格对齐 表格对齐 表格对齐 ✻ 思考中 [0m 
+[0;38;5;83mB19 测试 the quick brown fox 表格对齐 fn main() ⏺
+[0;38;5;90mB46 the quick brown fox ── ✻ 思考中 residue the q
+[0;38;5;97mB45 测试 residue residue[0m                     
+[0;38;5;104mB28 ✻ 思考中 ── residue[0m                           
+[0;38;5;111mB25 表格对齐 residue 测试 fn main() ── ✻ 思考中 t
+[0;38;5;118mB22 the quick brown fox 分析代码 ── ✻ 思考中 表格
+[0;38;5;125mB16 ── ✻ 思考中 测试 表格对齐 fn main() residue ─[0m 
+[0;38;5;132mB42 ⏺ Read 分析代码 fn main() the quick brown fox
+[0;38;5;139mB37 residue 测试 ✻ 思考中 测试 residue fn main() 
+[0;38;5;146mB12 ⏺ Read ✻ 思考中 residue 中文输出 residue
+[0;38;5;153mB49 residue 表格对齐 分析代码[0m                     
+[0;38;5;160mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue
+[0;38;5;167mB20 residue ✻ 思考中 ⏺ Read 表格对齐 ⏺ Read the q
+[0;38;5;174mB41 fn main() 表格对齐[0m          
+[0;38;5;181mB55 测试 分析代码[0m                                 
+[0;38;5;188mB09 residue ✻ 思考中 分析代码 分析代码 ✻ 思考中 [0m  
+[0;38;5;195mB28 ✻ 思考中 ── residue[0m                           
+[0;38;5;202mB07 ⏺ Read 表格对齐 ✻ 思考中 分析代码 residue[0m     
+[29;19H8[1;3H[0;38;5;20m3[1;14Hfn main() ⏺ Read residue[11;2H[0;38;5;90m57[11;5H⏺ Read residue 分析代码 ── 测试[11;37H表格对齐 ⏺ Re[16;2H[0;38;5;125m09[16;5Hresidue ✻ 思考中[16;22H分析代码[16;31H分析代码 ✻ 思考中[16;49H[0m [22;2H[0;38;5;167m01[22;5H── fn main() ✻ 思考中[0m                        [29;18H22

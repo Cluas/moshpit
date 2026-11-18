@@ -39,8 +39,9 @@ default is upstream's behaviour; `crates/term` turns them on.
 - **W3** · size · `image` with PNG, JPEG, GIF and WebP only.
 - **W4** · switch `writer_thread()` · replies written synchronously, in
   order, without a thread per terminal.
-- **W5** · fix · a wide character that does not fit before the right margin
-  wraps first.
+- **W5** · switch `wrap_wide_at_margin()` · a wide character that does not
+  fit before the right margin wraps first (not on a terminal fed mosh's
+  frames).
 - **W6** · fix · a grapheme cut by the end of a read joins the cell printed
   last, as if it had come in one read.
 - **W7** · switch `host_owns_columns()` · DECCOLM does nothing.
@@ -145,7 +146,8 @@ produces a reply; it must not block (ours appends to a vector).
 
 ## W5. a wide character at the margin wraps first
 
-**Touches:** `term/src/terminalstate/performer.rs` (`flush_print`).
+**Touches:** `term/src/config.rs` (`wrap_wide_at_margin`),
+`term/src/terminalstate/performer.rs` (`flush_print`).
 
 **Why:** printing a two-column character with the cursor in the last column
 wrote it there: its second half ran past the margin, off screen, and the
@@ -153,6 +155,15 @@ cursor stayed on the line. xterm and tmux (3.6a, measured) erase that last
 cell, mark the line as continuing, and print the character at the start of
 the next line. Chinese and Japanese text hit this on every line that does
 not happen to end on an even column.
+
+A switch, off for a terminal fed mosh's frames (`Options::mosh_host`):
+mosh sends diffs of the server's screen, where a program that turned
+autowrap off (herdr's attach sends `ESC [?7l`) keeps the character in the
+last column, and the diff's next row starts with CR LF. Wrapping it there
+put the terminal a line off from that screen (on the last row, the whole
+screen scrolled), and the server's later diffs, written against its own
+screen, left fragments of old rows behind until a full repaint
+(`crates/term/tests/mosh_host.rs`, recorded from herdr tab switches).
 
 ## W6. graphemes cut by a read
 
