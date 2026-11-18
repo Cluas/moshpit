@@ -4,6 +4,7 @@
 //! (`crates/android/src/app/tests.rs`), with the rules merged between them.
 
 use super::*;
+use moshpit_ui::connection_form::JumpRoute;
 use moshpit_seal::foundation::date::Date;
 use moshpit_store::ssh_keys::{SshKeyAlgorithm, SshKeySource};
 use serde_json::json;
@@ -1232,10 +1233,11 @@ fn only_a_connections_own_item_can_be_missing() {
 // MARK: - F1: a connection through another
 
 /// The draft of a connection through another shows it; picking one turns
-/// mosh and the proxy off, and saves SSH with no proxy of its own; none
-/// again saves direct, mosh still off.
+/// the proxy off and leaves mosh as it was, over SSH (no route saved) until
+/// a route is picked; the route saves only through a jump host with mosh
+/// on; none again saves direct.
 #[test]
-fn f1_a_draft_goes_through_another_and_saves_as_ssh() {
+fn f1_a_draft_goes_through_another_and_saves_its_mosh_route() {
     let bastion = uuid();
     let mut c = studio();
     c.connection_protocol = ConnectionProtocol::Mosh;
@@ -1246,30 +1248,43 @@ fn f1_a_draft_goes_through_another_and_saves_as_ssh() {
     assert!(draft.fields.mosh && draft.fields.socks);
     assert!(draft.set("via", &json!(bastion.to_string())));
     assert_eq!(draft.fields.via, bastion.to_string());
-    assert!(!draft.fields.mosh, "mosh can't take the way");
+    assert!(draft.fields.mosh, "mosh stays as it was");
     assert!(!draft.fields.socks, "the jump host's proxy carries its leg");
+    assert_eq!(draft.fields.jump_route, JumpRoute::Ssh);
     let saved = draft.applied(&c, (60000, 61000));
     assert_eq!(saved.via_connection_id, Some(bastion));
-    assert_eq!(saved.connection_protocol, ConnectionProtocol::Ssh);
+    assert_eq!(saved.connection_protocol, ConnectionProtocol::Mosh);
+    assert_eq!(saved.jump_mosh_route, None, "SSH is the unsaved default");
     assert_eq!(saved.use_socks_proxy, Some(false));
     assert_eq!(Draft::of(&saved).fields.via, bastion.to_string());
 
+    for (id, route) in [("direct", JumpRoute::Direct), ("viaJump", JumpRoute::ViaJump)] {
+        assert!(draft.set("jumpRoute", &json!(id)));
+        assert_eq!(draft.fields.jump_route, route);
+        let saved = draft.applied(&c, (60000, 61000));
+        assert_eq!(saved.jump_mosh_route.as_deref(), Some(id));
+        assert_eq!(Draft::of(&saved).fields.jump_route, route, "reads back");
+    }
+    // An unknown route changes nothing.
+    assert!(draft.set("jumpRoute", &json!("auto")));
+    assert_eq!(draft.fields.jump_route, JumpRoute::ViaJump);
+
+    // Mosh off, or no jump host: no route is saved.
+    draft.fields.mosh = false;
+    assert_eq!(draft.applied(&c, (60000, 61000)).jump_mosh_route, None);
+    draft.fields.mosh = true;
     assert!(draft.set("via", &json!("")));
     let direct = draft.applied(&c, (60000, 61000));
     assert_eq!(direct.via_connection_id, None);
-    assert_eq!(
-        direct.connection_protocol,
-        ConnectionProtocol::Ssh,
-        "left off"
-    );
+    assert_eq!(direct.connection_protocol, ConnectionProtocol::Mosh);
+    assert_eq!(direct.jump_mosh_route, None);
+}
 
-    // A draft that kept mosh on through one is not saved that way.
-    draft.fields.via = bastion.to_string();
-    draft.fields.mosh = true;
-    draft.fields.socks = true;
-    let forced = draft.applied(&c, (60000, 61000));
-    assert_eq!(forced.connection_protocol, ConnectionProtocol::Ssh);
-    assert_eq!(forced.use_socks_proxy, Some(false));
+/// The form is shown with Settings' range as numbers, for the rule.
+#[test]
+fn the_form_carries_the_udp_range_as_numbers() {
+    let draft = Draft::new(true);
+    assert_eq!(draft.shown(&[], (60100, 60200)).udp_ports, [60100, 60200]);
 }
 
 /// The menu's choices are the other connections that go direct, each its
@@ -1352,7 +1367,7 @@ fn the_new_jump_host_draft_is_jump_only_and_nested() {
 }
 
 /// What the new jump host saved is picked in the outer draft, which keeps
-/// everything else it held; mosh goes off as picking any jump host does.
+/// everything else it held.
 #[test]
 fn the_saved_jump_host_is_picked_and_the_rest_of_the_draft_kept() {
     let mut outer = Draft::new(true);
@@ -1363,9 +1378,8 @@ fn the_saved_jump_host_is_picked_and_the_rest_of_the_draft_kept() {
     let id = Uuid::new_v4();
     outer.go_through(id);
     assert_eq!(outer.fields.via, id.to_string());
-    assert!(!outer.fields.mosh);
+    assert!(outer.fields.mosh);
     expected.fields.via = id.to_string();
-    expected.fields.mosh = false;
     assert_eq!(outer, expected);
 }
 

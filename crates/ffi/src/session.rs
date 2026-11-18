@@ -253,7 +253,7 @@ pub fn session_hop(
 /// `through_jump`: it goes through a saved jump host; `jump_mosh_route`: its
 /// `jumpMoshRoute` (`ssh`, `direct`, `viaJump`; none reads as `ssh`).
 #[uniffi::export]
-pub fn dials_mosh(mosh: bool, through_jump: bool, jump_mosh_route: Option<String>) -> bool {
+pub fn core_dials_mosh(mosh: bool, through_jump: bool, jump_mosh_route: Option<String>) -> bool {
     let mut spec = ConnectionSpec::ssh("", Target::new("", "", 22));
     spec.jump_mosh_route = JumpMoshRoute::from_raw(jump_mosh_route.as_deref());
     if through_jump {
@@ -1881,10 +1881,10 @@ mod tests {
     ];
 
     #[test]
-    fn dials_mosh_is_the_cores_rule() {
+    fn core_dials_mosh_is_the_cores_rule() {
         for &(mosh, through, route, want) in DIALS_MOSH {
             assert_eq!(
-                dials_mosh(mosh, through, route.map(str::to_owned)),
+                core_dials_mosh(mosh, through, route.map(str::to_owned)),
                 want,
                 "{mosh} {through} {route:?}"
             );

@@ -322,7 +322,7 @@ mod tests {
     use super::*;
 
     /// The route matrix: which connections dial mosh. The Swift
-    /// `dialsMosh` answers through the core (`dials_mosh`), and its test
+    /// `dialsMosh` answers through the core (`core_dials_mosh`), and its test
     /// asserts the same table.
     #[test]
     fn dialled_protocol_follows_the_jump_route() {

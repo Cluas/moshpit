@@ -32,7 +32,8 @@
 //! - A connection may go through another saved one (F1), one hop: the
 //!   choices are the others that reach their hosts directly, none for a
 //!   connection others go through ([`via_choices`], [`via_users`]);
-//!   through one, it saves as SSH without a proxy of its own.
+//!   through one, it saves without a proxy of its own, and mosh over the
+//!   route it picked (`jumpMoshRoute`; none: SSH).
 
 use moshpit_seal::foundation::uuid::Uuid;
 use moshpit_store::connections::{
@@ -42,7 +43,7 @@ use moshpit_store::ssh_keys::SshKeyRecord;
 pub use moshpit_ui::connection_form::SecretState;
 use moshpit_ui::connection_form::{
     self as screen, Auth, ConnectionPredict, DEFAULT_PORT, DEFAULT_PROXY_PORT, FormState,
-    KeyChoice, Message, Missing, Mux, Secrets,
+    JumpRoute, KeyChoice, Message, Missing, Mux, Secrets,
 };
 use moshpit_ui::settings::PredictMode as ScreenPredict;
 use serde_json::Value;
@@ -259,6 +260,9 @@ impl Draft {
                 key: None,
                 mosh: c.connection_protocol == ConnectionProtocol::Mosh,
                 udp_range: String::new(),
+                udp_ports: [0, 0],
+                jump_route: JumpRoute::named(c.jump_mosh_route.as_deref().unwrap_or("ssh"))
+                    .unwrap_or_default(),
                 predict_mode: ConnectionPredict::of(c.predict().map(screen_predict)),
                 mosh_server_path: c.mosh_server_path.clone().unwrap_or_default(),
                 socks: c.use_socks_proxy.unwrap_or(false),
@@ -339,6 +343,11 @@ impl Draft {
             ("mosh", _, Some(f)) => s.mosh = f,
             ("socks", _, Some(f)) => s.socks = f,
             ("jumpOnly", _, Some(f)) => s.jump_only = f,
+            ("jumpRoute", Some(t), _) => {
+                if let Some(r) = JumpRoute::named(&t) {
+                    s.jump_route = r;
+                }
+            }
             ("auth", Some(t), _) => match t.as_str() {
                 "password" => s.auth = Auth::Password,
                 "key" => s.auth = Auth::Key,
@@ -472,6 +481,7 @@ impl Draft {
         state.secrets.stored_password = self.keeps_stored_password();
         state.secrets.stored_key = self.keeps_stored_key();
         state.udp_range = udp_range(udp);
+        state.udp_ports = [udp.0, udp.1];
         state
     }
 
@@ -526,11 +536,16 @@ impl Draft {
         c.via_connection_id = Uuid::parse(s.via.trim());
         c.jump_host_only = s.jump_only;
         let through = c.via_connection_id.is_some();
-        c.connection_protocol = if s.mosh && !through {
+        // Through one, mosh is dialled only over a route that isn't SSH
+        // (`jump_mosh_route`; `ConnectionSpec::dialled_protocol`); a
+        // route left at SSH is not saved, which reads the same.
+        c.connection_protocol = if s.mosh {
             ConnectionProtocol::Mosh
         } else {
             ConnectionProtocol::Ssh
         };
+        c.jump_mosh_route = (through && s.mosh && s.jump_route != JumpRoute::Ssh)
+            .then(|| s.jump_route.id().to_owned());
         c.mosh_port_range_start = udp.0;
         c.mosh_port_range_end = udp.1;
         // Empty: `mosh-server` on PATH, the capability probe intact.

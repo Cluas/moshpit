@@ -136,7 +136,7 @@ pub fn chrome(app: &App, page: &TerminalPage) -> Chrome {
     chrome.banner = if conn.return_path_dead {
         // What was typed waiting for mosh-server (B854) isn't followed on
         // Android yet: the banner says the outage alone.
-        Some(Banner::ReturnPath { typed: false })
+        Some(Banner::ReturnPath { typed: false, route: None, ports: String::new() })
     } else if conn.roaming {
         Some(Banner::Roam {
             srtt: conn.srtt_ms,
