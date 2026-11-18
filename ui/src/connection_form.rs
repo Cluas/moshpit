@@ -1555,9 +1555,12 @@ fn jump_host_section(draft: &Draft) -> AnyElement {
         None => section,
     };
     section
-        .footer(t!(
-            "Signs in to it first with its own key or password, then reaches this host from there."
-        ))
+        .footer(if draft.read(|s| goes_through(s)) {
+            // The section is made again when the choice changes.
+            t!("Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.")
+        } else {
+            t!("Signs in to it first with its own key or password, then reaches this host from there.")
+        })
         .into_element()
 }
 

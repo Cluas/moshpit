@@ -1885,3 +1885,30 @@ fn f1_the_jump_host_in_chinese() {
     );
     channel.close();
 }
+
+/// Through a jump host a mosh connection is dialled over SSH: the JUMP HOST
+/// section says so under its row (not before a jump host is picked).
+#[test]
+fn f1_a_jump_host_footer_says_the_connection_uses_ssh() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let mut state = draft();
+    state.mosh = true;
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    find(&mut app, "text:Connect via");
+    let notice =
+        "Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.";
+    assert!(!app.screen().shows(notice), "{:?}", app.screen().texts());
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    emit(&mut app, menu, "select", json!("B1"));
+    find(&mut app, &format!("text:{notice}"));
+    // The section is made again with the choice: its menu is a new one.
+    let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
+    emit(&mut app, menu, "select", json!(""));
+    find(
+        &mut app,
+        "text:Signs in to it first with its own key or password, then reaches this host from there.",
+    );
+    assert!(!app.screen().shows(notice));
+    channel.close();
+}

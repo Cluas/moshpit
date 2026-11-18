@@ -1106,5 +1106,7 @@
   "Jump hosts (%lld)": "점프 호스트(%lld)",
   "Jump host deleted": "점프 호스트가 삭제됨",
   "%@ connects through this host. It won't connect until you pick another way.": "%@ 연결은 이 호스트를 거칩니다. 다른 경로를 고르기 전까지 연결되지 않습니다.",
-  "%@ connect through this host. They won't connect until you pick another way.": "%@ 연결은 이 호스트를 거칩니다. 다른 경로를 고르기 전까지 연결되지 않습니다."
+  "%@ connect through this host. They won't connect until you pick another way.": "%@ 연결은 이 호스트를 거칩니다. 다른 경로를 고르기 전까지 연결되지 않습니다.",
+  "Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.": "점프 호스트를 거치면 이 연결은 SSH를 씁니다. mosh의 UDP는 점프 호스트를 통과하지 못해요.",
+  "Connected over SSH: mosh can't pass a jump host": "SSH로 연결됨: mosh는 점프 호스트를 거칠 수 없어요"
 }

@@ -294,6 +294,8 @@
   "Reconnects this session over %@.": "Reconecta esta sessão por %@.",
   "This connection uses SSH": "Esta conexão usa SSH",
   "Mosh can't go through a jump host, so connections through one use SSH.": "O Mosh não passa por um host de salto, então conexões através de um usam SSH.",
+  "Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.": "Através de um host de salto, esta conexão usa SSH: o UDP do mosh não passa pelo host de salto.",
+  "Connected over SSH: mosh can't pass a jump host": "Conectado por SSH: o mosh não passa por um host de salto",
   "MOSH DIAGNOSTICS": "DIAGNÓSTICO DO MOSH",
   "No datagrams yet.": "Nenhum datagrama ainda.",
   "Theme name": "Nome do tema",

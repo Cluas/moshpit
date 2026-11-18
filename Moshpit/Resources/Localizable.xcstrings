@@ -11169,6 +11169,58 @@
         }
       }
     },
+    "Connected over SSH: mosh can't pass a jump host": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per SSH verbunden: Mosh kommt nicht durch einen Jump-Host"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectado por SSH: mosh no pasa por un host de salto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en SSH : mosh ne passe pas par un hôte de rebond"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH で接続しました。mosh は踏み台を通れません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 연결됨: mosh는 점프 호스트를 거칠 수 없어요"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectado por SSH: o mosh não passa por um host de salto"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已通过 SSH 连接：mosh 过不了跳板机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已透過 SSH 連線：mosh 過不了跳板機"
+          }
+        }
+      }
+    },
     "Connected, but the server wouldn't open a session channel.": {
       "localizations": {
         "de": {
@@ -51365,6 +51417,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "這些更動只存在這裡。刪掉工作樹，它們就沒了。"
+          }
+        }
+      }
+    },
+    "Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über einen Jump-Host nutzt diese Verbindung SSH: Mosh-UDP kommt am Jump-Host nicht vorbei."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A través de un host de salto esta conexión usa SSH: el UDP de mosh no pasa por el host de salto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Via un hôte de rebond, cette connexion utilise SSH : l'UDP de mosh ne traverse pas l'hôte de rebond."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "踏み台経由では SSH を使います。mosh の UDP は踏み台を通れません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트를 거치면 이 연결은 SSH를 씁니다. mosh의 UDP는 점프 호스트를 통과하지 못해요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Através de um host de salto, esta conexão usa SSH: o UDP do mosh não passa pelo host de salto."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经跳板机时走 SSH：mosh 的 UDP 过不了跳板机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經跳板機時走 SSH：mosh 的 UDP 過不了跳板機"
           }
         }
       }

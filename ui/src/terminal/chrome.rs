@@ -124,6 +124,7 @@ pub(crate) fn over_pane(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyEle
                 .test_id("terminal-banners")
                 .child(banner_slot(ctx.clone()))
                 .child(notice_slot(ctx.clone()))
+                .child(jump_notice(ctx.clone()))
                 // The swipe's dots, under whatever banner is up.
                 .child(super::switcher::dots(ctx, order)),
         )
@@ -212,6 +213,38 @@ fn notice_slot(ctx: Ctx) -> AnyElement {
             None => view().into_element(),
         })
     })
+    .into_element()
+}
+
+/// How long the jump-host notice stays before it goes by itself.
+const JUMP_NOTICE_HOLD: Timer = Timer::from_secs(6);
+
+/// A connection saved as mosh but dialled over SSH because it goes through
+/// a jump host says so once per session, when it is live: an info banner
+/// that goes by itself after a few seconds or when closed. Never a modal.
+fn jump_notice(ctx: Ctx) -> AnyElement {
+    let chrome = ctx.chrome;
+    // Up from the first live frame; once it has gone it stays gone.
+    let gone = signal(false);
+    let armed = signal(false);
+    let shown = computed(move || {
+        !gone.get() && chrome.with(|c| c.jump && c.state == super::model::LinkState::Live)
+    });
+    let timer = stored(None::<Spawned<()>>);
+    effect(move || {
+        if shown.get() && !armed.get_untracked() {
+            armed.set(true);
+            timer.replace(Some(set_timeout(JUMP_NOTICE_HOLD, move || gone.set(true))));
+        }
+    });
+    banner(BannerTone::Info, || {
+        t!("Connected over SSH: mosh can't pass a jump host").into()
+    })
+    .floating()
+    .shown(move || shown.get())
+    .on_close(move || gone.set(true))
+    .close_test_id("terminal-jump-notice-dismiss")
+    .test_id("terminal-jump-notice")
     .into_element()
 }
 

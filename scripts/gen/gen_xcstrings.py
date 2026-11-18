@@ -663,6 +663,8 @@ add("Switch to %@?", "切换到 %@？", "%@ に切り替えますか？")
 add("Reconnects this session over %@.", "用 %@ 重新连接这个会话。", "このセッションを %@ で再接続します。")
 add("This connection uses SSH", "这条连接走 SSH", "この接続は SSH を使います")
 add("Mosh can't go through a jump host, so connections through one use SSH.", "mosh 过不了跳板机，经跳板机的连接都走 SSH。", "Mosh はジャンプホストを経由できないため、ジャンプホスト経由の接続は SSH を使います。")
+add("Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.", "经跳板机时走 SSH：mosh 的 UDP 过不了跳板机", "踏み台経由では SSH を使います。mosh の UDP は踏み台を通れません。")
+add("Connected over SSH: mosh can't pass a jump host", "已通过 SSH 连接：mosh 过不了跳板机", "SSH で接続しました。mosh は踏み台を通れません")
 add("MOSH DIAGNOSTICS", "MOSH 诊断", "MOSH 診断")
 add("No datagrams yet.", "还没收到任何数据。", "まだデータグラムを受信していません。")
 

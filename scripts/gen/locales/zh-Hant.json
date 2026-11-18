@@ -1106,5 +1106,7 @@
   "Jump hosts (%lld)": "跳板主機（%lld）",
   "Jump host deleted": "跳板主機已刪除",
   "%@ connects through this host. It won't connect until you pick another way.": "%@ 經由這台主機連線。重新選一條路之前，它連不上。",
-  "%@ connect through this host. They won't connect until you pick another way.": "%@ 經由這台主機連線。重新選一條路之前，它們連不上。"
+  "%@ connect through this host. They won't connect until you pick another way.": "%@ 經由這台主機連線。重新選一條路之前，它們連不上。",
+  "Through a jump host this connection uses SSH: mosh's UDP can't pass the jump host.": "經跳板機時走 SSH：mosh 的 UDP 過不了跳板機",
+  "Connected over SSH: mosh can't pass a jump host": "已透過 SSH 連線：mosh 過不了跳板機"
 }

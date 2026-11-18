@@ -1006,3 +1006,52 @@ fn command_keys_ask_what_the_menu_says_once_per_press() {
     no_intent(&heard);
     channel.close();
 }
+
+#[test]
+fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
+    let words = "Connected over SSH: mosh can't pass a jump host";
+    let (mut app, channel, _) = open(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, &chrome());
+    app.wait_for("id:terminal-breadcrumb").unwrap();
+    assert!(!app.screen().shows(words), "no jump host, no notice");
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true})));
+    app.wait_for("id:terminal-jump-notice")
+        .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
+    assert!(app.screen().shows(words));
+    // Not a modal: nothing was asked of the host.
+    no_intent(&heard);
+    app.press("id:terminal-jump-notice-dismiss").unwrap();
+    for _ in 0..40 {
+        if !app.screen().shows(words) {
+            break;
+        }
+        app.run_for(Duration::from_millis(100)).unwrap();
+    }
+    assert!(!app.screen().shows(words), "tapped away");
+    // Once per session: the next chrome with the jump flag doesn't bring it back.
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"jump": true, "name": "again"})),
+    );
+    app.run_for(Duration::from_millis(500)).unwrap();
+    assert!(!app.screen().shows(words), "once per session");
+    channel.close();
+}
+
+#[test]
+fn the_jump_host_notice_goes_by_itself() {
+    let words = "Connected over SSH: mosh can't pass a jump host";
+    let (mut app, channel, _) = open(Params::default());
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true})));
+    app.wait_for("id:terminal-jump-notice").unwrap();
+    for _ in 0..100 {
+        if !app.screen().shows(words) {
+            break;
+        }
+        app.run_for(Duration::from_millis(100)).unwrap();
+    }
+    assert!(!app.screen().shows(words), "gone after its hold");
+    channel.close();
+}
