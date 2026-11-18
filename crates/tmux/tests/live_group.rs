@@ -1302,3 +1302,79 @@ fn over_mosh_a_rebuilt_sidecar_keeps_the_renderers_status_line_off() {
         .all(|l| l.ends_with(" off"));
     assert!(on_group, "{sessions}\n{report}");
 }
+
+/// The device flow (mosh + tmux, the user's session named "0"): a desktop on
+/// the session, mosh's renderer attached by id, the sidecar told the
+/// renderer's pid before its own attach lands (as the session's leg does).
+/// The user's own session is not Moshpit's, so before ef31b979 nothing hid
+/// tmux's status line on the phone's group.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_the_status_line_is_hidden_on_the_users_own_numeric_session() {
+    let server = Server::start("devflow");
+    if !server.groups() {
+        return;
+    }
+    server.tmux(&["rename-session", "-t", "main", "0"]);
+    let _desk = server.desktop("=0");
+    assert!(eventually(10, || server.renderer_pid().is_some()));
+    let id = server.tmux(&["display-message", "-p", "-t", "=0:", "#{session_id}"]);
+    let renderer = server.renderer(&id);
+    let shell = renderer.id() as i64;
+    let find = || {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid}"])
+            .lines()
+            .filter_map(|l| l.parse::<i64>().ok())
+            .find(|p| is_child_of(*p, shell))
+    };
+    assert!(eventually(10, || find().is_some()), "the renderer attached");
+    let rpid = find().unwrap();
+    let (child, stdin, rx) = server.client("");
+    let mut phone = Phone {
+        sent: Vec::new(),
+        controller: Controller::new(Config {
+            renders_output: false,
+            ..Config::default()
+        }),
+        child,
+        stdin,
+        rx,
+        start: Instant::now(),
+    };
+    let now = phone.now();
+    phone.controller.begin_control_mode(now);
+    phone.controller.expect_renderer_pid(rpid, now);
+    let rows = |server: &Server| {
+        server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_control_mode} #{session_name} #{status}",
+        ])
+    };
+    let off = phone.pump_until(10, |_| {
+        rows(&server)
+            .lines()
+            .any(|l| l.starts_with("0 0~mp-") && l.ends_with(" off"))
+    });
+    let report = format!(
+        "{}\nsent: {:#?}",
+        server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_pid} ctl=#{client_control_mode} #{session_name} st=#{status}"
+        ]),
+        phone.sent
+    );
+    drop(renderer);
+    assert!(off, "tmux's status line is still on for the renderer\n{report}");
+}
+
+fn is_child_of(pid: i64, parent: i64) -> bool {
+    Command::new("ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<i64>().ok())
+        == Some(parent)
+}
