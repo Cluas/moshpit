@@ -339,11 +339,10 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
         .sessions
         .tmux(id, TmuxAction::SelectSession(alpha.clone()))
         .unwrap();
-    let at = term.screen.len();
-    // tmux repaints only what changed: the status line's "[" stays.
     assert!(
-        term.wait_for_from(at, "alpha", 15).await.is_some(),
-        "{}",
+        eventually(15, || clients().lines().any(|l| l.starts_with("0 alpha"))).await,
+        "{}\n{}",
+        clients(),
         term.text()
     );
     assert!(
