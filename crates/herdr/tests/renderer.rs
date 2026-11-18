@@ -748,7 +748,7 @@ fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
     rig.show("t-1");
     rig.run_for(50);
     assert_eq!(rig.veils(), 1);
-    rig.run_for(1_000);
+    rig.run_for(2_000);
     let redraws: Vec<u64> = rig
         .outputs
         .iter()
@@ -758,7 +758,7 @@ fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
     let lifted = rig.revealed_at().expect("never lifted");
     assert!(lifted > redraws[0], "lifted before the redraw");
     rig.show("t-2");
-    rig.run_for(1_000);
+    rig.run_for(2_000);
     assert_eq!(rig.veils(), 2);
     assert_eq!(
         rig.outputs
@@ -767,6 +767,31 @@ fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
             .count(),
         1
     );
+}
+
+/// The redraw's veil lifts as soon as the redraw's bytes have gone quiet:
+/// no grace on top (the wait read as too long).
+#[test]
+fn the_first_panes_veil_lifts_once_the_redraw_has_gone_quiet() {
+    let mut rig = Rig::new();
+    rig.show("t-1");
+    for _ in 0..200 {
+        rig.run_for(10);
+        if rig.outputs.iter().any(|(_, o)| matches!(o, Output::Redraw)) {
+            break;
+        }
+    }
+    let redraw = rig
+        .outputs
+        .iter()
+        .find_map(|(at, o)| matches!(o, Output::Redraw).then_some(*at))
+        .expect("no redraw");
+    assert_eq!(rig.revealed_at(), None);
+    rig.run_for(60);
+    rig.paint(); // the program's frame, after the size nudge's round trip
+    rig.run_for(1_000);
+    let lifted = rig.revealed_at().expect("never lifted");
+    assert!(lifted - redraw <= 60 + 10 + 100 + 10, "{}", lifted - redraw);
 }
 
 // MARK: - A renderer that stopped: who brings it back
@@ -1110,7 +1135,7 @@ fn switching_back_while_a_switch_away_is_out_types_nothing_until_the_loop_is_bac
 /// The first pane's own veil and redraw over (their own test), and what
 /// they said forgotten.
 fn settle_first_veil(rig: &mut Rig) {
-    rig.run_for(1_000);
+    rig.run_for(2_000);
     assert!(!rig.renderer.veiled());
     rig.outputs.clear();
 }

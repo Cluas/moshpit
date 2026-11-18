@@ -186,6 +186,13 @@ pub struct Budgets {
     pub cover_repaint: u64,
     /// The veil's cap, for a pane that paints nothing (3 s).
     pub cover_cap: u64,
+    /// How long the screen must stay quiet after the redraw's bytes before
+    /// the first pane's veil lifts (100 ms: a full-screen program writes
+    /// its frame in one burst).
+    pub redraw_quiet: u64,
+    /// The first pane's veil past its redraw when no bytes come (a program
+    /// that doesn't redraw on a size change: 800 ms).
+    pub redraw_cap: u64,
     /// How many copies of the loop's start line a generation gets, the
     /// first (the host's) included (4, as many as the mosh+tmux attach
     /// line).
@@ -203,6 +210,8 @@ impl Default for Budgets {
             cover_quiet: 150,
             cover_repaint: 400,
             cover_cap: 3_000,
+            redraw_quiet: 100,
+            redraw_cap: 800,
             boot_lines: 4,
             boot_ack: 2_000,
         }
@@ -288,11 +297,21 @@ struct Cover {
     landed: Option<u64>,
     /// The last bytes since the landing.
     last: Option<u64>,
+    /// The redraw's ([`Output::Redraw`]): it lifts once the redraw's bytes
+    /// have come and gone quiet ([`Budgets::redraw_quiet`]), not on a
+    /// grace — the screen under it is the fragments until they come.
+    redraw: bool,
 }
 
 impl Cover {
     fn lifts_at(&self, budgets: &Budgets) -> u64 {
         let cap = self.since + budgets.cover_cap;
+        if self.redraw {
+            return match self.last {
+                Some(last) => cap.min(last + budgets.redraw_quiet),
+                None => self.since + budgets.redraw_cap,
+            };
+        }
         match self.landed {
             Some(landed) => {
                 let quiet = self.last.map_or(0, |last| last + budgets.cover_quiet);
@@ -913,6 +932,7 @@ impl Renderer {
                     since: now,
                     landed: Some(now),
                     last: None,
+                    redraw: true,
                 });
             } else {
                 self.reveal();
@@ -986,6 +1006,7 @@ impl Renderer {
                 since: now,
                 landed: None,
                 last: None,
+                redraw: false,
             });
         }
         self.lane.push_back(Step::Apply);
