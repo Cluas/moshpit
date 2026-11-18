@@ -741,7 +741,8 @@ fn a_reply_for_the_pane_on_screen_goes_once_the_loop_is_seen_still_on_it() {
 /// The first attach replays the pane onto a fresh tty, and a full-screen
 /// program showed fragments of earlier frames there until its next full
 /// redraw (after every switch to mosh). Its veil stays up through herdr's
-/// repaint and the redraw asked after it; a later switch asks no redraw.
+/// repaint and the redraw asked after it; a later switch asks its own (a
+/// tab switch left the same fragments).
 #[test]
 fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
     let mut rig = Rig::new();
@@ -765,7 +766,7 @@ fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
             .iter()
             .filter(|(_, output)| matches!(output, Output::Redraw))
             .count(),
-        1
+        2
     );
 }
 
@@ -1146,6 +1147,14 @@ impl Rig {
         self.drain();
     }
 
+    /// When the repaint's veil was done with: the redraw asked then, its
+    /// own veil up until that has painted.
+    fn redrawn_at(&self) -> Option<u64> {
+        self.outputs
+            .iter()
+            .find_map(|(at, output)| matches!(output, Output::Redraw).then_some(*at))
+    }
+
     fn revealed_at(&self) -> Option<u64> {
         self.outputs
             .iter()
@@ -1168,12 +1177,12 @@ fn the_veil_lifts_on_the_new_panes_repaint_not_on_the_loops_own_noise() {
     rig.run_for(40);
     rig.paint();
     rig.run_for(200);
-    assert_eq!(rig.revealed_at(), None, "lifted on the loop's own noise");
+    assert_eq!(rig.redrawn_at(), None, "lifted on the loop's own noise");
     rig.paint(); // the new pane, +250
     rig.run_for(20);
     rig.paint();
     rig.run_for(500);
-    let lifted = rig.revealed_at().expect("never lifted") - began;
+    let lifted = rig.redrawn_at().expect("never redrawn") - began;
     assert_eq!(
         lifted,
         120 + 400,
@@ -1191,7 +1200,7 @@ fn a_repaint_that_beat_the_landing_back_lifts_the_veil_after_the_repaint_grace()
     rig.run_for(80);
     rig.paint(); // the repaint arrived before the exec's answer
     rig.run_for(1_000);
-    let lifted = rig.revealed_at().expect("never lifted") - began;
+    let lifted = rig.redrawn_at().expect("never redrawn") - began;
     assert_eq!(
         lifted,
         120 + 400,
@@ -1210,12 +1219,12 @@ fn the_veil_waits_for_a_repaint_that_comes_well_after_the_landing() {
     let began = rig.now;
     rig.pick("t-2");
     rig.run_for(120 + 250);
-    assert_eq!(rig.revealed_at(), None, "lifted before the repaint");
+    assert_eq!(rig.redrawn_at(), None, "lifted before the repaint");
     rig.paint(); // the repaint, 250 ms after the landing
     rig.run_for(30);
     rig.paint();
     rig.run_for(1_000);
-    let lifted = rig.revealed_at().expect("never lifted") - began;
+    let lifted = rig.redrawn_at().expect("never redrawn") - began;
     assert_eq!(lifted, 120 + 250 + 30 + 150);
 }
 

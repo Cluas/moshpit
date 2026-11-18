@@ -107,8 +107,8 @@ pub enum Output {
     /// Take the veil down: the new pane has painted, or no switch is coming
     /// to paint under it.
     Reveal,
-    /// The loop's first pane has painted: have its program redraw the
-    /// whole screen (mosh's Repaint). The attach replays the pane's raw
+    /// A pane the loop landed on has painted (the first, and every switch
+    /// since): have its program redraw the whole screen (mosh's Repaint). The attach replays the pane's raw
     /// stream onto a fresh tty, and a full-screen program (Claude Code)
     /// left fragments of earlier frames there until its next full redraw
     /// (seen after every switch to mosh; the person's Repaint cleared them).
@@ -923,9 +923,11 @@ impl Renderer {
         if let Some(cover) = self.cover
             && now >= cover.lifts_at(&self.budgets)
         {
-            if !self.redrawn && cover.landed.is_some() {
-                // The first pane's repaint is over: the redraw now, and the
-                // veil stays up until that has gone quiet too.
+            if !cover.redraw && cover.landed.is_some() {
+                // The pane's repaint is over: the redraw now, and the veil
+                // stays up until that has gone quiet too. Every landing,
+                // not only the first: each attach replays its pane onto
+                // the loop's tty, fragments and all (a tab switch's too).
                 self.redrawn = true;
                 self.outputs.push_back(Output::Redraw);
                 self.cover = Some(Cover {
