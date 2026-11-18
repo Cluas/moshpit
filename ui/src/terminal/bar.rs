@@ -17,6 +17,8 @@ use nsh_core::prelude::*;
 use super::{
     Crumb, Ctx, Intent, line,
     model::{Crumbs, LinkState, Mux, PillKind, Signal as AgentSignal},
+    picker::{Kind, Vocab, new_prompt},
+    prompt::Prompts,
 };
 use crate::{
     connection_form::JumpRoute,
@@ -25,6 +27,7 @@ use crate::{
         alert::alert_dialog,
         button::{IconButtonSize, IconVariant, icon_button},
         icon::{IconSize, Tone, icon},
+        menu::{MenuEntry, menu},
         motion::Duration as Motion,
         status::{Status, status_dot},
         tokens::token,
@@ -41,7 +44,7 @@ pub(crate) fn height(compact: bool) -> f32 {
 const PIECE: f32 = 36.0;
 
 /// The bar.
-pub(crate) fn top_bar(ctx: Ctx) -> AnyElement {
+pub(crate) fn top_bar(ctx: Ctx, prompts: Prompts) -> AnyElement {
     let compact = {
         let ctx = ctx.clone();
         computed(move || ctx.compact())
@@ -64,7 +67,8 @@ pub(crate) fn top_bar(ctx: Ctx) -> AnyElement {
                     .px(px(16.0))
                     .child(leading_button(ctx.clone()))
                     .child(pill(ctx.clone()))
-                    .child(breadcrumb(ctx.clone())),
+                    .child(breadcrumb(ctx.clone()))
+                    .child(create_button(ctx.clone(), prompts)),
             ),
         )
         // The hairline at the bar's bottom, over it.
@@ -161,6 +165,169 @@ fn leading_button(ctx: Ctx) -> AnyElement {
         })
     })
     .into_element()
+}
+
+// --- New: ＋ ------------------------------------------------------------------
+
+/// What the bar's ＋ can make, by the menu's ids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Create {
+    /// A window (herdr: a tab) in the session shown.
+    Window,
+    /// A pane split from the window shown.
+    Pane,
+    /// A session (herdr: a workspace).
+    Session,
+}
+
+impl Create {
+    pub fn id(self) -> &'static str {
+        match self {
+            Create::Window => "new-window",
+            Create::Pane => "new-pane",
+            Create::Session => "new-session",
+        }
+    }
+
+    pub fn named(id: &str) -> Option<Create> {
+        [Create::Window, Create::Pane, Create::Session]
+            .into_iter()
+            .find(|c| c.id() == id)
+    }
+}
+
+/// The ＋ menu's entries on `mux`: a new window (tab), a new pane split
+/// from the window shown (greyed out when no window is), a new session
+/// (workspace). The words are the ones the overview, the pane menus and
+/// the sessions page say.
+pub fn create_entries(mux: Mux, has_window: bool) -> Vec<MenuEntry> {
+    let herdr = mux == Mux::Herdr;
+    vec![
+        MenuEntry::new(
+            Create::Window.id(),
+            if herdr {
+                t!("New tab")
+            } else {
+                t!("New window")
+            },
+        )
+        .symbol("plus.rectangle.on.rectangle"),
+        MenuEntry::new(Create::Pane.id(), t!("New Pane"))
+            .symbol("rectangle.split.2x1")
+            .disabled(!has_window),
+        MenuEntry::new(
+            Create::Session.id(),
+            if herdr {
+                t!("New Workspace")
+            } else {
+                t!("New Session")
+            },
+        )
+        .symbol("square.stack"),
+    ]
+}
+
+/// What the ＋ shows for: a live tree on a multiplexer, and the window it
+/// shows (the pane's split goes there).
+fn create_target(ctx: &Ctx) -> Option<(Mux, Option<String>)> {
+    ctx.chrome.with(|c| {
+        let crumbs = c.crumbs.as_ref().filter(|crumbs| crumbs.live)?;
+        if c.mux == Mux::None {
+            return None;
+        }
+        let window = crumbs.tree.as_ref().and_then(|t| t.active_window.clone());
+        Some((c.mux, window))
+    })
+}
+
+/// The bar's ＋ (a glass 44 pt circle, as Back is): the system menu of
+/// [`create_entries`]. A window or a session is named first by the host's
+/// prompt (blank: the program names it); a pane is made at once. Shown
+/// only over a live multiplexer's tree.
+/// The narrowest screen the bar's ＋ shows on.
+const CREATE_MIN_WIDTH: f32 = 360.0;
+
+fn create_button(ctx: Ctx, prompts: Prompts) -> AnyElement {
+    // Under 360 pt (an iPad's narrowest split, Slide Over) the ＋ would
+    // squeeze the breadcrumb's three 44 pt segments out of their capsule;
+    // there the pickers' own ＋ (a tap on the window or the session) makes
+    // them instead.
+    let target = {
+        let ctx = ctx.clone();
+        computed(move || {
+            (window().width.0 >= CREATE_MIN_WIDTH)
+                .then(|| create_target(&ctx))
+                .flatten()
+        })
+    };
+    dynamic(move || {
+        let Some((mux, window)) = target.get() else {
+            return view().into_element();
+        };
+        let (ctx, prompts) = (ctx.clone(), prompts.clone());
+        untracked(move || {
+            let label = t!("New…");
+            let has_window = window.is_some();
+            let drawing = view().accessibility_elements_hidden(true).child(
+                icon_button("plus", label.clone())
+                    .variant(IconVariant::Glass)
+                    .size(IconButtonSize::Md),
+            );
+            let pick = move |id: String| {
+                if let Some(create) = Create::named(&id) {
+                    create_from(&ctx, &prompts, mux, window.clone(), create);
+                }
+            };
+            view()
+                .relative()
+                .flex_shrink_0()
+                .child(drawing)
+                .child(menu(
+                    create_entries(mux, has_window),
+                    Some("terminal-new"),
+                    move || label.clone(),
+                    pick,
+                ))
+                .into_element()
+        })
+    })
+    .into_element()
+}
+
+/// Does `create` from the ＋: asks the name first for a window or a
+/// session, splits `window` at once.
+pub(crate) fn create_from(
+    ctx: &Ctx,
+    prompts: &Prompts,
+    mux: Mux,
+    window: Option<String>,
+    create: Create,
+) {
+    let kind = match create {
+        Create::Pane => {
+            if let Some(window) = window {
+                ctx.ask(Intent::NewPane(window));
+            }
+            return;
+        }
+        Create::Window => Kind::Windows,
+        Create::Session => Kind::Sessions,
+    };
+    let tell = ctx.tell.clone();
+    let ask = ctx.tell.clone();
+    prompts.ask(
+        &move |event| ask(Intent::Prompt(event)),
+        new_prompt(kind, &Vocab::of(mux)),
+        move |text| {
+            let Some(text) = text else { return };
+            let name = text.trim();
+            let name = (!name.is_empty()).then(|| name.to_owned());
+            tell(match create {
+                Create::Session => Intent::NewSession(name),
+                _ => Intent::NewWindow(name),
+            });
+        },
+    );
 }
 
 // --- The transport capsule -------------------------------------------------

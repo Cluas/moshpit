@@ -374,3 +374,88 @@ fn the_session_is_never_named_twice() {
     );
     channel.close();
 }
+
+/// The bar's ＋ is always there on a live terminal: a system menu of New
+/// window (herdr: New tab), a split of the window in use, and New session
+/// (herdr: New workspace). A window or a session asks its name first (the
+/// host's prompt, blank: the program names it); the split goes at once.
+#[test]
+fn the_bars_plus_makes_a_window_a_pane_or_a_session() {
+    let (mut app, channel, natives) =
+        start_observing(Screen::Terminal, Params::default(), "terminal-screen");
+    let heard = hear(&channel);
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    let menu = natives
+        .find("moshpit/menu", "terminal-new")
+        .expect("the bar's ＋");
+    let titles: Vec<(String, bool)> = natives
+        .prop(menu, "items")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            (
+                i["id"].as_str().unwrap().to_owned(),
+                i["disabled"].as_bool().unwrap_or(false),
+            )
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            ("new-window".to_owned(), false),
+            ("new-pane".to_owned(), false),
+            ("new-session".to_owned(), false),
+        ]
+    );
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(items[0]["title"], "New window");
+    assert_eq!(items[2]["title"], "New Session");
+
+    // The split: at once, in the window in use.
+    common::emit(&mut app.0, menu, "select", json!("new-pane"));
+    assert_eq!(
+        next_intent(&heard),
+        json!({"ev": "new-pane", "window": "@1"})
+    );
+
+    // A window and a session: the name first.
+    for (pick, title, said) in [
+        ("new-window", "New Window", "new-window"),
+        ("new-session", "New Session", "new-session"),
+    ] {
+        common::emit(&mut app.0, menu, "select", json!(pick));
+        let prompt = next_intent(&heard);
+        assert_eq!(prompt["ev"], "prompt", "{pick}");
+        assert_eq!(prompt["title"], title, "{pick}");
+        let id = prompt["id"].as_u64().unwrap();
+        post(
+            &mut app.0,
+            &channel,
+            &json!({"op": "prompted", "id": id, "text": " build "}).to_string(),
+        );
+        assert_eq!(next_intent(&heard), json!({"ev": said, "name": "build"}));
+        common::emit(&mut app.0, menu, "select", json!(pick));
+        let id = next_intent(&heard)["id"].as_u64().unwrap();
+        post(
+            &mut app.0,
+            &channel,
+            &json!({"op": "prompted", "id": id, "text": ""}).to_string(),
+        );
+        assert_eq!(next_intent(&heard), json!({"ev": said, "name": null}));
+    }
+
+    // herdr: a tab and a workspace.
+    let mut herdr = chrome();
+    herdr["mux"] = json!("herdr");
+    herdr["crumbs"]["tree"]["mux"] = json!("herdr");
+    post(&mut app.0, &channel, &herdr.to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    let menu = natives.find("moshpit/menu", "terminal-new").unwrap();
+    let items = natives.prop(menu, "items").unwrap();
+    assert_eq!(items[0]["title"], "New tab");
+    assert_eq!(items[2]["title"], "New Workspace");
+    channel.close();
+}

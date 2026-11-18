@@ -347,6 +347,9 @@ pub enum Intent {
     NewPane(String),
     /// A new window, named so (none: the program names it).
     NewWindow(Option<String>),
+    /// A new session (herdr: workspace), named so (none: the program
+    /// names it): the bar's ＋.
+    NewSession(Option<String>),
     RenameWindow {
         id: String,
         name: String,
@@ -411,6 +414,7 @@ impl Intent {
             }
             Intent::NewPane(window) => json!({"ev": "new-pane", "window": window}),
             Intent::NewWindow(name) => json!({"ev": "new-window", "name": name}),
+            Intent::NewSession(name) => json!({"ev": "new-session", "name": name}),
             Intent::RenameWindow { id, name } => {
                 json!({"ev": "rename-window", "id": id, "name": name})
             }
@@ -678,7 +682,7 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                 // The keyboard's height: the column ends where the keyboard
                 // starts, moving with it in the commit that hears it.
                 .mb_keyboard()
-                .child(bar::top_bar(ctx.clone()))
+                .child(bar::top_bar(ctx.clone(), prompts.clone()))
                 .child(cover::pane_area(ctx.clone(), order))
                 .child(panels::panels(ctx.clone()))
                 .child(keys::shortcut_bar(ctx.clone())),

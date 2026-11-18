@@ -1976,6 +1976,9 @@ extension TerminalScreen {
         case .newWindow(let name):
             Haptics.tap()
             withMultiplexer { $0.newWindow(named: name) }
+        case .newSession(let name):
+            Haptics.tap()
+            withMultiplexer { $0.newSession(named: name) }
         case .renameWindow(let window, let name):
             withMultiplexer { $0.renameWindow(window, to: name) }
         case .killPane(let pane):

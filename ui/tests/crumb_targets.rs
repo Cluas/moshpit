@@ -302,3 +302,21 @@ fn no_intent(rx: &std::sync::mpsc::Receiver<String>) {
         assert_eq!(value["ev"], "anchor", "the screen told the host {value}");
     }
 }
+
+/// The bar's ＋ shows on every iPhone (375 pt and up) and gives way on a
+/// narrower screen (an iPad's Slide Over), where the breadcrumb's three
+/// targets need the room.
+#[test]
+fn the_bars_plus_gives_way_on_a_narrow_screen() {
+    let message = chrome("train", "1", "claude", true);
+    let (app, channel) = open_phone(&message, 375.0, "label:1");
+    assert!(
+        app.screen().matches("label:New…").unwrap(),
+        "on a 375 pt iPhone"
+    );
+    assert_targets(&app, ["train", "1", "claude"]);
+    channel.close();
+    let (app, channel) = open_phone(&message, 320.0, "label:1");
+    assert!(!app.screen().matches("label:New…").unwrap(), "320 pt: gone");
+    channel.close();
+}

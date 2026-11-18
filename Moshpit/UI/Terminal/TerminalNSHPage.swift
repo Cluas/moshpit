@@ -488,6 +488,8 @@ enum TerminalNSHIntent: Equatable {
     case selectPane(String)
     case newPane(String)
     case newWindow(String?)
+    /// The bar's ＋ menu: a new session (herdr: workspace), optionally named.
+    case newSession(String?)
     case renameWindow(String, String)
     case killPane(String)
     case killWindow(String)
@@ -556,6 +558,8 @@ enum TerminalNSHIntent: Equatable {
             self = .newPane(window)
         case "new-window":
             self = .newWindow(message["name"] as? String)
+        case "new-session":
+            self = .newSession(message["name"] as? String)
         case "rename-window":
             guard let id = message["id"] as? String, let name = message["name"] as? String else { return nil }
             self = .renameWindow(id, name)
