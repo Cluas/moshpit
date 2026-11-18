@@ -1716,7 +1716,11 @@ extension TerminalScreen {
         // route for mosh (``ServerConnection/jumpMoshRoute``).
         chrome.jumpMosh = connection.dialsMoshThroughJump
         chrome.jump = connection.viaConnectionId != nil && !chrome.jumpMosh
+        // The notice that mosh can use UDP: only while no route was ever
+        // picked. A route set to SSH — the pill's switch back, the banner's
+        // "this time only", the form — is the person's choice already.
         chrome.jumpSsh = chrome.jump && connection.connectionProtocol == .mosh
+            && connection.jumpMoshRoute == nil
         chrome.mux = connection.multiplexer
         chrome.sidebar = onToggleSidebar != nil
         chrome.pill = transportKind
