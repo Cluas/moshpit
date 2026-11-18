@@ -130,6 +130,16 @@ final class ConnectionStore {
         return saved(id)
     }
 
+    /// Through a jump host: mosh from now on, its UDP on `route`. Returns
+    /// the saved record.
+    func useMoshThroughJump(of id: UUID, route: JumpMoshRoute) -> ServerConnection? {
+        guard var current = saved(id) else { return nil }
+        current.connectionProtocol = .mosh
+        current.jumpMoshRoute = route.rawValue
+        update(current)
+        return saved(id)
+    }
+
     /// Deletes the connection, and what sessions remember about it
     /// (``SessionMemory``: its last tmux selection, its host's capabilities)
     /// once the list is trusted (B199).

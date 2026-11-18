@@ -275,6 +275,9 @@ pub enum Intent {
     BannerDismiss,
     /// The notice's remedy.
     NoticeAction,
+    /// Through a jump host over SSH: mosh from now on, its UDP on `route`
+    /// (saved on the connection, which reconnects).
+    JumpRoute(crate::connection_form::JumpRoute),
     /// The copied link's chip.
     OpenLink,
     /// A shortcut chip, by its id (a held key repeats).
@@ -378,6 +381,7 @@ impl Intent {
             Intent::BannerAction => ev("banner-action"),
             Intent::BannerDismiss => ev("banner-dismiss"),
             Intent::NoticeAction => ev("notice-action"),
+            Intent::JumpRoute(route) => json!({"ev": "jump-route", "route": route.id()}),
             Intent::OpenLink => ev("open-link"),
             Intent::Chip(id) => json!({"ev": "chip", "id": id}),
             Intent::Arrow(dir) => json!({"ev": "arrow", "dir": dir.name()}),

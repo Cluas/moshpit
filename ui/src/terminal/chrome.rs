@@ -287,6 +287,7 @@ fn jump_notice(ctx: Ctx) -> AnyElement {
     // Up from the first live frame; once it has gone it stays gone.
     let gone = signal(false);
     let armed = signal(false);
+    let asking = signal(false);
     let shown = computed(move || {
         !gone.get() && chrome.with(|c| c.jump_ssh && c.state == super::model::LinkState::Live)
     });
@@ -294,15 +295,31 @@ fn jump_notice(ctx: Ctx) -> AnyElement {
     effect(move || {
         if shown.get() && !armed.get_untracked() {
             armed.set(true);
-            timer.replace(Some(set_timeout(JUMP_NOTICE_HOLD, move || gone.set(true))));
+            // Not while its sheet asks: going would drop the answer.
+            timer.replace(Some(set_timeout(JUMP_NOTICE_HOLD, move || {
+                if !asking.get_untracked() {
+                    gone.set(true);
+                }
+            })));
         }
     });
     banner(BannerTone::Info, || {
         t!(
-            "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings."
+            "This connection goes through a jump host over SSH. mosh can use UDP instead."
         )
         .into()
     })
+    .action(t!("Use UDP…"), {
+        let ctx = ctx.clone();
+        move || {
+            asking.set(true);
+            super::bar::pick_udp_route(&ctx, move || {
+                asking.set(false);
+                gone.set(true);
+            });
+        }
+    })
+    .action_test_id("terminal-jump-notice-udp")
     .floating()
     .shown(move || shown.get())
     .on_close(move || gone.set(true))

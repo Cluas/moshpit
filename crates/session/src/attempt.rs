@@ -572,6 +572,14 @@ pub(crate) fn mosh_command(
         spec.mosh_port_range.0,
         spec.mosh_port_range.1,
     );
+    // Through a jump host SSH reaches the target at the address the jump
+    // host sees, while the phone's UDP comes to whatever address it — or
+    // the jump host's forward — aims at: `-s` would bind the one and drop
+    // the other. The server listens on every address (mosh's
+    // `--bind-server=any`).
+    if matches!(spec.hop, Hop::Through(_)) {
+        command = command.replacen(" new -s ", " new ", 1);
+    }
     let program = match (multiplexer, herdr) {
         (Multiplexer::Tmux, _) => Some(mosh_tmux_program(spec.tmux_command(), remembered)),
         (Multiplexer::Herdr, Some(herdr)) => Some(mosh_herdr_program(spec, herdr)),
@@ -1128,6 +1136,22 @@ mod tests {
             proxy: None,
         }));
         spec
+    }
+
+    /// Through a jump host mosh-server listens on every address: SSH
+    /// reached the target at the jump host's view of it, which the phone's
+    /// UDP may not be aimed at. Straight there it keeps `-s`.
+    #[test]
+    fn through_a_jump_host_mosh_server_binds_every_address() {
+        for route in [JumpMoshRoute::Direct, JumpMoshRoute::ViaJump] {
+            let command = mosh_command(&through_spec(route), Multiplexer::None, None, None);
+            assert!(command.contains("mosh-server new -c 256"), "{command}");
+            assert!(!command.contains(" -s "), "{command}");
+        }
+        let mut straight = through_spec(JumpMoshRoute::Direct);
+        straight.hop = Hop::Direct;
+        let command = mosh_command(&straight, Multiplexer::None, None, None);
+        assert!(command.contains("mosh-server new -s -c 256"), "{command}");
     }
 
     /// Through a jump host mosh's UDP is aimed by the connection's route:

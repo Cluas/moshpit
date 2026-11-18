@@ -1917,6 +1917,15 @@ extension TerminalScreen {
             }
         case .noticeAction:
             active?.runHerdrNoticeAction()
+        case .jumpRoute(let route):
+            guard active != nil else { return }
+            stillSwitch = true
+            holdStill()
+            if let saved = connectionHolder.store.useMoshThroughJump(of: connection.id, route: route) {
+                connection = saved
+            }
+            Haptics.select()
+            reconnect(still: true)
         case .openLink:
             if let url = copiedURL {
                 UIApplication.shared.open(url)

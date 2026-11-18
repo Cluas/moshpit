@@ -474,6 +474,8 @@ enum TerminalNSHIntent: Equatable {
     case window(Int)
     case takeOver, create, install
     case bannerAction, bannerDismiss, noticeAction, openLink
+    /// Through a jump host over SSH: mosh from now on, its UDP on this route.
+    case jumpRoute(JumpMoshRoute)
     case chip(String)
     case arrow(String)
     case scroll(String)
@@ -515,6 +517,10 @@ enum TerminalNSHIntent: Equatable {
         case "banner-action": self = .bannerAction
         case "banner-dismiss": self = .bannerDismiss
         case "notice-action": self = .noticeAction
+        case "jump-route":
+            guard let route = (message["route"] as? String).flatMap(JumpMoshRoute.init(rawValue:)),
+                  route != .ssh else { return nil }
+            self = .jumpRoute(route)
         case "open-link": self = .openLink
         case "chip":
             guard let id = message["id"] as? String else { return nil }

@@ -19,6 +19,7 @@ use super::{
     model::{Crumbs, LinkState, Mux, PillKind, Signal as AgentSignal},
 };
 use crate::{
+    connection_form::JumpRoute,
     face::Design,
     ui::{
         alert::alert_dialog,
@@ -285,6 +286,39 @@ fn pill(ctx: Ctx) -> AnyElement {
         .into_element()
 }
 
+/// Through a jump host over SSH, mosh asks how its UDP gets to the host:
+/// straight there, or forwarded by the jump host. The pick is saved as the
+/// connection's route and the session reconnects over mosh; the form's
+/// MOSH section has the same choice (and the forwarding rule to copy).
+///
+/// `answered` runs once the sheet is answered (the jump-host notice goes
+/// then: gone sooner, it would take the pending answer with it).
+pub(crate) fn pick_udp_route(ctx: &Ctx, answered: impl FnOnce() + 'static) {
+    ctx.ask(Intent::DialogAnchor("pill"));
+    let answer = alert_dialog()
+        .title(t!("Use mosh over UDP?"))
+        .description(t!(
+            "Pick how mosh's UDP gets to this host. You can change it later in the connection's settings, under MOSH."
+        ))
+        .action_sheet()
+        .action(JumpRoute::Direct.id(), JumpRoute::Direct.title())
+        .action(JumpRoute::ViaJump.id(), JumpRoute::ViaJump.title())
+        .cancel("cancel", t!("Cancel"))
+        .show();
+    let ctx = ctx.clone();
+    drop(spawn(async move {
+        let picked = answer
+            .await
+            .ok()
+            .and_then(|r| r.action)
+            .and_then(|id| JumpRoute::named(&id));
+        if let Some(route) = picked {
+            ctx.ask(Intent::JumpRoute(route));
+        }
+        answered();
+    }));
+}
+
 /// The banner's "Use SSH" through a jump host, mosh's UDP on a route of
 /// its own: this time only (the banner's action, a one-shot reconnect), or
 /// from now on (the route goes back to SSH, as the pill's switch does).
@@ -317,16 +351,7 @@ pub(crate) fn confirm_switch(ctx: &Ctx) {
     // Behind a jump host there is nothing to switch to: say why, and leave
     // the saved protocol alone.
     if ctx.chrome.with_untracked(|c| c.jump) {
-        ctx.ask(Intent::DialogAnchor("pill"));
-        drop(
-            alert_dialog()
-                .title(t!("This connection uses SSH"))
-                .description(t!(
-                    "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings."
-                ))
-                .cancel("ok", t!("OK"))
-                .show(),
-        );
+        pick_udp_route(ctx, || {});
         return;
     }
     let target = if ctx.chrome.with_untracked(|c| c.mosh) {

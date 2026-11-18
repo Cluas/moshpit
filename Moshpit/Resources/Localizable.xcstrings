@@ -35717,6 +35717,58 @@
         }
       }
     },
+    "Pick how mosh's UDP gets to this host. You can change it later in the connection's settings, under MOSH.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle, wie das UDP von mosh diesen Host erreicht. Du kannst es später in den Verbindungseinstellungen unter MOSH ändern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige cómo llega el UDP de mosh a este host. Puedes cambiarlo luego en los ajustes de la conexión, en MOSH."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisis comment l’UDP de mosh atteint cet hôte. Tu pourras le changer plus tard dans les réglages de la connexion, sous MOSH."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh の UDP がこのホストへ届く経路を選んでください。あとで接続設定の MOSH で変更できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh의 UDP가 이 호스트에 닿는 경로를 고르세요. 나중에 연결 설정의 MOSH에서 바꿀 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha como o UDP do mosh chega a este host. Você pode mudar depois nos ajustes da conexão, em MOSH."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 mosh 的 UDP 怎么到达这台主机。之后可以在连接设置的 MOSH 分区里改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇 mosh 的 UDP 怎麼到達這台主機。之後可以在連線設定的 MOSH 分區裡改。"
+          }
+        }
+      }
+    },
     "Picking your language keeps the foreign words you say mid-sentence intact.": {
       "localizations": {
         "de": {
@@ -50277,6 +50329,58 @@
         }
       }
     },
+    "This connection goes through a jump host over SSH. mosh can use UDP instead.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Verbindung läuft über einen Sprunghost per SSH. mosh kann stattdessen UDP verwenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión pasa por un host de salto por SSH. mosh puede usar UDP en su lugar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion passe par un hôte de rebond en SSH. mosh peut utiliser UDP à la place."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続はジャンプホスト経由の SSH です。mosh は UDP も使えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결은 점프 호스트를 거쳐 SSH로 연결됩니다. mosh는 UDP를 대신 쓸 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexão passa por um host de salto via SSH. O mosh pode usar UDP em vez disso."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个连接经跳板机走 SSH。mosh 也可以改走 UDP。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個連線經跳板機走 SSH。mosh 也可以改走 UDP。"
+          }
+        }
+      }
+    },
     "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": {
       "localizations": {
         "de": {
@@ -53553,6 +53657,58 @@
         }
       }
     },
+    "Use UDP…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP verwenden …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar UDP…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser UDP…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP を使う…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP 사용…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar UDP…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用 UDP…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用 UDP…"
+          }
+        }
+      }
+    },
     "Use mosh": {
       "localizations": {
         "de": {
@@ -53601,6 +53757,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 mosh"
+          }
+        }
+      }
+    },
+    "Use mosh over UDP?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh über UDP verwenden?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Usar mosh por UDP?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser mosh en UDP ?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh で UDP を使いますか？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh를 UDP로 쓸까요?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar mosh por UDP?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 mosh 走 UDP？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讓 mosh 走 UDP？"
           }
         }
       }

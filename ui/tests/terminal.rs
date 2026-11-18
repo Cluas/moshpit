@@ -186,7 +186,7 @@ fn the_pill_asks_before_it_switches_and_hangs_the_question_from_itself() {
 }
 
 #[test]
-fn behind_a_jump_host_the_pill_explains_ssh_and_switches_nothing() {
+fn behind_a_jump_host_the_pill_asks_how_mosh_udp_gets_there() {
     let (mut app, channel, _) = open(Params::default());
     app.answer_dialogs_myself();
     let heard = hear(&channel);
@@ -196,18 +196,45 @@ fn behind_a_jump_host_the_pill_explains_ssh_and_switches_nothing() {
     assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
     assert!(common::wait_dialog(&mut app), "the alert never asked");
     let dialog = app.pending_dialog().cloned().expect("the alert asks");
-    assert_eq!(dialog.title.as_deref(), Some("This connection uses SSH"));
-    assert_eq!(
-        dialog.message.as_deref(),
-        Some(
-            "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings."
-        )
-    );
+    assert_eq!(dialog.title.as_deref(), Some("Use mosh over UDP?"));
     let texts: Vec<_> = dialog.buttons.iter().map(|b| b.text.clone()).collect();
-    assert_eq!(texts, ["OK"]);
-    app.answer_dialog(nsh_testing::DialogAnswer::Press("OK".into()))
+    assert_eq!(
+        texts,
+        ["UDP straight to the host", "UDP forwarded by the jump host", "Cancel"]
+    );
+    app.answer_dialog(nsh_testing::DialogAnswer::Press("UDP straight to the host".into()))
+        .unwrap();
+    let intent = next_intent(&heard);
+    assert_eq!(intent["ev"], "jump-route");
+    assert_eq!(intent["route"], "direct");
+    // Cancel picks nothing.
+    app.press("id:terminal-transport-switch").unwrap();
+    assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
+    assert!(common::wait_dialog(&mut app));
+    app.answer_dialog(nsh_testing::DialogAnswer::Press("Cancel".into()))
         .unwrap();
     no_intent(&heard);
+    channel.close();
+}
+
+/// The jump-host notice's "Use UDP…" asks the same, and goes.
+#[test]
+fn the_jump_host_notice_offers_udp_in_place() {
+    let (mut app, channel, _) = open(Params::default());
+    app.answer_dialogs_myself();
+    let heard = hear(&channel);
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    app.wait_for("id:terminal-jump-notice-udp").unwrap();
+    app.press("id:terminal-jump-notice-udp").unwrap();
+    assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
+    assert!(common::wait_dialog(&mut app), "the alert never asked");
+    app.answer_dialog(nsh_testing::DialogAnswer::Press(
+        "UDP forwarded by the jump host".into(),
+    ))
+    .unwrap();
+    let intent = next_intent(&heard);
+    assert_eq!(intent["ev"], "jump-route");
+    assert_eq!(intent["route"], "viaJump");
     channel.close();
 }
 
@@ -1069,7 +1096,7 @@ fn command_keys_ask_what_the_menu_says_once_per_press() {
 
 #[test]
 fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
-    let words = "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.";
+    let words = "This connection goes through a jump host over SSH. mosh can use UDP instead.";
     let (mut app, channel, _) = open(Params::default());
     let heard = hear(&channel);
     show(&mut app, &channel, &chrome());
@@ -1130,7 +1157,7 @@ fn a_roam_over_in_a_moment_shows_no_banner() {
 
 #[test]
 fn the_jump_host_notice_goes_by_itself() {
-    let words = "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.";
+    let words = "This connection goes through a jump host over SSH. mosh can use UDP instead.";
     let (mut app, channel, _) = open(Params::default());
     show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
     app.wait_for("id:terminal-jump-notice").unwrap();
