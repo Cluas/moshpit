@@ -1,0 +1,28 @@
+{"cli": "shell", "path": "mosh", "cols": 80, "rows": 24, "text": "hello world", "predict": "never"}
+{"t": 652, "o": "G1s/MTA0OWgbWz8xaBtbPzVsG1tyG1swbRtbSBtbMkobWz8yNWwbW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSxtbMTsxSBtbPzI1aBtbMG0bWz8yMDA0bBtbPzEwMDNsG1s/MTAwMmwbWz8xMDAxbBtbPzEwMDBsG1s/MTAwNGwbWz8xMDE1bBtbPzEwMDZsG1s/MTAwNWw="}
+{"t": 916, "o": "G1s/MjVsCnNoLTMuMiQgG1s/MjVo"}
+{"t": 1942, "k": "h"}
+{"t": 1970, "o": "aA=="}
+{"t": 2198, "k": "e"}
+{"t": 2222, "o": "ZQ=="}
+{"t": 2457, "k": "l"}
+{"t": 2474, "o": "bA=="}
+{"t": 2712, "k": "l"}
+{"t": 2723, "o": "bA=="}
+{"t": 2968, "k": "o"}
+{"t": 2979, "o": "bw=="}
+{"t": 3237, "k": " "}
+{"t": 3258, "o": "IA=="}
+{"t": 3517, "k": "w"}
+{"t": 3529, "o": "dw=="}
+{"t": 3770, "k": "o"}
+{"t": 3785, "o": "bw=="}
+{"t": 4044, "k": "r"}
+{"t": 4063, "o": "cg=="}
+{"t": 4310, "k": "l"}
+{"t": 4330, "o": "bA=="}
+{"t": 4587, "k": "d"}
+{"t": 4601, "o": "ZA=="}
+{"t": 4862, "k": "Enter"}
+{"t": 4874, "o": "G1s/MjVsDQpzaDogaGVsbG86IGNvbW1hbmQgbm90IGZvdW5kDQpzaC0zLjIkIBtbPzI1aA=="}
+{"ref": ["", "sh-3.2$ hello world", "sh: hello: command not found", "sh-3.2$", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], "cursor": [8, 3, 1], "at": 26}
