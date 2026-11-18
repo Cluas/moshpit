@@ -289,8 +289,15 @@ async fn mosh_tmux_sidecar_tree_pin_and_follow() {
     let mut term = Term::attach(panes[0].stream);
     term.resize(90, 28);
     // The renderer: tmux's client as mosh's program, on the most recent
-    // session (beta).
-    assert!(term.wait_for("[beta", 15).await, "{}", term.text());
+    // session (beta, or from tmux 3.8 the phone's own group of it,
+    // `beta~mp-…`). Over mosh its status line is off, so tmux says where it is.
+    let clients = || tmux.run(&["list-clients", "-F", "#{client_control_mode} #{session_name}"]);
+    assert!(
+        eventually(15, || clients().lines().any(|l| l.starts_with("0 beta"))).await,
+        "{}\n{}",
+        clients(),
+        term.text()
+    );
 
     // The tree, from the sidecar.
     assert!(

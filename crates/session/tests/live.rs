@@ -992,9 +992,8 @@ async fn mosh_with_tmux_renders_the_existing_session_and_never_creates_one() {
     let _reaper = mosh_server_pid(&mut bench, id).await;
     let (_, panes) = bench.panes(id, 10).await;
     let mut term = Term::attach(shell(&panes).stream);
-    // tmux's status line names the session: `[w10]`, or from tmux 3.8 the
-    // phone's own group of it, `[w10~mp-…` (B773, B812).
-    assert!(term.wait_for("[w10", 15).await, "{}", term.text());
+    // Over mosh tmux's status line is off, so it can't name the session:
+    // the command typed lands in w10's pane (checked below) instead.
     term.write(b"echo mt-$((6*7))\r");
     assert!(term.wait_for("mt-42", 15).await, "{}", term.text());
     let pane = tmux.run(&["display-message", "-p", "-t", "w10", "#{pane_id}"]);
