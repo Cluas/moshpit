@@ -97,25 +97,36 @@ final class RustSessionDriver: RustSessionListener {
     var hasClosed: Bool { closed }
 
     private var connection: ServerConnection { session.connection }
+    /// What the core really dialled: the saved protocol is mosh, but a host
+    /// without mosh-server makes it dial SSH (`Degrade::MoshServerMissing`).
+    /// The multiplexer flags follow the transport, not the setting, or herdr's
+    /// panes land on a tmux controller and paint "No tmux sessions".
+    private var dialsMosh: Bool {
+        connection.dialsMosh && session.degrade?.missing != .moshServer
+    }
+    /// A degrade that still leaves the multiplexer's own chrome working.
+    private var multiplexerIntact: Bool {
+        session.degrade == nil || session.degrade?.missing == .moshServer
+    }
     /// Whether this connection paints through tmux pane hosts.
     private var expectsTmux: Bool {
-        !connection.dialsMosh && connection.multiplexer == .tmux
+        !dialsMosh && connection.multiplexer == .tmux
     }
     /// mosh with tmux: the sidecar's tree beside mosh's screen.
     private var expectsSidecar: Bool {
-        connection.dialsMosh && connection.multiplexer == .tmux
+        dialsMosh && connection.multiplexer == .tmux
     }
     /// herdr over SSH: its panes' frames on the core's frame channel.
     private var expectsHerdr: Bool {
-        !connection.dialsMosh && connection.multiplexer == .herdr
+        !dialsMosh && connection.multiplexer == .herdr
     }
     /// herdr over mosh: mosh paints the loop, the control plane beside it.
     private var expectsMoshHerdr: Bool {
-        connection.dialsMosh && connection.multiplexer == .herdr
+        dialsMosh && connection.multiplexer == .herdr
     }
     /// herdr's chrome, on either transport.
     private var expectsHerdrSurface: Bool { expectsHerdr || expectsMoshHerdr }
-    private var isMosh: Bool { connection.dialsMosh }
+    private var isMosh: Bool { dialsMosh }
 
     init(session: SessionHub.ActiveSession, core: RustCore,
          appearance: RustTmuxController.Appearance) {
@@ -713,7 +724,7 @@ final class RustSessionDriver: RustSessionListener {
     /// state through it). A reconnect gets a fresh one; the previous one is
     /// the frozen frame until the new attach paints.
     private func wireTmuxIfExpected() {
-        guard expectsTmux, session.degrade == nil else { return }
+        guard expectsTmux, multiplexerIntact else { return }
         if let tmux, tmux.attach == nil { return }
         installTmux()
         session.rustSetAwaitingFirstFrame(true)
@@ -723,7 +734,7 @@ final class RustSessionDriver: RustSessionListener {
     /// Connected over mosh with tmux: the sidecar's surface (one for the
     /// session: a reconnect's sidecar mirrors into the same one).
     private func wireSidecarIfExpected() {
-        guard expectsSidecar, session.degrade == nil, tmux == nil else { return }
+        guard expectsSidecar, multiplexerIntact, tmux == nil else { return }
         let grid = session.coordinator.lastReportedSize
             ?? SessionHub.ActiveSession.estimateGrid(fontSize: appearance.fontSize)
         let adapter = RustTmuxController(driver: self, appearance: appearance, grid: grid,
@@ -834,7 +845,7 @@ final class RustSessionDriver: RustSessionListener {
     /// reconnect's client mirrors into the same one). Over mosh the screen
     /// is mosh's: no frame to wait for.
     private func wireHerdrIfExpected() {
-        guard expectsHerdrSurface, session.degrade == nil else { return }
+        guard expectsHerdrSurface, multiplexerIntact else { return }
         if herdrSurface == nil {
             let surface = RustHerdrController(driver: self)
             herdrSurface = surface
