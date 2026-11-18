@@ -1319,7 +1319,7 @@ fn over_mosh_the_status_line_is_hidden_on_the_users_own_numeric_session() {
         return;
     }
     server.tmux(&["rename-session", "-t", "main", "0"]);
-    let _desk = server.desktop("=0");
+    let mut desk = server.desktop("=0");
     assert!(eventually(10, || server.renderer_pid().is_some()));
     let id = server.tmux(&["display-message", "-p", "-t", "=0:", "#{session_id}"]);
     let renderer = server.renderer(&id);
@@ -1370,6 +1370,8 @@ fn over_mosh_the_status_line_is_hidden_on_the_users_own_numeric_session() {
         phone.sent
     );
     drop(renderer);
+    let _ = desk.kill();
+    let _ = desk.wait();
     assert!(off, "tmux's status line is still on for the renderer\n{report}");
 }
 
@@ -1393,7 +1395,7 @@ fn over_mosh_the_status_line_is_hidden_beside_earlier_phone_groups() {
         return;
     }
     server.tmux(&["rename-session", "-t", "main", "0"]);
-    let _desk = server.desktop("=0");
+    let mut desk = server.desktop("=0");
     assert!(eventually(10, || server.renderer_pid().is_some()));
     let id = server.tmux(&["display-message", "-p", "-t", "=0:", "#{session_id}"]);
     let renderer = server.renderer(&id);
@@ -1463,6 +1465,8 @@ fn over_mosh_the_status_line_is_hidden_beside_earlier_phone_groups() {
     let still = mine(&server).iter().all(|l| l.ends_with(" off"));
     drop(renderer);
     drop(old);
+    let _ = desk.kill();
+    let _ = desk.wait();
     eprintln!("{report}");
     assert!(off && still, "tmux's status line is on for the renderer\n{report}");
 }
