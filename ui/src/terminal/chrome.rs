@@ -134,10 +134,27 @@ pub(crate) fn over_pane(ctx: Ctx, order: Memo<super::switcher::Order>) -> AnyEle
 /// The one banner (§6.3): the kind the host posts, made again only when
 /// the kind changes, so a roam's round trip updates its words in place.
 fn banner_slot(ctx: Ctx) -> AnyElement {
-    let current = {
+    let posted = {
         let ctx = ctx.clone();
         computed(move || ctx.chrome.with(|c| c.banner.as_ref().map(Kind::of)))
     };
+    // A roam shows only once it has lasted ROAM_GRACE: coming back from
+    // the background, iOS reports a new path and mosh's next reply ends the
+    // roam a moment later — the banner flashed by on every return.
+    let roam_due = signal(false);
+    let timer = stored(None::<Spawned<()>>);
+    effect(move || {
+        let roaming = posted.get() == Some(Kind::Roam);
+        timer.replace(None);
+        roam_due.set(false);
+        if roaming {
+            timer.replace(Some(set_timeout(ROAM_GRACE, move || roam_due.set(true))));
+        }
+    });
+    let current = computed(move || match posted.get() {
+        Some(Kind::Roam) if !roam_due.get() => None,
+        kind => kind,
+    });
     let last = kept(move || current.get());
     dynamic(move || {
         let kind = last.get();
@@ -218,6 +235,10 @@ fn notice_slot(ctx: Ctx) -> AnyElement {
 
 /// How long the jump-host notice stays before it goes by itself.
 const JUMP_NOTICE_HOLD: Timer = Timer::from_secs(6);
+
+/// How long a roam lasts before its banner shows: a return from the
+/// background roams for a moment, and says nothing.
+const ROAM_GRACE: Timer = Timer::from_millis(1500);
 
 /// A connection saved as mosh but dialled over SSH because it goes through
 /// a jump host says so once per session, when it is live: an info banner

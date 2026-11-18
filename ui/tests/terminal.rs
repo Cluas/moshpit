@@ -1041,6 +1041,34 @@ fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
 }
 
 #[test]
+fn a_roam_over_in_a_moment_shows_no_banner() {
+    // Back from the background, iOS reports a new path and mosh's next
+    // reply ends the roam: the banner used to flash by on every return.
+    let (mut app, channel, _) = open(Params::default());
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"banner": {"kind": "roam", "srtt": 40.0, "history": []}})),
+    );
+    for _ in 0..5 {
+        app.run_for(Duration::from_millis(100)).unwrap();
+        assert!(
+            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            "no banner within the grace"
+        );
+    }
+    show(&mut app, &channel, &chrome());
+    for _ in 0..25 {
+        app.run_for(Duration::from_millis(100)).unwrap();
+        assert!(
+            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            "a roam that ended never shows"
+        );
+    }
+    channel.close();
+}
+
+#[test]
 fn the_jump_host_notice_goes_by_itself() {
     let words = "Connected over SSH: mosh can't pass a jump host";
     let (mut app, channel, _) = open(Params::default());
