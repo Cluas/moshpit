@@ -49,7 +49,7 @@ use crate::{
     ui::{
         button::{Variant, button},
         empty::empty,
-        icon::Tone,
+        icon::{Tone, icon},
         mark::agent_mark,
         motion::Duration as Motion,
         notice::{BannerTone, banner},
@@ -434,8 +434,33 @@ fn session_card(
                 }
             }
         }
+        // The open session's last row: a new window (herdr: tab) in it,
+        // named first by the host's prompt. Not on a page that is read
+        // only.
+        if !read_only {
+            card = card.row(new_window_row(connection, &session, words, &tell));
+        }
     }
     card.into_element()
+}
+
+/// "New window" (herdr: "New tab") at the end of session `session`'s
+/// open card: quiet as the tree's rows, a muted + and the words.
+fn new_window_row(
+    connection: &str,
+    session: &str,
+    words: &Words,
+    tell: &Tell,
+) -> crate::ui::row::Row {
+    let intent = Intent::NewWindow {
+        connection: connection.to_owned(),
+        session: session.to_owned(),
+    };
+    let tell = tell.clone();
+    row(words.new_window.clone())
+        .leading(icon("plus").tone(Tone::Muted))
+        .on_press(move || tell(intent.event()))
+        .test_id(&format!("sessions-new-window-{connection}-{session}"))
 }
 
 /// A window's row: one pane opens it; several fold out.

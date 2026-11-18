@@ -521,3 +521,68 @@ fn a_window_never_says_its_sessions_name_again() {
     );
     channel.close();
 }
+
+/// Each open session ends in "＋ New window" (herdr: "New tab"): a quiet
+/// row that asks the host for a window in that session. A folded session
+/// and a read-only page have none.
+#[test]
+fn an_open_session_offers_a_new_window_in_it() {
+    let (mut app, channel) = open();
+    let told = hear(&channel);
+    for session in ["$0", "$1"] {
+        let id = format!("id:sessions-new-window-{HOST}-{session}");
+        assert!(app.screen().matches(&id).unwrap(), "{id}");
+        app.press(&id).unwrap();
+        assert_eq!(
+            next(&told),
+            json!({"ev": "new-window", "connection": HOST, "session": session})
+        );
+    }
+    assert!(app.screen().shows("New window"));
+    app.press(&format!("id:home-session-{HOST}-$1")).unwrap();
+    let _ = next(&told);
+    assert!(
+        !app.screen()
+            .matches(&format!("id:sessions-new-window-{HOST}-$1"))
+            .unwrap(),
+        "folded away with its windows"
+    );
+    channel.close();
+
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    show(&mut app, &channel, host(Link::Dead, Some(control())));
+    assert!(
+        !app.screen()
+            .matches(&format!("id:sessions-new-window-{HOST}-$0"))
+            .unwrap(),
+        "read-only: no new window"
+    );
+    channel.close();
+}
+
+#[test]
+fn herdr_offers_a_new_tab() {
+    let (mut app, channel) = start(Screen::Sessions, Params::default(), "sessions");
+    let mut herdr = control();
+    herdr.mux = Mux::Herdr;
+    herdr.sessions = vec![SessionInfo {
+        id: "w4".into(),
+        name: "api".into(),
+    }];
+    herdr.windows = vec![window("w4:t1", "w4", 1, "Tab 1", 1)];
+    herdr.panes = vec![pane("w4:p1", "w4:t1", 0, "zsh", "/Users/dev/src/api")];
+    herdr.active_session = Some("w4".into());
+    herdr.active_window = Some("w4:t1".into());
+    herdr.active_pane = Some("w4:p1".into());
+    herdr.hooks.clear();
+    show(&mut app, &channel, host(Link::Live, Some(herdr)));
+    let told = hear(&channel);
+    assert!(app.screen().shows("New tab"), "{:?}", app.screen().texts());
+    app.press(&format!("id:sessions-new-window-{HOST}-w4"))
+        .unwrap();
+    assert_eq!(
+        next(&told),
+        json!({"ev": "new-window", "connection": HOST, "session": "w4"})
+    );
+    channel.close();
+}

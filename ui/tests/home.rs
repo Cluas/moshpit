@@ -176,6 +176,7 @@ fn rows(nodes: &[LayoutNode]) -> Vec<LayoutNode> {
                     "home-pane-",
                     "home-idle-",
                     "home-all-",
+                    "home-new-session-",
                     "home-more-working-",
                     "card-dead-",
                     "card-edit-",
@@ -228,6 +229,7 @@ fn the_acceptance_fixture_fits_two_screens() {
             format!("home-pane-{GPU}-w5:p1"),
             format!("home-idle-{GPU}"),
             format!("home-all-{GPU}"),
+            format!("home-new-session-{GPU}"),
         ]
     );
     assert_eq!(
@@ -422,6 +424,15 @@ fn what_the_user_does_reaches_the_host() {
         (
             format!("id:home-all-{BOX}"),
             json!({"ev": "sessions", "connection": BOX}),
+        ),
+        // ＋ on each live card: herdr's workspace, tmux's session.
+        (
+            format!("id:home-new-session-{GPU}"),
+            json!({"ev": "new-session", "connection": GPU}),
+        ),
+        (
+            format!("id:home-new-session-{BOX}"),
+            json!({"ev": "new-session", "connection": BOX}),
         ),
         ("id:home-add".to_owned(), json!({"ev": "add"})),
         ("id:home-settings".to_owned(), json!({"ev": "settings"})),
@@ -723,6 +734,8 @@ fn in_the_apps_language() {
         "已完成",
         "全部工作区",
         "全部会话",
+        "新建工作区",
+        "新建会话",
         "25 分钟前断开",
         "重新连接",
         "1 个在等你",

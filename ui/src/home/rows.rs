@@ -249,6 +249,20 @@ pub(crate) fn host_row(host_row: HostRow, connection: &Connection, ctx: &Ctx) ->
     }
 }
 
+/// The card's last row, always there while the host is live with a
+/// multiplexer: a new session (herdr: workspace), named first by the
+/// host's prompt. Quiet, as the tree's rows are: a muted + and the words,
+/// no chevron (it opens no page). The long-press menus keep theirs.
+pub(crate) fn new_session_row(mux: Mux, connection: &str, ctx: &Ctx) -> Row {
+    row(match mux {
+        Mux::Tmux => t!("New Session"),
+        Mux::Herdr => t!("New Workspace"),
+    })
+    .leading(icon("plus").tone(Tone::Muted))
+    .on_press(ctx.asking(Intent::NewSession(connection.to_owned())))
+    .test_id(&format!("home-new-session-{connection}"))
+}
+
 /// A pane with no agent: called by its folder, `program · ~/path` under
 /// it, the program's symbol before it.
 fn other_pane(other: OtherPane, connection: &str, user: &str, tray: Vec<Action>, ctx: &Ctx) -> Row {

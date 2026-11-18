@@ -28,6 +28,9 @@ pub struct Words {
     pub none: String,
     /// Making one: the empty page's button.
     pub new: String,
+    /// Making a window (herdr: tab) in a session: the row at the end of an
+    /// open session's card.
+    pub new_window: String,
     /// A pane whose program the host did not say.
     pub shell: String,
     /// An agent no stamp names.
@@ -41,6 +44,7 @@ impl Words {
                 window: t!("Window"),
                 none: t!("No tmux sessions on this host"),
                 new: t!("New Session"),
+                new_window: t!("New window"),
                 shell: t!("shell"),
                 agent: t!("agent"),
             },
@@ -48,6 +52,7 @@ impl Words {
                 window: t!("Tab"),
                 none: t!("No herdr workspaces on this host"),
                 new: t!("New Workspace"),
+                new_window: t!("New tab"),
                 shell: t!("shell"),
                 agent: t!("agent"),
             },
