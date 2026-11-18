@@ -1,10 +1,10 @@
 //! The pane overview on a headless engine (`ui/src/terminal/overview.rs`):
 //! the breadcrumb's window and pane open it (held, the old lists), ⌘K
 //! toggles it, the host opens it for VoiceOver; a card per window with its
-//! panes and their states; a pane picked switches and closes it; New
-//! window asks a name; the card's ⋯ and a pane's long press split, rename
-//! after asking, kill after the action sheet; past four panes, "+N" opens
-//! the rest.
+//! panes and their states; a window of one pane picked switches and
+//! closes it, a window of more opens its pane page (a card per pane, then
+//! New pane); New window asks a name; the card's ⋯ and a pane's long press
+//! split, rename after asking, kill after the action sheet.
 
 mod common;
 
@@ -235,7 +235,12 @@ fn a_card_per_window_with_its_panes_and_their_states() {
         !app.0.screen().texts().iter().any(|t| t.contains("2.1.322")),
         "never a version string"
     );
-    // The current pane is the selected one.
+    // The window of the current pane is the selected one; on its pane
+    // page, the pane.
+    assert!(app.0.screen().selected("id:overview-panes-@2").unwrap());
+    assert!(!app.0.screen().selected("id:overview-panes-@3").unwrap());
+    app.0.press("id:overview-panes-@2").unwrap();
+    app.0.wait_for("id:overview-pane-page-@2").unwrap();
     assert!(app.0.screen().selected("id:overview-pane-%3").unwrap());
     assert!(!app.0.screen().selected("id:overview-pane-%2").unwrap());
     channel.close();
@@ -249,8 +254,12 @@ fn a_pane_picked_switches_to_it_and_the_overview_goes() {
         &channel,
         &json!({"op": "overview", "open": true}).to_string(),
     );
-    app.0.wait_for("id:overview-pane-%6").unwrap();
+    app.0.wait_for("id:overview-panes-@3").unwrap();
     assert_eq!(next_of(&heard, "overview")["open"], true);
+    // web has two panes: its pane page first, then the pane.
+    app.0.press("id:overview-panes-@3").unwrap();
+    app.0.wait_for("id:overview-pane-page-@3").unwrap();
+    none_of(&heard, "select-pane");
     app.0.press("id:overview-pane-%6").unwrap();
     assert_eq!(
         next_of(&heard, "select-pane"),
@@ -413,18 +422,140 @@ fn a_cards_more_menu_speaks_the_multiplexers_words() {
 }
 
 #[test]
-fn past_four_panes_plus_shows_the_rest() {
+fn past_four_panes_plus_and_the_pane_page_shows_them_all() {
     let (mut app, channel, _heard, _) = open_screen("tmux", "%2");
     post(
         &mut app.0,
         &channel,
         &json!({"op": "overview", "open": true}).to_string(),
     );
-    app.0.wait_for("id:overview-more-panes-@5").unwrap();
+    app.0.wait_for("id:overview-panes-@5").unwrap();
+    assert!(app.0.screen().shows("+3"));
     assert_eq!(app.0.screen().count("id:overview-pane-%15").unwrap(), 0);
-    app.0.press("id:overview-more-panes-@5").unwrap();
+    app.0.press("id:overview-panes-@5").unwrap();
     app.0.wait_for("id:overview-pane-%15").unwrap();
+    assert_eq!(
+        pane_cards(&app),
+        (10..16).map(|i| format!("%{i}")).collect::<Vec<_>>()
+    );
     channel.close();
+}
+
+/// The pane page's cards, in order: the panes' ids.
+fn pane_cards(app: &common::App) -> Vec<String> {
+    app.0
+        .screen()
+        .layout_nodes()
+        .into_iter()
+        .filter_map(|n| n.test_id.map(|t| t.to_string()))
+        .filter_map(|t| t.strip_prefix("overview-pane-card-").map(str::to_owned))
+        .collect()
+}
+
+/// A window of one pane is one tap away, as before the pane page: its
+/// card switches to the pane.
+#[test]
+fn a_window_of_one_pane_opens_at_once() {
+    for mux in ["tmux", "herdr"] {
+        let (mut app, channel, heard, _) = open_screen(mux, "%2");
+        post(
+            &mut app.0,
+            &channel,
+            &json!({"op": "overview", "open": true}).to_string(),
+        );
+        app.0.wait_for("id:overview-pane-%1").unwrap();
+        assert_eq!(
+            app.0.screen().count("id:overview-panes-@1").unwrap(),
+            0,
+            "{mux}"
+        );
+        app.0.press("id:overview-pane-%1").unwrap();
+        assert_eq!(
+            next_of(&heard, "select-pane"),
+            json!({"ev": "select-pane", "id": "%1"}),
+            "{mux}"
+        );
+        channel.close();
+    }
+}
+
+/// The user: "the New pane row takes too much room; a pane pressed should
+/// open the panes' thumbnails". No card has a row under it; a window of
+/// more panes opens its pane page: a card per pane, in order, and last
+/// "＋ New pane", as the windows' last is "＋ New window". A pane there
+/// switches; back (herdr: Tabs) goes up.
+#[test]
+fn a_windows_panes_open_its_pane_page_ending_in_new_pane() {
+    for (mux, back) in [("tmux", "Windows"), ("herdr", "Tabs")] {
+        let (mut app, channel, heard, _) = open_screen(mux, "%2");
+        post(
+            &mut app.0,
+            &channel,
+            &json!({"op": "overview", "open": true}).to_string(),
+        );
+        app.0.wait_for("id:overview-new-window").unwrap();
+        // No new pane under any window's card.
+        assert_eq!(
+            app.0.screen().count("id:overview-new-pane").unwrap(),
+            0,
+            "{mux}"
+        );
+        assert!(!app.0.screen().shows("New Pane"), "{mux}");
+        // The panes' box says the window and what it holds.
+        assert!(
+            app.0.screen().matches("label:web, 2 panes").unwrap(),
+            "{mux}: {:?}",
+            app.0.screen().texts()
+        );
+        app.0.press("id:overview-panes-@2").unwrap();
+        app.0.wait_for("id:overview-pane-page-@2").unwrap();
+        assert_eq!(pane_cards(&app), ["%2", "%3", "%4"], "{mux}");
+        assert!(app.0.screen().shows("trainer · 3 panes"), "{mux}");
+        assert!(app.0.screen().shows(back), "{mux}");
+        // The other windows' cards are gone from the page.
+        assert_eq!(
+            app.0.screen().count("id:overview-card-@5").unwrap(),
+            0,
+            "{mux}"
+        );
+        // The last card: a new pane in this window, at once.
+        let last = app
+            .0
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .filter_map(|n| n.test_id.map(|t| t.to_string()))
+            .filter(|t| t.starts_with("overview-pane-card-") || t == "overview-new-pane")
+            .next_back();
+        assert_eq!(last.as_deref(), Some("overview-new-pane"), "{mux}");
+        app.0.press("id:overview-new-pane").unwrap();
+        assert_eq!(
+            next_of(&heard, "new-pane"),
+            json!({"ev": "new-pane", "window": "@2"}),
+            "{mux}"
+        );
+        // Back: the windows again, the overview still open.
+        app.0.press("id:terminal-overview-back").unwrap();
+        app.0.wait_for("id:overview-card-@5").unwrap();
+        assert_eq!(app.0.screen().count("id:overview-pane-page-@2").unwrap(), 0);
+        assert!(
+            app.0
+                .screen()
+                .matches("id:terminal-overview-session")
+                .unwrap()
+        );
+        // A pane on its page switches to it and the overview goes.
+        app.0.press("id:overview-panes-@2").unwrap();
+        app.0.wait_for("id:overview-pane-%4").unwrap();
+        app.0.press("id:overview-pane-%4").unwrap();
+        assert_eq!(
+            next_of(&heard, "select-pane"),
+            json!({"ev": "select-pane", "id": "%4"}),
+            "{mux}"
+        );
+        assert_eq!(next_of(&heard, "overview")["open"], false, "{mux}");
+        channel.close();
+    }
 }
 
 #[test]
@@ -446,7 +577,8 @@ fn without_a_live_tree_the_host_cannot_open_it() {
 }
 
 /// B653: VoiceOver hears a pane's state in words: minutes said as
-/// minutes (Home's rule; "13m" is the eye's), and "+3" as what it is.
+/// minutes (Home's rule; "13m" is the eye's), and a window of more panes
+/// as the window and its panes.
 #[test]
 fn voiceover_hears_minutes_and_what_more_opens() {
     let (mut app, channel, _heard, _) = open_screen("tmux", "%2");
@@ -474,7 +606,10 @@ fn voiceover_hears_minutes_and_what_more_opens() {
         "the pane's words: {:?}",
         app.0.screen().texts()
     );
-    assert!(app.0.wait_for("label:3 more").is_ok(), "what +3 opens");
+    assert!(
+        app.0.wait_for("label:logs, 6 panes").is_ok(),
+        "what the panes' box opens"
+    );
     channel.close();
 }
 
@@ -662,8 +797,12 @@ fn the_shown_panes_cell_and_a_picked_one_tell_the_host_where_they_are() {
     // Laid out again (a tick of the tree), still there: not told again.
     post(&mut app.0, &channel, &switcher("tmux", "%2"));
     none_of(&heard, "overview-anchor");
-    // A pane picked: where its cell is first (its terminal grows from
-    // there), then the switch at once, then the overview goes.
+    // A pane picked on its window's page: where its cell is first (its
+    // terminal grows from there), then the switch at once, then the
+    // overview goes.
+    app.0.press("id:overview-panes-@3").unwrap();
+    app.0.wait_for("id:overview-pane-page-@3").unwrap();
+    app.0.run_for(Duration::from_millis(300)).unwrap();
     let cell = bounds(&app, "overview-pane-%6");
     app.0.press("id:overview-pane-%6").unwrap();
     let events: Vec<Value> = events_until(&heard, "overview")
@@ -691,7 +830,7 @@ fn a_shown_pane_behind_more_has_no_cell_to_shrink_into() {
         &channel,
         &json!({"op": "overview", "open": true}).to_string(),
     );
-    app.0.wait_for("id:overview-more-panes-@5").unwrap();
+    app.0.wait_for("id:overview-panes-@5").unwrap();
     // The host fades the page over the terminal alone.
     none_of(&heard, "overview-anchor");
     channel.close();
@@ -772,42 +911,4 @@ fn a_panes_snapshot_replaces_the_fragments_its_terminal_had() {
         app.0.screen().texts()
     );
     channel.close();
-}
-
-/// Every window's card says "＋ New pane" under it, in plain sight beside
-/// the last card's "New window" (the user never found it in ⋯): a press
-/// splits that window at once. ⋯ keeps it too.
-#[test]
-fn every_window_card_offers_a_new_pane_in_sight() {
-    for mux in ["tmux", "herdr"] {
-        let (mut app, channel, heard, _) = open_screen(mux, "%2");
-        post(
-            &mut app.0,
-            &channel,
-            &json!({"op": "overview", "open": true}).to_string(),
-        );
-        app.0.wait_for("id:overview-new-window").unwrap();
-        let ids: Vec<String> = app
-            .0
-            .screen()
-            .layout_nodes()
-            .into_iter()
-            .filter_map(|n| n.test_id.map(|t| t.to_string()))
-            .filter(|t| t.starts_with("overview-card-"))
-            .collect();
-        assert!(!ids.is_empty(), "{mux}: cards");
-        for card in &ids {
-            let window = card.trim_start_matches("overview-card-");
-            let row = format!("id:overview-new-pane-{window}");
-            assert!(app.0.screen().matches(&row).unwrap(), "{mux}: {row}");
-            app.0.press(&row).unwrap();
-            assert_eq!(
-                next_of(&heard, "new-pane"),
-                json!({"ev": "new-pane", "window": window}),
-                "{mux}"
-            );
-        }
-        assert!(app.0.screen().shows("New Pane"), "{mux}");
-        channel.close();
-    }
 }

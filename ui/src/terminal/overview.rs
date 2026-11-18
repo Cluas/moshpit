@@ -9,11 +9,22 @@
 //!   or a pane picked.
 //! - A card holds its window's panes: one fills it, two side by side, three
 //!   as a tall one and two stacked, four in a grid; past four, three and
-//!   "+N", which shows them all. A pane says what runs in it and its
-//!   agent's state, with the state's dot; the current one has the accent's
-//!   ring. Under the card: the window's name by Home's rules and its most
-//!   urgent state, or its panes, or what runs in it.
-//! - A pane picked switches to it ([`Intent::SelectPane`]). Its long press
+//!   "+N". The panes drawn are the card's picture of its layout. A pane
+//!   says what runs in it and its agent's state, with the state's dot; the
+//!   current one has the accent's ring. Under the card: the window's name
+//!   by Home's rules and its most urgent state, or its panes, or what runs
+//!   in it.
+//! - A window of one pane: a press on it switches to that pane
+//!   ([`Intent::SelectPane`]), at once. A window of more: a press on its
+//!   panes opens the window's pane page, the same grid of cards one level
+//!   down, one card per pane (its picture, then what runs in it and its
+//!   state, and its ⋯: the pane's menu), and last "＋ New pane", as the
+//!   windows' last card is "＋ New window". There a pane picked switches
+//!   to it; the bar's back (Windows, herdr Tabs) or Escape goes back up.
+//!   (The phone's card is some 127 pt wide: a pane in it is too small a
+//!   target to pick, and a row of "＋ New pane" under every card took more
+//!   room than it gave.)
+//! - Its long press
 //!   is the host's menu (`overview-pane-<id>`: Open, New Pane, Rename
 //!   window…, Kill pane…), its pick coming back as `{"op": "overview-act"}`;
 //!   the card's ⋯ is the system's menu (New Pane, Rename window…, Kill
@@ -55,9 +66,10 @@ use crate::{
     nav_bar,
     ui::{
         alert::alert_dialog,
+        button::{Variant, button},
         icon::{IconSize, Tone, icon},
         menu::{MenuEntry, menu},
-        motion::Duration,
+        motion::{Duration, ENTER},
         status::{Status, status_dot},
         tokens::{number, token},
         typography::TextToken,
@@ -73,8 +85,6 @@ pub const ROW_GAP: f32 = 20.0;
 /// The panes' box in a card: two rows of panes of at least the touch
 /// target.
 pub const BOX: f32 = 112.0;
-/// A row of an opened card's panes (past four).
-pub const OPEN_ROW: f32 = 54.0;
 /// A picture's text and its line (points): a texture to recognise a
 /// screen by, not to read.
 pub const PICTURE_TEXT: f32 = 4.5;
@@ -221,10 +231,10 @@ impl Overview {
 }
 
 /// How many of a card's `n` panes show, and how many hide behind "+N": all
-/// of up to four, or all when the card is opened; three and the rest past
-/// that.
-pub fn shown(n: usize, opened: bool) -> (usize, usize) {
-    if n <= 4 || opened { (n, 0) } else { (3, n - 3) }
+/// of up to four; three and the rest past that (the window's pane page
+/// shows them all).
+pub fn shown(n: usize) -> (usize, usize) {
+    if n <= 4 { (n, 0) } else { (3, n - 3) }
 }
 
 /// How many columns of cards fit `width`.
@@ -715,10 +725,23 @@ pub(crate) fn ask_pictures(ctx: &Ctx, model: Memo<Overview>) {
 pub(crate) fn overview(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
     let open = ctx.overview;
     let visible = computed(move || open.get());
-    // Escape closes it (a hardware keyboard; the terminal has given up the
-    // keyboard while it is up).
+    // The window whose pane page shows; none: the windows. Every opening
+    // starts at the windows.
+    let focus = signal(None::<String>);
+    effect(move || {
+        if !open.get() {
+            untracked(|| focus.set(None));
+        }
+    });
+    // Escape goes back up from a pane page, else closes it (a hardware
+    // keyboard; the terminal has given up the keyboard while it is up).
     on_key("escape", move |_: &str| {
-        if open.get_untracked() {
+        if !open.get_untracked() {
+            return;
+        }
+        if focus.with_untracked(Option::is_some) {
+            focus.set(None);
+        } else {
             open.set(false);
         }
     });
@@ -729,7 +752,7 @@ pub(crate) fn overview(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> Any
         .child(switcher::appearing_ms(
             visible,
             |showing| fade_ms(reduce_motion(), showing),
-            move || page(ctx.clone(), model, prompts.clone()),
+            move || page(ctx.clone(), model, prompts.clone(), focus),
         ))
         .into_element()
 }
@@ -742,9 +765,14 @@ struct Anchor {
     told: Stored<Option<(String, [f32; 4])>>,
 }
 
-/// The page: its bar, the summary, the cards.
-fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
-    let opened = signal(HashSet::<String>::new());
+/// The page: its bar, the summary, the cards (the windows', or a
+/// window's panes').
+fn page(
+    ctx: Ctx,
+    model: Memo<Overview>,
+    prompts: Prompts,
+    focus: Signal<Option<String>>,
+) -> AnyElement {
     let anchor = Anchor {
         target: element_ref(),
         told: stored(None),
@@ -774,7 +802,7 @@ fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
         .h(move || px(window().height.0))
         .bg(move || token("background"))
         .test_id("terminal-overview")
-        .child(bar(ctx.clone(), model))
+        .child(bar(ctx.clone(), model, focus))
         .child(
             scroll()
                 .flex_1()
@@ -785,28 +813,26 @@ fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
                         .px(px(number("space-page")))
                         .pt(px(4.0))
                         .gap(px(12.0))
-                        .child(summary(model))
-                        .child(dynamic({
-                            let ctx = ctx.clone();
-                            move || {
-                                let overview = model.get();
-                                let open_cards = opened.get();
-                                let ctx = ctx.clone();
-                                let prompts = prompts.clone();
-                                untracked(move || {
-                                    grid(ctx, overview, open_cards, opened, prompts, anchor)
-                                })
-                            }
-                        }))
+                        .child(summary(model, focus))
+                        .child(cards(ctx.clone(), model, prompts, anchor, focus))
                         .child(view().h(move || px(32.0 + safe_area().bottom.0))),
                 ),
         )
         .into_element()
 }
 
-/// The overview's bar: the session (its list), Done.
-fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
+/// The overview's bar: the session (its list), or on a pane page back to
+/// the windows; Done.
+fn bar(ctx: Ctx, model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyElement {
     let session = computed(move || model.with(|o| o.session.clone()));
+    // A pane page shown (its window still there): back to the windows.
+    let down = computed(move || {
+        focus.with(|f| {
+            f.as_ref()
+                .is_some_and(|w| model.with(|o| o.card(w).is_some()))
+        })
+    });
+    let herdr = computed(move || model.with(|o| o.mux == HomeMux::Herdr));
     // herdr's workspace wears its own symbol, as in the breadcrumb (B656).
     let symbol = computed(move || model.with(|o| vocab(o.mux).session_icon));
     let close = {
@@ -822,46 +848,26 @@ fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
                 .items_center()
                 .justify_between()
                 .px(px(number("space-page")))
-                .child(
-                    // The finger's target is the bar's 44 pt; the capsule
-                    // drawn in it is 36 (B654).
-                    view()
-                        .h(px(44.0))
-                        .min_w(px(44.0))
-                        .justify_center()
-                        .role(AccessibilityRole::Button)
-                        .label(move || session.get())
-                        .test_id("terminal-overview-session")
-                        .active(|s| s.opacity(0.5))
-                        .on_press(ctx.asking(Intent::Crumb(Crumb::Session)))
-                        .child(
-                            view()
-                                .flex_row()
-                                .items_center()
-                                .gap(px(6.0))
-                                .h(px(36.0))
-                                .px(px(12.0))
-                                .rounded(px(number("radius-full")))
-                                .bg(move || token("chrome"))
-                                .border(px(0.5))
-                                .border_color(move || token("border-strong"))
-                                .child(dynamic(move || {
-                                    let name = symbol.get();
-                                    untracked(move || {
-                                        icon(name)
-                                            .size(IconSize::Sm)
-                                            .tone(Tone::Muted)
-                                            .into_element()
-                                    })
-                                }))
-                                .child(
-                                    chrome_text(TextToken::Subhead, move || session.get())
-                                        .number_of_lines(1u32)
-                                        .text_color(move || token("foreground")),
-                                )
-                                .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
-                        ),
-                )
+                .child(dynamic(move || {
+                    if !down.get() {
+                        let ctx = ctx.clone();
+                        return untracked(move || capsule(ctx, session, symbol));
+                    }
+                    // Back names the page it goes to, as the system's does.
+                    let words = if herdr.get() {
+                        t!("Tabs")
+                    } else {
+                        t!("Windows")
+                    };
+                    untracked(move || {
+                        button(words)
+                            .variant(Variant::Bar)
+                            .icon("chevron.backward")
+                            .on_press(move || focus.set(None))
+                            .test_id("terminal-overview-back")
+                            .into_element()
+                    })
+                }))
                 .child(nav_bar::text_button(
                     t!("Done"),
                     true,
@@ -872,18 +878,79 @@ fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
         .into_element()
 }
 
-/// "4 windows · 7 panes", and how many wait on you.
-fn summary(model: Memo<Overview>) -> AnyElement {
+/// The bar's session capsule (the sessions list).
+fn capsule(ctx: Ctx, session: Memo<String>, symbol: Memo<&'static str>) -> AnyElement {
+    // The finger's target is the bar's 44 pt; the capsule
+    // drawn in it is 36 (B654).
+    view()
+        .h(px(44.0))
+        .min_w(px(44.0))
+        .justify_center()
+        .role(AccessibilityRole::Button)
+        .label(move || session.get())
+        .test_id("terminal-overview-session")
+        .active(|s| s.opacity(0.5))
+        .on_press(ctx.asking(Intent::Crumb(Crumb::Session)))
+        .child(
+            view()
+                .flex_row()
+                .items_center()
+                .gap(px(6.0))
+                .h(px(36.0))
+                .px(px(12.0))
+                .rounded(px(number("radius-full")))
+                .bg(move || token("chrome"))
+                .border(px(0.5))
+                .border_color(move || token("border-strong"))
+                .child(dynamic(move || {
+                    let name = symbol.get();
+                    untracked(move || {
+                        icon(name)
+                            .size(IconSize::Sm)
+                            .tone(Tone::Muted)
+                            .into_element()
+                    })
+                }))
+                .child(
+                    chrome_text(TextToken::Subhead, move || session.get())
+                        .number_of_lines(1u32)
+                        .text_color(move || token("foreground")),
+                )
+                .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
+        )
+        .into_element()
+}
+
+/// "4 windows · 7 panes", and how many wait on you; on a window's pane
+/// page, "trainer · 3 panes" and its own.
+fn summary(model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyElement {
     dynamic(move || {
-        let (mux, windows, panes, waiting) =
-            model.with(|o| (o.mux, o.cards.len(), o.panes(), o.waiting()));
+        let shown = focus.get();
+        let (words, waiting) = model.with(|o| {
+            let panes = |n: usize| crate::plural!("%lld panes", n as i64);
+            match shown.as_deref().and_then(|w| o.card(w)) {
+                Some(card) => {
+                    let waiting = card
+                        .cells
+                        .iter()
+                        .filter(|c| c.signal == Some(AgentSignal::Attention))
+                        .count();
+                    (
+                        format!("{} · {}", card.place, panes(card.cells.len())),
+                        waiting,
+                    )
+                }
+                None => {
+                    let windows = if o.mux == HomeMux::Herdr {
+                        crate::plural!("%lld tabs", o.cards.len() as i64)
+                    } else {
+                        crate::plural!("%lld windows", o.cards.len() as i64)
+                    };
+                    (format!("{windows} · {}", panes(o.panes())), o.waiting())
+                }
+            }
+        });
         untracked(move || {
-            let windows = if mux == HomeMux::Herdr {
-                crate::plural!("%lld tabs", windows as i64)
-            } else {
-                crate::plural!("%lld windows", windows as i64)
-            };
-            let panes = crate::plural!("%lld panes", panes as i64);
             // The badge goes under the count when the two don't fit
             // (B836): it follows the user's text size past the chrome's
             // extra large, and at the largest, "1 件があなた待ち" alone is
@@ -896,7 +963,7 @@ fn summary(model: Memo<Overview>) -> AnyElement {
                 .min_h(px(28.0))
                 .test_id("terminal-overview-summary")
                 .child(
-                    chrome_text(TextToken::Footnote, format!("{windows} · {panes}"))
+                    chrome_text(TextToken::Footnote, words)
                         .text_color(move || token("muted-foreground")),
                 );
             if waiting > 0 {
@@ -911,36 +978,47 @@ fn summary(model: Memo<Overview>) -> AnyElement {
     .into_element()
 }
 
-/// The cards, in rows of as many columns as fit, and the new window's.
-fn grid(
+/// The page's cards: the windows', or, a window's pane page shown, its
+/// panes'. The swap cross-fades over `fast` (a plain cut under reduced
+/// motion, the token's time then 0).
+fn cards(
     ctx: Ctx,
-    overview: Overview,
-    open_cards: HashSet<String>,
-    opened: Signal<HashSet<String>>,
+    model: Memo<Overview>,
     prompts: Prompts,
     anchor: Anchor,
+    focus: Signal<Option<String>>,
 ) -> AnyElement {
+    let fade = animated_value(1.0_f32);
+    let level = stored(None::<String>);
+    view()
+        .bind_opacity(&fade)
+        .child(dynamic(move || {
+            let overview = model.get();
+            let shown = focus.get();
+            let card = shown.as_deref().and_then(|w| overview.card(w)).cloned();
+            let ctx = ctx.clone();
+            let prompts = prompts.clone();
+            untracked(move || {
+                let now_at = card.as_ref().map(|c| c.window.clone());
+                if level.replace(now_at.clone()) != now_at {
+                    let ms = Duration::Fast.ms();
+                    if ms > 0.0 {
+                        fade.set(0.0);
+                        drop(fade.timing(1.0, ms, ENTER));
+                    }
+                }
+                match card {
+                    Some(card) => pane_grid(ctx, overview, card, prompts, anchor),
+                    None => grid(ctx, overview, prompts, anchor, focus),
+                }
+            })
+        }))
+        .into_element()
+}
+
+/// Items in rows of as many columns as fit, empty places filling the last.
+fn rows_of(items: Vec<AnyElement>) -> AnyElement {
     let columns = columns(window().width.0 - 2.0 * number("space-page"));
-    let now = switcher::unix_now();
-    let words = Words::here();
-    let mut items: Vec<AnyElement> = overview
-        .cards
-        .iter()
-        .map(|card| {
-            card_view(
-                &ctx,
-                &overview,
-                card,
-                open_cards.contains(&card.window),
-                opened,
-                &prompts,
-                now,
-                &words,
-                anchor,
-            )
-        })
-        .collect();
-    items.push(new_card(ctx.clone(), overview.mux, prompts.clone()));
     let mut rows = view().gap(px(ROW_GAP));
     let mut items = items.into_iter().peekable();
     while items.peek().is_some() {
@@ -956,50 +1034,38 @@ fn grid(
     rows.into_element()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn card_view(
-    ctx: &Ctx,
-    overview: &Overview,
-    card: &Card,
-    open: bool,
-    opened: Signal<HashSet<String>>,
-    prompts: &Prompts,
-    now: f64,
-    words: &Words,
+/// The cards, in rows of as many columns as fit, and the new window's.
+fn grid(
+    ctx: Ctx,
+    overview: Overview,
+    prompts: Prompts,
     anchor: Anchor,
+    focus: Signal<Option<String>>,
 ) -> AnyElement {
-    let (count, more) = shown(card.cells.len(), open);
-    let cells: Vec<AnyElement> = card.cells[..count]
+    let now = switcher::unix_now();
+    let words = Words::here();
+    let mut items: Vec<AnyElement> = overview
+        .cards
         .iter()
-        .map(|cell| cell_view(ctx, card, cell, card.cells.len() > 1, now, words, anchor))
+        .map(|card| card_view(&ctx, &overview, card, &prompts, now, &words, anchor, focus))
         .collect();
-    let window = card.window.clone();
-    let more_view = (more > 0).then(|| {
-        view()
-            .flex_1()
-            .min_h(px(44.0))
-            .items_center()
-            .justify_center()
-            .bg(move || token("muted"))
-            .role(AccessibilityRole::Button)
-            // What it opens, not the glyph (B653).
-            .label(crate::plural!("%lld more", more as i64))
-            .test_id(&format!("overview-more-panes-{window}"))
-            .active(|s| s.bg(move || token("accent")))
-            .on_press(move || {
-                opened.update(|o| {
-                    o.insert(window.clone());
-                })
-            })
-            .child(
-                chrome_text(TextToken::Headline, format!("+{more}"))
-                    .text_color(move || token("foreground")),
-            )
-            .into_element()
-    });
-    let boxed = panes_box(cells, more_view, card.cells.len(), open);
-    let panes = |n: i64| crate::plural!("%lld panes", n);
-    let (line, status) = card_line(card, now, words, &panes);
+    items.push(new_card(ctx.clone(), overview.mux, prompts.clone()));
+    rows_of(items)
+}
+
+/// A card's words under its box: its title, its second line (the state's
+/// dot first, when it has one), and ⋯, the system's menu of `entries`.
+#[allow(clippy::too_many_arguments)]
+fn card_label(
+    title: String,
+    line: String,
+    said: String,
+    status: Option<Status>,
+    entries: Vec<MenuEntry>,
+    menu_id: String,
+    more_label: String,
+    act: impl Fn(String) + 'static,
+) -> AnyElement {
     // The state's words take a second line rather than lose their end
     // (B834): a card on a phone is some 127 pt wide, and "あなた待ち · 2個の
     // ペイン" or "Wartet auf dich · 2 Panels" is wider. The chrome's text
@@ -1017,31 +1083,17 @@ fn card_view(
         );
     }
     let line_tone = status.map_or("muted-foreground", tone);
-    // Screen readers hear a lone pane's minutes as minutes (B653).
-    let said = match card.cells.as_slice() {
-        [cell] if status.is_some() => cell
-            .signal
-            .map(|signal| spoken_state(signal, cell.since, now))
-            .unwrap_or_else(|| line.clone()),
-        _ => line.clone(),
-    };
-    second = second.child(
-        chrome_text(TextToken::Footnote, line)
-            .number_of_lines(2u32)
-            .flex_shrink(1.0)
-            .min_w(px(0.0))
-            .label(said)
-            .text_color(move || token(line_tone)),
-    );
-    let more_label = t!("More for %@", arg1 = card.place.clone());
-    let window_id = card.window.clone();
-    let act = {
-        let ctx = ctx.clone();
-        let prompts = prompts.clone();
-        let overview = overview.clone();
-        move |action: String| act_on_window(&ctx, &prompts, &overview, &action, &window_id)
-    };
-    let label = view()
+    if !line.is_empty() {
+        second = second.child(
+            chrome_text(TextToken::Footnote, line)
+                .number_of_lines(2u32)
+                .flex_shrink(1.0)
+                .min_w(px(0.0))
+                .label(said)
+                .text_color(move || token(line_tone)),
+        );
+    }
+    view()
         .flex_row()
         .items_start()
         .gap(px(4.0))
@@ -1052,7 +1104,7 @@ fn card_view(
                 .min_w(px(0.0))
                 .gap(px(2.0))
                 .child(
-                    chrome_text(TextToken::Headline, card.place.clone())
+                    chrome_text(TextToken::Headline, title)
                         .number_of_lines(1u32)
                         .text_color(move || token("foreground")),
                 )
@@ -1069,76 +1121,127 @@ fn card_view(
                 .justify_center()
                 .child(icon("ellipsis").size(IconSize::Md).tone(Tone::Muted))
                 .child(menu(
-                    window_entries(overview.mux),
-                    Some(&format!("overview-window-menu-{}", card.window)),
+                    entries,
+                    Some(&menu_id),
                     move || more_label.clone(),
                     act,
                 )),
-        );
-    view()
-        .test_id(&format!("overview-card-{}", card.window))
-        .child(boxed)
-        .child(label)
-        .child(new_pane_row(ctx, &card.window))
-        .into_element()
-}
-
-/// Under each card, as plain as the last card's "New window": "＋ New
-/// pane", a split of that window at once. ⋯ keeps it too, as the second
-/// way (the user missed it there).
-fn new_pane_row(ctx: &Ctx, window: &str) -> AnyElement {
-    let words = t!("New Pane");
-    view()
-        .flex_row()
-        .items_center()
-        .gap(px(6.0))
-        .min_h(px(44.0))
-        .role(AccessibilityRole::Button)
-        .label(words.clone())
-        .test_id(&format!("overview-new-pane-{window}"))
-        .active(|s| s.opacity(0.5))
-        .on_press(ctx.asking(Intent::NewPane(window.to_owned())))
-        .child(icon("plus").tone(Tone::Muted))
-        .child(
-            chrome_text(TextToken::Footnote, words)
-                .number_of_lines(1u32)
-                .text_color(move || token("muted-foreground")),
         )
         .into_element()
 }
 
-/// The panes' box: its cells laid out by how many there are.
-fn panes_box(
-    mut cells: Vec<AnyElement>,
-    more: Option<AnyElement>,
-    total: usize,
-    open: bool,
+#[allow(clippy::too_many_arguments)]
+fn card_view(
+    ctx: &Ctx,
+    overview: &Overview,
+    card: &Card,
+    prompts: &Prompts,
+    now: f64,
+    words: &Words,
+    anchor: Anchor,
+    focus: Signal<Option<String>>,
 ) -> AnyElement {
+    let many = card.cells.len() > 1;
+    let (count, more) = shown(card.cells.len());
+    // A window of one pane: its cell is the button (a press switches to
+    // it). Of more: the cells are the window's picture, and the box is the
+    // button, to the window's pane page.
+    let cells: Vec<AnyElement> = card.cells[..count]
+        .iter()
+        .map(|cell| {
+            let role = if many {
+                CellRole::Picture
+            } else {
+                CellRole::Pick
+            };
+            cell_view(ctx, card, cell, role, now, words, anchor)
+        })
+        .collect();
+    let more_view = (more > 0).then(|| {
+        view()
+            .flex_1()
+            .min_h(px(44.0))
+            .items_center()
+            .justify_center()
+            .bg(move || token("muted"))
+            .child(
+                chrome_text(TextToken::Headline, format!("+{more}"))
+                    .text_color(move || token("foreground")),
+            )
+            .into_element()
+    });
+    let boxed = panes_box(cells, more_view);
+    let panes = |n: i64| crate::plural!("%lld panes", n);
+    let (line, status) = card_line(card, now, words, &panes);
+    // Screen readers hear a lone pane's minutes as minutes (B653).
+    let said = match card.cells.as_slice() {
+        [cell] if status.is_some() => cell
+            .signal
+            .map(|signal| spoken_state(signal, cell.since, now))
+            .unwrap_or_else(|| line.clone()),
+        _ => line.clone(),
+    };
+    let boxed = if many {
+        // One target over the panes: what it opens is the window's panes,
+        // said as the window and what its panes hold.
+        let mut parts = vec![card.place.clone(), said.clone()];
+        if card.current() {
+            parts.push(t!("current"));
+        }
+        let window = card.window.clone();
+        view()
+            .role(AccessibilityRole::Button)
+            .label(parts.join(", "))
+            .accessibility_state(AccessibilityState {
+                selected: card.current(),
+                ..AccessibilityState::default()
+            })
+            .test_id(&format!("overview-panes-{}", card.window))
+            .rounded(px(number("radius")))
+            .border_curve(BorderCurve::Continuous)
+            .overflow_hidden()
+            .active(|s| s.opacity(0.6))
+            .on_press(move || focus.set(Some(window.clone())))
+            .child(boxed)
+            .into_element()
+    } else {
+        boxed
+    };
+    let more_label = t!("More for %@", arg1 = card.place.clone());
+    let window_id = card.window.clone();
+    let act = {
+        let ctx = ctx.clone();
+        let prompts = prompts.clone();
+        let overview = overview.clone();
+        move |action: String| act_on_window(&ctx, &prompts, &overview, &action, &window_id)
+    };
+    let label = card_label(
+        card.place.clone(),
+        line,
+        said,
+        status,
+        window_entries(overview.mux),
+        format!("overview-window-menu-{}", card.window),
+        more_label,
+        act,
+    );
+    view()
+        .test_id(&format!("overview-card-{}", card.window))
+        .child(boxed)
+        .child(label)
+        .into_element()
+}
+
+/// The panes' box: its cells laid out by how many there are.
+fn panes_box(mut cells: Vec<AnyElement>, more: Option<AnyElement>) -> AnyElement {
     let frame = view()
+        .h(px(BOX))
         .rounded(px(number("radius")))
         .border_curve(BorderCurve::Continuous)
         .overflow_hidden()
         .bg(move || token("border"))
         .gap(px(DIVIDER));
     let row = || view().flex_row().flex_1().gap(px(DIVIDER));
-    if open && total > 4 {
-        // Opened: every pane, two to a row.
-        let rows = cells.len().div_ceil(2);
-        let mut frame = frame.h(px(rows as f32 * OPEN_ROW + (rows as f32 - 1.0) * DIVIDER));
-        let mut cells = cells.into_iter();
-        for _ in 0..rows {
-            let mut r = row();
-            for _ in 0..2 {
-                r = match cells.next() {
-                    Some(c) => r.child(c),
-                    None => r.child(view().flex_1().bg(move || token("card"))),
-                };
-            }
-            frame = frame.child(r);
-        }
-        return frame.into_element();
-    }
-    let frame = frame.h(px(BOX));
     match (cells.len(), more) {
         (1, None) => frame.child(cells.remove(0)).into_element(),
         (2, None) => frame.child(row().children(cells)).into_element(),
@@ -1166,12 +1269,129 @@ fn panes_box(
     }
 }
 
-/// One pane: what runs in it, its state, the current one ringed.
+/// A window's pane page: a card per pane, in the windows' grid, and last
+/// "＋ New pane", as the windows' last card is "＋ New window".
+fn pane_grid(
+    ctx: Ctx,
+    overview: Overview,
+    card: Card,
+    prompts: Prompts,
+    anchor: Anchor,
+) -> AnyElement {
+    let now = switcher::unix_now();
+    let words = Words::here();
+    let mut items: Vec<AnyElement> = card
+        .cells
+        .iter()
+        .map(|cell| pane_card(&ctx, &overview, &card, cell, &prompts, now, &words, anchor))
+        .collect();
+    items.push(new_pane_card(&ctx, &card.window));
+    view()
+        .test_id(&format!("overview-pane-page-{}", card.window))
+        .child(rows_of(items))
+        .into_element()
+}
+
+/// One pane's card: its picture in the box (the current one ringed), then
+/// what runs in it and its state, and ⋯ (the pane's menu, as its long
+/// press).
+#[allow(clippy::too_many_arguments)]
+fn pane_card(
+    ctx: &Ctx,
+    overview: &Overview,
+    card: &Card,
+    cell: &Cell,
+    prompts: &Prompts,
+    now: f64,
+    words: &Words,
+    anchor: Anchor,
+) -> AnyElement {
+    let boxed = panes_box(
+        vec![cell_view(
+            ctx,
+            card,
+            cell,
+            CellRole::Card,
+            now,
+            words,
+            anchor,
+        )],
+        None,
+    );
+    let (line, status, said) = match cell.signal {
+        Some(signal) => match switcher::state_line(&stop_of(cell, card), now, words) {
+            Some((line, status, _)) => (line, Some(status), spoken_state(signal, cell.since, now)),
+            None => (String::new(), None, String::new()),
+        },
+        None => (String::new(), None, String::new()),
+    };
+    let pane = cell.pane.clone();
+    let act = {
+        let ctx = ctx.clone();
+        let prompts = prompts.clone();
+        let overview = overview.clone();
+        move |action: String| act_on_pane(&ctx, &prompts, &overview, &action, &pane)
+    };
+    let label = card_label(
+        cell.name.clone(),
+        line,
+        said,
+        status,
+        pane_entries(overview.mux),
+        format!("overview-pane-menu-{}", cell.pane),
+        t!("More for %@", arg1 = cell.name.clone()),
+        act,
+    );
+    view()
+        .test_id(&format!("overview-pane-card-{}", cell.pane))
+        .child(boxed)
+        .child(label)
+        .into_element()
+}
+
+/// The pane page's last card: a new pane in its window, at once (a pane
+/// has no name to ask for).
+fn new_pane_card(ctx: &Ctx, window: &str) -> AnyElement {
+    let words = t!("New Pane");
+    view()
+        .h(px(BOX))
+        .items_center()
+        .justify_center()
+        .gap(px(6.0))
+        .rounded(px(number("radius")))
+        .border_curve(BorderCurve::Continuous)
+        .border(px(1.0))
+        .border_color(move || token("border-strong"))
+        .role(AccessibilityRole::Button)
+        .label(words.clone())
+        .test_id("overview-new-pane")
+        .active(|s| s.bg(move || token("accent")))
+        .on_press(ctx.asking(Intent::NewPane(window.to_owned())))
+        .child(icon("plus").size(IconSize::Lg).tone(Tone::Muted))
+        .child(chrome_text(TextToken::Subhead, words).text_color(move || token("muted-foreground")))
+        .into_element()
+}
+
+/// What a pane's cell is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CellRole {
+    /// A window of one pane: the cell is the button, its words in it.
+    Pick,
+    /// A pane of a window of more: drawn, its words in it, the press its
+    /// box's (to the pane page).
+    Picture,
+    /// A pane page's card: the button, its picture alone (its words are
+    /// under the box).
+    Card,
+}
+
+/// One pane: its picture, what runs in it and its state (a pane page's
+/// card: its picture alone), the current one ringed.
 fn cell_view(
     ctx: &Ctx,
     card: &Card,
     cell: &Cell,
-    many: bool,
+    role: CellRole,
     now: f64,
     words: &Words,
     anchor: Anchor,
@@ -1181,9 +1401,6 @@ fn cell_view(
     if let Some(signal) = cell.signal {
         // In words, minutes said as minutes (B653: "13m" is the eye's).
         label_parts.push(spoken_state(signal, cell.since, now));
-    }
-    if many {
-        label_parts.push(card.place.clone());
     }
     if cell.current {
         label_parts.push(t!("current"));
@@ -1196,6 +1413,8 @@ fn cell_view(
         let pane = cell.pane.clone();
         move || tell_anchor(&ctx, anchor.target, pane.clone(), anchor.told)
     });
+    // The host's long-press menu finds the pane by its id, whatever the
+    // cell is for.
     let mut v = view()
         .flex_1()
         .min_w(px(0.0))
@@ -1211,44 +1430,55 @@ fn cell_view(
                 tell();
             }
         })
-        .role(AccessibilityRole::Button)
-        .label(label_parts.join(", "))
-        .accessibility_state(AccessibilityState {
-            selected: cell.current,
-            ..AccessibilityState::default()
-        })
-        .test_id(&format!("overview-pane-{}", cell.pane))
-        .active(|s| s.bg(move || token("accent")))
-        .on_press({
-            let ctx = ctx.clone();
-            move |e: &PressEvent| {
-                // The cell's place: where the press is in the surface, less
-                // where it is in the cell.
-                let rect = size.get().map(|s| {
-                    [
-                        e.page_position.x.0 - e.position.x.0,
-                        e.page_position.y.0 - e.position.y.0,
-                        s.width.0,
-                        s.height.0,
-                    ]
-                });
-                pick_from(&ctx, &pane, rect)
-            }
-        })
-        .child(picture(ctx, &cell.pane))
-        .child(
+        .test_id(&format!("overview-pane-{}", cell.pane));
+    if role == CellRole::Picture {
+        // Its box is the button and says the window: the cell is drawn
+        // only.
+        v = v.accessibility_elements_hidden(true);
+    } else {
+        v = v
+            .role(AccessibilityRole::Button)
+            .label(label_parts.join(", "))
+            .accessibility_state(AccessibilityState {
+                selected: cell.current,
+                ..AccessibilityState::default()
+            })
+            .active(|s| s.bg(move || token("accent")))
+            .on_press({
+                let ctx = ctx.clone();
+                move |e: &PressEvent| {
+                    // The cell's place: where the press is in the surface,
+                    // less where it is in the cell.
+                    let rect = size.get().map(|s| {
+                        [
+                            e.page_position.x.0 - e.position.x.0,
+                            e.page_position.y.0 - e.position.y.0,
+                            s.width.0,
+                            s.height.0,
+                        ]
+                    });
+                    pick_from(&ctx, &pane, rect)
+                }
+            });
+    }
+    v = v.child(picture(ctx, &cell.pane, role == CellRole::Card));
+    if role != CellRole::Card {
+        v = v.child(
             chrome_text(TextToken::Subhead, cell.name.clone())
                 .number_of_lines(1u32)
                 .text_color(move || token("foreground")),
         );
+    }
     if let Some((words, status, line_tone)) = state {
-        // Two lines, as the card's (B834): a pane on a phone is some 72 pt
-        // wide, and German's "Wartet auf dich" is wider.
-        v = v.child(
-            chrome_text(TextToken::Caption, words)
-                .number_of_lines(2u32)
-                .text_color(move || token(line_tone)),
-        );
+        if role != CellRole::Card {
+            // Two lines, as the card's (B834): a pane on a phone is some
+            // 72 pt wide, and German's "Wartet auf dich" is wider.
+            v = v.child(
+                chrome_text(TextToken::Caption, words)
+                    .number_of_lines(2u32)
+                    .text_color(move || token(line_tone)),
+            );
+        }
         v = v.child(
             view()
                 .absolute()
@@ -1274,8 +1504,10 @@ fn cell_view(
 
 /// Pane `pane`'s picture, filling what its cell leaves above its words:
 /// the end of its screen as tiny text ([`picture_rows`]), as many rows as
-/// fit; nothing until (unless) the host has one. Decorative.
-fn picture(ctx: &Ctx, pane: &str) -> AnyElement {
+/// fit; nothing until (unless) the host has one, or, `placeholder` (a
+/// pane page's card, whose words are under it), the terminal's symbol.
+/// Decorative.
+fn picture(ctx: &Ctx, pane: &str, placeholder: bool) -> AnyElement {
     let pictures = ctx.pictures;
     let height = signal(0.0_f32);
     let rows = {
@@ -1305,7 +1537,18 @@ fn picture(ctx: &Ctx, pane: &str) -> AnyElement {
         .child(dynamic(move || {
             let rows = rows.get();
             if rows.is_empty() {
-                return view().into_element();
+                if !placeholder {
+                    return view().into_element();
+                }
+                return untracked(|| {
+                    view()
+                        .absolute()
+                        .inset_0()
+                        .items_center()
+                        .justify_center()
+                        .child(icon("terminal").size(IconSize::Lg).tone(Tone::Subtle))
+                        .into_element()
+                });
             }
             let lines = rows.len() as u32;
             text(rows.join("\n"))
@@ -1586,11 +1829,10 @@ mod tests {
     }
 
     #[test]
-    fn past_four_panes_a_card_shows_three_and_more_until_opened() {
-        assert_eq!(shown(1, false), (1, 0));
-        assert_eq!(shown(4, false), (4, 0));
-        assert_eq!(shown(6, false), (3, 3));
-        assert_eq!(shown(6, true), (6, 0));
+    fn past_four_panes_a_card_shows_three_and_more() {
+        assert_eq!(shown(1), (1, 0));
+        assert_eq!(shown(4), (4, 0));
+        assert_eq!(shown(6), (3, 3));
     }
 
     #[test]
