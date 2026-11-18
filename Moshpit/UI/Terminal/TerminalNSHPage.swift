@@ -387,8 +387,8 @@ final class TerminalNSHModel {
             stage.handover()
             return nil
         case "dialog-anchor":
-            // The pill's question: on the iPad its popover hangs from the
-            // pill, as SwiftUI's confirmationDialog does.
+            // The pill's question hangs from the pill, as SwiftUI's
+            // confirmationDialog does (iPad popover, iOS 26 phone sheet).
             if message["name"] as? String == "pill", let surface, let pill = anchors.pill {
                 dialogAnchor.arm(surface: surface, rect: pill)
             }

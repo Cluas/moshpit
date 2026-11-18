@@ -12,7 +12,9 @@ import UIKit
 /// ``arm(surface:rect:)`` then watches the main run loop for a short while
 /// with an observer ordered before Core Animation's commit, so the alert
 /// the surface presents is moved in the turn it is presented, before UIKit
-/// lays its popover out. On a phone the sheet is no popover: nothing to do.
+/// lays its popover out. Since iOS 26 a phone's action sheet hangs from its
+/// source too (floating, not docked to the bottom edge), so the phone needs
+/// the same move, or the sheet comes up at the bottom over the key bar.
 @MainActor
 final class NSHDialogAnchor {
     private var observer: CFRunLoopObserver?
@@ -26,7 +28,7 @@ final class NSHDialogAnchor {
     /// surface's points).
     func arm(surface: UIView, rect: CGRect) {
         disarm()
-        guard UIDevice.current.userInterfaceIdiom != .phone, rect.width > 0 else { return }
+        guard rect.width > 0 else { return }
         self.surface = surface
         self.rect = rect
         deadline = CACurrentMediaTime() + Self.window
