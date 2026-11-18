@@ -203,13 +203,14 @@ pub const TERMS: &[Term] = &[
     Term {
         name: "host",
         en: &["host", "hosts"],
+        // A jump host is 跳板机: the word carries the host in it.
         hans: Rendering {
-            must: &["主机"],
+            must: &["主机", "跳板机"],
             never: &["宿主"],
             never_en: &[],
         },
         hant: Rendering {
-            must: &["主機"],
+            must: &["主機", "跳板機"],
             never: &["宿主"],
             never_en: &[],
         },
