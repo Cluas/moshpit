@@ -1138,6 +1138,28 @@ struct RustSessionTests {
         #expect(session.herdrControl != nil)
     }
 
+    @Test("mosh + herdr: swipes and taps go to herdr's client over mosh, never as frame-channel intents the core drops")
+    func moshHerdrScrollsThroughMosh() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        connection.multiplexer = .herdr
+        let (driver, _, fake) = driver(connection)
+        fake.herdr = Self.herdrModel()
+        let task = await started(driver, fake)
+        driver.handle(.state(state: .connected))
+        await task.value
+        let before = fake.herdrIntents.count
+        driver.scroll(lines: 3)
+        driver.click(col: 4, row: 2)
+        let sent = fake.herdrIntents.dropFirst(before).filter {
+            switch $0.1 {
+            case .scroll, .mouse: return true
+            default: return false
+            }
+        }
+        #expect(sent.isEmpty, "over mosh the core drops herdr's scroll and mouse intents")
+    }
+
     @Test("herdr: the surface mirrors the core, asks it for everything, waits for its answers")
     func herdrSurface() async throws {
         var connection = ServerConnection(host: "h", username: "u")

@@ -1716,6 +1716,7 @@ extension TerminalScreen {
         // route for mosh (``ServerConnection/jumpMoshRoute``).
         chrome.jumpMosh = connection.dialsMoshThroughJump
         chrome.jump = connection.viaConnectionId != nil && !chrome.jumpMosh
+        chrome.jumpSsh = chrome.jump && connection.connectionProtocol == .mosh
         chrome.mux = connection.multiplexer
         chrome.sidebar = onToggleSidebar != nil
         chrome.pill = transportKind

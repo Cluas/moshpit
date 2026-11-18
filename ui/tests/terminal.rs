@@ -1066,3 +1066,80 @@ fn command_keys_ask_what_the_menu_says_once_per_press() {
     no_intent(&heard);
     channel.close();
 }
+
+#[test]
+fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
+    let words = "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.";
+    let (mut app, channel, _) = open(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, &chrome());
+    app.wait_for("id:terminal-breadcrumb").unwrap();
+    assert!(!app.screen().shows(words), "no jump host, no notice");
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    app.wait_for("id:terminal-jump-notice")
+        .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
+    assert!(app.screen().shows(words));
+    // Not a modal: nothing was asked of the host.
+    no_intent(&heard);
+    app.press("id:terminal-jump-notice-dismiss").unwrap();
+    for _ in 0..40 {
+        if !app.screen().shows(words) {
+            break;
+        }
+        app.run_for(Duration::from_millis(100)).unwrap();
+    }
+    assert!(!app.screen().shows(words), "tapped away");
+    // Once per session: the next chrome with the jump flag doesn't bring it back.
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"jump": true, "jumpSsh": true, "name": "again"})),
+    );
+    app.run_for(Duration::from_millis(500)).unwrap();
+    assert!(!app.screen().shows(words), "once per session");
+    channel.close();
+}
+
+#[test]
+fn a_roam_over_in_a_moment_shows_no_banner() {
+    // Back from the background, iOS reports a new path and mosh's next
+    // reply ends the roam: the banner used to flash by on every return.
+    let (mut app, channel, _) = open(Params::default());
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"banner": {"kind": "roam", "srtt": 40.0, "history": []}})),
+    );
+    for _ in 0..5 {
+        app.run_for(Duration::from_millis(100)).unwrap();
+        assert!(
+            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            "no banner within the grace"
+        );
+    }
+    show(&mut app, &channel, &chrome());
+    for _ in 0..25 {
+        app.run_for(Duration::from_millis(100)).unwrap();
+        assert!(
+            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            "a roam that ended never shows"
+        );
+    }
+    channel.close();
+}
+
+#[test]
+fn the_jump_host_notice_goes_by_itself() {
+    let words = "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.";
+    let (mut app, channel, _) = open(Params::default());
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    app.wait_for("id:terminal-jump-notice").unwrap();
+    for _ in 0..100 {
+        if !app.screen().shows(words) {
+            break;
+        }
+        app.run_for(Duration::from_millis(100)).unwrap();
+    }
+    assert!(!app.screen().shows(words), "gone after its hold");
+    channel.close();
+}

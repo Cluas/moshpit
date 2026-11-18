@@ -357,6 +357,9 @@ pub struct Chrome {
     /// of its own: the pill and the banner offer a normal switch to SSH
     /// (which sets the route back to SSH).
     pub jump_mosh: bool,
+    /// Saved as mosh, dialled over SSH because it goes through a jump host
+    /// on the SSH route: the terminal says so once.
+    pub jump_ssh: bool,
     pub mux: Mux,
     /// The leading button toggles the iPad's sidebar instead of going back.
     pub sidebar: bool,

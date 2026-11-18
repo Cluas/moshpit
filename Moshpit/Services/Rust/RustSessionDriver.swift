@@ -987,6 +987,21 @@ final class RustSessionDriver: RustSessionListener {
             perform(.scrollLines(lines: Int64(lines)))
             return
         }
+        if expectsMoshHerdr {
+            // Over mosh herdr's own client paints this terminal and reads
+            // its input: a swipe is that client's wheel, sent as typed
+            // bytes. The frame channel's scroll intent has no channel to
+            // ride over mosh — the core drops it, and nothing moved.
+            guard viewModel.connState == .live else { return }
+            let coordinator = session.coordinator
+            guard coordinator.localAppWantsMouse else {
+                Log.ssh.notice("rust session: mosh herdr swipe dropped, herdr's client has no mouse reporting on")
+                return
+            }
+            coordinator.dropPredictions()
+            coordinator.sendWheel(lines: lines)
+            return
+        }
         if expectsHerdrSurface {
             // herdr owns the pane's history (and a full-screen program's
             // own scrolling): a swipe is herdr's scroll, never the local
@@ -1011,6 +1026,12 @@ final class RustSessionDriver: RustSessionListener {
         if let tmux {
             session.coordinator.dropPredictions()
             perform(.click(col: Int64(col), row: Int64(row)))
+        } else if expectsMoshHerdr {
+            // herdr's client over mosh takes the click as typed bytes, as
+            // the swipe in `scroll(lines:)`.
+            guard viewModel.connState == .live else { return }
+            session.coordinator.dropPredictions()
+            session.coordinator.clickLocal(col: col, row: row)
         } else if expectsHerdrSurface {
             // A tap is a left click in herdr's pane (herdr ≥ 0.9.2 takes
             // mouse input), as on the Swift path.

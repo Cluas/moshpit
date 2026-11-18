@@ -641,6 +641,9 @@ struct TerminalNSHChrome: Equatable {
     /// Through a jump host with mosh's UDP on a route of its own: the pill
     /// and the banner offer a normal switch to SSH.
     var jumpMosh = false
+    /// Saved as mosh, dialled over SSH through a jump host: the terminal
+    /// says so once.
+    var jumpSsh = false
     var mux: Multiplexer = .none
     var sidebar = false
     var pill: TransportPillKind = .ssh
@@ -717,6 +720,7 @@ struct TerminalNSHChrome: Equatable {
             "mosh": mosh,
             "jump": jump,
             "jumpMosh": jumpMosh,
+            "jumpSsh": jumpSsh,
             "mux": mux.rawValue,
             "sidebar": sidebar,
             "pill": Self.pill(pill),
