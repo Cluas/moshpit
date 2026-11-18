@@ -1023,8 +1023,12 @@ fn a_burst_costs_one_listing_of_each_kind_and_one_more_after() {
 
 // MARK: - The status line
 
+/// 1.1.0 regression: over mosh the phone showed tmux's own status bar on
+/// the user's sessions. 1.0.8 turned it off while the phone is on the
+/// session (`set-option -t … status off`), and gave it back with `-u` on a
+/// switch and on the disconnect; never a persisted config.
 #[test]
-fn the_users_sessions_get_no_status_option() {
+fn the_users_session_goes_without_status_while_the_phone_is_on_it() {
     let mut s = Sidecar::make(
         &["$0 1 alpha", "$1 2 work"],
         &[],
@@ -1035,12 +1039,26 @@ fn the_users_sessions_get_no_status_option() {
         None,
     );
     s.land("$1", "work");
+    assert_eq!(s.status_commands(), ["set-option -t '$1' status off"]);
     s.switch_session("$0");
     s.land("$0", "alpha");
-    assert!(s.status_commands().is_empty());
+    assert_eq!(
+        s.status_commands(),
+        [
+            "set-option -t '$1' status off",
+            "set-option -t '$1' -u status",
+            "set-option -t '$0' status off",
+        ]
+    );
     let request = s.rig.with(|c, now| c.restore_suppressed_status(now));
-    assert_eq!(request, None, "the disconnect owes nothing either");
-    assert!(s.status_commands().is_empty());
+    assert!(request.is_some(), "the disconnect owes the status line");
+    s.rig.settle();
+    assert_eq!(
+        s.status_commands().last().map(String::as_str),
+        Some("set-option -t '$0' -u status")
+    );
+    let again = s.rig.with(|c, now| c.restore_suppressed_status(now));
+    assert_eq!(again, None, "and only once");
 }
 
 #[test]
@@ -1056,14 +1074,21 @@ fn an_owned_session_goes_without_status_while_on_it_and_gets_it_back() {
     s.rig.with(|c, now| c.new_session(Some("mine"), now));
     s.rig.settle();
     s.land("$5", "mine");
-    assert_eq!(s.status_commands(), ["set-option -t '$5' status off"]);
-    s.switch_session("$1");
-    s.land("$1", "work");
     assert_eq!(
         s.status_commands(),
         [
-            "set-option -t '$5' status off",
-            "set-option -t '$5' -u status"
+            "set-option -t '$1' status off",
+            "set-option -t '$1' -u status",
+            "set-option -t '$5' status off"
+        ]
+    );
+    s.switch_session("$1");
+    s.land("$1", "work");
+    assert_eq!(
+        s.status_commands()[3..],
+        [
+            "set-option -t '$5' -u status",
+            "set-option -t '$1' status off"
         ]
     );
 }
@@ -1094,7 +1119,10 @@ fn a_rebuilt_sidecar_still_owes_the_status_line() {
         Some(ledger),
     );
     second.land("$1", "work");
-    assert_eq!(second.status_commands(), ["set-option -t '$5' -u status"]);
+    assert_eq!(
+        second.status_commands(),
+        ["set-option -t '$5' -u status", "set-option -t '$1' status off"]
+    );
 }
 
 #[test]
@@ -1491,17 +1519,18 @@ fn a_session_moshpit_makes_is_marked_on_it_and_its_hidden_status_stamped() {
     s.rig.settle();
     s.land("$5", "mine");
     assert_eq!(
-        s.mark_commands(),
+        s.mark_commands()[1..],
         [
             "set-option -t '$5' @moshpit_owned 1",
+            "set-option -t '$1' -u @moshpit_status_hidden",
             "set-option -t '$5' -F @moshpit_status_hidden '#{client_name}'",
         ]
     );
     s.switch_session("$1");
     s.land("$1", "work");
-    assert_eq!(
-        s.mark_commands().last().map(String::as_str),
-        Some("set-option -t '$5' -u @moshpit_status_hidden")
+    assert!(
+        s.mark_commands()
+            .contains(&"set-option -t '$5' -u @moshpit_status_hidden".to_owned())
     );
 }
 
@@ -1516,7 +1545,10 @@ fn a_sidecar_after_a_killed_app_gives_back_the_status_line_it_left_off() {
         &["$1 owned= hidden=", "$5 owned=1 hidden=client-99999"],
         ("$1", "work"),
     );
-    assert_eq!(s.status_commands(), ["set-option -t '$5' -u status"]);
+    assert_eq!(
+        s.status_commands(),
+        ["set-option -t '$1' status off", "set-option -t '$5' -u status"]
+    );
     assert!(s.rig.controller.owned_session_ids().contains("$5"));
     assert!(!s.rig.controller.owned_session_ids().contains("$1"));
     // And it is Moshpit's still: on it, the status line goes off again.
@@ -1544,8 +1576,9 @@ fn a_sidecar_after_a_killed_app_on_that_session_keeps_it_off() {
     s.land("$1", "work");
     assert_eq!(
         s.status_commands().last().map(String::as_str),
-        Some("set-option -t '$5' -u status")
+        Some("set-option -t '$1' status off")
     );
+    assert!(s.status_commands().contains(&"set-option -t '$5' -u status".to_owned()));
 }
 
 /// A stamp of a client still attached is another phone's, on that session
@@ -1567,8 +1600,17 @@ fn a_live_stamp_and_the_users_sessions_are_left_alone() {
     );
     s.switch_session("$6");
     s.land("$6", "theirs");
-    assert!(s.status_commands().is_empty(), "{:?}", s.status_commands());
-    assert!(s.mark_commands().is_empty(), "{:?}", s.mark_commands());
+    // Only the phone's own session ever goes dark, and comes back; the
+    // other phone's stamped $5 is never touched.
+    assert!(
+        s.status_commands().iter().all(|c| !c.contains("'$5'")),
+        "{:?}",
+        s.status_commands()
+    );
+    assert_eq!(
+        s.status_commands().last().map(String::as_str),
+        Some("set-option -t '$6' status off")
+    );
 }
 
 fn make_marked(marks: &[&str], landing: (&str, &str)) -> Sidecar {
@@ -1734,6 +1776,41 @@ fn an_owned_sessions_status_line_is_hidden_on_the_phones_group() {
         sessions: vec!["$1 2 work".into()],
         windows: vec!["$1 @3 0 b25d,80x24,0,0,3 1 1 zsh".into()],
         marks: vec!["$1 owned=1 hidden=".into()],
+        groups: true,
+        ..Fake::default()
+    }));
+    let mut rig = Rig::new(Config {
+        renders_output: false,
+        ..Config::default()
+    });
+    rig.respond(responder(fake.clone()));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $1 work\n");
+    rig.settle();
+    let mut s = Sidecar { rig, fake };
+    s.attach_renderer(work(false, 45533, "/dev/ttys026"));
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    assert!(
+        s.status_commands()
+            .iter()
+            .any(|c| c == "set-option -t '$91' status off"),
+        "{:#?}",
+        s.status_commands()
+    );
+}
+
+/// B773: the user's own session shows no status line on the phone: the
+/// group's, the one on the phone's screen, is turned off.
+#[test]
+fn the_users_sessions_status_line_is_hidden_on_the_phones_group() {
+    // The marks are on the server before the sidecar starts (B86).
+    let fake = Rc::new(RefCell::new(Fake {
+        clients: vec![work(true, 45613, "/dev/ttys030")],
+        sessions: vec!["$1 2 work".into()],
+        windows: vec!["$1 @3 0 b25d,80x24,0,0,3 1 1 zsh".into()],
+        marks: vec!["$1 owned= hidden=".into()],
         groups: true,
         ..Fake::default()
     }));

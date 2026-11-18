@@ -608,7 +608,7 @@ impl Controller {
             if stamp.is_empty() || clients.contains(stamp) {
                 continue;
             }
-            if owned && current.as_deref() == Some(id) {
+            if current.as_deref() == Some(id) {
                 // The phone is on it: it stays off, stamped ours below.
                 if self.sidecar.status_hidden_session_id.as_deref() == Some(id) {
                     self.send(hide_stamp_command(id));
@@ -624,8 +624,9 @@ impl Controller {
         self.sync_status_line();
     }
 
-    /// The status line over mosh: off on a session Moshpit created while the
-    /// phone is on it; every other session left exactly as it is.
+    /// The status line over mosh: off on the session the phone is on (the
+    /// user's own included), given back by `-u` when it leaves, on the
+    /// disconnect, or when a dead sidecar's stamp is found.
     pub(super) fn sync_status_line(&mut self) {
         if self.config.renders_output || !self.snapshot.is_attached {
             return;
@@ -642,11 +643,11 @@ impl Controller {
             .filter(|group| group.session == current)
             .and_then(|group| group.id.clone())
             .unwrap_or_else(|| current.clone());
-        let wanted = self
-            .sidecar
-            .owned_session_ids
-            .contains(&current)
-            .then_some(shown);
+        // 1.0.8: mosh draws tmux's whole TUI, so Moshpit's own breadcrumbs
+        // replace its status line on whatever session the phone is on — the
+        // user's too. `-u` hands it back (the stamp says it was us), and
+        // nothing is ever written to the user's config.
+        let wanted = Some(shown);
         if wanted == self.sidecar.status_hidden_session_id {
             return;
         }
