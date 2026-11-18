@@ -1143,7 +1143,9 @@ struct RustSessionTests {
         var connection = ServerConnection(host: "h", username: "u")
         connection.connectionProtocol = .mosh
         connection.multiplexer = .herdr
-        let (driver, _, fake) = driver(connection)
+        // The driver holds its session unowned: the test keeps it alive.
+        let (driver, session, fake) = driver(connection)
+        defer { withExtendedLifetime(session) {} }
         fake.herdr = Self.herdrModel()
         let task = await started(driver, fake)
         driver.handle(.state(state: .connected))
