@@ -26,6 +26,10 @@
 //! - The accessory is a chevron, a check, a disclosure arrow, a spinner
 //!   while loading, a control ([`Row::trailing`]: a switch), or a badge
 //!   ([`Row::badge`]), whose words the row says after its title.
+//! - A side action ([`Row::side_action`]) sits just before the accessory,
+//!   as UIKit's detail button sits before a disclosure chevron: its own
+//!   44 pt target over a lane the row keeps for it, so the row keeps its
+//!   press and its chevron, and the side action takes only its own.
 //!
 //! A row with an action ([`Row::on_press`]) is `nsh_base`'s button (a
 //! disclosure row its own target, which screen readers hear expanded or
@@ -67,6 +71,12 @@ pub const HEIGHT_LG: f32 = 60.0;
 /// The value lane's least width, beside the title: a value narrower than
 /// this keeps only its own width ([`value_least`]).
 pub const VALUE_MIN: f32 = 56.0;
+/// A side action's touch target ([`Row::side_action`]).
+pub const SIDE: f32 = 44.0;
+/// The lane a side action keeps in the row: its target less a gap, the
+/// target reaching half a gap into the space on each side (the symbol is
+/// far narrower), so a long title keeps its room.
+const SIDE_LANE: f32 = SIDE - GAP;
 /// Past this share of the content lane, the title puts the value under it.
 pub const TITLE_SHARE: f32 = 0.6;
 
@@ -119,6 +129,9 @@ pub struct Row {
     loading: Rc<dyn Fn() -> bool>,
     stacked: Rc<dyn Fn() -> bool>,
     below: Option<AnyElement>,
+    /// A button just before the accessory, over a lane the row keeps for
+    /// it ([`Row::side_action`]).
+    side: Option<AnyElement>,
     test_id: Option<SharedString>,
     /// What the built row is put in (a swipe tray: B499), keeping its
     /// place on the section (its inset, its leading lane).
@@ -154,6 +167,7 @@ pub fn row(title: impl Into<SharedString>) -> Row {
         loading: Rc::new(|| false),
         stacked: Rc::new(|| false),
         below: None,
+        side: None,
         test_id: None,
         wrap: None,
     }
@@ -327,6 +341,16 @@ impl Row {
         self
     }
 
+    /// A button just before the accessory (a 44 pt icon button: ＋ beside
+    /// "All sessions ›"), as UIKit's detail button before a chevron. It
+    /// lies over a lane the row keeps for it rather than inside the row,
+    /// so the row keeps its own press and the button takes only its own
+    /// (an ancestor's press would fire with it).
+    pub fn side_action(mut self, button: impl IntoElement) -> Self {
+        self.side = Some(button.into_element());
+        self
+    }
+
     /// The row heads a group (a host's session over its windows): screen
     /// readers jump to it by headings. It keeps its press.
     pub fn heading(mut self) -> Self {
@@ -495,6 +519,7 @@ impl Row {
             loading,
             stacked,
             below,
+            side: side_action,
             test_id,
             wrap: _,
         } = self;
@@ -540,6 +565,7 @@ impl Row {
         // lane), and whether the title and the value fit side by side in
         // it: the title within its share, a whole value beside it.
         let lanes_width = signal(0.0_f32);
+        let wraps_title = side_action.is_some();
         let lead = if leading.is_some() || reserve_leading {
             LEADING + GAP
         } else {
@@ -671,6 +697,10 @@ impl Row {
                         .child(make(false))
                 }))
                 .into_element()
+        } else if wraps_title {
+            // Beside a side action the title has less room: it wraps
+            // rather than being cut ("Tous les espaces de travail").
+            title_words.number_of_lines(0u32).into_element()
         } else {
             title_words
                 .number_of_lines(lines_at_text_size)
@@ -866,6 +896,9 @@ impl Row {
             ),
             Accessory::Element(element) => Some(*element),
         };
+        // How wide the accessory is drawn: where a side action lies, from
+        // the trailing edge.
+        let slot_width = signal(16.0_f32);
         // While loading, a spinner lies over the accessory, which fades out
         // (it is never made again: a control keeps its state).
         let accessory = {
@@ -875,7 +908,12 @@ impl Row {
                 .flex_shrink_0()
                 .min_w(px(16.0))
                 .items_center()
-                .justify_center();
+                .justify_center()
+                .on_layout(move |b: &Bounds<Points>| {
+                    if slot_width.get_untracked() != b.size.width.0 {
+                        slot_width.set(b.size.width.0);
+                    }
+                });
             // At an accessibility text size, at the top, as tall as the
             // title's first line, the control centred in it. Read as the
             // row is made: a size changed while it shows takes effect the
@@ -894,7 +932,7 @@ impl Row {
                         .child(lane),
                 );
             }
-            slot.child(when(
+            let slot = slot.child(when(
                 move || loading_now(),
                 || {
                     view()
@@ -904,7 +942,25 @@ impl Row {
                         .justify_center()
                         .child(spinner(SpinnerSize::Sm))
                 },
-            ))
+            ));
+            if side_action.is_some() {
+                // The side action's lane, kept empty: the button lies over
+                // it from outside the row.
+                view()
+                    .flex_row()
+                    .items_center()
+                    .flex_shrink_0()
+                    .gap(px(GAP))
+                    .child(
+                        view()
+                            .w(px(SIDE_LANE))
+                            .h(px(1.0))
+                            .accessibility_elements_hidden(true),
+                    )
+                    .child(slot)
+            } else {
+                slot
+            }
         };
 
         let height = if has_subtitle { HEIGHT_LG } else { HEIGHT_MD };
@@ -922,7 +978,7 @@ impl Row {
                 }
             }
         };
-        match (on_press, expanded) {
+        let built = match (on_press, expanded) {
             (Some(on_press), expanded) if expanded.is_some() || on_long_press.is_some() => {
                 // Its own target: nsh_base's button cannot say expanded,
                 // nor take a long press.
@@ -1010,6 +1066,24 @@ impl Row {
                 }
                 plain.child(lanes).child(accessory).into_element()
             }
+        };
+        match side_action {
+            None => built,
+            Some(side) => view()
+                .relative()
+                .child(built)
+                .child(
+                    view()
+                        .absolute()
+                        .top(px(0.0))
+                        .bottom(px(0.0))
+                        .right(move || px(PADDING_X + slot_width.get() + GAP / 2.0))
+                        .w(px(SIDE))
+                        .items_center()
+                        .justify_center()
+                        .child(side),
+                )
+                .into_element(),
         }
     }
 }

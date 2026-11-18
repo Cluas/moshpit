@@ -520,18 +520,14 @@ fn body_view(body: Option<CardBody>, connection: &Connection, ctx: &Ctx) -> AnyE
     };
     match body {
         None => view().into_element(),
-        Some(CardBody::Rows(host_rows)) => {
-            let mux = connection.control.as_ref().map_or(Mux::Tmux, |c| c.mux);
-            section()
-                .variant(SectionVariant::Plain)
-                .rows(
-                    host_rows
-                        .into_iter()
-                        .map(|r| rows::host_row(r, connection, ctx))
-                        .chain([rows::new_session_row(mux, &id, ctx)]),
-                )
-                .into_element()
-        }
+        Some(CardBody::Rows(host_rows)) => section()
+            .variant(SectionVariant::Plain)
+            .rows(
+                host_rows
+                    .into_iter()
+                    .map(|r| rows::host_row(r, connection, ctx)),
+            )
+            .into_element(),
         Some(CardBody::Connecting { mux }) => one(row(match mux {
             None => t!("Connecting…"),
             Some(Mux::Tmux) => t!("Connecting to tmux…"),

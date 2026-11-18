@@ -176,7 +176,6 @@ fn rows(nodes: &[LayoutNode]) -> Vec<LayoutNode> {
                     "home-pane-",
                     "home-idle-",
                     "home-all-",
-                    "home-new-session-",
                     "home-more-working-",
                     "card-dead-",
                     "card-edit-",
@@ -229,8 +228,25 @@ fn the_acceptance_fixture_fits_two_screens() {
             format!("home-pane-{GPU}-w5:p1"),
             format!("home-idle-{GPU}"),
             format!("home-all-{GPU}"),
-            format!("home-new-session-{GPU}"),
         ]
+    );
+    // ＋ (a new workspace) rides on "All workspaces ›", the card's last
+    // row: no row of its own, the card's shape as it was. Its own 44 pt
+    // target, inside the row, before the chevron.
+    let all = node(&nodes, &format!("home-all-{GPU}")).bounds;
+    let plus = node(&nodes, &format!("home-new-session-{GPU}")).bounds;
+    assert!(
+        plus.size.width.0 >= 44.0 && plus.size.height.0 >= 44.0,
+        "{plus:?}"
+    );
+    assert!(
+        plus.origin.y.0 >= all.origin.y.0 - 0.5
+            && plus.origin.y.0 + plus.size.height.0 <= all.origin.y.0 + all.size.height.0 + 0.5,
+        "＋ {plus:?} inside its row {all:?}"
+    );
+    assert!(
+        plus.origin.x.0 + plus.size.width.0 < all.origin.x.0 + all.size.width.0 - 16.0,
+        "＋ {plus:?} leaves the chevron its place in {all:?}"
     );
     assert_eq!(
         app.screen()
@@ -734,8 +750,6 @@ fn in_the_apps_language() {
         "已完成",
         "全部工作区",
         "全部会话",
-        "新建工作区",
-        "新建会话",
         "25 分钟前断开",
         "重新连接",
         "1 个在等你",
@@ -744,6 +758,15 @@ fn in_the_apps_language() {
             app.screen().shows(words),
             "{words}: {:?}",
             app.screen().texts()
+        );
+    }
+    // The ＋ beside each list says what it makes.
+    for label in ["新建工作区", "新建会话"] {
+        assert!(
+            app.screen()
+                .matches(&format!("role:button[{label}]"))
+                .unwrap(),
+            "{label}"
         );
     }
     channel.close();

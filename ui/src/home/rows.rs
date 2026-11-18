@@ -21,6 +21,7 @@ use super::{
     swipe::{self, Action, Tint},
 };
 use crate::ui::{
+    button::{IconVariant, icon_button},
     icon::{Tone, icon},
     mark::{MarkSize, agent_mark, host_mark},
     row::{Row, row},
@@ -245,22 +246,30 @@ pub(crate) fn host_row(host_row: HostRow, connection: &Connection, ctx: &Ctx) ->
         .value(count.to_string())
         .chevron()
         .on_press(ctx.asking(Intent::Sessions(id.clone())))
+        .side_action(new_session_button(mux, &id, ctx))
         .test_id(&format!("home-all-{id}")),
     }
 }
 
-/// The card's last row, always there while the host is live with a
-/// multiplexer: a new session (herdr: workspace), named first by the
-/// host's prompt. Quiet, as the tree's rows are: a muted + and the words,
-/// no chevron (it opens no page). The long-press menus keep theirs.
-pub(crate) fn new_session_row(mux: Mux, connection: &str, ctx: &Ctx) -> Row {
-    row(match mux {
-        Mux::Tmux => t!("New Session"),
-        Mux::Herdr => t!("New Workspace"),
-    })
-    .leading(icon("plus").tone(Tone::Muted))
+/// ＋ beside "All sessions ›" (herdr: workspaces): a new session, named
+/// first by the host's prompt. A muted 44 pt symbol before the chevron, as
+/// UIKit's detail button sits before one, rather than a row of its own:
+/// the card keeps its shape (a full-width row read as out of place on the
+/// card), and the action sits on the row whose list it adds to. The
+/// long-press menus keep theirs.
+fn new_session_button(mux: Mux, connection: &str, ctx: &Ctx) -> AnyElement {
+    icon_button(
+        "plus",
+        match mux {
+            Mux::Tmux => t!("New Session"),
+            Mux::Herdr => t!("New Workspace"),
+        },
+    )
+    .variant(IconVariant::Ghost)
+    .tone(Tone::Muted)
     .on_press(ctx.asking(Intent::NewSession(connection.to_owned())))
     .test_id(&format!("home-new-session-{connection}"))
+    .into_element()
 }
 
 /// A pane with no agent: called by its folder, `program · ~/path` under
