@@ -1118,6 +1118,22 @@ struct RustSessionTests {
         #expect(AgentActivityMonitor.stampInterval(of: tmux) == AgentActivityMonitor.sweepInterval)
     }
 
+    @Test("mosh + herdr on a host without mosh-server: the core dials SSH, and herdr's panes never land on tmux")
+    func moshHerdrFallsBackToSSH() async throws {
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.connectionProtocol = .mosh
+        connection.multiplexer = .herdr
+        let (driver, session, fake) = driver(connection)
+        fake.herdr = Self.herdrModel()
+        let task = await started(driver, fake)
+        driver.handle(.degraded(degrade: .moshServerMissing))
+        driver.handle(.state(state: .connected))
+        await task.value
+        driver.handle(.panes(attach: 1, panes: [PaneValue(pane: "w1:p1", stream: 0, active: true)]))
+        #expect(session.tmuxController == nil, "herdr's pane is not a tmux pane")
+        #expect(session.herdrControl != nil)
+    }
+
     @Test("herdr: the surface mirrors the core, asks it for everything, waits for its answers")
     func herdrSurface() async throws {
         var connection = ServerConnection(host: "h", username: "u")
