@@ -560,7 +560,11 @@ final class RustSessionDriver: RustSessionListener {
                 session.rustSetTmux(nil)
             }
             session.rustSetRetired(nil)
-            endFirstFrameWait()
+            // herdr over mosh paints through this shell too, but its first
+            // frame is the renderer's first reveal (``shellViewMark(_:)``):
+            // ending the wait here let a switch's last picture go before
+            // the pane had redrawn, a blank for the rest.
+            if !expectsMoshHerdr { endFirstFrameWait() }
             return
         }
         guard !panes.isEmpty else { return }
