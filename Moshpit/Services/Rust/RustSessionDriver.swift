@@ -99,23 +99,23 @@ final class RustSessionDriver: RustSessionListener {
     private var connection: ServerConnection { session.connection }
     /// Whether this connection paints through tmux pane hosts.
     private var expectsTmux: Bool {
-        connection.connectionProtocol == .ssh && connection.multiplexer == .tmux
+        !connection.dialsMosh && connection.multiplexer == .tmux
     }
     /// mosh with tmux: the sidecar's tree beside mosh's screen.
     private var expectsSidecar: Bool {
-        connection.connectionProtocol == .mosh && connection.multiplexer == .tmux
+        connection.dialsMosh && connection.multiplexer == .tmux
     }
     /// herdr over SSH: its panes' frames on the core's frame channel.
     private var expectsHerdr: Bool {
-        connection.connectionProtocol == .ssh && connection.multiplexer == .herdr
+        !connection.dialsMosh && connection.multiplexer == .herdr
     }
     /// herdr over mosh: mosh paints the loop, the control plane beside it.
     private var expectsMoshHerdr: Bool {
-        connection.connectionProtocol == .mosh && connection.multiplexer == .herdr
+        connection.dialsMosh && connection.multiplexer == .herdr
     }
     /// herdr's chrome, on either transport.
     private var expectsHerdrSurface: Bool { expectsHerdr || expectsMoshHerdr }
-    private var isMosh: Bool { connection.connectionProtocol == .mosh }
+    private var isMosh: Bool { connection.dialsMosh }
 
     init(session: SessionHub.ActiveSession, core: RustCore,
          appearance: RustTmuxController.Appearance) {

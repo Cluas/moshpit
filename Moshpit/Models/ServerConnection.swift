@@ -249,3 +249,12 @@ struct ServerConnection: Identifiable, Codable, Equatable {
         name.isEmpty ? "\(username)@\(host)" : name
     }
 }
+
+extension ServerConnection {
+    /// Whether the core dials this connection over mosh. Through a jump host
+    /// it is SSH only (F1: mosh's UDP can't take the way), whatever the saved
+    /// protocol says: the surface must follow what was dialled, not the
+    /// setting, or an SSH herdr session is read as a mosh one and lands on
+    /// the tmux empty state.
+    var dialsMosh: Bool { connectionProtocol == .mosh && viaConnectionId == nil }
+}

@@ -195,6 +195,19 @@ struct RustSessionTests {
         #expect(RustSessionDriver.spec(for: connection, grid: (80, 24)).proxyHost == nil)
     }
 
+    /// A mosh connection behind a jump host is dialled over SSH (F1), so the
+    /// surface must read it as SSH: a herdr host reached that way is herdr's
+    /// frame channel, never the mosh sidecar and the tmux empty state.
+    @Test("mosh through a jump host is dialled as SSH")
+    func moshThroughJumpIsSSH() {
+        var connection = ServerConnection(host: "box.local", username: "me", connectionProtocol: .mosh)
+        #expect(connection.dialsMosh)
+        connection.viaConnectionId = UUID()
+        #expect(!connection.dialsMosh)
+        connection.connectionProtocol = .ssh
+        #expect(!connection.dialsMosh)
+    }
+
     /// B430: Settings › UDP ports said "for every connection", but a
     /// connect asked mosh-server for the range the connection stored at its
     /// last save — a narrowed range never reached a saved connection, and
