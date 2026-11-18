@@ -131,6 +131,12 @@ pub fn mosh_take_path(renderer_key: &str) -> String {
 /// its attach: between attaches, and once the loop has parked, there is no
 /// pid to kill.
 ///
+/// The first attach waits (up to 3 s) while the tty is still 80×24:
+/// mosh-server starts its program at that size, before the client's
+/// first resize lands, and an attach that came up then resized the pane
+/// to 80 columns and straight back — Claude's screen reflowed twice and
+/// kept fragments of the narrow frame until its next full redraw.
+///
 /// Under `sh -c` (B138): the login shell gets one quoted word, so a fish
 /// that has no `while … do … done` (or `$(…)` before 3.4) runs it as sh.
 pub fn raw_attach_loop_command(renderer_key: &str, custom_path: Option<&str>) -> String {
@@ -165,7 +171,9 @@ pub fn raw_attach_loop_command(renderer_key: &str, custom_path: Option<&str>) ->
         "mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; echo $$ > \"{looped}\"; f=1; while :; do \
          tid=$(cat \"{target}\" 2>/dev/null); \
          if [ -n \"$tid\" ]; then \
-         if [ -n \"$f\" ]; then f=; t=$(stty -g 2>/dev/null) \
+         if [ -n \"$f\" ]; then f=; n=0; \
+         while [ \"$(stty size 2>/dev/null)\" = \"24 80\" ] && [ $n -lt 30 ]; do sleep 0.1; n=$((n+1)); done; \
+         t=$(stty -g 2>/dev/null) \
          && stty -icanon min 0 time 0 2>/dev/null && cat >/dev/null; \
          [ -n \"$t\" ] && stty \"$t\" 2>/dev/null; fi; \
          sh -c \"echo \\$\\$ > \\\"{pid}\\\"; \

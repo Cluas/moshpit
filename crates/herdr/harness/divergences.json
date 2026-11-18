@@ -213,6 +213,19 @@
       "evidence": ["tests/launch_host.rs: a_follow_refused_before_its_attach_is_seen_is_still_said (said as nothing on the old command)", "tests/fixtures/corpus/divergences.txt (retarget-unseen-refusal)"],
       "severity": "low",
       "status": "open"
+    },
+    {
+      "id": "first-attach-at-mosh-default-size",
+      "swift": "HerdrLaunch.swift (rawAttachLoopCommand): the first attach starts as soon as the target file names a terminal",
+      "symptom": "Right after a switch to mosh, a Claude Code pane showed fragments of an older frame among the new one, until a scroll redrew it: mosh-server starts its program on an 80×24 tty before the client's first resize lands, so the attach sized the pane to 80 columns and straight back, and the program reflowed twice.",
+      "trigger": "Every renderer loop command (the command's text differs); in use, a target published before mosh's first resize.",
+      "minimal_input": "launch.loop <key> -",
+      "swift_before": "the command without the wait",
+      "fix": "Before the first attach (and the first after a park), wait up to 3 s while `stty size` still reads 24 80.",
+      "rust_outcome": "the command with `while [ \"$(stty size)\" = \"24 80\" ] && [ $n -lt 30 ]; do sleep 0.1; …; done` before the first attach",
+      "evidence": ["tests/fixtures/corpus/divergences.txt (first-attach-at-mosh-default-size)"],
+      "severity": "low",
+      "status": "open"
     }
   ],
   "notes": [
