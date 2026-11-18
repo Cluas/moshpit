@@ -673,7 +673,10 @@ impl Controller {
     /// already counts it hidden (`set-option` is idempotent); what was hidden
     /// before, if elsewhere, is given back.
     fn assert_status_off(&mut self, id: &str) {
-        if self.config.renders_output || !self.snapshot.is_attached {
+        // Not gated on the snapshot's attach: the move itself is the proof
+        // the sidecar is up, and a snapshot not yet caught up must not keep
+        // the line on.
+        if self.config.renders_output {
             return;
         }
         if let Some(hidden) = self.sidecar.status_hidden_session_id.clone()
