@@ -44,7 +44,7 @@ use moshpit_session::{
     ProxyWhy, ResumeOutcome, SessionMemory, SessionState, Sessions, Timing, TmuxAction, TmuxView,
     Transport, TunnelWhy, UdpFlow, UdpNetwork, UnreachableWhy,
 };
-use moshpit_session::{Hop, HopBroken, Via};
+use moshpit_session::{Hop, HopBroken, JumpMoshRoute, Via};
 use moshpit_store::connections::{Route, ServerConnection};
 
 use crate::store::ConnectionRecord;
@@ -189,6 +189,10 @@ pub struct SessionSpec {
     /// straight to the host.
     #[uniffi(default = None)]
     pub hop: Option<SessionHop>,
+    /// Where mosh's UDP goes through a jump host (`ssh`, `direct`,
+    /// `viaJump`; the connection's `jumpMoshRoute`); none reads as `ssh`.
+    #[uniffi(default = None)]
+    pub jump_mosh_route: Option<String>,
 }
 
 /// How a session reaches its host when not straight there (F1).
@@ -241,6 +245,27 @@ pub fn session_hop(
         Route::Deleted => Some(SessionHop::Deleted),
         Route::Chained => Some(SessionHop::Chained),
     }
+}
+
+/// Whether a connection dials mosh: the core's own rule
+/// ([`ConnectionSpec::dialled_protocol`]), for the app's `dialsMosh` to ask
+/// instead of keeping a copy. `mosh`: the connection is saved as mosh;
+/// `through_jump`: it goes through a saved jump host; `jump_mosh_route`: its
+/// `jumpMoshRoute` (`ssh`, `direct`, `viaJump`; none reads as `ssh`).
+#[uniffi::export]
+pub fn dials_mosh(mosh: bool, through_jump: bool, jump_mosh_route: Option<String>) -> bool {
+    let mut spec = ConnectionSpec::ssh("", Target::new("", "", 22));
+    spec.jump_mosh_route = JumpMoshRoute::from_raw(jump_mosh_route.as_deref());
+    if through_jump {
+        spec.hop = Hop::Through(Box::new(Via {
+            connection_id: String::new(),
+            name: String::new(),
+            target: Target::new("", "", 22),
+            proxy: None,
+        }));
+    }
+    let protocol = if mosh { Protocol::Mosh } else { Protocol::Ssh };
+    spec.dialled_protocol(protocol) == Protocol::Mosh
 }
 
 impl SessionSpec {
@@ -315,11 +340,12 @@ impl SessionSpec {
             Some(SessionHop::Deleted) => Hop::Broken(HopBroken::Deleted),
             Some(SessionHop::Chained) => Hop::Broken(HopBroken::Chained),
         };
-        // Through a jump host: SSH only, and its proxy, not one of this
-        // connection's own.
+        spec.jump_mosh_route = JumpMoshRoute::from_raw(self.jump_mosh_route.as_deref());
+        // Through a jump host: its proxy, not one of this connection's own.
+        // The transport is `dialled_protocol`'s to say (SSH unless the
+        // route sends mosh's UDP somewhere).
         if !spec.hop.is_direct() {
             spec.proxy = None;
-            spec.protocol = Protocol::Ssh;
         }
         spec
     }
@@ -1838,6 +1864,81 @@ fn app_timing() -> Timing {
 mod tests {
     use super::*;
 
+    /// The table Swift's `dialsMosh` test asserts too
+    /// (Tests/MoshpitTests/Models/DialsMoshParityTests.swift): (saved as
+    /// mosh, through a jump host, route) → dials mosh.
+    const DIALS_MOSH: &[(bool, bool, Option<&str>, bool)] = &[
+        (false, false, None, false),
+        (true, false, None, true),
+        (true, false, Some("direct"), true),
+        (true, true, None, false),
+        (true, true, Some("ssh"), false),
+        (true, true, Some("direct"), true),
+        (true, true, Some("viaJump"), true),
+        (true, true, Some("auto"), false),
+        (false, true, Some("direct"), false),
+        (false, true, Some("viaJump"), false),
+    ];
+
+    #[test]
+    fn dials_mosh_is_the_cores_rule() {
+        for &(mosh, through, route, want) in DIALS_MOSH {
+            assert_eq!(
+                dials_mosh(mosh, through, route.map(str::to_owned)),
+                want,
+                "{mosh} {through} {route:?}"
+            );
+        }
+    }
+
+    /// The route reaches the core spec: through a jump host a `direct` or
+    /// `viaJump` connection dials mosh, an absent one dials SSH.
+    #[test]
+    fn a_spec_carries_the_jump_route_to_the_core() {
+        let through = || {
+            Some(SessionHop::Through {
+                connection_id: "J".into(),
+                name: "bastion".into(),
+                user: "dev".into(),
+                host: "192.0.2.9".into(),
+                port: 22,
+                proxy_host: None,
+                proxy_port: None,
+            })
+        };
+        let spec = |route: Option<&str>| SessionSpec {
+            connection_id: "C0FFEE00-0000-4000-8000-000000000001".into(),
+            user: "me".into(),
+            host: "node01.example.com".into(),
+            port: 22,
+            proxy_host: None,
+            proxy_port: None,
+            mosh: true,
+            multiplexer: SessionMultiplexer::None,
+            tmux_path: None,
+            mosh_server_path: None,
+            mosh_port_low: None,
+            mosh_port_high: None,
+            herdr_path: None,
+            locale: String::new(),
+            cols: 80,
+            rows: 24,
+            connected_before: false,
+            hop: through(),
+            jump_mosh_route: route.map(str::to_owned),
+        }
+        .core();
+        for (route, want) in [
+            (None, Protocol::Ssh),
+            (Some("ssh"), Protocol::Ssh),
+            (Some("direct"), Protocol::Mosh),
+            (Some("viaJump"), Protocol::Mosh),
+        ] {
+            let spec = spec(route);
+            assert_eq!(spec.dialled_protocol(spec.protocol), want, "{route:?}");
+        }
+    }
+
     /// B337: the session layer's word that the server has no session
     /// reaches the app, where the terminal shows the empty state with its
     /// Create over mosh's waiting renderer.
@@ -1890,6 +1991,7 @@ mod tests {
             rows: 24,
             connected_before: false,
             hop: Some(hop),
+            jump_mosh_route: None,
         }
         .core();
         let Hop::Through(via) = &spec.hop else {
@@ -1897,7 +1999,8 @@ mod tests {
         };
         assert_eq!(via.target, Target::new("dev", "2001:db8::1", 2222));
         assert_eq!(via.proxy, Some(Socks5Proxy::new("192.0.2.9", 1080)));
-        assert_eq!(spec.protocol, Protocol::Ssh);
+        assert_eq!(spec.dialled_protocol(spec.protocol), Protocol::Ssh);
+
         assert_eq!(spec.proxy, None);
         // Straight there: no hop.
         assert_eq!(session_hop(ConnectionRecord::from(&bastion), saved), None);
@@ -2017,6 +2120,7 @@ mod tests {
             rows: 40,
             connected_before: false,
             hop: None,
+            jump_mosh_route: None,
         };
         let core = spec.core();
         assert_eq!(core.connection_id, spec.connection_id);
@@ -2058,6 +2162,7 @@ mod tests {
             rows: 24,
             connected_before: false,
             hop: None,
+            jump_mosh_route: None,
         };
         let core = spec.core();
         assert_eq!(core.target, Target::new("me", "2001:db8::1", 22));

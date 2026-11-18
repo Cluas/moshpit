@@ -308,6 +308,7 @@ mod tests {
             rows: 24,
             connected_before: false,
             hop: None,
+            jump_mosh_route: None,
         });
         let deadline = Instant::now() + Duration::from_secs(10);
         let failed = loop {
@@ -378,6 +379,7 @@ mod tests {
             rows: 24,
             connected_before: false,
             hop: None,
+            jump_mosh_route: None,
         });
         let deadline = Instant::now() + Duration::from_secs(20);
         while !matches!(

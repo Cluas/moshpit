@@ -1161,7 +1161,7 @@ fn f1_a_connection_through_another_dials_through_it() {
         Some(moshpit_ssh::Socks5Proxy::new("192.0.2.9", 1080))
     );
     assert_eq!(spec.target, moshpit_ssh::Target::new("me", "node01", 22));
-    assert_eq!(spec.protocol, Protocol::Ssh, "mosh can't take the way");
+    assert_eq!(spec.dialled_protocol(spec.protocol), Protocol::Ssh, "no route: mosh can't take the way");
     assert_eq!(spec.proxy, None, "the jump host's proxy, not its own");
 
     // The jump host deleted: a route that fails, not a direct dial.

@@ -383,9 +383,11 @@ pub fn spec(
         StoredRoute::Deleted => Hop::Broken(HopBroken::Deleted),
         StoredRoute::Chained => Hop::Broken(HopBroken::Chained),
     };
+    spec.jump_mosh_route =
+        moshpit_session::JumpMoshRoute::from_raw(connection.jump_mosh_route.as_deref());
+    // The transport through a jump host is `dialled_protocol`'s to say.
     if !spec.hop.is_direct() {
         spec.proxy = None;
-        spec.protocol = Protocol::Ssh;
     }
     spec.multiplexer = match connection.multiplexer() {
         Multiplexer::None => moshpit_session::Multiplexer::None,
