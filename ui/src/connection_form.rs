@@ -160,6 +160,13 @@ pub struct FormState {
     pub mosh: bool,
     /// The UDP port range from Settings, as the row shows it.
     pub udp_range: String,
+    /// The same range as numbers, for the forwarding rule; `[0, 0]`
+    /// (unset) reads as mosh's own 60000–61000.
+    #[serde(default)]
+    pub udp_ports: [i64; 2],
+    /// How mosh reaches the host through a jump host (nothing: SSH).
+    #[serde(default)]
+    pub jump_route: JumpRoute,
     pub predict_mode: ConnectionPredict,
     pub mosh_server_path: String,
     pub socks: bool,
@@ -425,6 +432,67 @@ pub fn proxy_port_is_wrong(state: &FormState) -> bool {
     state.socks && port(&state.socks_port, DEFAULT_PROXY_PORT).is_none()
 }
 
+/// How mosh's UDP reaches a host behind a jump host: the saved
+/// `jumpMoshRoute` (crates/session's `JumpMoshRoute`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JumpRoute {
+    /// The whole connection over SSH.
+    #[default]
+    Ssh,
+    /// UDP straight to the target host.
+    Direct,
+    /// UDP to the jump host, which forwards it to the target.
+    ViaJump,
+}
+
+impl JumpRoute {
+    pub const ALL: [JumpRoute; 3] = [JumpRoute::Ssh, JumpRoute::Direct, JumpRoute::ViaJump];
+
+    /// Its id, as the form and its host say it (and the store saves it).
+    pub fn id(self) -> &'static str {
+        match self {
+            JumpRoute::Ssh => "ssh",
+            JumpRoute::Direct => "direct",
+            JumpRoute::ViaJump => "viaJump",
+        }
+    }
+
+    pub fn named(id: &str) -> Option<JumpRoute> {
+        JumpRoute::ALL.into_iter().find(|r| r.id() == id)
+    }
+
+    pub fn title(self) -> String {
+        match self {
+            JumpRoute::Ssh => t!("Over SSH"),
+            JumpRoute::Direct => t!("UDP straight to the host"),
+            JumpRoute::ViaJump => t!("UDP forwarded by the jump host"),
+        }
+    }
+}
+
+/// The nftables rules that make a jump host forward mosh's UDP ports to
+/// `target`: what the form offers to copy for [`JumpRoute::ViaJump`].
+/// `ports` is Settings' range; unset, mosh's own 60000–61000.
+pub fn forward_rule(target: &str, ports: [i64; 2]) -> String {
+    let [low, high] = if ports[0] > 0 && ports[1] >= ports[0] {
+        ports
+    } else {
+        [60000, 61000]
+    };
+    let target = match target.trim() {
+        "" => "TARGET_IP",
+        t => t,
+    };
+    format!(
+        "nft add table ip moshpit\n\
+         nft add chain ip moshpit pre '{{ type nat hook prerouting priority -100; }}'\n\
+         nft add chain ip moshpit post '{{ type nat hook postrouting priority 100; }}'\n\
+         nft add rule ip moshpit pre udp dport {low}-{high} dnat to {target}\n\
+         nft add rule ip moshpit post ip daddr {target} udp dport {low}-{high} masquerade"
+    )
+}
+
 /// A connection's predictive echo (B531): as Settings says, or its own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -653,6 +721,8 @@ pub enum Field {
     Emoji(String),
     /// The connection to go through (its id; empty: none).
     Via(String),
+    /// How mosh's UDP goes through it.
+    JumpRoute(JumpRoute),
     /// Made only to be gone through.
     JumpOnly(bool),
 }
@@ -677,6 +747,7 @@ impl Field {
             Field::HerdrPath(v) => ("herdrPath", json!(v)),
             Field::Emoji(v) => ("emoji", json!(v)),
             Field::Via(v) => ("via", json!(v)),
+            Field::JumpRoute(v) => ("jumpRoute", json!(v.id())),
             Field::JumpOnly(v) => ("jumpOnly", json!(v)),
         };
         json!({"ev": "set", "key": key, "value": value})
@@ -701,17 +772,18 @@ impl Field {
             Field::HerdrPath(v) => s.herdr_path = v,
             Field::Emoji(v) => s.emoji = v,
             Field::Via(v) => go_through(s, v),
+            Field::JumpRoute(v) => s.jump_route = v,
             Field::JumpOnly(v) => s.jump_only = v,
         }
     }
 }
 
-/// `s` going through the connection `via` (empty: none). Through one, mosh
-/// is off (its UDP can't take the way) and so is the SOCKS proxy (the
-/// jump host's own applies to its leg); none again leaves them off.
+/// `s` going through the connection `via` (empty: none). Through one, the
+/// SOCKS proxy is off (the jump host's own applies to its leg); mosh stays
+/// as it was, and its route ([`JumpRoute`], SSH unless picked) says how
+/// its UDP goes.
 pub fn go_through(s: &mut FormState, via: String) {
     if !via.is_empty() {
-        s.mosh = false;
         s.socks = false;
     }
     s.via = via;
@@ -1590,21 +1662,12 @@ fn jump_only(draft: &Draft) -> AnyElement {
 fn mosh(draft: &Draft) -> AnyElement {
     let state = draft.state;
     let on = computed(move || state.with(|s| s.as_ref().is_some_and(|s| s.mosh)));
-    let through = computed(move || state.with(|s| s.as_ref().is_some_and(goes_through)));
     let set = draft.setter(Field::Mosh);
     let toggle = row(t!("Use mosh"))
-        .subtitle_with(move || {
-            if through.get() {
-                t!("mosh needs UDP straight to the host; through another connection it's SSH only.")
-            } else {
-                t!("Survives network changes; needs UDP.")
-            }
-            .into()
-        })
+        .subtitle(t!("Survives network changes; needs UDP."))
         .wrap_subtitle()
         .trailing(
             switch(move || on.get(), set)
-                .disabled(move || through.get())
                 .label(t!("Use mosh"))
                 .test_id("toggle-use-mosh"),
         );
@@ -1650,7 +1713,72 @@ fn mosh_rows(draft: &Draft) -> Vec<AnyElement> {
         .layout(FieldLayout::Stacked)
         .test_id("connection-form-mosh-server")
         .into_element(),
+        jump_route(draft),
     ]
+}
+
+/// "When going through a jump host": only with a jump host picked (mosh is
+/// on, or these rows wouldn't be here). Forwarded: the rules to copy, and
+/// what else the hosts need.
+fn jump_route(draft: &Draft) -> AnyElement {
+    let state = draft.state;
+    let through = computed(move || state.with(|s| s.as_ref().is_some_and(goes_through)));
+    let draft = draft.clone();
+    view()
+        .w_full()
+        .child(when(move || through.get(), move || {
+            let route = computed(move || {
+                state.with(|s| s.as_ref().map(|s| s.jump_route).unwrap_or_default())
+            });
+            let pick = draft.setter(Field::JumpRoute);
+            let picker = select(
+                t!("When going through a jump host"),
+                JumpRoute::ALL.map(|r| option(r.id(), r.title())),
+                move || route.get().id().into(),
+                move |id| {
+                    if let Some(r) = JumpRoute::named(&id) {
+                        pick(r);
+                    }
+                },
+            )
+            .test_id("connection-form-jump-route")
+            .into_element();
+            let forwarded = computed(move || route.get() == JumpRoute::ViaJump);
+            let rule = move || {
+                state.with(|s| {
+                    s.as_ref()
+                        .map(|s| forward_rule(&s.host, s.udp_ports))
+                        .unwrap_or_default()
+                })
+            };
+            view()
+                .w_full()
+                .child(picker)
+                .child(when(move || forwarded.get(), move || {
+                    view()
+                        .w_full()
+                        .child(
+                            row(t!("Forwarding rule for the jump host"))
+                                .subtitle_with(move || rule().into())
+                                .wrap_subtitle()
+                                .mono_subtitle()
+                                .value(t!("Copy"))
+                                .on_press(move || set_clipboard(rule()))
+                                .test_id("connection-form-forward-rule"),
+                        )
+                        .child(
+                            row(t!("Also needed"))
+                                .subtitle(t!(
+                                    "Allow these UDP ports in the security groups of both hosts, and turn on net.ipv4.ip_forward on the jump host."
+                                ))
+                                .wrap_subtitle()
+                                .test_id("connection-form-forward-note"),
+                        )
+                        .into_element()
+                }))
+                .into_element()
+        }))
+        .into_element()
 }
 
 // --- PROXY ------------------------------------------------------------------------------

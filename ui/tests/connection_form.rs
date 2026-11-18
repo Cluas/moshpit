@@ -1628,11 +1628,11 @@ fn bastion() -> ViaChoice {
 
 /// With another saved connection to go through, JUMP HOST offers it under
 /// Connect via, Direct first, its address under its name. Picking it tells
-/// the host, turns mosh off and its switch off limits with the reason, and
-/// takes PROXY away (the jump host's own proxy carries its leg); Direct
-/// again brings PROXY back and leaves mosh off.
+/// the host and takes PROXY away (the jump host's own proxy carries its
+/// leg); mosh's switch stays as it was and usable; Direct again brings
+/// PROXY back.
 #[test]
-fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
+fn f1_picking_a_jump_host_takes_the_proxy_away_and_leaves_mosh_alone() {
     let (mut app, channel, natives) = start_tall(Params::default());
     let heard = hear(&channel);
     let mut state = draft();
@@ -1657,25 +1657,25 @@ fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
             {"id": "+new", "title": "New connection…"},
         ]))
     );
-    let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
-    assert_eq!(natives.prop(mosh, "on"), Some(json!(true)));
-    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(true)));
+    assert!(
+        natives
+            .find("moshpit/menu", "connection-form-jump-route")
+            .is_none(),
+        "no jump host, no route row"
+    );
 
     emit(&mut app, menu, "select", json!("B1"));
     assert_eq!(
         next(&heard),
         json!({"ev": "set", "key": "via", "value": "B1"})
     );
-    find(
-        &mut app,
-        "text:mosh needs UDP straight to the host; through another connection it's SSH only.",
-    );
+    find(&mut app, "text:When going through a jump host");
     assert!(app.screen().shows("bastion"));
     assert!(!app.screen().shows("PROXY"), "{:?}", app.screen().texts());
     assert!(!app.screen().shows("SOCKS5"));
     let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
-    assert_eq!(natives.prop(mosh, "on"), Some(json!(false)));
-    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(false)));
+    assert_eq!(natives.prop(mosh, "on"), Some(json!(true)));
+    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(true)));
 
     let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
     emit(&mut app, menu, "select", json!(""));
@@ -1684,11 +1684,111 @@ fn f1_picking_a_jump_host_turns_mosh_off_and_takes_the_proxy_away() {
         json!({"ev": "set", "key": "via", "value": ""})
     );
     find(&mut app, "text:PROXY");
-    assert!(app.screen().shows("Survives network changes; needs UDP."));
-    let mosh = natives.find("moshpit/switch", "toggle-use-mosh").unwrap();
-    assert_eq!(natives.prop(mosh, "on"), Some(json!(false)), "left off");
-    assert_eq!(natives.prop(mosh, "enabled"), Some(json!(true)));
+    assert!(!app.screen().shows("When going through a jump host"));
     channel.close();
+}
+
+/// The route row is there only with mosh on and a jump host picked; it
+/// lists the three routes (SSH the default) and tells the host the pick.
+/// Only "forwarded" shows the rule to copy, with the target host and
+/// Settings' range in it, and the note on what else the hosts need.
+#[test]
+fn the_jump_route_row_shows_with_mosh_and_a_jump_host_and_the_rule_only_when_forwarded() {
+    let (mut app, channel, natives) = start_tall(Params::default());
+    let heard = hear(&channel);
+    let mut state = draft();
+    state.mosh = true;
+    state.host = "192.0.2.20".into();
+    state.udp_ports = [60000, 61000];
+    state.via = "B1".into();
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state.clone());
+    find(&mut app, "text:When going through a jump host");
+    let menu = natives
+        .find("moshpit/menu", "connection-form-jump-route")
+        .unwrap();
+    assert_eq!(
+        natives.prop(menu, "items"),
+        Some(json!([
+            {"id": "ssh", "title": "Over SSH", "checked": true},
+            {"id": "direct", "title": "UDP straight to the host"},
+            {"id": "viaJump", "title": "UDP forwarded by the jump host"},
+        ]))
+    );
+    assert!(!app.screen().shows("Forwarding rule for the jump host"));
+
+    emit(&mut app, menu, "select", json!("viaJump"));
+    assert_eq!(
+        next(&heard),
+        json!({"ev": "set", "key": "jumpRoute", "value": "viaJump"})
+    );
+    find(&mut app, "text:Forwarding rule for the jump host");
+    let rule = "nft add rule ip moshpit pre udp dport 60000-61000 dnat to 192.0.2.20";
+    assert!(
+        app.screen().texts().iter().any(|t| t.contains(rule)),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(app.screen().shows("Also needed"));
+
+    // Mosh off: the whole row goes.
+    let mut off = state;
+    off.mosh = false;
+    show(&mut app, &channel, off);
+    assert!(
+        natives
+            .find("moshpit/menu", "connection-form-jump-route")
+            .is_none()
+    );
+    channel.close();
+}
+
+/// The route row and its note in Chinese, as the app says them.
+#[test]
+fn the_jump_route_in_chinese() {
+    let (mut app, channel, natives) = start_tall(zh_hans());
+    let mut state = draft();
+    state.mosh = true;
+    state.host = "192.0.2.20".into();
+    state.via = "B1".into();
+    state.jump_route = moshpit_ui::connection_form::JumpRoute::ViaJump;
+    state.via_choices = vec![bastion()];
+    show(&mut app, &channel, state);
+    find(&mut app, "id:connection-form-forward-note");
+    for text in [
+        "经跳板机时",
+        "跳板机上的转发规则",
+        "另外还需要",
+        "两台主机的安全组都要放行这段 UDP 端口，跳板机要开启 net.ipv4.ip_forward。",
+    ] {
+        assert!(app.screen().shows(text), "{text}: {:?}", app.screen().texts());
+    }
+    let menu = natives
+        .find("moshpit/menu", "connection-form-jump-route")
+        .unwrap();
+    assert_eq!(
+        natives.prop(menu, "items"),
+        Some(json!([
+            {"id": "ssh", "title": "走 SSH"},
+            {"id": "direct", "title": "UDP 直连目标机"},
+            {"id": "viaJump", "title": "UDP 经跳板机转发", "checked": true},
+        ]))
+    );
+    channel.close();
+}
+
+/// The rule, filled with the target and the range; unset, mosh's own.
+#[test]
+fn the_forwarding_rule_names_the_target_and_the_range() {
+    use moshpit_ui::connection_form::forward_rule;
+    let rule = forward_rule("192.0.2.20", [60100, 60200]);
+    assert!(rule.contains("pre udp dport 60100-60200 dnat to 192.0.2.20"), "{rule}");
+    assert!(
+        rule.contains("post ip daddr 192.0.2.20 udp dport 60100-60200 masquerade"),
+        "{rule}"
+    );
+    assert!(rule.starts_with("nft add table ip moshpit\n"));
+    assert!(forward_rule("", [0, 0]).contains("udp dport 60000-61000 dnat to TARGET_IP"));
 }
 
 /// No other saved connection: JUMP HOST still offers Direct and, last, a
@@ -1860,6 +1960,7 @@ fn f1_a_deleted_jump_host_shows_as_such() {
 fn f1_the_jump_host_in_chinese() {
     let (mut app, channel, natives) = start_tall(zh_hans());
     let mut state = draft();
+    state.mosh = true;
     state.via_choices = vec![bastion()];
     show(&mut app, &channel, state);
     find(&mut app, "text:经由");
@@ -1881,7 +1982,7 @@ fn f1_the_jump_host_in_chinese() {
     emit(&mut app, menu, "select", json!("B1"));
     find(
         &mut app,
-        "text:mosh 要用 UDP 直接连到主机，经由别的连接时只能用 SSH。",
+        "text:经跳板机时",
     );
     channel.close();
 }
