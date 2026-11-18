@@ -819,11 +819,6 @@ struct TerminalScreen: View {
     private func endStillSwitch() {
         stillSwitch = false
         nshModel.stage.releaseStill()
-        // A switch to mosh came up with fragments of the screen it left
-        // among the new frame, until the diagnostics' "Repaint screen"
-        // cleared them: mosh-server diffs from a blank screen the phone's
-        // was not. Once uncovered, the same repaint (ack state 0).
-        if connection.dialsMosh { active?.requestRepaint() }
     }
 
     /// The session this screen shows changed (``activeIdentity``): a new

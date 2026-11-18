@@ -151,6 +151,8 @@ struct Rig {
     held_said: Vec<(u64, bool)>,
     /// Screen bytes due: (when).
     paints: Vec<u64>,
+    /// When the plane asked the program to redraw its whole screen.
+    redraws: Vec<u64>,
     log: Vec<String>,
 }
 
@@ -194,6 +196,7 @@ impl Rig {
             pastes: Vec::new(),
             held_said: Vec::new(),
             paints: Vec::new(),
+            redraws: Vec::new(),
             log: Vec::new(),
         };
         rig.herdr.default_delay = 40;
@@ -256,6 +259,7 @@ impl Rig {
                     }
                 }
                 PlaneOut::Mark(mark) => self.marks.push((self.now, mark.code)),
+                PlaneOut::Redraw => self.redraws.push(self.now),
                 PlaneOut::Delivered { token, sent } => {
                     self.delivered.insert(token, (self.now, sent));
                 }
@@ -639,6 +643,22 @@ fn a_pick_from_the_notice_of_a_held_pane_lands() {
     rig.type_text("here");
     rig.run(500);
     assert_eq!(rig.landed_in(&term(B)), "here");
+}
+
+/// Right after a switch to mosh, a Claude Code pane showed fragments of
+/// earlier frames until the diagnostics' Repaint (Canary 159): the attach
+/// replays the pane onto a fresh tty. Once the first pane has painted, the
+/// program is asked to redraw the whole screen — once: a switch between
+/// panes asks nothing more.
+#[test]
+fn the_first_pane_on_screen_is_redrawn_once_and_a_switch_asks_nothing_more() {
+    let mut rig = Rig::booted();
+    assert_eq!(rig.redraws.len(), 1, "{:?}", rig.log);
+    rig.held.push(term(B));
+    rig.act(Action::SelectPane(B.to_owned()));
+    rig.run(3_000);
+    assert_eq!(rig.on_screen(), Some(term(B)));
+    assert_eq!(rig.redraws.len(), 1);
 }
 
 #[test]

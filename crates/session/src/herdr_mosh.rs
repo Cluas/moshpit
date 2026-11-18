@@ -210,6 +210,9 @@ pub enum PlaneOut {
     Barrier(u64),
     /// A mark for the shell's view (the switch veil and its lifting).
     Mark(Mark),
+    /// Have the program redraw its whole screen (mosh's Repaint): the
+    /// loop's first pane has painted ([`RendererOutput::Redraw`]).
+    Redraw,
     /// A delivery's answer.
     Delivered {
         token: u64,
@@ -1187,6 +1190,7 @@ impl Plane {
                 code: mark::REVEAL,
                 arg: 0,
             })),
+            RendererOutput::Redraw => self.outputs.push_back(PlaneOut::Redraw),
             RendererOutput::Notice(notice) => self.say(notice),
             RendererOutput::ClearNotice => {
                 if self.said.as_ref().is_some_and(|said| said.until.is_none()) {
@@ -2092,6 +2096,9 @@ impl Task {
                     }
                 }
                 PlaneOut::Mark(mark) => self.shell.mark(mark),
+                PlaneOut::Redraw => {
+                    let _ = self.mosh.send(MoshCommand::Repaint);
+                }
                 PlaneOut::Delivered { token, sent } => {
                     if let Some(reply) = self.deliveries.remove(&token) {
                         let _ = reply.send(sent);
