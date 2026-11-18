@@ -1052,12 +1052,18 @@ struct TerminalScreen: View {
     /// after transport-up — over a stale frame whose input herdr was still
     /// dropping, 1.3 s of it at 510 ms RTT. Plain SSH, mosh and a connect
     /// degraded to a plain shell paint into the persistent terminal and
-    /// take the grace.
+    /// take the grace — except herdr over mosh on the Rust core, which
+    /// waits for the renderer's first reveal: the raw attach replays
+    /// fragments until the pane's program redraws, and a protocol switch
+    /// keeps its last picture up over them.
     nonisolated static func waitsForFirstFrame(transport: ConnectionProtocol,
                                                multiplexer: Multiplexer,
                                                degraded: Bool,
                                                onRustCore: Bool) -> Bool {
-        guard transport == .ssh, !degraded else { return false }
+        guard !degraded else { return false }
+        // herdr over mosh on the Rust core: its first reveal, after the
+        // first pane's redraw (a switch's picture stays until then).
+        if transport == .mosh { return multiplexer == .herdr && onRustCore }
         switch multiplexer {
         case .tmux: return true
         case .herdr: return onRustCore

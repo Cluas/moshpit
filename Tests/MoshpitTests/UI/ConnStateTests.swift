@@ -125,9 +125,12 @@ struct ConnStateTests {
         #expect(waits(.ssh, .tmux, false, false))
         // The Swift path's herdr reports no first frame: the grace.
         #expect(!waits(.ssh, .herdr, false, false))
-        // mosh, a plain shell and a degraded connect paint into the
-        // persistent terminal.
-        #expect(!waits(.mosh, .herdr, false, true))
+        // mosh otherwise, a plain shell and a degraded connect paint into
+        // the persistent terminal.
+        // herdr over mosh on the Rust core waits for its first reveal.
+        #expect(waits(.mosh, .herdr, false, true))
+        #expect(!waits(.mosh, .herdr, false, false))
+        #expect(!waits(.mosh, .herdr, true, true))
         #expect(!waits(.mosh, .tmux, false, true))
         #expect(!waits(.ssh, .none, false, true))
         #expect(!waits(.ssh, .tmux, true, true))

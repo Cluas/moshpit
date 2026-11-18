@@ -183,6 +183,13 @@ final class RustSessionDriver: RustSessionListener {
         Log.ssh.info("rust session \(id, privacy: .public): connecting \(self.connection.connectionProtocol.rawValue, privacy: .public)+\(self.connection.multiplexer.rawValue, privacy: .public)")
         viewModel.adoptRustStatus(.connecting, automatic: automatic)
         if expectsTmux || expectsHerdr { session.rustSetAwaitingFirstFrame(true) }
+        if expectsMoshHerdr {
+            // Over mosh the first pane is veiled until the redraw after
+            // its repaint has painted (the renderer's first reveal): a
+            // switch keeps its last picture up until then, not a blank.
+            session.rustSetAwaitingFirstFrame(true)
+            armFirstFrameFallback()
+        }
     }
 
     /// What the core connects to. mosh-server's UDP ports are Settings'
@@ -680,6 +687,7 @@ final class RustSessionDriver: RustSessionListener {
             coordinator.extendCoverTimeout(by: TimeInterval(mark.arg) / 1000)
         case RustTmuxController.Mark.reveal:
             coordinator.reveal()
+            if expectsMoshHerdr, session.awaitingFirstFrame { endFirstFrameWait() }
         default:
             break
         }
@@ -790,7 +798,7 @@ final class RustSessionDriver: RustSessionListener {
         firstFrameFallback = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled, let self else { return }
-            if self.expectsHerdr {
+            if self.expectsHerdr || self.expectsMoshHerdr {
                 // The reconnect veil waits on herdr's first frame now (B323):
                 // one that never comes must not hold it up.
                 self.endFirstFrameWait()
