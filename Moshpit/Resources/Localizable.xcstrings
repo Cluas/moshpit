@@ -5865,6 +5865,110 @@
         }
       }
     },
+    "Allow these UDP ports in the security groups of both hosts, and turn on net.ipv4.ip_forward on the jump host.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erlaube diese UDP-Ports in den Sicherheitsgruppen beider Hosts und aktiviere net.ipv4.ip_forward auf dem Sprunghost."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permite estos puertos UDP en los grupos de seguridad de ambos hosts y activa net.ipv4.ip_forward en el host intermedio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez ces ports UDP dans les groupes de sécurité des deux hôtes et activez net.ipv4.ip_forward sur l’hôte relais."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "両方のホストのセキュリティグループでこの UDP ポートを許可し、ジャンプホストで net.ipv4.ip_forward を有効にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "두 호스트의 보안 그룹에서 이 UDP 포트를 허용하고, 점프 호스트에서 net.ipv4.ip_forward를 켜야 합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libere estas portas UDP nos grupos de segurança dos dois hosts e ative net.ipv4.ip_forward no host intermediário."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两台主机的安全组都要放行这段 UDP 端口，跳板机要开启 net.ipv4.ip_forward。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兩台主機的安全群組都要放行這段 UDP 連接埠，跳板機要開啟 net.ipv4.ip_forward。"
+          }
+        }
+      }
+    },
+    "Also needed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Außerdem nötig"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "También hace falta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aussi nécessaire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかに必要なこと"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추가로 필요한 것"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Também é preciso"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外还需要"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外還需要"
+          }
+        }
+      }
+    },
     "Always": {
       "localizations": {
         "de": {
@@ -18931,6 +19035,58 @@
         }
       }
     },
+    "Forwarding rule for the jump host": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiterleitungsregel für den Sprunghost"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regla de reenvío para el host intermedio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Règle de transfert pour l’hôte relais"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンプホストの転送ルール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트의 전달 규칙"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regra de encaminhamento para o host intermediário"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板机上的转发规则"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳板機上的轉發規則"
+          }
+        }
+      }
+    },
     "From": {
       "localizations": {
         "de": {
@@ -19031,6 +19187,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "起始值必須 ≤ 結束值。"
+          }
+        }
+      }
+    },
+    "From now on": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ab jetzt immer"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desde ahora siempre"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désormais toujours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今後はずっと"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앞으로 계속"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daqui em diante sempre"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以后都走"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以後都走"
           }
         }
       }
@@ -33637,6 +33845,58 @@
         }
       }
     },
+    "Over SSH": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über SSH"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por SSH"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par SSH"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH を使う"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 연결"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por SSH"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "走 SSH"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "走 SSH"
+          }
+        }
+      }
+    },
     "Override bright colors": {
       "localizations": {
         "de": {
@@ -37533,6 +37793,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "用 %@ 重新連上這個工作階段。"
+          }
+        }
+      }
+    },
+    "Reconnects this session over SSH, through the jump host.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindet diese Sitzung über den Sprunghost neu per SSH."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a conectar esta sesión por SSH, a través del host intermedio."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecte cette session en SSH, via l’hôte relais."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンプホスト経由で、このセッションを SSH でつなぎ直します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트를 거쳐 이 세션을 SSH로 다시 연결합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconecta esta sessão por SSH, pelo host intermediário."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经跳板机，用 SSH 重连这个会话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經跳板機，用 SSH 重新連線這個工作階段。"
           }
         }
       }
@@ -49913,6 +50225,58 @@
         }
       }
     },
+    "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Verbindung läuft über einen Sprunghost per SSH. Für mosh wähle in den Verbindungseinstellungen, wie das UDP durchkommt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión pasa por un host intermedio con SSH. Para usar mosh, elige en los ajustes de la conexión cómo llega el UDP."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion passe par un hôte relais en SSH. Pour utiliser mosh, choisissez dans les réglages de la connexion comment l’UDP passe."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続はジャンプホストを SSH で経由します。mosh を使うには、接続の設定で UDP の通し方を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결은 점프 호스트를 SSH로 거칩니다. mosh를 쓰려면 연결 설정에서 UDP가 지나갈 방법을 고르세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexão passa por um host intermediário via SSH. Para usar mosh, escolha nas configurações da conexão como o UDP passa."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条连接经跳板机走 SSH。要用 mosh，请在连接设置里选好 UDP 怎么过去。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這條連線經跳板機走 SSH。要用 mosh，請在連線設定裡選好 UDP 怎麼過去。"
+          }
+        }
+      }
+    },
     "This connection goes through another, but which one couldn't be told. Pick it again in Edit.": {
       "localizations": {
         "de": {
@@ -51265,6 +51629,58 @@
         }
       }
     },
+    "This time only": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur diesmal"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo esta vez"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette fois seulement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回だけ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번만"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só desta vez"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅这一次"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅這一次"
+          }
+        }
+      }
+    },
     "This window is sized for %@.": {
       "localizations": {
         "de": {
@@ -51365,6 +51781,110 @@
           "stringUnit": {
             "state": "translated",
             "value": "這些更動只存在這裡。刪掉工作樹，它們就沒了。"
+          }
+        }
+      }
+    },
+    "Through a jump host, check that the jump host forwards UDP %@ and the target host allows it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfe über einen Sprunghost, ob der Sprunghost UDP %@ weiterleitet und der Zielhost es zulässt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al pasar por un host intermedio, comprueba que el host intermedio reenvía UDP %@ y que el host de destino lo permite."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Via un hôte relais, vérifiez que l’hôte relais transfère l’UDP %@ et que l’hôte cible l’autorise."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンプホスト経由のとき、ジャンプホストが UDP %@ を転送し、接続先ホストも許可しているか確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트를 거칠 때는 점프 호스트가 UDP %@을(를) 전달하고 대상 호스트도 허용하는지 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ao passar por um host intermediário, verifique se o host intermediário encaminha UDP %@ e se o host de destino permite."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经跳板机时，检查跳板机是否转发 UDP %@、目标机是否放行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經跳板機時，檢查跳板機是否轉發 UDP %@、目標機是否放行。"
+          }
+        }
+      }
+    },
+    "Through a jump host, check that the target host allows UDP %@.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfe über einen Sprunghost, ob der Zielhost UDP %@ zulässt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al pasar por un host intermedio, comprueba que el host de destino permite UDP %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Via un hôte relais, vérifiez que l’hôte cible autorise l’UDP %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンプホスト経由のとき、接続先ホストが UDP %@ を許可しているか確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트를 거칠 때는 대상 호스트가 UDP %@을(를) 허용하는지 확인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ao passar por um host intermediário, verifique se o host de destino permite UDP %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经跳板机时，检查目标机是否放行 UDP %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經跳板機時，檢查目標機是否放行 UDP %@。"
           }
         }
       }
@@ -52097,6 +52617,58 @@
         }
       }
     },
+    "UDP forwarded by the jump host": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP vom Sprunghost weiterleiten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP reenviado por el host intermedio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP transféré par l’hôte relais"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP をジャンプホストが転送"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP를 점프 호스트가 전달"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP encaminhado pelo host intermediário"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP 经跳板机转发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP 經跳板機轉發"
+          }
+        }
+      }
+    },
     "UDP ports": {
       "localizations": {
         "de": {
@@ -52197,6 +52769,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "UDP 連接埠在「設定」裡統一設定。"
+          }
+        }
+      }
+    },
+    "UDP straight to the host": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP direkt zum Zielhost"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP directo al host de destino"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP direct vers l’hôte cible"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP でホストへ直接"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP로 대상 호스트에 직접"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP direto ao host de destino"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP 直连目标机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UDP 直連目標機"
           }
         }
       }
@@ -52873,6 +53497,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "改用 SSH"
+          }
+        }
+      }
+    },
+    "Use SSH?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH verwenden?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Usar SSH?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser SSH ?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH に切り替えますか？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH로 바꿀까요?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar SSH?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改走 SSH？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改走 SSH？"
           }
         }
       }
@@ -53653,6 +54329,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "剛才輸入的內容沒有送出：連線斷了，現在已經重新連上"
+          }
+        }
+      }
+    },
+    "When going through a jump host": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über einen Sprunghost"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al pasar por un host intermedio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Via un hôte relais"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジャンプホスト経由のとき"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "점프 호스트를 거칠 때"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ao passar por um host intermediário"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经跳板机时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "經跳板機時"
           }
         }
       }

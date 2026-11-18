@@ -662,7 +662,20 @@ add("Switch", "切换", "切り替え")
 add("Switch to %@?", "切换到 %@？", "%@ に切り替えますか？")
 add("Reconnects this session over %@.", "用 %@ 重新连接这个会话。", "このセッションを %@ で再接続します。")
 add("This connection uses SSH", "这条连接走 SSH", "この接続は SSH を使います")
-add("Mosh can't go through a jump host, so connections through one use SSH.", "mosh 过不了跳板机，经跳板机的连接都走 SSH。", "Mosh はジャンプホストを経由できないため、ジャンプホスト経由の接続は SSH を使います。")
+add("This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings.", "这条连接经跳板机走 SSH。要用 mosh，请在连接设置里选好 UDP 怎么过去。", "この接続はジャンプホストを SSH で経由します。mosh を使うには、接続の設定で UDP の通し方を選んでください。")
+add("When going through a jump host", "经跳板机时", "ジャンプホスト経由のとき")
+add("Over SSH", "走 SSH", "SSH を使う")
+add("UDP straight to the host", "UDP 直连目标机", "UDP でホストへ直接")
+add("UDP forwarded by the jump host", "UDP 经跳板机转发", "UDP をジャンプホストが転送")
+add("Forwarding rule for the jump host", "跳板机上的转发规则", "ジャンプホストの転送ルール")
+add("Also needed", "另外还需要", "ほかに必要なこと")
+add("Allow these UDP ports in the security groups of both hosts, and turn on net.ipv4.ip_forward on the jump host.", "两台主机的安全组都要放行这段 UDP 端口，跳板机要开启 net.ipv4.ip_forward。", "両方のホストのセキュリティグループでこの UDP ポートを許可し、ジャンプホストで net.ipv4.ip_forward を有効にしてください。")
+add("Through a jump host, check that the target host allows UDP %@.", "经跳板机时，检查目标机是否放行 UDP %@。", "ジャンプホスト経由のとき、接続先ホストが UDP %@ を許可しているか確認してください。")
+add("Through a jump host, check that the jump host forwards UDP %@ and the target host allows it.", "经跳板机时，检查跳板机是否转发 UDP %@、目标机是否放行。", "ジャンプホスト経由のとき、ジャンプホストが UDP %@ を転送し、接続先ホストも許可しているか確認してください。")
+add("Use SSH?", "改走 SSH？", "SSH に切り替えますか？")
+add("Reconnects this session over SSH, through the jump host.", "经跳板机，用 SSH 重连这个会话。", "ジャンプホスト経由で、このセッションを SSH でつなぎ直します。")
+add("This time only", "仅这一次", "今回だけ")
+add("From now on", "以后都走", "今後はずっと")
 add("MOSH DIAGNOSTICS", "MOSH 诊断", "MOSH 診断")
 add("No datagrams yet.", "还没收到任何数据。", "まだデータグラムを受信していません。")
 
@@ -770,9 +783,6 @@ add("Deleted connection", "已删除的连接", "削除された接続")
 add("Signs in to it first with its own key or password, then reaches this host from there.",
     "先用那条连接自己的密钥或密码登录，再从那里连到这台主机。",
     "まずその接続自身の鍵かパスワードでログインし、そこからこのホストに接続します。")
-add("mosh needs UDP straight to the host; through another connection it's SSH only.",
-    "mosh 要用 UDP 直接连到主机，经由别的连接时只能用 SSH。",
-    "mosh はホストまで直接 UDP が届く必要があるので、別の接続を経由するときは SSH だけです。")
 add("This connection is the jump host for %@, so it connects directly.",
     "这条连接是 %@ 的跳板主机，所以它只能直接连接。",
     "この接続は %@ の踏み台なので、直接接続します。")
