@@ -739,11 +739,8 @@ fn frame(frame: Frame) -> AnyElement {
             let disabled = disabled.clone();
             move || if disabled() { 0.4_f32 } else { 1.0 }
         })
-        // A press on the row gives the control the keyboard; one on a
-        // control that has it already is the control's own (the caret, the
-        // edit menu with Paste), not focused again on top of it.
         .on_press(move || {
-            if !disabled() && !focused.get_untracked() {
+            if !disabled() {
                 handle.focus();
             }
         })
