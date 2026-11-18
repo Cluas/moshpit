@@ -562,6 +562,47 @@ async fn a_killed_app_does_not_leave_its_sessions_status_line_off() {
     assert!(back, "mine's status line stayed off: {after:?}");
 }
 
+/// The phone over mosh on the user's own session, with the user's own tmux
+/// config (status on) and a desktop attached: tmux's status line must be off
+/// on what the phone shows, through the real session, the real sidecar and a
+/// real mosh-server. Device report (Canary 153, tmux 3.8): it stayed on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server and tmux; see the module docs"]
+async fn over_mosh_the_status_line_of_the_users_own_session_is_off() {
+    need!();
+    let sshd = Sshd::start().await;
+    let tmux = Tmux::named("moshpit-r34");
+    desktop_session(&tmux, "0");
+    let desktop = Desktop::attach(&tmux, "0", 200, 60);
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let (id, reaper) = connect_phone(&mut bench, &sshd, &tmux).await;
+    assert!(
+        eventually(15, || renderer(&tmux, Some(&desktop)).is_some()).await,
+        "no renderer"
+    );
+    let off = eventually(15, || tmux.viewed_status("0") == "off").await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let report = format!(
+        "{}\n{}",
+        tmux.run(&[
+            "list-clients",
+            "-F",
+            "#{client_control_mode} #{client_pid} #{client_session} st=#{status}"
+        ]),
+        tmux.run(&[
+            "list-sessions",
+            "-F",
+            "#{session_id} #{session_name} st=#{status} hidden=#{@moshpit_status_hidden}"
+        ])
+    );
+    let still = tmux.viewed_status("0") == "off";
+    hang_up(&mut bench, id, &reaper).await;
+    drop(desktop);
+    eprintln!("{report}");
+    assert!(off && still, "tmux's status line is on for the phone\n{report}");
+}
+
 // MARK: 3. Only over a layout of ours (B270's trade-off)
 
 /// The window's panes as `left,top,width,height` each.

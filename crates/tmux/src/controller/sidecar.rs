@@ -332,6 +332,13 @@ impl Controller {
         // it squashed has no record to be handed back from.
         self.probe_switch_layouts(&group.session);
         self.send(format!("switch-client -c {} -t {target}", renderer.name));
+        // The move is what puts the group on the phone's screen: its status
+        // line goes off with it, whatever the sidecar believes it hid before
+        // (a belief carried over from an earlier sidecar, or one set while
+        // the group's id was still unknown, never reached the screen).
+        if let Some(id) = &group.id {
+            self.assert_status_off(id);
+        }
         // B812: the group both have now left, behind the move.
         if let Some(left) = self.sidecar.group_left.take() {
             self.send(format!("kill-session -t '{left}'"));
@@ -660,6 +667,27 @@ impl Controller {
             self.send(hide_stamp_command(wanted));
         }
         self.sidecar.status_hidden_session_id = wanted;
+    }
+
+    /// `status off` on `id` and the stamp, again even when the sidecar
+    /// already counts it hidden (`set-option` is idempotent); what was hidden
+    /// before, if elsewhere, is given back.
+    fn assert_status_off(&mut self, id: &str) {
+        // Not gated on the snapshot's attach: the move itself is the proof
+        // the sidecar is up, and a snapshot not yet caught up must not keep
+        // the line on.
+        if self.config.renders_output {
+            return;
+        }
+        if let Some(hidden) = self.sidecar.status_hidden_session_id.clone()
+            && hidden != id
+        {
+            self.send(format!("set-option -t '{hidden}' -u status"));
+            self.send(format!("set-option -t '{hidden}' -u {STATUS_HIDDEN_OPTION}"));
+        }
+        self.send(format!("set-option -t '{id}' status off"));
+        self.send(hide_stamp_command(id));
+        self.sidecar.status_hidden_session_id = Some(id.to_owned());
     }
 
     /// Give a hidden status line back over the live channel, then wait for

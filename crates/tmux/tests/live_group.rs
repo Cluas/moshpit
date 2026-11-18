@@ -130,6 +130,9 @@ impl Phone {
         while quiet_since.elapsed() < Duration::from_millis(ms) {
             let mut moved = false;
             while let Ok(bytes) = self.rx.try_recv() {
+                if let Some(lag) = std::env::var("PHONE_LAG").ok().and_then(|v| v.parse().ok()) {
+                    std::thread::sleep(Duration::from_millis(lag));
+                }
                 let now = self.now();
                 self.controller.receive(&bytes, now);
                 moved = true;
@@ -1301,4 +1304,165 @@ fn over_mosh_a_rebuilt_sidecar_keeps_the_renderers_status_line_off() {
         .filter(|l| l.starts_with(&format!("{pid} ")))
         .all(|l| l.ends_with(" off"));
     assert!(on_group, "{sessions}\n{report}");
+}
+
+/// The device flow (mosh + tmux, the user's session named "0"): a desktop on
+/// the session, mosh's renderer attached by id, the sidecar told the
+/// renderer's pid before its own attach lands (as the session's leg does).
+/// The user's own session is not Moshpit's, so before ef31b979 nothing hid
+/// tmux's status line on the phone's group.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_the_status_line_is_hidden_on_the_users_own_numeric_session() {
+    let server = Server::start("devflow");
+    if !server.groups() {
+        return;
+    }
+    server.tmux(&["rename-session", "-t", "main", "0"]);
+    let _desk = server.desktop("=0");
+    assert!(eventually(10, || server.renderer_pid().is_some()));
+    let id = server.tmux(&["display-message", "-p", "-t", "=0:", "#{session_id}"]);
+    let renderer = server.renderer(&id);
+    let shell = renderer.id() as i64;
+    let find = || {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid}"])
+            .lines()
+            .filter_map(|l| l.parse::<i64>().ok())
+            .find(|p| is_child_of(*p, shell))
+    };
+    assert!(eventually(10, || find().is_some()), "the renderer attached");
+    let rpid = find().unwrap();
+    let (child, stdin, rx) = server.client("");
+    let mut phone = Phone {
+        sent: Vec::new(),
+        controller: Controller::new(Config {
+            renders_output: false,
+            ..Config::default()
+        }),
+        child,
+        stdin,
+        rx,
+        start: Instant::now(),
+    };
+    let now = phone.now();
+    phone.controller.begin_control_mode(now);
+    phone.controller.expect_renderer_pid(rpid, now);
+    let rows = |server: &Server| {
+        server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_control_mode} #{session_name} #{status}",
+        ])
+    };
+    let off = phone.pump_until(10, |_| {
+        rows(&server)
+            .lines()
+            .any(|l| l.starts_with("0 0~mp-") && l.ends_with(" off"))
+    });
+    let report = format!(
+        "{}\nsent: {:#?}",
+        server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_pid} ctl=#{client_control_mode} #{session_name} st=#{status}"
+        ]),
+        phone.sent
+    );
+    drop(renderer);
+    assert!(off, "tmux's status line is still on for the renderer\n{report}");
+}
+
+fn is_child_of(pid: i64, parent: i64) -> bool {
+    Command::new("ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<i64>().ok())
+        == Some(parent)
+}
+
+/// The same flow with what the device had: two earlier mosh connections of
+/// the phone, their groups still attached by their own renderers, and the
+/// app's remembered selection pointing at one of those groups.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_the_status_line_is_hidden_beside_earlier_phone_groups() {
+    let server = Server::start("devflow2");
+    if !server.groups() {
+        return;
+    }
+    server.tmux(&["rename-session", "-t", "main", "0"]);
+    let _desk = server.desktop("=0");
+    assert!(eventually(10, || server.renderer_pid().is_some()));
+    let id = server.tmux(&["display-message", "-p", "-t", "=0:", "#{session_id}"]);
+    let renderer = server.renderer(&id);
+    let shell = renderer.id() as i64;
+    let find = || {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid}"])
+            .lines()
+            .filter_map(|l| l.parse::<i64>().ok())
+            .find(|p| is_child_of(*p, shell))
+    };
+    assert!(eventually(10, || find().is_some()), "the renderer attached");
+    let rpid = find().unwrap();
+    // The earlier phone groups were used after: a bare `attach-session`
+    // lands on one of them, as it did on the device.
+    std::thread::sleep(Duration::from_millis(1200));
+    let mut old = Vec::new();
+    for tag in ["yub", "b9z"] {
+        let name = format!("0~mp-iPhone-0-{tag}");
+        server.tmux(&["new-session", "-d", "-t", &id, "-s", &name]);
+        server.tmux(&["set-option", "-t", &format!("={name}:"), "@moshpit_group_of", &id]);
+        old.push((name.clone(), server.renderer(&format!("={name}"))));
+        std::thread::sleep(Duration::from_millis(1200));
+    }
+    let old_id = server.tmux(&["display-message", "-p", "-t", "=0~mp-iPhone-0-b9z:", "#{session_id}"]);
+    let (child, stdin, rx) = server.client("");
+    let mut phone = Phone {
+        sent: Vec::new(),
+        controller: Controller::new(Config {
+            renders_output: false,
+            ..Config::default()
+        }),
+        child,
+        stdin,
+        rx,
+        start: Instant::now(),
+    };
+    let now = phone.now();
+    let pane0 = server.tmux(&["display-message", "-p", "-t", "=0:0", "#{pane_id}"]);
+    let win0 = server.tmux(&["display-message", "-p", "-t", "=0:0", "#{window_id}"]);
+    phone.controller.set_pending_restore(Some(moshpit_tmux::model::Selection {
+        session: old_id,
+        window: Some(win0),
+        pane: Some(pane0),
+    }));
+    phone.controller.expect_renderer_pid(rpid, now);
+    phone.controller.begin_control_mode(now);
+    let mine = |server: &Server| {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid} #{session_name} #{status}"])
+            .lines()
+            .filter(|l| l.starts_with(&format!("{rpid} ")))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let off = phone.pump_until(10, |_| {
+        let rows = mine(&server);
+        rows.iter().any(|l| l.contains("~mp-") && l.ends_with(" off"))
+    });
+    phone.pump(1500);
+    let report = format!(
+        "{}\n{}\nsent: {:#?}",
+        server.tmux(&["list-clients", "-F", "#{client_pid} ctl=#{client_control_mode} #{session_name} st=#{status}"]),
+        server.tmux(&["ls", "-F", "#{session_name} #{session_id} st=#{status}"]),
+        phone.sent
+    );
+    let still = mine(&server).iter().all(|l| l.ends_with(" off"));
+    drop(renderer);
+    drop(old);
+    eprintln!("{report}");
+    assert!(off && still, "tmux's status line is on for the renderer\n{report}");
 }
