@@ -646,19 +646,21 @@ fn a_pick_from_the_notice_of_a_held_pane_lands() {
 }
 
 /// Right after a switch to mosh, a Claude Code pane showed fragments of
-/// earlier frames until the diagnostics' Repaint (Canary 159), and after a
-/// tab switch under mosh too (Canary 166): each attach replays the pane
-/// onto a fresh tty. Once a pane the loop landed on has painted, its
-/// program is asked to redraw the whole screen.
+/// earlier frames until the diagnostics' Repaint (Canary 159): the attach
+/// replays the pane onto a fresh tty. Once the first pane has painted, the
+/// program is asked to redraw the whole screen — once: a switch between
+/// panes asks nothing more (the fragments a tab switch left, Canary 166,
+/// were the phone's terminal wrapping wide characters mosh's screen keeps
+/// in the last column: crates/term/tests/mosh_host.rs).
 #[test]
-fn every_pane_the_loop_lands_on_is_redrawn() {
+fn the_first_pane_on_screen_is_redrawn_once_and_a_switch_asks_nothing_more() {
     let mut rig = Rig::booted();
     assert_eq!(rig.redraws.len(), 1, "{:?}", rig.log);
     rig.held.push(term(B));
     rig.act(Action::SelectPane(B.to_owned()));
     rig.run(3_000);
     assert_eq!(rig.on_screen(), Some(term(B)));
-    assert_eq!(rig.redraws.len(), 2);
+    assert_eq!(rig.redraws.len(), 1);
 }
 
 #[test]
