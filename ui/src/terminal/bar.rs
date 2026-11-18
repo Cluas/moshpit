@@ -285,6 +285,31 @@ fn pill(ctx: Ctx) -> AnyElement {
         .into_element()
 }
 
+/// The banner's "Use SSH" through a jump host, mosh's UDP on a route of
+/// its own: this time only (the banner's action, a one-shot reconnect), or
+/// from now on (the route goes back to SSH, as the pill's switch does).
+pub(crate) fn confirm_ssh_for_now_or_good(ctx: &Ctx) {
+    ctx.ask(Intent::DialogAnchor("pill"));
+    let answer = alert_dialog()
+        .title(t!("Use SSH?"))
+        .description(t!(
+            "Reconnects this session over SSH, through the jump host."
+        ))
+        .action_sheet()
+        .action("once", t!("This time only"))
+        .action("always", t!("From now on"))
+        .cancel("cancel", t!("Cancel"))
+        .show();
+    let ctx = ctx.clone();
+    drop(spawn(async move {
+        match answer.await.ok().and_then(|r| r.action).as_deref() {
+            Some("once") => ctx.ask(Intent::BannerAction),
+            Some("always") => ctx.ask(Intent::Transport),
+            _ => {}
+        }
+    }));
+}
+
 /// The pill's question (`confirmationDialog`): switch to the other
 /// transport? A tap alone never reconnects. On the iPad the host hangs the
 /// sheet's popover from the pill.
@@ -297,7 +322,7 @@ pub(crate) fn confirm_switch(ctx: &Ctx) {
             alert_dialog()
                 .title(t!("This connection uses SSH"))
                 .description(t!(
-                    "Mosh can't go through a jump host, so connections through one use SSH."
+                    "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings."
                 ))
                 .cancel("ok", t!("OK"))
                 .show(),

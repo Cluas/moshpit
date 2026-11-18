@@ -309,6 +309,14 @@ pub enum Banner {
     ReturnPath {
         #[serde(default)]
         typed: bool,
+        /// Through a jump host with mosh's UDP on a route of its own
+        /// (`direct`, `viaJump`): the banner says whose ports to check.
+        /// None: not through one.
+        #[serde(default)]
+        route: Option<crate::connection_form::JumpRoute>,
+        /// The UDP range to check, as Settings says it ("60000–61000").
+        #[serde(default)]
+        ports: String,
     },
     /// mosh is roaming to a new network path (`RoamBanner`).
     Roam {
@@ -345,6 +353,10 @@ pub struct Chrome {
     /// The connection goes through a jump host: SSH only, so the pill has
     /// no transport to switch to (F1).
     pub jump: bool,
+    /// The connection goes through a jump host and dials mosh over a route
+    /// of its own: the pill and the banner offer a normal switch to SSH
+    /// (which sets the route back to SSH).
+    pub jump_mosh: bool,
     pub mux: Mux,
     /// The leading button toggles the iPad's sidebar instead of going back.
     pub sidebar: bool,

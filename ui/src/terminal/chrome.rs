@@ -24,6 +24,7 @@ use super::{
     cover::chrome_text,
     model::{Banner as BannerModel, Missing, Notice},
 };
+use crate::connection_form::JumpRoute;
 use crate::ui::{
     icon::{IconSize, Tone, icon},
     motion::{Duration, ENTER, LEAVE, distance},
@@ -59,12 +60,37 @@ impl Kind {
 /// What `kind`'s banner says; `srtt`: the smoothed round trip a roam
 /// banner reads in small words after its sentence; `typed`: what was typed
 /// waits for mosh-server (B854), which the return path's banner says.
-pub(crate) fn banner_words(kind: Kind, srtt: Option<f64>, typed: bool) -> String {
+pub(crate) fn banner_words(
+    kind: Kind,
+    srtt: Option<f64>,
+    typed: bool,
+    route: Option<JumpRoute>,
+    ports: &str,
+) -> String {
     match kind {
-        Kind::ReturnPath if typed => t!(
-            "No UDP reply from mosh-server. What you've typed will be sent when the connection is back."
-        ),
-        Kind::ReturnPath => t!("No UDP reply from mosh-server."),
+        Kind::ReturnPath => {
+            let said = if typed {
+                t!(
+                    "No UDP reply from mosh-server. What you've typed will be sent when the connection is back."
+                )
+            } else {
+                t!("No UDP reply from mosh-server.")
+            };
+            let ports = if ports.is_empty() { "60000–61000" } else { ports };
+            // Through a jump host the UDP can be stopped at either end.
+            let check = match route {
+                Some(JumpRoute::Direct) => t!(
+                    "Through a jump host, check that the target host allows UDP %@.",
+                    arg1 = ports
+                ),
+                Some(JumpRoute::ViaJump) => t!(
+                    "Through a jump host, check that the jump host forwards UDP %@ and the target host allows it.",
+                    arg1 = ports
+                ),
+                _ => return said,
+            };
+            format!("{said} {check}")
+        }
         Kind::Roam => {
             let said = t!("Network changed. mosh is reconnecting.");
             match srtt {
@@ -152,18 +178,31 @@ fn banner_slot(ctx: Ctx) -> AnyElement {
 fn banner_view(kind: Kind, current: Memo<Option<Kind>>, ctx: Ctx) -> AnyElement {
     let chrome = ctx.chrome;
     let words = move || -> SharedString {
-        let (srtt, typed) = chrome.with(|c| match &c.banner {
-            Some(BannerModel::Roam { srtt, .. }) => (*srtt, false),
-            Some(BannerModel::ReturnPath { typed }) => (None, *typed),
-            _ => (None, false),
-        });
-        banner_words(kind, srtt, typed).into()
+        chrome.with(|c| match &c.banner {
+            Some(BannerModel::Roam { srtt, .. }) => banner_words(kind, *srtt, false, None, ""),
+            Some(BannerModel::ReturnPath { typed, route, ports }) => {
+                banner_words(kind, None, *typed, *route, ports)
+            }
+            _ => banner_words(kind, None, false, None, ""),
+        })
+        .into()
     };
     let shown = move || current.get() == Some(kind);
     match kind {
         Kind::ReturnPath => banner(BannerTone::Warning, words)
             .icon("wifi.exclamationmark")
-            .action(t!("Use SSH"), ctx.asking(Intent::BannerAction))
+            .action(t!("Use SSH"), {
+                // Through a jump host on a UDP route of its own, "Use SSH"
+                // asks whether that is for now or for good.
+                let ctx = ctx.clone();
+                move || {
+                    if ctx.chrome.with_untracked(|c| c.jump_mosh) {
+                        super::bar::confirm_ssh_for_now_or_good(&ctx);
+                    } else {
+                        ctx.ask(Intent::BannerAction);
+                    }
+                }
+            })
             .action_test_id("mosh-returnpath-switch-ssh")
             .on_close(ctx.asking(Intent::BannerDismiss))
             .close_test_id("mosh-returnpath-dismiss")

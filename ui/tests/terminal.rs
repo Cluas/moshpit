@@ -199,13 +199,73 @@ fn behind_a_jump_host_the_pill_explains_ssh_and_switches_nothing() {
     assert_eq!(dialog.title.as_deref(), Some("This connection uses SSH"));
     assert_eq!(
         dialog.message.as_deref(),
-        Some("Mosh can't go through a jump host, so connections through one use SSH.")
+        Some(
+            "This connection goes through a jump host over SSH. To use mosh, pick how its UDP gets through in the connection's settings."
+        )
     );
     let texts: Vec<_> = dialog.buttons.iter().map(|b| b.text.clone()).collect();
     assert_eq!(texts, ["OK"]);
     app.answer_dialog(nsh_testing::DialogAnswer::Press("OK".into()))
         .unwrap();
     no_intent(&heard);
+    channel.close();
+}
+
+/// Through a jump host with mosh's UDP on a route of its own, the pill is a
+/// normal switch (to SSH, for good), and the dead-return-path banner names
+/// the end to check and asks "this time only" or "from now on".
+#[test]
+fn over_a_jump_route_the_banner_names_the_end_to_check_and_asks_how_long_to_use_ssh() {
+    let (mut app, channel, _) = open(Params::default());
+    app.answer_dialogs_myself();
+    let heard = hear(&channel);
+    let banner = |route: &str| {
+        with(
+            chrome(),
+            json!({
+                "mosh": true, "jumpMosh": true,
+                "banner": {"kind": "returnPath", "route": route, "ports": "60000–61000"},
+            }),
+        )
+    };
+    show(&mut app, &channel, &banner("direct"));
+    app.wait_for(
+        "text:No UDP reply from mosh-server. Through a jump host, check that the target host allows UDP 60000–61000.",
+    )
+    .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
+    show(&mut app, &channel, &banner("viaJump"));
+    app.wait_for(
+        "text:No UDP reply from mosh-server. Through a jump host, check that the jump host forwards UDP 60000–61000 and the target host allows it.",
+    )
+    .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
+
+    app.press("id:mosh-returnpath-switch-ssh").unwrap();
+    assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
+    assert!(common::wait_dialog(&mut app), "the sheet never asked");
+    let dialog = app.pending_dialog().cloned().expect("the sheet asks");
+    assert_eq!(dialog.title.as_deref(), Some("Use SSH?"));
+    let texts: Vec<_> = dialog.buttons.iter().map(|b| b.text.clone()).collect();
+    assert_eq!(texts, ["This time only", "From now on", "Cancel"]);
+    app.answer_dialog(nsh_testing::DialogAnswer::Press("This time only".into()))
+        .unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "banner-action"}));
+
+    app.press("id:mosh-returnpath-switch-ssh").unwrap();
+    assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
+    assert!(common::wait_dialog(&mut app), "the sheet never asked");
+    app.answer_dialog(nsh_testing::DialogAnswer::Press("From now on".into()))
+        .unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "switch-transport"}));
+
+    // Not through a jump host: the banner's action stays the plain one.
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"banner": {"kind": "returnPath"}})),
+    );
+    app.wait_for("text:No UDP reply from mosh-server.").unwrap();
+    app.press("id:mosh-returnpath-switch-ssh").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "banner-action"}));
     channel.close();
 }
 
