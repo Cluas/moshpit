@@ -28,6 +28,13 @@ enum NSHTextPrompt {
         // The appearance of the page that asks (R18): the terminal's colour
         // scheme's from the terminal, the app's from any other page.
         alert.overrideUserInterfaceStyle = view.traitCollection.userInterfaceStyle
+        // iOS 26 fills the preferred action (the confirm button) with the
+        // tint and draws its label white; the window's tint is the accent,
+        // which under white can read at under 2:1 (a light teal). Tint the
+        // alert with the accent darkened until white reads at 4.5:1
+        // (``InkContrast/underWhite(_:)``); Cancel is drawn in the label
+        // colour, not the tint, so nothing else changes.
+        alert.view.tintColor = InkContrast.underWhite(UIColor(AppThemeCatalog.current.accent))
         alert.addTextField { field in
             field.placeholder = question.placeholder
             field.text = question.text

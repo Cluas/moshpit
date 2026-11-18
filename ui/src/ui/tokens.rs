@@ -462,21 +462,19 @@ pub fn readable_on(accent: Rgba, surfaces: &[Rgba], dark: bool) -> Rgba {
     hsl.into()
 }
 
-/// The least contrast a filled button's label has on its accent: its text
-/// is 17 pt semibold, large text for WCAG.
-pub const ON_ACCENT: f32 = 3.0;
-
-/// What is drawn on the accent: white while white reads on it
-/// ([`ON_ACCENT`]), else the light appearance's ink (a pale accent: a
-/// yellow, a light teal). Where white falls under 3:1 the accent is light
-/// enough that ink reads at better than 6:1.
+/// What is drawn on the accent, a filled button's label: white while white
+/// reads on it ([`READABLE`], 4.5:1, as body text: the label is 17 pt
+/// semibold, but a pale or mid-tone accent under white is what users
+/// reported unreadable), else the light appearance's ink (a pale accent: a
+/// yellow, a light teal), else black (a mid-tone accent, such as Signal
+/// Room's periwinkle, where neither white nor ink reaches 4.5:1). One of
+/// white and black always does: every accent gets a readable label.
 pub fn on_accent(accent: Rgba) -> Rgba {
-    let white = rgb(WHITE);
-    if contrast(white, accent) >= ON_ACCENT {
-        white
-    } else {
-        rgb(INK)
-    }
+    let accent = Rgba { a: 1.0, ..accent };
+    [rgb(WHITE), rgb(INK), rgb(BLACK)]
+        .into_iter()
+        .find(|label| contrast(*label, accent) >= READABLE)
+        .unwrap_or(rgb(BLACK))
 }
 
 /// A host key's face's hues (§4.13), in the order a face's `hue` picks
@@ -847,7 +845,8 @@ mod tests {
             ("muted-foreground", "5E5C56", "A7A398"),
             ("primary", "6C6BEF", "6C6BEF"),
             ("primary-active", "5652D6", "5652D6"),
-            ("primary-foreground", "FFFFFF", "FFFFFF"),
+            // Mid-tone: white reads at 4.2:1, black at 5:1 (4.5:1 for labels).
+            ("primary-foreground", "000000", "000000"),
             // Derived (UI-DESIGN §2.3), as the spec's table has them.
             ("primary-text", "4E4DEC", "8A89F2"),
             ("primary-hover", "6362DC", "7877F0"),
@@ -1002,13 +1001,13 @@ mod tests {
                 "primary-foreground",
                 "primary",
                 token(&colors, "primary"),
-                ON_ACCENT,
+                READABLE,
             );
         }
     }
 
     #[test]
-    fn a_pale_accent_takes_ink_and_signal_room_white() {
+    fn a_pale_accent_takes_ink_and_a_mid_tone_one_black() {
         let ink = rgb(INK);
         let pale = colors(&custom("F5E663"));
         assert_eq!(token(&pale, "primary-foreground"), (ink, ink));
@@ -1018,11 +1017,75 @@ mod tests {
             (ink, ink),
             "Moshpit Classic's teal is pale"
         );
+        // Signal Room's periwinkle is mid-tone: white reads at 4.2:1 and
+        // ink at 4.3:1 on it, black at 5:1.
         let signal = colors(&AppTheme::SIGNAL_ROOM);
         assert_eq!(
             token(&signal, "primary-foreground"),
-            (rgb(WHITE), rgb(WHITE))
+            (rgb(BLACK), rgb(BLACK))
         );
+        // A deep accent keeps white.
+        let deep = colors(&custom("1A237E"));
+        assert_eq!(token(&deep, "primary-foreground"), (rgb(WHITE), rgb(WHITE)));
+    }
+
+    /// A filled button's label reads at 4.5:1 on its fill, in both
+    /// appearances, for every built-in accent, pale and mid-tone picks, and
+    /// any accent at all (a sweep plus a seeded random walk).
+    #[test]
+    fn a_filled_buttons_label_reads_on_any_accent() {
+        let mut accents: Vec<(String, Rgba)> = built_ins()
+            .into_iter()
+            .map(|(name, theme)| (name, theme.accent))
+            .collect();
+        for pick in [
+            "53DCC9", "F5E663", "EDEDED", "FFFFFF", "000000", "8E8E93", "777777", "6C6BEF",
+            "FF2D55", "34C759", "FF9500", "5AC8FA", "AF52DE", "1A237E",
+        ] {
+            accents.push((pick.to_owned(), hex(pick)));
+        }
+        let mut seed: u32 = 0x9E37_79B9;
+        for _ in 0..2000 {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            let byte = |shift: u32| ((seed >> shift) & 0xFF) as f32 / 255.0;
+            let color = Rgba {
+                r: byte(0),
+                g: byte(8),
+                b: byte(16),
+                a: 1.0,
+            };
+            accents.push((hex_string(color), color));
+        }
+        for grey in 0..=255u32 {
+            let c = grey as f32 / 255.0;
+            accents.push((
+                format!("grey {grey}"),
+                Rgba {
+                    r: c,
+                    g: c,
+                    b: c,
+                    a: 1.0,
+                },
+            ));
+        }
+        for (name, accent) in accents {
+            let colors = colors(&custom(&hex_string(accent).trim_start_matches('#')[..6]));
+            let (fill, label) = (
+                token(&colors, "primary"),
+                token(&colors, "primary-foreground"),
+            );
+            for (side, (f, l)) in [("light", (fill.0, label.0)), ("dark", (fill.1, label.1))] {
+                let ratio = contrast(l, f);
+                assert!(
+                    ratio >= READABLE,
+                    "{name}: label {} on {} is {ratio:.2}:1 ({side})",
+                    hex_string(l),
+                    hex_string(f)
+                );
+            }
+        }
     }
 
     #[test]

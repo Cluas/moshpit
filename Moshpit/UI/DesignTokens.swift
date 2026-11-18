@@ -127,6 +127,28 @@ enum InkContrast {
         return UIColor(red: color.0, green: color.1, blue: color.2, alpha: 1)
     }
 
+    /// `accent` as the fill of a button whose label the system draws white
+    /// (a `UIAlertController`'s preferred action, filled with the tint on
+    /// iOS 26): its lightness lowered by the least that lets white read at
+    /// 4.5:1, its hue and saturation kept. A pale accent (Moshpit Classic's
+    /// teal) or a mid-tone one (Signal Room's periwinkle) under a white label
+    /// is unreadable; the NSH pages pick a dark label instead (`on_accent`),
+    /// which UIKit's alert does not let us set.
+    static func underWhite(_ accent: UIColor) -> UIColor {
+        var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        accent.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let clamp = { (v: CGFloat) in min(1, max(0, Double(v))) }
+        var (h, sat, l) = hsl((clamp(r), clamp(g), clamp(b)))
+        for _ in 0...200 {
+            let color = fromHSL(h, sat, l)
+            if contrast(color, (1, 1, 1)) >= 4.5 {
+                return UIColor(red: color.0, green: color.1, blue: color.2, alpha: 1)
+            }
+            l = max(0, l - 0.005)
+        }
+        return .black
+    }
+
     /// WCAG's relative luminance.
     static func luminance(_ c: (Double, Double, Double)) -> Double {
         func channel(_ v: Double) -> Double { v <= 0.040_45 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }

@@ -327,6 +327,28 @@ struct AppAppearanceWindowTests {
                 == Self.bytes(UIColor(Ink.accent).resolvedColor(with: dark)))
     }
 
+    @Test("the alert's tint lets its white confirm label read at 4.5:1 for every accent")
+    func alertTintUnderWhite() {
+        var accents: [(Double, Double, Double)] = [
+            (0x53 / 255, 0xDC / 255, 0xC9 / 255), (0x6C / 255, 0x6B / 255, 0xEF / 255),
+            (0xF5 / 255, 0xE6 / 255, 0x63 / 255), (1, 1, 1), (0, 0, 0), (0.5, 0.5, 0.5),
+        ]
+        var seed: UInt32 = 0x9E37_79B9
+        for _ in 0..<500 {
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5
+            accents.append((Double(seed & 0xFF) / 255, Double((seed >> 8) & 0xFF) / 255,
+                            Double((seed >> 16) & 0xFF) / 255))
+        }
+        for accent in accents {
+            let tint = InkContrast.underWhite(UIColor(red: accent.0, green: accent.1, blue: accent.2, alpha: 1))
+            let rgb = Self.bytes(tint).prefix(3).map { Double($0) / 255 }
+            #expect(InkContrast.contrast((rgb[0], rgb[1], rgb[2]), (1, 1, 1)) >= 4.45, "\(accent)")
+        }
+        // Already dark enough: kept.
+        let deep = UIColor(red: 0x1A / 255, green: 0x23 / 255, blue: 0x7E / 255, alpha: 1)
+        #expect(Self.bytes(InkContrast.underWhite(deep)) == Self.bytes(deep))
+    }
+
     @Test("the form inks the SwiftUI sheets draw with have a light side, and the dark one as before")
     func formInks() {
         let light = UITraitCollection(userInterfaceStyle: .light)
