@@ -360,9 +360,9 @@ pub struct Renderer {
     overdue: Vec<ExecId>,
     deliveries: Vec<Delivery>,
     cover: Option<Cover>,
-    /// The first landing's repaint, watched as a cover is but under no
-    /// veil: [`Output::Redraw`] once it has gone quiet. Once per loop.
-    first_paint: Option<Cover>,
+    /// The loop's first pane was redrawn ([`Output::Redraw`]): the first
+    /// landing's veil stays up through herdr's repaint and the redraw after
+    /// it, so neither shows. Once per loop.
     redrawn: bool,
     outputs: VecDeque<Output>,
     next_exec: u64,
@@ -413,7 +413,6 @@ impl Renderer {
             overdue: Vec::new(),
             deliveries: Vec::new(),
             cover: None,
-            first_paint: None,
             redrawn: false,
             outputs: VecDeque::new(),
             next_exec: 0,
@@ -431,11 +430,6 @@ impl Renderer {
             && cover.landed.is_some_and(|landed| now >= landed)
         {
             cover.last = Some(now);
-        }
-        if let Some(first) = &mut self.first_paint
-            && first.landed.is_some_and(|landed| now >= landed)
-        {
-            first.last = Some(now);
         }
     }
 
@@ -807,13 +801,6 @@ impl Renderer {
                     {
                         cover.landed = Some(now);
                     }
-                    if !self.redrawn && self.first_paint.is_none() {
-                        self.first_paint = Some(Cover {
-                            since: now,
-                            landed: Some(now),
-                            last: None,
-                        });
-                    }
                     self.applied = Some(terminal);
                     self.landed(now);
                 } else if output.is_some_and(launch::retarget_missing) {
@@ -917,14 +904,19 @@ impl Renderer {
         if let Some(cover) = self.cover
             && now >= cover.lifts_at(&self.budgets)
         {
-            self.reveal();
-        }
-        if let Some(first) = self.first_paint
-            && now >= first.lifts_at(&self.budgets)
-        {
-            self.first_paint = None;
-            self.redrawn = true;
-            self.outputs.push_back(Output::Redraw);
+            if !self.redrawn && cover.landed.is_some() {
+                // The first pane's repaint is over: the redraw now, and the
+                // veil stays up until that has gone quiet too.
+                self.redrawn = true;
+                self.outputs.push_back(Output::Redraw);
+                self.cover = Some(Cover {
+                    since: now,
+                    landed: Some(now),
+                    last: None,
+                });
+            } else {
+                self.reveal();
+            }
         }
         if let Some(Watch::Retry { at, epoch }) = self.watch
             && now >= at
@@ -954,8 +946,7 @@ impl Renderer {
             _ => None,
         };
         let cover = self.cover.map(|cover| cover.lifts_at(&self.budgets));
-        let first = self.first_paint.map(|first| first.lifts_at(&self.budgets));
-        [lane, deliveries, watch, cover, first, self.retype_wait]
+        [lane, deliveries, watch, cover, self.retype_wait]
             .into_iter()
             .flatten()
             .min()
@@ -987,7 +978,9 @@ impl Renderer {
         self.take_over = takeover;
         // The exec, the kill, the re-attach and the repaint are all round
         // trips; until the last one the screen is the pane being left.
-        if had_target {
+        // The first pane too (once per loop): its attach replays the pane
+        // onto a fresh tty, fragments and all, until the redraw after it.
+        if had_target || !self.redrawn {
             self.outputs.push_back(Output::Veil);
             self.cover = Some(Cover {
                 since: now,

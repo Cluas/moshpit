@@ -738,15 +738,35 @@ fn a_reply_for_the_pane_on_screen_goes_once_the_loop_is_seen_still_on_it() {
     );
 }
 
+/// The first attach replays the pane onto a fresh tty, and a full-screen
+/// program showed fragments of earlier frames there until its next full
+/// redraw (after every switch to mosh). Its veil stays up through herdr's
+/// repaint and the redraw asked after it; a later switch asks no redraw.
 #[test]
-fn the_veil_goes_up_for_a_switch_and_not_for_the_first_attach() {
+fn the_first_pane_is_veiled_until_the_redraw_after_its_repaint_has_painted() {
     let mut rig = Rig::new();
     rig.show("t-1");
     rig.run_for(50);
-    assert_eq!(rig.veils(), 0, "the first attach has nothing stale to hide");
-    rig.show("t-2");
-    rig.run_for(50);
     assert_eq!(rig.veils(), 1);
+    rig.run_for(1_000);
+    let redraws: Vec<u64> = rig
+        .outputs
+        .iter()
+        .filter_map(|(at, output)| matches!(output, Output::Redraw).then_some(*at))
+        .collect();
+    assert_eq!(redraws.len(), 1, "{:?}", rig.outputs);
+    let lifted = rig.revealed_at().expect("never lifted");
+    assert!(lifted > redraws[0], "lifted before the redraw");
+    rig.show("t-2");
+    rig.run_for(1_000);
+    assert_eq!(rig.veils(), 2);
+    assert_eq!(
+        rig.outputs
+            .iter()
+            .filter(|(_, output)| matches!(output, Output::Redraw))
+            .count(),
+        1
+    );
 }
 
 // MARK: - A renderer that stopped: who brings it back
@@ -1087,6 +1107,14 @@ fn switching_back_while_a_switch_away_is_out_types_nothing_until_the_loop_is_bac
 
 // MARK: - The switch veil
 
+/// The first pane's own veil and redraw over (their own test), and what
+/// they said forgotten.
+fn settle_first_veil(rig: &mut Rig) {
+    rig.run_for(1_000);
+    assert!(!rig.renderer.veiled());
+    rig.outputs.clear();
+}
+
 impl Rig {
     fn paint(&mut self) {
         self.renderer.painted(self.now);
@@ -1103,6 +1131,7 @@ impl Rig {
 #[test]
 fn the_veil_lifts_on_the_new_panes_repaint_not_on_the_loops_own_noise() {
     let mut rig = on_first_pane();
+    settle_first_veil(&mut rig);
     rig.host.delay = Box::new(|_| 120);
     let began = rig.now;
     rig.show("t-2");
@@ -1130,6 +1159,7 @@ fn the_veil_lifts_on_the_new_panes_repaint_not_on_the_loops_own_noise() {
 #[test]
 fn a_repaint_that_beat_the_landing_back_lifts_the_veil_after_the_repaint_grace() {
     let mut rig = on_first_pane();
+    settle_first_veil(&mut rig);
     rig.host.delay = Box::new(|_| 120);
     let began = rig.now;
     rig.show("t-2");
@@ -1150,6 +1180,7 @@ fn a_repaint_that_beat_the_landing_back_lifts_the_veil_after_the_repaint_grace()
 #[test]
 fn the_veil_waits_for_a_repaint_that_comes_well_after_the_landing() {
     let mut rig = on_first_pane();
+    settle_first_veil(&mut rig);
     rig.host.delay = Box::new(|_| 120);
     let began = rig.now;
     rig.pick("t-2");
