@@ -186,6 +186,14 @@ pub struct ServerConnection {
     /// which loads as off.
     #[serde(default, skip_serializing_if = "is_false")]
     pub jump_host_only: bool,
+    /// Where mosh's UDP goes when this connection goes through a jump host:
+    /// `ssh` (the default: SSH only), `direct` (to the target) or `viaJump`
+    /// (to the jump host, which forwards it). Raw, like `multiplexer_raw`:
+    /// `moshpit_session::JumpMoshRoute::from_raw` reads it, and an absent
+    /// or unknown value is `ssh`, so a connection saved before it existed
+    /// behaves as it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_mosh_route: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -225,6 +233,7 @@ impl ServerConnection {
             emoji: None,
             via_connection_id: None,
             jump_host_only: false,
+            jump_mosh_route: None,
         }
     }
 

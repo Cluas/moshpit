@@ -17,14 +17,53 @@ pub enum Protocol {
     Mosh,
 }
 
+/// Where mosh's UDP goes when the connection goes through a jump host (SSH
+/// can be forwarded through `direct-tcpip`, UDP can't). Only read for a
+/// connection through another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum JumpMoshRoute {
+    /// No mosh through the jump host: the connection is SSH (the default,
+    /// and what a connection saved before the choice existed reads as).
+    #[default]
+    Ssh,
+    /// The phone sends UDP straight to the target host; the jump host only
+    /// carries the SSH that starts `mosh-server`.
+    Direct,
+    /// The phone sends UDP to the jump host, which forwards it to the
+    /// target host (a rule the person set up there).
+    ViaJump,
+}
+
+impl JumpMoshRoute {
+    /// The stored spelling (`jumpMoshRoute`).
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            Self::Ssh => "ssh",
+            Self::Direct => "direct",
+            Self::ViaJump => "viaJump",
+        }
+    }
+
+    /// The route a stored spelling names; anything else (absent, unknown:
+    /// written by a later build) is SSH.
+    pub fn from_raw(raw: Option<&str>) -> Self {
+        match raw {
+            Some("direct") => Self::Direct,
+            Some("viaJump") => Self::ViaJump,
+            _ => Self::Ssh,
+        }
+    }
+}
+
 /// How a connection reaches its host (F1).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Hop {
     /// Straight to the host (through [`ConnectionSpec::proxy`], if set).
     #[default]
     Direct,
-    /// Through another saved connection's SSH (`ssh -J`): only ever SSH
-    /// (mosh's UDP can't take the way), and [`ConnectionSpec::proxy`]
+    /// Through another saved connection's SSH (`ssh -J`): SSH, unless the
+    /// connection's [`JumpMoshRoute`] says where mosh's UDP goes instead,
+    /// and [`ConnectionSpec::proxy`]
     /// doesn't apply (the jump host's own does, to its leg).
     Through(Box<Via>),
     /// Through a saved connection that can't serve: the session fails at
@@ -77,6 +116,9 @@ pub struct ConnectionSpec {
     pub proxy: Option<Socks5Proxy>,
     /// Straight there or through another connection's SSH (F1).
     pub hop: Hop,
+    /// Where mosh's UDP goes through a jump host (read only when `hop` is
+    /// [`Hop::Through`]).
+    pub jump_mosh_route: JumpMoshRoute,
     pub protocol: Protocol,
     pub multiplexer: Multiplexer,
     /// The tmux command, as typed in the form (a path, or a path with
@@ -114,6 +156,7 @@ impl ConnectionSpec {
             target,
             proxy: None,
             hop: Hop::Direct,
+            jump_mosh_route: JumpMoshRoute::Ssh,
             protocol: Protocol::Ssh,
             multiplexer: Multiplexer::None,
             tmux_path: None,
@@ -128,12 +171,14 @@ impl ConnectionSpec {
     }
 
     /// The transport a dial asks for: [`Self::protocol`], except that a
-    /// connection through another is SSH only (F1).
+    /// connection through another is SSH (F1) unless its
+    /// [`JumpMoshRoute`] sends mosh's UDP somewhere. A broken hop never
+    /// dials mosh.
     pub fn dialled_protocol(&self, protocol: Protocol) -> Protocol {
-        if self.hop.is_direct() {
-            protocol
-        } else {
-            Protocol::Ssh
+        match &self.hop {
+            Hop::Direct => protocol,
+            Hop::Through(_) if self.jump_mosh_route != JumpMoshRoute::Ssh => protocol,
+            _ => Protocol::Ssh,
         }
     }
 
@@ -275,6 +320,50 @@ pub(crate) fn ms(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The route matrix: which connections dial mosh. The Swift
+    /// `dialsMosh` answers through the core (`dials_mosh`), and its test
+    /// asserts the same table.
+    #[test]
+    fn dialled_protocol_follows_the_jump_route() {
+        let target = Target::new("dev", "target.example.com", 22);
+        let via = || {
+            Hop::Through(Box::new(Via {
+                connection_id: "j".to_owned(),
+                name: "bastion".to_owned(),
+                target: Target::new("ops", "bastion.example.com", 22),
+                proxy: None,
+            }))
+        };
+        let routes = [JumpMoshRoute::Ssh, JumpMoshRoute::Direct, JumpMoshRoute::ViaJump];
+        for protocol in [Protocol::Ssh, Protocol::Mosh] {
+            for route in routes {
+                let mut spec = ConnectionSpec::ssh("c", target.clone());
+                spec.jump_mosh_route = route;
+                // Straight there: the route is not read.
+                spec.hop = Hop::Direct;
+                assert_eq!(spec.dialled_protocol(protocol), protocol, "{route:?}");
+                // Through a jump host: mosh only when asked for and a route says where.
+                spec.hop = via();
+                let want = if route == JumpMoshRoute::Ssh { Protocol::Ssh } else { protocol };
+                assert_eq!(spec.dialled_protocol(protocol), want, "{protocol:?} {route:?}");
+                // A hop that can't serve never dials mosh.
+                for broken in [HopBroken::Deleted, HopBroken::Chained, HopBroken::Unresolved] {
+                    spec.hop = Hop::Broken(broken);
+                    assert_eq!(spec.dialled_protocol(protocol), Protocol::Ssh);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_route_reads_back_from_its_spelling_and_unknown_is_ssh() {
+        for route in [JumpMoshRoute::Ssh, JumpMoshRoute::Direct, JumpMoshRoute::ViaJump] {
+            assert_eq!(JumpMoshRoute::from_raw(Some(route.raw_value())), route);
+        }
+        assert_eq!(JumpMoshRoute::from_raw(None), JumpMoshRoute::Ssh);
+        assert_eq!(JumpMoshRoute::from_raw(Some("auto")), JumpMoshRoute::Ssh);
+    }
 
     #[test]
     fn the_dial_gives_a_silent_host_fifteen_seconds() {

@@ -102,7 +102,7 @@ pub use mosh_udp::{SystemUdp, UdpFlow, UdpNetwork};
 pub use registry::{Events, FLUSH_BOUND, Sessions};
 pub use services::{CredentialError, Credentials, NoMemory, Services, SessionMemory};
 pub use session::{DELIVERY_WAIT, SessionView};
-pub use spec::{ConnectionSpec, Hop, HopBroken, Protocol, Timing, Via};
+pub use spec::{ConnectionSpec, Hop, HopBroken, JumpMoshRoute, Protocol, Timing, Via};
 pub use tmux_leg::{TmuxAction, TmuxRefusal, TmuxView, mark as view_marks, view_action, view_mark};
 
 pub use moshpit_install::Multiplexer;

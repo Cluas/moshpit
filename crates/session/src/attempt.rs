@@ -26,7 +26,7 @@ use crate::event::{
     Cause, CredentialsWhy, Degrade, Failure, FailureKind, MoshWhy, ProxyWhy, TunnelWhy,
 };
 use crate::services::{CredentialError, Services};
-use crate::spec::{ConnectionSpec, Hop, HopBroken, Protocol, Timing, Via};
+use crate::spec::{ConnectionSpec, Hop, HopBroken, JumpMoshRoute, Protocol, Timing, Via};
 
 /// Where an attempt is headed: the multiplexer it runs and what it lacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,7 +253,8 @@ impl Attempt {
         )
         .await?;
         let capabilities = self.capabilities(&ssh).await;
-        // Through a jump host, SSH only (F1): mosh's UDP can't take the way.
+        // Through a jump host, SSH (F1) unless the connection's route sends
+        // mosh's UDP somewhere ([`udp_aim`]).
         let result = match self.spec.dialled_protocol(self.protocol) {
             Protocol::Ssh => self.ssh(&ssh, &capabilities, None).await,
             Protocol::Mosh => self.mosh(&ssh, &capabilities).await,
@@ -401,10 +402,21 @@ impl Attempt {
             reaper.over(ssh);
             reaper
         });
-        let server = match ssh.peer_addr() {
-            Some(peer) => udp_server(peer, credentials.udp_port),
-            None => resolve(host, credentials.udp_port, self.timing.dial_timeout).await?,
+        let aim = udp_aim(&self.spec, ssh.peer_addr());
+        let server = match &aim {
+            UdpAim::Peer(peer) => udp_server(*peer, credentials.udp_port),
+            UdpAim::Resolve { host, .. } => {
+                resolve(host, credentials.udp_port, self.timing.dial_timeout).await?
+            }
         };
+        if !self.spec.hop.is_direct() {
+            log::info!(
+                "mosh through a jump host: route {}, UDP to {} (port {})",
+                self.spec.jump_mosh_route.raw_value(),
+                server.ip(),
+                server.port()
+            );
+        }
         let control = if matches!(route.multiplexer, Multiplexer::Tmux | Multiplexer::Herdr) {
             Some(ssh.clone())
         } else {
@@ -643,6 +655,41 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window == needle)
+}
+
+/// Where mosh's UDP is aimed: an address already known, or a host to look
+/// up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum UdpAim {
+    /// The address the SSH connection reached ([`udp_server`]).
+    Peer(SocketAddr),
+    /// A name to look up ([`resolve`]); `jump` when it is the jump host's.
+    Resolve { host: String, jump: bool },
+}
+
+/// Where mosh's UDP goes, by how the connection reached its host. Straight
+/// there: the address SSH reached, else the host's name. Through a jump
+/// host: its [`crate::spec::JumpMoshRoute`] — the target's name, or the
+/// jump host's — and never the SSH peer, which through a hop is (when
+/// there is one at all) not the target's.
+pub(crate) fn udp_aim(spec: &ConnectionSpec, peer: Option<SocketAddr>) -> UdpAim {
+    match (&spec.hop, spec.jump_mosh_route) {
+        (Hop::Through(via), JumpMoshRoute::ViaJump) => UdpAim::Resolve {
+            host: via.target.host.clone(),
+            jump: true,
+        },
+        (Hop::Through(_), _) => UdpAim::Resolve {
+            host: spec.target.host.clone(),
+            jump: false,
+        },
+        _ => match peer {
+            Some(peer) => UdpAim::Peer(peer),
+            None => UdpAim::Resolve {
+                host: spec.target.host.clone(),
+                jump: false,
+            },
+        },
+    }
 }
 
 /// Where mosh's UDP goes when the SSH connection went straight to the host:
@@ -1068,6 +1115,43 @@ mod tests {
         let address: SocketAddr = "192.0.2.7:60001".parse().unwrap();
         let found = std::future::ready(Ok(vec![address].into_iter()));
         assert_eq!(lookup_within(found, bound).await, Some(address));
+    }
+
+    fn through_spec(route: JumpMoshRoute) -> ConnectionSpec {
+        let mut spec = ConnectionSpec::ssh("c", Target::new("dev", "target.example.com", 22));
+        spec.protocol = Protocol::Mosh;
+        spec.jump_mosh_route = route;
+        spec.hop = Hop::Through(Box::new(Via {
+            connection_id: "j".to_owned(),
+            name: "bastion".to_owned(),
+            target: Target::new("ops", "bastion.example.com", 22),
+            proxy: None,
+        }));
+        spec
+    }
+
+    /// Through a jump host mosh's UDP is aimed by the connection's route:
+    /// the target by name (never a peer address, which through a hop is not
+    /// the target's), or the jump host by name; straight there nothing
+    /// changed.
+    #[test]
+    fn udp_aim_follows_the_jump_route() {
+        let peer: SocketAddr = "192.0.2.99:22".parse().unwrap();
+        let resolve = |host: &str, jump| UdpAim::Resolve { host: host.to_owned(), jump };
+        for p in [None, Some(peer)] {
+            assert_eq!(
+                udp_aim(&through_spec(JumpMoshRoute::Direct), p),
+                resolve("target.example.com", false)
+            );
+            assert_eq!(
+                udp_aim(&through_spec(JumpMoshRoute::ViaJump), p),
+                resolve("bastion.example.com", true)
+            );
+        }
+        let mut straight = through_spec(JumpMoshRoute::Direct);
+        straight.hop = Hop::Direct;
+        assert_eq!(udp_aim(&straight, Some(peer)), UdpAim::Peer(peer));
+        assert_eq!(udp_aim(&straight, None), resolve("target.example.com", false));
     }
 
     /// B171: mosh's datagrams go to the address SSH reached, at the
