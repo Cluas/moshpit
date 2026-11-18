@@ -292,6 +292,8 @@
   "Switch": "Basculer",
   "Switch to %@?": "Basculer vers %@ ?",
   "Reconnects this session over %@.": "Reconnecte cette session via %@.",
+  "This connection uses SSH": "Cette connexion utilise SSH",
+  "Mosh can't go through a jump host, so connections through one use SSH.": "Mosh ne peut pas passer par un hôte de rebond ; les connexions qui en utilisent un passent donc par SSH.",
   "MOSH DIAGNOSTICS": "DIAGNOSTIC MOSH",
   "No datagrams yet.": "Aucun datagramme reçu.",
   "Theme name": "Nom du thème",

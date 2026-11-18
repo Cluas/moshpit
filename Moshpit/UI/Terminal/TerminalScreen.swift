@@ -486,7 +486,7 @@ struct TerminalScreen: View {
     }
 
     private var transportKind: TransportPillKind {
-        if connection.connectionProtocol == .mosh {
+        if connection.dialsMosh {
             return metrics?.isRoaming == true ? .moshRoaming : .mosh
         }
         return .ssh
@@ -1606,7 +1606,7 @@ struct Sparkline: Shape {
 extension TerminalScreen {
     /// mosh's counters while the page shows them (`{"op": "diagnostics"}`).
     private var nshDiagnostics: TerminalNSHDiagnostics {
-        TerminalNSHDiagnostics(shown: showMoshDiagnostics && connection.connectionProtocol == .mosh,
+        TerminalNSHDiagnostics(shown: showMoshDiagnostics && connection.dialsMosh,
                                counters: metrics?.moshDiagnostics)
     }
 
@@ -1693,7 +1693,8 @@ extension TerminalScreen {
         chrome.user = connection.username
         chrome.host = connection.host
         chrome.port = connection.port
-        chrome.mosh = connection.connectionProtocol == .mosh
+        chrome.mosh = connection.dialsMosh
+        chrome.jump = connection.viaConnectionId != nil
         chrome.mux = connection.multiplexer
         chrome.sidebar = onToggleSidebar != nil
         chrome.pill = transportKind
@@ -1849,7 +1850,7 @@ extension TerminalScreen {
             // Confirmed on the page's own action sheet.
             switchProtocol()
         case .diagnostics:
-            if connection.connectionProtocol == .mosh { showMoshDiagnostics = true }
+            if connection.dialsMosh { showMoshDiagnostics = true }
         case .diagnosticsDismiss:
             showMoshDiagnostics = false
         case .repaint:

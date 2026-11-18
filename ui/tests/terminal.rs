@@ -186,6 +186,30 @@ fn the_pill_asks_before_it_switches_and_hangs_the_question_from_itself() {
 }
 
 #[test]
+fn behind_a_jump_host_the_pill_explains_ssh_and_switches_nothing() {
+    let (mut app, channel, _) = open(Params::default());
+    app.answer_dialogs_myself();
+    let heard = hear(&channel);
+    show(&mut app, &channel, &with(chrome(), json!({"jump": true})));
+    app.wait_for("id:terminal-transport-switch").unwrap();
+    app.press("id:terminal-transport-switch").unwrap();
+    assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
+    assert!(common::wait_dialog(&mut app), "the alert never asked");
+    let dialog = app.pending_dialog().cloned().expect("the alert asks");
+    assert_eq!(dialog.title.as_deref(), Some("This connection uses SSH"));
+    assert_eq!(
+        dialog.message.as_deref(),
+        Some("Mosh can't go through a jump host, so connections through one use SSH.")
+    );
+    let texts: Vec<_> = dialog.buttons.iter().map(|b| b.text.clone()).collect();
+    assert_eq!(texts, ["OK"]);
+    app.answer_dialog(nsh_testing::DialogAnswer::Press("OK".into()))
+        .unwrap();
+    no_intent(&heard);
+    channel.close();
+}
+
+#[test]
 fn mosh_counters_hang_from_the_pill_while_the_host_shows_them() {
     let (mut app, channel, _) = open(Params::default());
     let heard = hear(&channel);

@@ -289,6 +289,21 @@ fn pill(ctx: Ctx) -> AnyElement {
 /// transport? A tap alone never reconnects. On the iPad the host hangs the
 /// sheet's popover from the pill.
 pub(crate) fn confirm_switch(ctx: &Ctx) {
+    // Behind a jump host there is nothing to switch to: say why, and leave
+    // the saved protocol alone.
+    if ctx.chrome.with_untracked(|c| c.jump) {
+        ctx.ask(Intent::DialogAnchor("pill"));
+        drop(
+            alert_dialog()
+                .title(t!("This connection uses SSH"))
+                .description(t!(
+                    "Mosh can't go through a jump host, so connections through one use SSH."
+                ))
+                .cancel("ok", t!("OK"))
+                .show(),
+        );
+        return;
+    }
     let target = if ctx.chrome.with_untracked(|c| c.mosh) {
         "SSH"
     } else {

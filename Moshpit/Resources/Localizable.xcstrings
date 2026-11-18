@@ -27033,6 +27033,58 @@
         }
       }
     },
+    "Mosh can't go through a jump host, so connections through one use SSH.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh kann nicht über einen Jump-Host laufen, daher nutzen Verbindungen über einen Jump-Host SSH."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh no puede pasar por un host de salto, así que las conexiones a través de uno usan SSH."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh ne peut pas passer par un hôte de rebond ; les connexions qui en utilisent un passent donc par SSH."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh はジャンプホストを経由できないため、ジャンプホスト経由の接続は SSH を使います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosh는 점프 호스트를 거칠 수 없어, 점프 호스트를 거치는 연결은 SSH를 사용합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Mosh não passa por um host de salto, então conexões através de um usam SSH."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 过不了跳板机，经跳板机的连接都走 SSH。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosh 過不了跳板機，經跳板機的連線都走 SSH。"
+          }
+        }
+      }
+    },
     "Mosh for new connections": {
       "localizations": {
         "de": {
@@ -49961,6 +50013,58 @@
           "stringUnit": {
             "state": "translated",
             "value": "這條連線是 %@ 的跳板主機，所以它只能直接連線。"
+          }
+        }
+      }
+    },
+    "This connection uses SSH": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Verbindung nutzt SSH"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexión usa SSH"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette connexion utilise SSH"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この接続は SSH を使います"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 연결은 SSH를 사용합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conexão usa SSH"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这条连接走 SSH"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這條連線走 SSH"
           }
         }
       }
