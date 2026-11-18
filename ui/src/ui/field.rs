@@ -763,6 +763,11 @@ fn ring(test_id: Option<String>) -> AnyElement {
         .border_color(move || token("ring"))
         .rounded(px(number("radius-sm")))
         .border_curve(BorderCurve::Continuous)
+        // It lies over the control while the control has the keyboard:
+        // touches go through to it (a tap moves the caret, a long press
+        // opens the edit menu), never to the ring, which would take a tap
+        // for one outside the input and put the keyboard away.
+        .pointer_events(PointerEvents::None)
         .accessibility_elements_hidden(true);
     if let Some(id) = &test_id {
         ring = ring.test_id(id);
