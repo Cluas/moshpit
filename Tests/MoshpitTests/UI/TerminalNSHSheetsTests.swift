@@ -109,14 +109,33 @@ struct TerminalNSHSheetsTests {
         #expect(TerminalNSHDiagnostics(shown: false, counters: counters).message["counters"] == nil)
     }
 
-    @Test("an action sheet on top of a surface is found; anything else is not")
-    func dialogAnchorFindsTheSheet() {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 400))
-        let root = UIViewController()
-        window.rootViewController = root
-        let surface = UIView(frame: window.bounds)
-        root.view.addSubview(surface)
-        #expect(NSHDialogAnchor.sheet(presentedBy: surface) == nil)
+    @Test("an armed anchor hangs the surface's next action sheet from its rect, before it shows")
+    func dialogAnchorMovesTheSheetAsItIsPresented() {
+        let surface = UIView(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        let pill = CGRect(x: 150, y: 50, width: 100, height: 30)
+        func sheet() -> UIAlertController {
+            let alert = UIAlertController(title: "Switch?", message: nil, preferredStyle: .actionSheet)
+            alert.popoverPresentationController?.sourceView = surface
+            alert.popoverPresentationController?.sourceRect = CGRect(x: 200, y: 800, width: 0, height: 0)
+            return alert
+        }
+        let anchor = NSHDialogAnchor()
+        anchor.arm(surface: surface, rect: pill)
+        // An alert is not a sheet: left alone, and the anchor still waits.
+        let alert = UIAlertController(title: "Error", message: nil, preferredStyle: .alert)
+        NSHDialogAnchor.willPresent(alert)
+        let first = sheet()
+        NSHDialogAnchor.willPresent(first)
+        if let popover = first.popoverPresentationController {
+            #expect(popover.sourceRect == pill)
+            #expect(popover.sourceView === surface)
+        }
+        // Spent: the next sheet is NSH's own.
+        let second = sheet()
+        NSHDialogAnchor.willPresent(second)
+        if let popover = second.popoverPresentationController {
+            #expect(popover.sourceRect != pill)
+        }
     }
 
     // MARK: Install Assist and a host folder
