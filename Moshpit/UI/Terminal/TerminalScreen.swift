@@ -1694,6 +1694,7 @@ extension TerminalScreen {
         chrome.host = connection.host
         chrome.port = connection.port
         chrome.mosh = connection.dialsMosh
+        chrome.jump = connection.viaConnectionId != nil
         chrome.mux = connection.multiplexer
         chrome.sidebar = onToggleSidebar != nil
         chrome.pill = transportKind

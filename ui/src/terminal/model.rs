@@ -342,6 +342,9 @@ pub struct Chrome {
     pub port: u32,
     /// It runs over mosh.
     pub mosh: bool,
+    /// The connection goes through a jump host: SSH only, so the pill has
+    /// no transport to switch to (F1).
+    pub jump: bool,
     pub mux: Mux,
     /// The leading button toggles the iPad's sidebar instead of going back.
     pub sidebar: bool,

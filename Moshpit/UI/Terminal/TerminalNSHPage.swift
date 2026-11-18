@@ -636,6 +636,7 @@ struct TerminalNSHChrome: Equatable {
     var host = ""
     var port = 22
     var mosh = false
+    var jump = false
     var mux: Multiplexer = .none
     var sidebar = false
     var pill: TransportPillKind = .ssh

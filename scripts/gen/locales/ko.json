@@ -292,6 +292,8 @@
   "Switch": "전환",
   "Switch to %@?": "%@(으)로 전환할까요?",
   "Reconnects this session over %@.": "이 세션을 %@(으)로 다시 연결합니다.",
+  "This connection uses SSH": "이 연결은 SSH를 사용합니다",
+  "Mosh can't go through a jump host, so connections through one use SSH.": "Mosh는 점프 호스트를 거칠 수 없어, 점프 호스트를 거치는 연결은 SSH를 사용합니다.",
   "MOSH DIAGNOSTICS": "MOSH 진단",
   "No datagrams yet.": "받은 데이터그램이 없습니다.",
   "Theme name": "테마 이름",

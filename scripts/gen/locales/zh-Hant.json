@@ -292,6 +292,8 @@
   "Switch": "切換",
   "Switch to %@?": "要切換到 %@ 嗎？",
   "Reconnects this session over %@.": "用 %@ 重新連上這個工作階段。",
+  "This connection uses SSH": "這條連線走 SSH",
+  "Mosh can't go through a jump host, so connections through one use SSH.": "mosh 過不了跳板機，經跳板機的連線都走 SSH。",
   "MOSH DIAGNOSTICS": "MOSH 診斷",
   "No datagrams yet.": "還沒收到任何資料。",
   "Theme name": "主題名稱",
