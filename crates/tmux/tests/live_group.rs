@@ -1209,3 +1209,96 @@ fn a_first_session_made_on_the_phone_stays() {
         .collect();
     assert!(ends_x.is_empty(), "the phone ended x: {ends_x:?}");
 }
+
+/// 1.1.0 regression on a real mosh flow: the renderer (mosh's own `tmux
+/// attach`) is moved into the sidecar's group of the user's session, and
+/// tmux's status line must be off on what the renderer shows.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_the_renderers_session_has_no_status_line() {
+    let server = Server::start("moshstatus");
+    if !server.groups() {
+        eprintln!("skipped: no group before tmux 3.8 (B812)");
+        return;
+    }
+    let renderer = server.renderer("=main");
+    let pid = server.renderer_pid().unwrap();
+    let sidecar = server.sidecar("main", pid);
+    let shown = |server: &Server| -> String {
+        let session = server
+            .tmux(&["list-clients", "-F", "#{client_pid} #{session_name}"])
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{pid} ")).map(str::to_owned))
+            .unwrap_or_default();
+        server.tmux(&["show-options", "-t", &format!("={session}:"), "status"])
+    };
+    let off = eventually(10, || {
+        server
+            .tmux(&["list-clients", "-F", "#{client_pid} #{session_name}"])
+            .contains("~mp-")
+            && shown(&server).contains("off")
+    });
+    let report = format!(
+        "renderer sees: {:?}\nsessions: {}\nsent: {:#?}",
+        shown(&server),
+        server.tmux(&["ls", "-F", "#{session_name} #{session_id} status=#{status}"]),
+        sidecar.sent
+    );
+    drop(renderer);
+    assert!(off, "status line still on for the renderer\n{report}");
+}
+
+/// The same, after the app's SSH leg dropped and a rebuilt sidecar (the old
+/// one's ledger inherited) took over while mosh stayed up.
+#[test]
+#[ignore = "needs tmux; see the module docs"]
+fn over_mosh_a_rebuilt_sidecar_keeps_the_renderers_status_line_off() {
+    let server = Server::start("moshstatus2");
+    if !server.groups() {
+        return;
+    }
+    let renderer = server.renderer("=main");
+    let pid = server.renderer_pid().unwrap();
+    let mut first = server.sidecar("main", pid);
+    first.pump(500);
+    let ledger = first.controller.take_pin_ledger();
+    let _ = first.child.kill();
+    let _ = first.child.wait();
+    std::thread::sleep(Duration::from_millis(500));
+    let (child, stdin, rx) = server.client("main");
+    let mut second = Phone {
+        sent: Vec::new(),
+        controller: Controller::new(Config {
+            renders_output: false,
+            ..Config::default()
+        }),
+        child,
+        stdin,
+        rx,
+        start: Instant::now(),
+    };
+    second.controller.inherit_pin_ledger(ledger);
+    let now = second.now();
+    second.controller.begin_control_mode(now);
+    second.pump(500);
+    let now = second.now();
+    second.controller.expect_renderer_pid(pid, now);
+    second.pump(3000);
+    let report = format!(
+        "{}\nsent: {:#?}",
+        server.tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_pid} #{client_control_mode} #{session_name} status=#{status}"
+        ]),
+        second.sent
+    );
+    let sessions = server.tmux(&["ls", "-F", "#{session_name} status=#{status}"]);
+    drop(renderer);
+    let on_group = server
+        .tmux(&["list-clients", "-F", "#{client_pid} #{session_name} #{status}"])
+        .lines()
+        .filter(|l| l.starts_with(&format!("{pid} ")))
+        .all(|l| l.ends_with(" off"));
+    assert!(on_group, "{sessions}\n{report}");
+}

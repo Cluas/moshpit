@@ -1801,6 +1801,41 @@ fn an_owned_sessions_status_line_is_hidden_on_the_phones_group() {
     );
 }
 
+/// B773: the user's own session shows no status line on the phone: the
+/// group's, the one on the phone's screen, is turned off.
+#[test]
+fn the_users_sessions_status_line_is_hidden_on_the_phones_group() {
+    // The marks are on the server before the sidecar starts (B86).
+    let fake = Rc::new(RefCell::new(Fake {
+        clients: vec![work(true, 45613, "/dev/ttys030")],
+        sessions: vec!["$1 2 work".into()],
+        windows: vec!["$1 @3 0 b25d,80x24,0,0,3 1 1 zsh".into()],
+        marks: vec!["$1 owned= hidden=".into()],
+        groups: true,
+        ..Fake::default()
+    }));
+    let mut rig = Rig::new(Config {
+        renders_output: false,
+        ..Config::default()
+    });
+    rig.respond(responder(fake.clone()));
+    rig.with(|c, now| c.begin_control_mode(now));
+    rig.boot();
+    rig.push("%session-changed $1 work\n");
+    rig.settle();
+    let mut s = Sidecar { rig, fake };
+    s.attach_renderer(work(false, 45533, "/dev/ttys026"));
+    s.rig.push("%session-changed $91 work~mp-iPhone-1-1hc\n");
+    s.rig.settle();
+    assert!(
+        s.status_commands()
+            .iter()
+            .any(|c| c == "set-option -t '$91' status off"),
+        "{:#?}",
+        s.status_commands()
+    );
+}
+
 /// The sidecar's group commands that end a session (B812).
 fn kills(commands: &[String]) -> Vec<&String> {
     commands
