@@ -773,3 +773,41 @@ fn a_panes_snapshot_replaces_the_fragments_its_terminal_had() {
     );
     channel.close();
 }
+
+/// Every window's card says "＋ New pane" under it, in plain sight beside
+/// the last card's "New window" (the user never found it in ⋯): a press
+/// splits that window at once. ⋯ keeps it too.
+#[test]
+fn every_window_card_offers_a_new_pane_in_sight() {
+    for mux in ["tmux", "herdr"] {
+        let (mut app, channel, heard, _) = open_screen(mux, "%2");
+        post(
+            &mut app.0,
+            &channel,
+            &json!({"op": "overview", "open": true}).to_string(),
+        );
+        app.0.wait_for("id:overview-new-window").unwrap();
+        let ids: Vec<String> = app
+            .0
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .filter_map(|n| n.test_id.map(|t| t.to_string()))
+            .filter(|t| t.starts_with("overview-card-"))
+            .collect();
+        assert!(!ids.is_empty(), "{mux}: cards");
+        for card in &ids {
+            let window = card.trim_start_matches("overview-card-");
+            let row = format!("id:overview-new-pane-{window}");
+            assert!(app.0.screen().matches(&row).unwrap(), "{mux}: {row}");
+            app.0.press(&row).unwrap();
+            assert_eq!(
+                next_of(&heard, "new-pane"),
+                json!({"ev": "new-pane", "window": window}),
+                "{mux}"
+            );
+        }
+        assert!(app.0.screen().shows("New Pane"), "{mux}");
+        channel.close();
+    }
+}

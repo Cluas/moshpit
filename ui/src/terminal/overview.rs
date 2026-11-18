@@ -1079,6 +1079,31 @@ fn card_view(
         .test_id(&format!("overview-card-{}", card.window))
         .child(boxed)
         .child(label)
+        .child(new_pane_row(ctx, &card.window))
+        .into_element()
+}
+
+/// Under each card, as plain as the last card's "New window": "＋ New
+/// pane", a split of that window at once. ⋯ keeps it too, as the second
+/// way (the user missed it there).
+fn new_pane_row(ctx: &Ctx, window: &str) -> AnyElement {
+    let words = t!("New Pane");
+    view()
+        .flex_row()
+        .items_center()
+        .gap(px(6.0))
+        .min_h(px(44.0))
+        .role(AccessibilityRole::Button)
+        .label(words.clone())
+        .test_id(&format!("overview-new-pane-{window}"))
+        .active(|s| s.opacity(0.5))
+        .on_press(ctx.asking(Intent::NewPane(window.to_owned())))
+        .child(icon("plus").tone(Tone::Muted))
+        .child(
+            chrome_text(TextToken::Footnote, words)
+                .number_of_lines(1u32)
+                .text_color(move || token("muted-foreground")),
+        )
         .into_element()
 }
 
