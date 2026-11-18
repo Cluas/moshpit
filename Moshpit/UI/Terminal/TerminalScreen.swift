@@ -153,6 +153,8 @@ struct TerminalScreen: View {
     /// with the veil, the pill and the breadcrumb change at once. Ordinary
     /// drops and resumes keep their motion.
     @State private var stillSwitch = false
+    /// The next dial goes over SSH, saving nothing (``reconnectOverSSHOnce``).
+    @State private var sshOnce = false
 
     /// Whether this screen has put the cover up for a phase that was not
     /// `.live` — the only licence for a cover to still be up once the
@@ -794,6 +796,18 @@ struct TerminalScreen: View {
         reconnect(still: true)
     }
 
+    /// The banner's "this time only": reconnects over SSH, through the jump
+    /// host, without saving anything. This screen's copy of the connection
+    /// reads as SSH until the next reconnect reloads the saved one.
+    private func reconnectOverSSHOnce() {
+        guard active != nil else { return }
+        stillSwitch = true
+        holdStill()
+        sshOnce = true
+        Haptics.select()
+        reconnect(still: true)
+    }
+
     /// The pane's picture as the switch begins, kept until it ends (the
     /// stage's, ``TerminalNSHStage/holdStill()``).
     private func holdStill() {
@@ -876,6 +890,10 @@ struct TerminalScreen: View {
             // seed's connection is saved nowhere, and dials as given.
             guard !ConnectionDeletion.isUnderWay(connection.id) else { return }
             connection = connectionHolder.store.saved(connection.id) ?? connection
+            if sshOnce {
+                sshOnce = false
+                connection.jumpMoshRoute = JumpMoshRoute.ssh.rawValue
+            }
             await hub.disconnect(connection.id)
             let session = hub.prepare(connection)
             self.active = session
@@ -1694,7 +1712,10 @@ extension TerminalScreen {
         chrome.host = connection.host
         chrome.port = connection.port
         chrome.mosh = connection.dialsMosh
-        chrome.jump = connection.viaConnectionId != nil
+        // Through a jump host, SSH only unless the connection picked a UDP
+        // route for mosh (``ServerConnection/jumpMoshRoute``).
+        chrome.jumpMosh = connection.dialsMoshThroughJump
+        chrome.jump = connection.viaConnectionId != nil && !chrome.jumpMosh
         chrome.mux = connection.multiplexer
         chrome.sidebar = onToggleSidebar != nil
         chrome.pill = transportKind
@@ -1715,7 +1736,11 @@ extension TerminalScreen {
         }
         (chrome.content, chrome.empty) = nshContent
         if active?.moshReturnPathDead == true {
-            chrome.banner = .returnPath(typed: active?.moshTypedWaits == true)
+            let udp = AppSettings.shared.udpRange
+            chrome.banner = .returnPath(
+                typed: active?.moshTypedWaits == true,
+                route: connection.dialsMoshThroughJump ? connection.jumpRoute.rawValue : nil,
+                ports: "\(udp.low)–\(udp.high)")
         } else if metrics?.isRoaming == true {
             chrome.banner = .roam(srtt: metrics?.srttMs, history: metrics?.srttHistory ?? [])
         } else if let notice = active?.degrade {
@@ -1879,7 +1904,7 @@ extension TerminalScreen {
             installPackages = active?.herdrControl != nil ? ["herdr"] : ["tmux"]
         case .bannerAction:
             if active?.moshReturnPathDead == true {
-                switchProtocol()
+                if connection.dialsMoshThroughJump { reconnectOverSSHOnce() } else { switchProtocol() }
             } else if let notice = active?.degrade {
                 installPackages = notice.packages
             }

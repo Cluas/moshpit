@@ -157,6 +157,12 @@ struct ServerConnection: Identifiable, Codable, Equatable {
     /// "Connect via" picker does. Optional so connections saved before it
     /// existed keep decoding: `nil` is off.
     var jumpHostOnly: Bool?
+    /// How mosh's UDP gets to this host through its jump host: `ssh` (the
+    /// whole connection over SSH), `direct` (UDP straight to the host) or
+    /// `viaJump` (UDP to the jump host, which forwards it). Stored raw, as
+    /// the core spells it (`JumpMoshRoute::raw_value`); `nil` and anything
+    /// unknown read as `ssh`. Optional so older connections keep decoding.
+    var jumpMoshRoute: String?
 
     /// Whether a connect to this goes to another box than one to `before`:
     /// another host (case aside, as DNS compares names), port or SSH port
@@ -251,10 +257,29 @@ struct ServerConnection: Identifiable, Codable, Equatable {
 }
 
 extension ServerConnection {
-    /// Whether the core dials this connection over mosh. Through a jump host
-    /// it is SSH only (F1: mosh's UDP can't take the way), whatever the saved
-    /// protocol says: the surface must follow what was dialled, not the
-    /// setting, or an SSH herdr session is read as a mosh one and lands on
-    /// the tmux empty state.
-    var dialsMosh: Bool { connectionProtocol == .mosh && viaConnectionId == nil }
+    /// How the jump route reads: unknown or missing is `ssh`, as the core
+    /// reads it.
+    var jumpRoute: JumpMoshRoute { jumpMoshRoute.flatMap(JumpMoshRoute.init(rawValue:)) ?? .ssh }
+
+    /// Whether the core dials this connection over mosh. It is the core's
+    /// own rule (`ConnectionSpec::dialled_protocol`, through the FFI's
+    /// `dialsMosh`), never a second copy of it: the surface must follow what
+    /// was dialled, not the setting, or an SSH herdr session is read as a
+    /// mosh one and lands on the tmux empty state. Through a jump host that
+    /// is mosh only on a route that isn't SSH.
+    var dialsMosh: Bool {
+        coreDialsMosh(mosh: connectionProtocol == .mosh, throughJump: viaConnectionId != nil,
+                          jumpMoshRoute: jumpMoshRoute)
+    }
+
+    /// The connection goes through a jump host, and its mosh UDP takes a
+    /// route of its own (not SSH).
+    var dialsMoshThroughJump: Bool {
+        dialsMosh && viaConnectionId != nil
+    }
+}
+
+/// How mosh's UDP gets through a jump host (``ServerConnection/jumpMoshRoute``).
+enum JumpMoshRoute: String {
+    case ssh, direct, viaJump
 }

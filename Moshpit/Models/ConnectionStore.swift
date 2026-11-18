@@ -117,6 +117,14 @@ final class ConnectionStore {
     @discardableResult
     func switchProtocol(of id: UUID) -> ServerConnection? {
         guard var current = saved(id) else { return nil }
+        // Through a jump host on a UDP route of its own, "to SSH" is the
+        // route going back to SSH: the connection stays a mosh one, so the
+        // form shows what it was and a later route pick works again.
+        if current.dialsMoshThroughJump {
+            current.jumpMoshRoute = JumpMoshRoute.ssh.rawValue
+            update(current)
+            return saved(id)
+        }
         current.connectionProtocol = current.connectionProtocol == .mosh ? .ssh : .mosh
         update(current)
         return saved(id)

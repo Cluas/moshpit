@@ -204,6 +204,10 @@ struct RustSessionTests {
         #expect(connection.dialsMosh)
         connection.viaConnectionId = UUID()
         #expect(!connection.dialsMosh)
+        // ... unless it picked a UDP route (DialsMoshParityTests has the table).
+        connection.jumpMoshRoute = "direct"
+        #expect(connection.dialsMosh)
+        connection.jumpMoshRoute = nil
         connection.connectionProtocol = .ssh
         #expect(!connection.dialsMosh)
     }

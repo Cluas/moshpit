@@ -241,7 +241,8 @@ final class RustSessionDriver: RustSessionListener {
             rows: UInt16(clamping: grid.rows),
             // B783: a new host's card says it was connected to before.
             connectedBefore: connection.lastConnectedAt != nil,
-            hop: hop(for: connection))
+            hop: hop(for: connection),
+            jumpMoshRoute: connection.jumpMoshRoute)
     }
 
     /// Closes the session for good, holding the process awake while the

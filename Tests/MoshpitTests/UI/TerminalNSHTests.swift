@@ -61,6 +61,7 @@ struct TerminalNSHTests {
         states.append(known)
         for banner: TerminalNSHChrome.Banner in [
             .returnPath(typed: false), .returnPath(typed: true),
+            .returnPath(typed: false, route: "viaJump", ports: "60000–61000"),
             .roam(srtt: 182.5, history: [100, 182.5]), .roam(srtt: nil, history: []),
             .degrade(.tmux), .degrade(.herdr), .degrade(.moshServer),
         ] {

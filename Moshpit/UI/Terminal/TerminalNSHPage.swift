@@ -636,7 +636,11 @@ struct TerminalNSHChrome: Equatable {
     var host = ""
     var port = 22
     var mosh = false
+    /// Through a jump host over SSH: the pill has no transport to switch to.
     var jump = false
+    /// Through a jump host with mosh's UDP on a route of its own: the pill
+    /// and the banner offer a normal switch to SSH.
+    var jumpMosh = false
     var mux: Multiplexer = .none
     var sidebar = false
     var pill: TransportPillKind = .ssh
@@ -689,8 +693,11 @@ struct TerminalNSHChrome: Equatable {
     }
 
     enum Banner: Equatable {
-        /// `typed`: what was typed waits for mosh-server (B854).
-        case returnPath(typed: Bool)
+        /// `typed`: what was typed waits for mosh-server (B854); `route`:
+        /// through a jump host on a UDP route of its own (`direct`,
+        /// `viaJump`), for the banner to name the end to check; `ports`:
+        /// the UDP range, as Settings says it.
+        case returnPath(typed: Bool, route: String? = nil, ports: String = "")
         case roam(srtt: Double?, history: [Double])
         case degrade(DegradeNotice.Missing)
     }
@@ -708,6 +715,8 @@ struct TerminalNSHChrome: Equatable {
             "host": host,
             "port": port,
             "mosh": mosh,
+            "jump": jump,
+            "jumpMosh": jumpMosh,
             "mux": mux.rawValue,
             "sidebar": sidebar,
             "pill": Self.pill(pill),
@@ -798,8 +807,10 @@ struct TerminalNSHChrome: Equatable {
 
     static func json(_ banner: Banner) -> [String: Any] {
         switch banner {
-        case .returnPath(let typed):
-            return ["kind": "returnPath", "typed": typed]
+        case .returnPath(let typed, let route, let ports):
+            var json: [String: Any] = ["kind": "returnPath", "typed": typed]
+            if let route { json["route"] = route; json["ports"] = ports }
+            return json
         case .roam(let srtt, let history):
             var json: [String: Any] = ["kind": "roam", "history": history]
             if let srtt { json["srtt"] = srtt }

@@ -11161,6 +11161,11 @@ public struct ConnectionRecord: Equatable, Hashable {
      * Made only to be gone through: Home doesn't list it.
      */
     public var jumpHostOnly: Bool
+    /**
+     * Where mosh's UDP goes through a jump host: `ssh`, `direct` or
+     * `viaJump`; none reads as `ssh`.
+     */
+    public var jumpMoshRoute: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -11176,7 +11181,11 @@ public struct ConnectionRecord: Equatable, Hashable {
          */viaConnectionId: String? = nil, 
         /**
          * Made only to be gone through: Home doesn't list it.
-         */jumpHostOnly: Bool = false) {
+         */jumpHostOnly: Bool = false, 
+        /**
+         * Where mosh's UDP goes through a jump host: `ssh`, `direct` or
+         * `viaJump`; none reads as `ssh`.
+         */jumpMoshRoute: String? = nil) {
         self.id = id
         self.name = name
         self.host = host
@@ -11205,6 +11214,7 @@ public struct ConnectionRecord: Equatable, Hashable {
         self.emoji = emoji
         self.viaConnectionId = viaConnectionId
         self.jumpHostOnly = jumpHostOnly
+        self.jumpMoshRoute = jumpMoshRoute
     }
 
     
@@ -11250,7 +11260,8 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
                 socksProxyPort: FfiConverterOptionInt64.read(from: &buf), 
                 emoji: FfiConverterOptionString.read(from: &buf), 
                 viaConnectionId: FfiConverterOptionString.read(from: &buf), 
-                jumpHostOnly: FfiConverterBool.read(from: &buf)
+                jumpHostOnly: FfiConverterBool.read(from: &buf), 
+                jumpMoshRoute: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -11283,6 +11294,7 @@ public struct FfiConverterTypeConnectionRecord: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.emoji, into: &buf)
         FfiConverterOptionString.write(value.viaConnectionId, into: &buf)
         FfiConverterBool.write(value.jumpHostOnly, into: &buf)
+        FfiConverterOptionString.write(value.jumpMoshRoute, into: &buf)
     }
 }
 
@@ -14497,6 +14509,11 @@ public struct SessionSpec: Equatable, Hashable {
      * straight to the host.
      */
     public var hop: SessionHop?
+    /**
+     * Where mosh's UDP goes through a jump host (`ssh`, `direct`,
+     * `viaJump`; the connection's `jumpMoshRoute`); none reads as `ssh`.
+     */
+    public var jumpMoshRoute: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14521,7 +14538,11 @@ public struct SessionSpec: Equatable, Hashable {
         /**
          * Through another saved connection ([`session_hop`], F1); `None`:
          * straight to the host.
-         */hop: SessionHop? = nil) {
+         */hop: SessionHop? = nil, 
+        /**
+         * Where mosh's UDP goes through a jump host (`ssh`, `direct`,
+         * `viaJump`; the connection's `jumpMoshRoute`); none reads as `ssh`.
+         */jumpMoshRoute: String? = nil) {
         self.connectionId = connectionId
         self.user = user
         self.host = host
@@ -14540,6 +14561,7 @@ public struct SessionSpec: Equatable, Hashable {
         self.rows = rows
         self.connectedBefore = connectedBefore
         self.hop = hop
+        self.jumpMoshRoute = jumpMoshRoute
     }
 
     
@@ -14575,7 +14597,8 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
                 cols: FfiConverterUInt16.read(from: &buf), 
                 rows: FfiConverterUInt16.read(from: &buf), 
                 connectedBefore: FfiConverterBool.read(from: &buf), 
-                hop: FfiConverterOptionTypeSessionHop.read(from: &buf)
+                hop: FfiConverterOptionTypeSessionHop.read(from: &buf), 
+                jumpMoshRoute: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -14598,6 +14621,7 @@ public struct FfiConverterTypeSessionSpec: FfiConverterRustBuffer {
         FfiConverterUInt16.write(value.rows, into: &buf)
         FfiConverterBool.write(value.connectedBefore, into: &buf)
         FfiConverterOptionTypeSessionHop.write(value.hop, into: &buf)
+        FfiConverterOptionString.write(value.jumpMoshRoute, into: &buf)
     }
 }
 
@@ -31959,6 +31983,22 @@ public func settingsUdpPorts(from: String, to: String) -> PortRange?  {
 })
 }
 /**
+ * Whether a connection dials mosh: the core's own rule
+ * ([`ConnectionSpec::dialled_protocol`]), for the app's `dialsMosh` to ask
+ * instead of keeping a copy. `mosh`: the connection is saved as mosh;
+ * `through_jump`: it goes through a saved jump host; `jump_mosh_route`: its
+ * `jumpMoshRoute` (`ssh`, `direct`, `viaJump`; none reads as `ssh`).
+ */
+public func coreDialsMosh(mosh: Bool, throughJump: Bool, jumpMoshRoute: String?) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_core_dials_mosh(
+        FfiConverterBool.lower(mosh),
+        FfiConverterBool.lower(throughJump),
+        FfiConverterOptionString.lower(jumpMoshRoute),$0
+    )
+})
+}
+/**
  * Whether the Local Network permission may be why `host` didn't answer
  * for `why` (B740, B801): the app's alert says it by the same rule the
  * Home card does (`moshpit_app::local_network`).
@@ -32549,6 +32589,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_settings_udp_ports() != 27974) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_core_dials_mosh() != 9032) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_local_network_may_be_why() != 54429) {
