@@ -8,11 +8,10 @@
 //! `SSH`; the breadcrumb says `session › project › agent●`, named by
 //! Home's rules ([`Crumbs::names`]), each segment a button, the agent's
 //! segment amber while it waits on you. A segment opens its level
-//! ([`segment_target`]): the session's and the window's quick lists, each
-//! ending in its New row, and the pane's page of the window's panes,
-//! ending in New pane. The bar has no ＋ of its own. The colors are
-//! tokens: the page is light on a light terminal theme
-//! ([`crate::screen::Params::terminal`]).
+//! (`Intent::Crumb`): the host's quick list of that level (sessions,
+//! windows, the window's panes), each ending in its New row. The bar has
+//! no ＋ of its own. The colors are tokens: the page is light on a light
+//! terminal theme ([`crate::screen::Params::terminal`]).
 
 use std::time::Duration;
 
@@ -635,33 +634,12 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
     row.into_element()
 }
 
-/// Where a segment's press goes: the session (herdr: workspace) and the
-/// window (herdr: tab) to their quick pickers, the host's lists hung from
-/// the breadcrumb, each ending in its "＋ New…" row; the pane to the
-/// window's pane page, ending in "＋ New pane" (its list before the
-/// session's tree has come).
-pub fn segment_target(crumb: Crumb, has_tree: bool) -> SegmentTarget {
-    match crumb {
-        Crumb::Pane if has_tree => SegmentTarget::PanePage,
-        crumb => SegmentTarget::Picker(crumb),
-    }
-}
-
-/// What a segment opens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SegmentTarget {
-    /// The host's quick picker of that level.
-    Picker(Crumb),
-    /// The pane page (the overview).
-    PanePage,
-}
-
+/// A segment's press: the host's quick picker of its level, hung from the
+/// breadcrumb: the sessions (herdr: workspaces), the windows (herdr: tabs)
+/// or the window's panes, the current one ticked, each list ending in its
+/// "＋ New…" row (New pane splits the window).
 fn press_segment(ctx: &Ctx, crumb: Crumb) {
-    let has_tree = ctx.switcher.with_untracked(|s| s.tree.is_some());
-    match segment_target(crumb, has_tree) {
-        SegmentTarget::PanePage => ctx.overview.set(true),
-        SegmentTarget::Picker(crumb) => ctx.ask(Intent::Crumb(crumb)),
-    }
+    ctx.ask(Intent::Crumb(crumb));
 }
 
 /// The multiplexer's symbol, as the `ui` layer's icons take it (a
@@ -787,28 +765,6 @@ fn identity(ctx: &Ctx) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The session's and the window's segments open their quick lists;
-    /// the pane's opens the pane page once the tree is here, the list of
-    /// panes before.
-    #[test]
-    fn each_segment_opens_its_level() {
-        for has_tree in [false, true] {
-            assert_eq!(
-                segment_target(Crumb::Session, has_tree),
-                SegmentTarget::Picker(Crumb::Session)
-            );
-            assert_eq!(
-                segment_target(Crumb::Window, has_tree),
-                SegmentTarget::Picker(Crumb::Window)
-            );
-        }
-        assert_eq!(segment_target(Crumb::Pane, true), SegmentTarget::PanePage);
-        assert_eq!(
-            segment_target(Crumb::Pane, false),
-            SegmentTarget::Picker(Crumb::Pane)
-        );
-    }
 
     /// The pill's dot (what `TransportConnState.transientTint` pinned for
     /// the SwiftUI pill, gone in D8): offline, with nothing being attempted,

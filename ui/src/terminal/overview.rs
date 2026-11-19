@@ -4,9 +4,10 @@
 //! window (herdr: workspace and tab) are picked from the host's quick
 //! pickers, hung from the breadcrumb.
 //!
-//! - Opened from the breadcrumb's pane segment, ⌘K, and VoiceOver's Show
-//!   all panes on the terminal (the host's `{"op": "overview", "open":
-//!   true}`); closed by Done, ⌘K again, Escape, or a pane picked.
+//! - Opened by ⌘K and VoiceOver's Show all panes on the terminal (the
+//!   host's `{"op": "overview", "open": true}`; the breadcrumb's pane
+//!   segment opens the host's quick list of the panes instead); closed by
+//!   Done, ⌘K again, Escape, or a pane picked.
 //! - A card per pane of the window shown: its picture, then what runs in
 //!   it and its state (the state's dot first), and its ⋯ (the pane's
 //!   menu); the current one has the accent's ring. Last, "＋ New pane",

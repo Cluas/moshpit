@@ -188,28 +188,17 @@ fn open_page(app: &mut common::App, channel: &moshpit_ui::channel::Channel) {
     );
 }
 
-/// The pane's segment opens the pane page; the window's and the session's
-/// open their quick lists (the host's picker), never the page.
+/// Every segment opens its level's quick list (the host's picker), the
+/// pane's too (the window's panes, ending in New pane): never the page.
 #[test]
-fn the_pane_crumb_opens_the_pane_page_and_the_others_their_lists() {
+fn every_crumb_opens_its_quick_list_never_the_page() {
     let (mut app, channel, heard, _) = open_screen("tmux", "%2");
     app.0.wait_for("id:terminal-crumb-pane").unwrap();
     app.0.press("id:terminal-crumb-pane").unwrap();
-    app.0.wait_for("id:overview-pane-page-@2").unwrap();
     assert_eq!(
-        next_of(&heard, "overview"),
-        json!({"ev": "overview", "open": true}),
-        "the host puts the keyboard away"
+        next_of(&heard, "crumb"),
+        json!({"ev": "crumb", "crumb": "pane"})
     );
-    none_of(&heard, "crumb");
-    app.0.press("id:terminal-overview-done").unwrap();
-    assert_eq!(
-        next_of(&heard, "overview"),
-        json!({"ev": "overview", "open": false})
-    );
-    app.0
-        .wait_for_gone("id:terminal-overview", Duration::from_secs(2))
-        .unwrap();
     app.0.press("id:terminal-crumb-window").unwrap();
     assert_eq!(
         next_of(&heard, "crumb"),

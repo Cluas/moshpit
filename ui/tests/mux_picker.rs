@@ -111,9 +111,13 @@ fn the_new_row_asks_a_window_its_name_and_splits_a_pane_at_once() {
     assert!(app.screen().shows("Tap to focus · ＋ splits a new pane"));
 }
 
+/// The breadcrumb's pane segment opens this list (the window's panes):
+/// each row its agent or program and its dot, the current pane ticked, New
+/// pane last; a row picked switches to that pane.
 #[test]
 fn panes_are_their_agents_first() {
     let (mut app, channel) = open(Params::default());
+    let heard = hear(&channel);
     show(
         &mut app,
         &channel,
@@ -152,6 +156,16 @@ fn panes_are_their_agents_first() {
         assert!(row.size.height.0 >= 44.0, "{id}: {row:?}");
         assert_eq!(row.size.width.0, card.size.width.0, "{id}");
     }
+    assert_eq!(
+        row_ids(&app),
+        ["mux-picker-row-%1", "mux-picker-row-%2", "mux-picker-new"]
+    );
+    assert!(app.screen().shows("New Pane"));
+    app.press("id:mux-picker-row-%2").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "select", "id": "%2"}));
+    app.press("id:mux-picker-new").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "new"}));
+    channel.close();
 }
 
 #[test]

@@ -171,11 +171,11 @@ fn the_breadcrumb_says_session_project_agent() {
         next_intent(&heard),
         json!({"ev": "crumb", "crumb": "window"})
     );
-    // The pane's segment opens the window's pane page (the tree is here).
+    // The pane's segment opens the window's panes' quick list (the tree
+    // here or not).
     post(&mut app.0, &channel, &switcher().to_string());
     app.0.press("label:claude, needs you").unwrap();
-    assert_eq!(next_intent(&heard), json!({"ev": "overview", "open": true}));
-    app.0.press("id:terminal-overview-done").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "crumb", "crumb": "pane"}));
     // The agent waits: its words are `warning-text`; the others `foreground`.
     assert!(close(
         color_of(&app, "claude"),
@@ -386,8 +386,8 @@ fn the_session_is_never_named_twice() {
 
 /// Each segment of the breadcrumb opens what makes and picks its level:
 /// the session's (herdr: workspace's) and the window's (herdr: tab's) quick
-/// lists, which end in their New row, and the pane's page of the window's
-/// panes, which ends in New pane. The bar has no ＋ of its own.
+/// lists, and the window's panes' quick list, each ending in its New row
+/// (New pane). The bar has no ＋ of its own.
 #[test]
 fn each_segment_opens_its_own_level() {
     let (mut app, channel, natives) =
@@ -410,18 +410,16 @@ fn each_segment_opens_its_own_level() {
         next_intent(&heard),
         json!({"ev": "crumb", "crumb": "window"})
     );
+    // The pane's: the window's panes' quick list, the tree here or not
+    // (it is the host's list, which ends in New pane): never a page.
     post(&mut app.0, &channel, &switcher().to_string());
     app.0.press("label:claude, needs you").unwrap();
-    assert_eq!(next_intent(&heard), json!({"ev": "overview", "open": true}));
-    app.0.wait_for("id:overview-new-pane").unwrap();
-    app.0.press("id:terminal-overview-done").unwrap();
-    // The page asked for its pictures, told where its cell is: then closed.
-    let closed = std::iter::repeat_with(|| next_intent(&heard))
-        .find(|e| e["ev"] == "overview")
-        .unwrap();
-    assert_eq!(closed, json!({"ev": "overview", "open": false}));
+    assert_eq!(next_intent(&heard), json!({"ev": "crumb", "crumb": "pane"}));
+    assert!(
+        !app.0.screen().matches("id:terminal-overview").unwrap(),
+        "no pane page"
+    );
 
-    // Before the tree comes, the pane's segment opens the list of panes.
     let mut bare = chrome();
     bare["crumbs"].as_object_mut().unwrap().remove("tree");
     let (mut app, channel2, _) =
