@@ -467,6 +467,8 @@ def run_moshpit_client(port, key, a, rec):
             rec.f.write(json.dumps({"t": rec.ms(), "o": base64.b64encode(scrub(b)).decode(),
                                     "a": int(f[2])}) + "\n")
             rec.seen = (rec.seen + b)[-200000:]
+        elif f[0] == "diag":
+            print(line.strip(), file=sys.stderr)
         elif f[0] == "sent":
             k = bytes.fromhex(f[3])
             rec.f.write(json.dumps({"t": rec.ms(), "k": "Enter" if k == b"\r" else k.decode(),

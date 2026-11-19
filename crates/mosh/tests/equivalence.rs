@@ -1,9 +1,11 @@
 //! The Rust port against the Swift implementation's recorded output: each
 //! `*.swift.txt` next to a fixture is what the Swift client printed for it,
 //! frozen since that client was deleted (E2; no tool writes them any more).
-//! It carried every fix in `harness/divergences.json` but one, so Rust must
+//! It carried every fix in `harness/divergences.json` but two, so Rust must
 //! print the same bytes everywhere, except on the divergence fixtures of
-//! that open fix (`excerpt-unicode`). Every divergence fixture must also
+//! the open fix `excerpt-unicode`, and on seeded SSP scenarios once a diff
+//! from an older held state applies (`held-states`: from there Rust matches
+//! its own pinned `ssp/*.rust.txt`). Every divergence fixture must also
 //! differ from what the Swift client printed before the fixes
 //! (`divergences.swift-b4b8e1b4.txt`), and in scenarios `thr` must be the
 //! acked state (`old`) on both sides.
@@ -152,12 +154,44 @@ fn recorded_sessions_replay_like_swift() {
     }
 }
 
+/// The `gaps=` and `applied=` of a `diag` line.
+fn gaps_and_applied(line: &str) -> Option<(u64, u64)> {
+    let value = |name: &str| -> Option<u64> {
+        line.split(' ')
+            .find_map(|field| field.strip_prefix(name))?
+            .parse()
+            .ok()
+    };
+    line.starts_with("diag ")
+        .then(|| Some((value("gaps=")?, value("applied=")?)))
+        .flatten()
+}
+
+/// Fix (held-states): the seeded scenarios send diffs from states older than
+/// the newest, which Swift dropped as gaps. Rust prints what it recorded
+/// (`s<seed>.rust.txt`); up to the first diff from an older held state it
+/// prints what Swift printed, and there it has fewer gaps and has applied
+/// a newer state.
 #[test]
-fn seeded_scenarios_match_swift() {
+fn seeded_scenarios_match_swift_until_a_held_state_applies() {
     for seed in [1, 2, 3] {
+        let label = format!("s{seed}");
         let scenario = read(&format!("ssp/s{seed}.txt"));
-        let swift = read(&format!("ssp/s{seed}.swift.txt"));
         let rust = harness::ssp::run(&scenario);
-        assert_scenario_matches(&rust, &swift, &format!("s{seed}"));
+        let recorded = read(&format!("ssp/s{seed}.rust.txt"));
+        assert_eq!(lines(&rust), lines(&recorded), "{label}");
+        let swift = read(&format!("ssp/s{seed}.swift.txt"));
+        let (rust, swift) = (lines(&rust), lines(&swift));
+        let split = rust
+            .iter()
+            .zip(&swift)
+            .position(|(r, s)| r != s)
+            .unwrap_or_else(|| panic!("{label}: no diff from an older state"));
+        let prefix = |lines: &[&str]| lines[..split].join("\n");
+        assert_scenario_matches(&prefix(&rust), &prefix(&swift), &label);
+        let (rust_gaps, rust_applied) = gaps_and_applied(rust[split]).unwrap();
+        let (swift_gaps, swift_applied) = gaps_and_applied(swift[split]).unwrap();
+        assert!(rust_gaps < swift_gaps, "{label} line {split}");
+        assert!(rust_applied > swift_applied, "{label} line {split}");
     }
 }

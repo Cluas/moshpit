@@ -130,10 +130,10 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | qoder-mosh | pass (at the input box) | — | — | — |
 | codex-mosh-tmux-rtt500-rs | — (no tmux reference) | lags (echo over 500 ms) | pass | — |
 
-Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh and codex-mosh-tmux pass.
-codex-mosh-tmux-rtt500-rs is **red** (bug 2, below).
+Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh, codex-mosh-tmux and codex-mosh-tmux-rtt500-rs pass.
+codex-mosh-tmux-rtt500-rs was red until bug 2 (below) was fixed.
 
-Totals: 85 green, 1 red (ignored).
+Totals: 86 green.
 
 ### Per CLI
 
@@ -230,12 +230,12 @@ To confirm on the friend's machine:
 The fix belongs in Qoder: an `auto` theme should not trust `OSC 11` inside tmux, or it should honour `COLORFGBG`, which it already reads.
 A user-side workaround: set Qoder's theme explicitly.
 
-## Bug 2: over mosh only, the cursor jumps up and down
+## Bug 2 (fixed): over mosh only, the cursor jumps up and down
 
 **Reproduced with Moshpit's own transport over a 500 ms round trip.**
 It is not reproduced with mosh-client.
-The red tests are `codex_mosh_tmux_rtt500_rs_cursor` (`crates/term/tests/cli_lab.rs`) and `a_diff_from_an_older_held_state_applies` (`crates/mosh/tests/transport.rs`).
-Both are `#[ignore = "red: ..."]` until the fix below lands.
+The tests are `codex_mosh_tmux_rtt500_rs_cursor` (`crates/term/tests/cli_lab.rs`), `a_diff_from_an_older_held_state_applies` and `at_a_500_ms_round_trip_every_state_is_shown` (`crates/mosh/tests/transport.rs`).
+The first two were red before the fix below.
 
 What was recorded:
 
@@ -265,19 +265,26 @@ Why:
    So a round trip plus `ACK_DELAY` passes between frames, and whatever state happened to land stays up 3× longer than on mosh-client.
    On a phone link it is the same, scaled by its round trip.
 
-The fix (not in this change; it is a transport design change):
+The fix: `Transport` now keeps a screen per server state, as mosh-client does (`crates/mosh/src/screen.rs`: mosh's framebuffer, the part of its emulator that host bytes use, and its `Display::new_frame`).
 
-- Keep a framebuffer per host state since the acked one, as mosh-client does.
-- Apply each diff to the state it names.
-- Hand the pane the difference between what it shows and the new state.
-  mosh's diffs are relative to their old state's screen, so they cannot be replayed on a newer screen.
+- It holds every state from the server's `throwaway_num` to the newest (at most 64), with rows shared between states.
+- It applies each diff to the state it names.
+- It hands the pane the newest state.
+  When the diff is from the state the pane shows (or it changes the size and repaints everything), the pane gets the server's own bytes.
+  Otherwise it gets the difference between what the pane shows and the new state, rendered as mosh renders it.
+  When a redraw hid frames, it gets a full repaint.
+- A state that arrives after a newer one is held for diffs that name it, but never shown or acked.
 
-This needs an emulator in the transport, or in the session's mosh path, plus a screen-to-bytes repaint.
-It is the root cause of the cursor jump and of the slow frame rate over mosh.
-It is worth doing on its own.
+After the fix, measured on the same path (`codex mosh-tmux --rtt 500 --moshpit`, `LAB_LONG=40`, three recordings):
 
-A cheaper mitigation: over mosh, hold a visible cursor's move off the input row for one frame interval (debounce).
-It hides the symptom but not the slow frames.
+| | before | after |
+|---|---|---|
+| states applied | 5 of 15 (`date` probe) | 55 of 55, 56 of 56, 56 of 56, no gaps |
+| frames while the answer streams | ~755 ms apart | ~252 ms apart |
+| states held at the end | 1 | 2–3 (about 79 KB of screens, shared rows counted once) |
+
+A full 80×24 screen with every row distinct is about 77 KB (1,920 cells of 40 bytes).
+A state that changes one row adds that row (about 3 KB) and its row table.
 
 Earlier hypotheses, for the record: H2-a (no DEC 2026 over mosh) is the cause of the mid-redraw states.
 H2-b (visibility rides on states) is part of it.

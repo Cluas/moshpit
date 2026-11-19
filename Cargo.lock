@@ -2418,6 +2418,7 @@ dependencies = [
  "aes",
  "miniz_oxide 0.8.9",
  "ocb3",
+ "unicode-width",
 ]
 
 [[package]]

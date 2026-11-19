@@ -140,6 +140,19 @@
       "evidence": ["src/wire.rs fragment()", "Tests/MoshpitTests/Services/MoshWireTests.swift: fragmentingPastTheCounterDoesNotTrap"],
       "severity": "none in practice",
       "swift_fix": "fix(mosh): fragmenting a huge instruction no longer traps"
+    },
+    {
+      "id": "held-states",
+      "swift": "MoshTransport.swift (receive: drops a diff whose base is not the last applied state)",
+      "symptom": "At high round-trip time most server states are dropped: frames arrive ~750 ms apart at 500 ms RTT, and mid-redraw states with a stray cursor show (the cursor jumps above the input row).",
+      "trigger": "A round trip long enough that mosh-server diffs from an acked state older than the newest one the client applied (about 500 ms RTT with streaming output).",
+      "minimal_input": "states 0->1, then 0->2 (the server diffs from the acked state 0 while 1 is in flight)",
+      "swift_before": "0->2 counted as a gap, not applied",
+      "fix": "Hold a screen per state from the server's throwaway number to the newest (cap 64, rows shared), apply each diff to the state it names, and hand the pane the server's bytes when the diff is from the shown state, otherwise a repaint of the difference (mosh's Display::new_frame).",
+      "rust_outcome": "0->2 applied and shown; 56 of 56 states at 500 ms RTT live, frames ~250 ms apart",
+      "evidence": ["src/screen.rs", "src/transport.rs receive_state()", "tests/transport.rs: a_diff_from_an_older_held_state_applies, at_a_500_ms_round_trip_every_state_is_shown", "crates/term/tests/cli_lab.rs: codex_mosh_tmux_rtt500_rs_cursor", "tests/equivalence.rs: seeded_scenarios_match_swift_until_a_held_state_applies (tests/fixtures/ssp/s{1,2,3}.rust.txt)"],
+      "severity": "high (visible on every slow link)",
+      "swift_fix": "none: the Swift client is deleted"
     }
   ],
   "notes": [

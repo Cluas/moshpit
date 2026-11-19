@@ -17,11 +17,20 @@
 //!   hold, everything unacked again only once the oldest of it has gone a
 //!   retransmission timeout without an ack, in instructions of at most
 //!   64 KiB of events (see `send`).
-//! - The server→client display state: a diff is applied only when its
-//!   `old_num` is the state already applied (the terminal has no framebuffer
-//!   of its own, so host bytes compose only in order); a gap or a diff that
-//!   does not decode is answered with an ack of the true state, never
-//!   skipped over. Output is acked within mosh's 100 ms `ACK_DELAY`.
+//! - The server→client display state, as mosh-client's receiver keeps it
+//!   (`networktransport-impl.h`, `recv`): a screen ([`Framebuffer`]) for
+//!   every server state from the oldest the server may still diff from
+//!   (`throwaway_num`) to the newest, each diff applied to the state it
+//!   names. mosh-server diffs small changes from the state the client last
+//!   acked, a round trip old, so at a long RTT nearly every diff names an
+//!   older state than the newest; applied only on the newest, most of them
+//!   were gaps (5 of 15 states shown at 500 ms, CLI-LAB.md Bug 2). The
+//!   terminal gets the newest state as a repaint from what it shows: the
+//!   server's own bytes when the diff is from that state, otherwise the
+//!   difference rendered as mosh renders it ([`screen::new_frame`]). A diff
+//!   from a state not held, or one that does not decode, is answered with
+//!   an ack of the newest state held, never skipped over. Output is acked
+//!   within mosh's 100 ms `ACK_DELAY`.
 //! - Keystrokes unacked for 10 s stop being retransmitted (resizes are kept).
 //! - A send timer once the channel is ready (see [`Transport::next_deadline`]),
 //!   a one-shot return-path watchdog (8 s with nothing received), a liveness
@@ -49,6 +58,7 @@ use std::collections::VecDeque;
 use crate::compress;
 use crate::crypto::{Direction, Message, Session};
 use crate::ocb::OcbError;
+use crate::screen::{self, Framebuffer};
 use crate::wire::{
     FRAGMENT_HEADER_LEN, Fragment, FragmentAssembler, HostMessage, Instruction, UserEvent,
     encode_fragment_into, encode_user_message, fragment_ranges,
@@ -165,8 +175,20 @@ pub struct Diagnostics {
     pub parse_failures: u64,
     /// Diffs that did not extend the applied state.
     pub gap_events: u64,
-    /// Highest server state applied.
+    /// Highest server state applied (the one acked).
     pub applied_host_num: u64,
+    /// Server states applied to a held state (diffs that were not gaps).
+    pub host_states_applied: u64,
+    /// Server states shown: each became the newest and reached the terminal.
+    pub host_states_shown: u64,
+    /// Frames rendered from held screens instead of forwarded as the
+    /// server wrote them (their diff named a state the terminal did not show).
+    pub host_frames_rendered: u64,
+    /// Server states held now.
+    pub held_states: u64,
+    /// Approximate bytes the held screens take (rows shared between states
+    /// counted once).
+    pub held_bytes: u64,
     /// Datagrams sent.
     pub packets_sent: u64,
     /// Newest user state queued.
@@ -237,6 +259,21 @@ impl UserState {
     }
 }
 
+/// Most server states held at once. mosh holds up to 1024; the server lets
+/// go of all but the states in flight (`throwaway_num`), a handful at any
+/// RTT, so this only bounds a server that never does. A state beyond it is
+/// refused (not acked) until the server lets go of older ones.
+pub const MAX_HELD_STATES: usize = 64;
+
+/// A server state the receiver holds: its screen and the echo ack it
+/// carries (a diff names an echo ack only when it moved).
+#[derive(Debug, Clone)]
+struct HeldState {
+    num: u64,
+    screen: Framebuffer,
+    echo_ack: u64,
+}
+
 /// The SSP client. See the module documentation.
 pub struct Transport {
     config: TransportConfig,
@@ -253,6 +290,15 @@ pub struct Transport {
     user_states: Vec<UserState>,
     server_acked_user_num: u64,
     applied_host_num: u64,
+    /// Server states from the oldest the server may diff from to the newest
+    /// (`applied_host_num`), by number. Never empty.
+    held: VecDeque<HeldState>,
+    /// The screen the terminal shows: the last state it was handed.
+    shown: Framebuffer,
+    shown_num: u64,
+    /// The terminal missed frames (a redraw hid them): the next one it gets
+    /// repaints everything.
+    shown_stale: bool,
     echo_ack: u64,
     assembler: FragmentAssembler,
     next_instruction_id: u64,
@@ -260,6 +306,9 @@ pub struct Transport {
     datagrams_received: u64,
     parse_failures: u64,
     gap_events: u64,
+    host_states_applied: u64,
+    host_states_shown: u64,
+    host_frames_rendered: u64,
     flow_rebuilds: u64,
 
     cols: i32,
@@ -331,12 +380,24 @@ impl Transport {
             }],
             server_acked_user_num: 0,
             applied_host_num: 0,
+            // mosh-server's state 0: a blank 80x24 screen.
+            held: VecDeque::from([HeldState {
+                num: 0,
+                screen: Framebuffer::new(80, 24),
+                echo_ack: 0,
+            }]),
+            shown: Framebuffer::new(80, 24),
+            shown_num: 0,
+            shown_stale: false,
             echo_ack: 0,
             assembler: FragmentAssembler::new(),
             next_instruction_id: 1,
             datagrams_received: 0,
             parse_failures: 0,
             gap_events: 0,
+            host_states_applied: 0,
+            host_states_shown: 0,
+            host_frames_rendered: 0,
             flow_rebuilds: 0,
             cols: 80,
             rows: 24,
@@ -1260,48 +1321,8 @@ impl Transport {
 
         // Output is acked within `ACK_DELAY_MS` (mosh's `set_data_ack`), not
         // by a datagram per frame. So is what does not apply: the server
-        // re-diffs from the state we ack, the one state we hold.
-        if instruction.new_num > self.applied_host_num
-            && instruction.old_num == self.applied_host_num
-        {
-            if instruction.diff.is_empty() {
-                // A pure ack or heartbeat: nothing to apply, safe to advance,
-                // nothing to ack early (mosh acks only output early).
-                self.applied_host_num = instruction.new_num;
-                self.last_heard = Some(now);
-            } else if let Ok(host) = HostMessage::decode(&instruction.diff) {
-                // A diff that only moves the echo ack still lands: it is
-                // what settles pending predictions.
-                let echo_moved = host.echo_ack.unwrap_or(0) > self.echo_ack;
-                if echo_moved {
-                    self.echo_ack = host.echo_ack.unwrap_or(0);
-                }
-                let bytes = if self.redraw_shows(host.resize, now) {
-                    host.host_bytes
-                } else {
-                    Vec::new()
-                };
-                if !bytes.is_empty() || echo_moved {
-                    self.events.push_back(Event::HostFrame(HostFrame {
-                        bytes,
-                        echo_ack: self.echo_ack,
-                    }));
-                }
-                self.applied_host_num = instruction.new_num;
-                self.last_heard = Some(now);
-                self.ack_soon(now);
-            } else {
-                // Never ack content that did not decode: mosh-server treats
-                // an ack as delivered and never resends it. Acking the true
-                // (old) state keeps it in the next diff.
-                self.parse_failures += 1;
-                self.ack_soon(now);
-            }
-        } else if instruction.new_num > self.applied_host_num {
-            // Gap: ack what we have so the server re-diffs from it.
-            self.gap_events += 1;
-            self.ack_soon(now);
-        }
+        // re-diffs from the newest state we ack.
+        self.receive_state(&instruction, now);
         // mosh acks the shutdown state a frame after its last datagram
         // ("speed up shutdown sequence", `calculate_timers`), then quits.
         if self.applied_host_num == SHUTDOWN_STATE {
@@ -1314,6 +1335,125 @@ impl Transport {
         // size, an ack that was due anyway.
         self.tick(now);
         self.publish_metrics();
+    }
+
+    /// mosh's receiver (`Transport::recv`): the new state is the state the
+    /// diff names with the diff applied, held in order; the newest is acked
+    /// and shown.
+    fn receive_state(&mut self, instruction: &Instruction, now: u64) {
+        let new_num = instruction.new_num;
+        if self.held.iter().any(|state| state.num == new_num) {
+            return;
+        }
+        let Some(base) = self
+            .held
+            .iter()
+            .find(|state| state.num == instruction.old_num)
+        else {
+            // Gap: ack what we have so the server re-diffs from it. A state
+            // older than the newest we hold is no gap (it is long past).
+            if new_num > self.applied_host_num {
+                self.gap_events += 1;
+                self.ack_soon(now);
+            }
+            return;
+        };
+        let host = if instruction.diff.is_empty() {
+            // A pure ack or heartbeat: the same screen under a new number.
+            HostMessage::default()
+        } else if let Ok(host) = HostMessage::decode(&instruction.diff) {
+            host
+        } else {
+            // Never ack content that did not decode: mosh-server treats
+            // an ack as delivered and never resends it. Acking the newest
+            // state we hold keeps it in the next diff.
+            self.parse_failures += 1;
+            self.ack_soon(now);
+            return;
+        };
+        // A diff that changes the size is a whole repaint (mosh's renderer
+        // clears and redraws everything on a new size), whatever it is from.
+        let base_size = (base.screen.width(), base.screen.height());
+        let repaints = host.resize.is_some_and(|(width, height)| {
+            (width.max(0) as usize, height.max(0) as usize) != base_size
+        });
+        let mut state = HeldState {
+            num: new_num,
+            screen: base.screen.clone(),
+            echo_ack: host.echo_ack.unwrap_or(base.echo_ack),
+        };
+        // The server no longer diffs from states before `throwaway_num`
+        // (the newest is always kept: it is what we ack).
+        let newest = self.applied_host_num;
+        self.held
+            .retain(|held| held.num >= instruction.throwaway_num || held.num == newest);
+        if self.held.len() >= MAX_HELD_STATES {
+            // Refused, as mosh's receiver refuses states past its limit: not
+            // acked, so the server sends it again from a state we hold.
+            self.ack_soon(now);
+            return;
+        }
+        if let Some((width, height)) = host.resize {
+            state
+                .screen
+                .resize(width.max(0) as usize, height.max(0) as usize);
+        }
+        state.screen.apply(&host.host_bytes);
+        self.host_states_applied += 1;
+        self.last_heard = Some(now);
+        if !instruction.diff.is_empty() {
+            // mosh acks only output early.
+            self.ack_soon(now);
+        }
+        if new_num < self.applied_host_num {
+            // Arrived after a newer one: held for diffs that name it, never
+            // shown (the terminal is already past it), not acked.
+            let at = self.held.partition_point(|held| held.num < new_num);
+            self.held.insert(at, state);
+            return;
+        }
+        self.applied_host_num = new_num;
+        // A diff that only moves the echo ack still lands: it is what
+        // settles pending predictions.
+        let echo_moved = state.echo_ack > self.echo_ack;
+        if echo_moved {
+            self.echo_ack = state.echo_ack;
+        }
+        // A heartbeat carries no frame for a redraw to wait on.
+        let shows = if instruction.diff.is_empty() {
+            self.redraw.is_none()
+        } else {
+            self.redraw_shows(host.resize, now)
+        };
+        let bytes = if !shows {
+            self.shown_stale = true;
+            Vec::new()
+        } else if repaints || (instruction.old_num == self.shown_num && !self.shown_stale) {
+            // The terminal shows the state the server diffed from (or the
+            // diff repaints everything): its bytes are the repaint, exactly
+            // as it wrote them.
+            host.host_bytes
+        } else if self.shown_stale {
+            // The terminal missed frames: repaint all of it.
+            self.host_frames_rendered += 1;
+            screen::new_frame(false, &self.shown, &state.screen)
+        } else {
+            self.host_frames_rendered += 1;
+            screen::new_frame(true, &self.shown, &state.screen)
+        };
+        if shows {
+            self.shown = state.screen.clone();
+            self.shown_num = new_num;
+            self.shown_stale = false;
+            self.host_states_shown += 1;
+        }
+        if !bytes.is_empty() || echo_moved {
+            self.events.push_back(Event::HostFrame(HostFrame {
+                bytes,
+                echo_ack: self.echo_ack,
+            }));
+        }
+        self.held.push_back(state);
     }
 
     /// Fix (timestamps): mosh's `network.cc` rules. 0xFFFF means "no
@@ -1389,6 +1529,16 @@ impl Transport {
             parse_failures: self.parse_failures,
             gap_events: self.gap_events,
             applied_host_num: self.applied_host_num,
+            host_states_applied: self.host_states_applied,
+            host_states_shown: self.host_states_shown,
+            host_frames_rendered: self.host_frames_rendered,
+            held_states: self.held.len() as u64,
+            held_bytes: screen::held_bytes(
+                self.held
+                    .iter()
+                    .map(|state| &state.screen)
+                    .chain(std::iter::once(&self.shown)),
+            ) as u64,
             packets_sent: self.send_seq,
             last_user_num: self.newest_user_num(),
             server_acked_user_num: self.server_acked_user_num,

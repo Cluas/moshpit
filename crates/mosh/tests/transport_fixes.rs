@@ -1422,7 +1422,10 @@ fn a_redraw_hides_frames_for_a_bounded_time() {
     transport.receive(&frame_datagram(1, 1, 2, &[bytes("hidden")]), 5_100);
     assert!(shown(&mut transport).is_empty());
     transport.receive(&frame_datagram(2, 2, 3, &[bytes("late")]), 5_101);
-    assert_eq!(shown(&mut transport)[0].bytes, b"late");
+    // The terminal missed the hidden frames: it gets the whole screen.
+    let repaint = String::from_utf8(shown(&mut transport)[0].bytes.clone()).unwrap();
+    assert!(repaint.contains("\x1b[H\x1b[2J"), "{repaint:?}");
+    assert!(repaint.contains("narrowhiddenlate"), "{repaint:?}");
 }
 
 /// Two columns is as narrow as it goes: a redraw there widens by one.

@@ -35,6 +35,7 @@ pub mod harness;
 mod inflate;
 pub mod ocb;
 pub mod proto;
+pub mod screen;
 pub mod transport;
 pub mod wire;
 

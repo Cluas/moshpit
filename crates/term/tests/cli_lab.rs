@@ -646,7 +646,6 @@ lab!(
     Steady
 );
 lab!(
-    #[ignore = "red: the mosh cursor jump (CLI-LAB.md, Bug 2): the transport applies one host state per round trip, so a state mosh-server snapshotted mid-redraw stays up ~0.75 s"]
     codex_mosh_tmux_rtt500_rs_cursor,
     "codex-mosh-tmux-rtt500-rs",
     Cursor
