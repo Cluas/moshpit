@@ -327,8 +327,8 @@ struct AppAppearanceWindowTests {
                 == Self.bytes(UIColor(Ink.accent).resolvedColor(with: dark)))
     }
 
-    @Test("the alert's tint lets its white confirm label read at 4.5:1 for every accent")
-    func alertTintUnderWhite() {
+    @Test("the alert's tint reads at 4.5:1 on its platter, light and dark, for every accent")
+    func alertTintReads() {
         var accents: [(Double, Double, Double)] = [
             (0x53 / 255, 0xDC / 255, 0xC9 / 255), (0x6C / 255, 0x6B / 255, 0xEF / 255),
             (0xF5 / 255, 0xE6 / 255, 0x63 / 255), (1, 1, 1), (0, 0, 0), (0.5, 0.5, 0.5),
@@ -339,14 +339,27 @@ struct AppAppearanceWindowTests {
             accents.append((Double(seed & 0xFF) / 255, Double((seed >> 8) & 0xFF) / 255,
                             Double((seed >> 16) & 0xFF) / 255))
         }
+        let sides: [(UITraitCollection, [(Double, Double, Double)])] = [
+            (UITraitCollection(userInterfaceStyle: .light), InkContrast.alertLight),
+            (UITraitCollection(userInterfaceStyle: .dark), InkContrast.alertDark),
+        ]
         for accent in accents {
-            let tint = InkContrast.underWhite(UIColor(red: accent.0, green: accent.1, blue: accent.2, alpha: 1))
-            let rgb = Self.bytes(tint).prefix(3).map { Double($0) / 255 }
-            #expect(InkContrast.contrast((rgb[0], rgb[1], rgb[2]), (1, 1, 1)) >= 4.45, "\(accent)")
+            let tint = InkContrast.alertTint(UIColor(red: accent.0, green: accent.1, blue: accent.2, alpha: 1))
+            for (trait, platter) in sides {
+                let rgb = Self.bytes(tint.resolvedColor(with: trait)).prefix(3).map { Double($0) / 255 }
+                for surface in platter {
+                    #expect(InkContrast.contrast((rgb[0], rgb[1], rgb[2]), surface) >= 4.45, "\(accent)")
+                }
+            }
         }
-        // Already dark enough: kept.
+        // Signal Room's periwinkle: darker in the light, lighter in the dark.
+        let periwinkle = InkContrast.alertTint(UIColor(red: 0x6C / 255, green: 0x6B / 255, blue: 0xEF / 255, alpha: 1))
+        let light = Self.bytes(periwinkle.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)))
+        let dark = Self.bytes(periwinkle.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))
+        #expect(light[0] < 0x6C && dark[0] > 0x6C)
+        // Already readable: kept.
         let deep = UIColor(red: 0x1A / 255, green: 0x23 / 255, blue: 0x7E / 255, alpha: 1)
-        #expect(Self.bytes(InkContrast.underWhite(deep)) == Self.bytes(deep))
+        #expect(Self.bytes(InkContrast.readable(deep, on: InkContrast.alertLight, dark: false)) == Self.bytes(deep))
     }
 
     @Test("the form inks the SwiftUI sheets draw with have a light side, and the dark one as before")

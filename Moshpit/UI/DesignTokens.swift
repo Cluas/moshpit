@@ -127,26 +127,39 @@ enum InkContrast {
         return UIColor(red: color.0, green: color.1, blue: color.2, alpha: 1)
     }
 
-    /// `accent` as the fill of a button whose label the system draws white
-    /// (a `UIAlertController`'s preferred action, filled with the tint on
-    /// iOS 26): its lightness lowered by the least that lets white read at
-    /// 4.5:1, its hue and saturation kept. A pale accent (Moshpit Classic's
-    /// teal) or a mid-tone one (Signal Room's periwinkle) under a white label
-    /// is unreadable; the NSH pages pick a dark label instead (`on_accent`),
-    /// which UIKit's alert does not let us set.
-    static func underWhite(_ accent: UIColor) -> UIColor {
+    /// UIKit's alert platter, light and dark: the system's grouped
+    /// backgrounds its glass sits between (opaque stand-ins).
+    static let alertLight: [(Double, Double, Double)] = [(1, 1, 1), (0xF2 / 255, 0xF2 / 255, 0xF7 / 255)]
+    static let alertDark: [(Double, Double, Double)] = [
+        (0x1C / 255, 0x1C / 255, 0x1E / 255), (0x2C / 255, 0x2C / 255, 0x2E / 255),
+        (0x3A / 255, 0x3A / 255, 0x3C / 255),
+    ]
+
+    /// `accent` moved in lightness (lighter for `dark` surfaces, darker for
+    /// light ones), its hue and saturation kept, by the least that reads at
+    /// 4.5:1 on every one of `surfaces`: the tokens' `readable_on`, the rule
+    /// every NSH page's `primary-text` is made by.
+    static func readable(_ accent: UIColor, on surfaces: [(Double, Double, Double)], dark: Bool) -> UIColor {
         var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
         accent.getRed(&r, green: &g, blue: &b, alpha: &a)
         let clamp = { (v: CGFloat) in min(1, max(0, Double(v))) }
         var (h, sat, l) = hsl((clamp(r), clamp(g), clamp(b)))
         for _ in 0...200 {
             let color = fromHSL(h, sat, l)
-            if contrast(color, (1, 1, 1)) >= 4.5 {
+            if surfaces.allSatisfy({ contrast(color, $0) >= 4.5 }) {
                 return UIColor(red: color.0, green: color.1, blue: color.2, alpha: 1)
             }
-            l = max(0, l - 0.005)
+            l = min(1, max(0, l + (dark ? 0.005 : -0.005)))
         }
-        return .black
+        return dark ? .white : .black
+    }
+
+    /// The tint of a `UIAlertController` with no preferred action: its
+    /// default actions' words, drawn on the alert's platter, `accent`
+    /// readable on it in either appearance.
+    static func alertTint(_ accent: UIColor) -> UIColor {
+        UIColor(light: readable(accent, on: alertLight, dark: false),
+                dark: readable(accent, on: alertDark, dark: true))
     }
 
     /// WCAG's relative luminance.

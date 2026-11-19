@@ -28,28 +28,42 @@ enum NSHTextPrompt {
         // The appearance of the page that asks (R18): the terminal's colour
         // scheme's from the terminal, the app's from any other page.
         alert.overrideUserInterfaceStyle = view.traitCollection.userInterfaceStyle
-        // iOS 26 fills the preferred action (the confirm button) with the
-        // tint and draws its label white; the window's tint is the accent,
-        // which under white can read at under 2:1 (a light teal). Tint the
-        // alert with the accent darkened until white reads at 4.5:1
-        // (``InkContrast/underWhite(_:)``); Cancel is drawn in the label
-        // colour, not the tint, so nothing else changes.
-        alert.view.tintColor = InkContrast.underWhite(UIColor(AppThemeCatalog.current.accent))
+        // No preferred action: iOS 26 fills a preferred action's capsule
+        // from a colour the alert's tint does not reach (seen on device: a
+        // light blue fill under purple words), and no public API sets its
+        // label, so the pair can't be made to read. Without one, Create is
+        // words in the tint on the alert's own platter, as Cancel is words
+        // in the label colour; the tint is the accent made readable on
+        // that platter in either appearance (4.5:1, the tokens'
+        // `readable_on`, ``InkContrast/alertTint(_:)``).
+        alert.view.tintColor = InkContrast.alertTint(UIColor(AppThemeCatalog.current.accent))
+        // Answered once, by a button or by Return.
+        var answered = false
+        let finish = { (text: String?) in
+            guard !answered else { return }
+            answered = true
+            answer(Self.answer(id: question.id, text: text))
+        }
         alert.addTextField { field in
             field.placeholder = question.placeholder
             field.text = question.text
             field.autocorrectionType = .no
             field.autocapitalizationType = .none
             field.accessibilityIdentifier = "nsh-prompt-field"
+            field.returnKeyType = .done
+            // Return confirms, as the preferred action did.
+            field.addAction(UIAction { [weak field] _ in
+                guard let field else { return }
+                finish(field.text ?? "")
+                presenter.dismiss(animated: true)
+            }, for: .primaryActionTriggered)
         }
         alert.addAction(UIAlertAction(title: question.cancel, style: .cancel) { _ in
-            answer(Self.answer(id: question.id, text: nil))
+            finish(nil)
         })
-        let confirm = UIAlertAction(title: question.confirm, style: .default) { [weak alert] _ in
-            answer(Self.answer(id: question.id, text: alert?.textFields?.first?.text ?? ""))
-        }
-        alert.addAction(confirm)
-        alert.preferredAction = confirm
+        alert.addAction(UIAlertAction(title: question.confirm, style: .default) { [weak alert] _ in
+            finish(alert?.textFields?.first?.text ?? "")
+        })
         presenter.present(alert, animated: true)
     }
 
