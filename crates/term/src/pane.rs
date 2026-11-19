@@ -21,9 +21,11 @@
 //! were pushed, as a session stream's marks do.
 //!
 //! **Frames.** The pane's thread builds the frames itself, while it holds
-//! the terminal anyway: at the end of every pass that changed something,
-//! and every [`PUBLISH`] of a pass that goes on (a backlog: bytes waiting
-//! faster than they parse, every read a full one). It leaves each in a
+//! the terminal anyway: once the output a pass brought is due (the stream
+//! went quiet for a few ms, or a synchronized update ended: a redraw that
+//! came in two reads is framed once, crate::coalesce), and every
+//! [`PUBLISH`] of a pass that goes on (a backlog: bytes waiting faster than
+//! they parse, every read a full one). It leaves each in a
 //! one-frame slot and tells the view, which takes it without the
 //! terminal's lock ([`Pane::take_published`]): the main thread never waits
 //! for a parse to show what is parsed, and a long catch-up keeps the screen
@@ -56,7 +58,7 @@ use std::{
 
 use moshpit_stream::{Mark, Stream, StreamId, view};
 
-use crate::{Event, Frame, Terminal};
+use crate::{Event, Frame, Terminal, coalesce::Coalescer};
 
 /// Called on the pane's thread when a frame is ready (hop to the view's
 /// thread and return), and for each mark met in the output (with the
@@ -364,10 +366,14 @@ impl Drop for Pane {
 
 fn run(inner: &Inner) {
     let mut buf = vec![0u8; READ];
+    // Output parsed and not framed yet (implicit coalescing, crate::coalesce).
+    let mut held = Coalescer::default();
     loop {
-        // Wait for output, for a synchronized update's deadline, or to close.
+        // Wait for output, for a synchronized update's deadline, for held
+        // output to be due (inside an update, the update's deadline rules),
+        // or to close.
         {
-            let deadline = lock(&inner.term).sync_deadline();
+            let deadline = lock(&inner.term).sync_deadline().or(held.due());
             let mut s = lock(&inner.signal);
             while !s.pending && !s.closed {
                 match deadline {
@@ -395,8 +401,10 @@ fn run(inner: &Inner) {
         }
 
         let mut published_at = Instant::now();
+        let mut bytes = false;
         loop {
             let (n, mark) = view::read_marked(inner.id, &mut buf);
+            bytes |= n > 0;
             if n > 0 || mark.is_some() {
                 let mut term = lock(&inner.term);
                 inner.dirty.store(true, Ordering::Release);
@@ -425,6 +433,7 @@ fn run(inner: &Inner) {
             // goes: a frame about every display refresh.
             if published_at.elapsed() >= PUBLISH {
                 published_at = Instant::now();
+                held.framed();
                 if publish(inner) {
                     (inner.callbacks.frame_ready)();
                 }
@@ -438,11 +447,15 @@ fn run(inner: &Inner) {
             }
         }
 
+        let now = Instant::now();
         let (replies, holding) = {
             let mut term = lock(&inner.term);
-            if term.sync_deadline().is_some_and(|at| at <= Instant::now()) {
+            if term.sync_deadline().is_some_and(|at| at <= now) {
                 term.flush_sync();
                 inner.dirty.store(true, Ordering::Release);
+            }
+            if bytes {
+                held.output(now, term.sync_settled());
             }
             (term.take_replies(), term.sync_deadline().is_some())
         };
@@ -459,9 +472,15 @@ fn run(inner: &Inner) {
             }
         }
         // The pass's frame (also when the view asked for the rest of one it
-        // took). Inside a synchronized update the grid has not changed yet;
-        // a local pane's view must still come for the replies it sends.
-        let shown = !holding && publish(inner);
+        // took, or a mark changed the screen), once the output it brought
+        // is due: a redraw split across reads is framed once. Inside a
+        // synchronized update the grid has not changed yet; a local pane's
+        // view must still come for the replies it sends.
+        let due = held.due().is_none_or(|at| at <= now);
+        if due && !holding {
+            held.framed();
+        }
+        let shown = due && !holding && publish(inner);
         if shown || owed {
             (inner.callbacks.frame_ready)();
         }

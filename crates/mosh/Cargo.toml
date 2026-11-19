@@ -10,3 +10,4 @@ publish.workspace = true
 aes = "0.9"
 ocb3 = "0.2"
 miniz_oxide = "0.8"
+unicode-width = "0.2"

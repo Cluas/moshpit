@@ -31,7 +31,8 @@
 //! channel is never reported ready), the send timer fires only on `tick`
 //! steps, idle states (an empty user state 3 s after the last new one)
 //! come only after time moved, and the timestamps are the same on both
-//! sides. Outputs must be identical.
+//! sides. Outputs are identical up to the first diff from an older held
+//! state, which Swift dropped and Rust applies (`held-states`).
 
 use std::fmt::Write;
 

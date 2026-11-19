@@ -191,8 +191,17 @@ fn live(args: &[String]) {
     }
     let d = transport.diagnostics();
     emit(format!(
-        "diag received={} applied={} gaps={} parseFailures={}",
-        d.datagrams_received, d.applied_host_num, d.gap_events, d.parse_failures
+        "diag received={} applied={} gaps={} parseFailures={} statesApplied={} statesShown={} \
+         rendered={} held={} heldBytes={}",
+        d.datagrams_received,
+        d.applied_host_num,
+        d.gap_events,
+        d.parse_failures,
+        d.host_states_applied,
+        d.host_states_shown,
+        d.host_frames_rendered,
+        d.held_states,
+        d.held_bytes
     ));
 }
 

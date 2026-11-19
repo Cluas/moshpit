@@ -61,6 +61,7 @@ use wezterm_term::{
     color::{ColorAttribute, ColorPalette},
 };
 
+pub mod coalesce;
 pub mod ffi;
 pub mod history_images;
 mod images;
@@ -642,6 +643,9 @@ pub struct Terminal {
     /// Actions of a synchronized update, held until its end or deadline.
     held: Vec<Action>,
     holding_since: Option<Instant>,
+    /// The output so far ended with a synchronized update's end: the
+    /// remote said the screen is whole (frame it without waiting).
+    sync_settled: bool,
     /// An image arrived since the history's were last weighed (B733).
     images_arrived: bool,
     /// This terminal's place in the process's ledger of history images,
@@ -772,6 +776,7 @@ impl Terminal {
             title: String::new(),
             held: Vec::new(),
             holding_since: None,
+            sync_settled: false,
             images_arrived: false,
             image_ledger_id,
             image_share,
@@ -993,6 +998,7 @@ impl Terminal {
             Action::CSI(CSI::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(
                 DecPrivateModeCode::SynchronizedOutput,
             )))) => {
+                self.sync_settled = self.holding_since.is_some();
                 self.holding_since = None;
                 batch.append(&mut self.held);
                 return;
@@ -1063,6 +1069,7 @@ impl Terminal {
         if self.holding_since.is_some() {
             self.held.push(action);
         } else {
+            self.sync_settled = false;
             batch.push(action);
         }
         // The shell's prompt is back (B579): what a program that died left on
@@ -1111,6 +1118,13 @@ impl Terminal {
     /// drawn anyway; [`Terminal::flush_sync`] then.
     pub fn sync_deadline(&self) -> Option<Instant> {
         self.holding_since.map(|t| t + SYNC_TIMEOUT)
+    }
+
+    /// The output so far ended with the end of a synchronized update (and
+    /// nothing outside one came after): the remote says the screen is
+    /// whole, so a pane frames it at once ([`coalesce`]).
+    pub fn sync_settled(&self) -> bool {
+        self.sync_settled && self.holding_since.is_none()
     }
 
     /// Applies a synchronized update that outlived its deadline.

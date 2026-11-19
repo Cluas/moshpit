@@ -3,8 +3,9 @@
 //! channel, a virtual clock instead of sleeps. Where a fix changes what a
 //! Swift test expects, the test says so.
 
-use moshpit_mosh::harness::{client_instruction, server_datagram};
+use moshpit_mosh::harness::{client_instruction, server_datagram, server_datagrams};
 use moshpit_mosh::proto::ProtoWriter;
+use moshpit_mosh::screen::{Framebuffer, new_frame};
 use moshpit_mosh::transport::timestamp16;
 use moshpit_mosh::wire::{HostInstruction, HostMessage, decode_user_message, encode_host_message};
 use moshpit_mosh::{
@@ -615,4 +616,150 @@ fn rig_sanity_proto_writer_matches_host_encoder() {
     let mut message = ProtoWriter::new();
     message.field_bytes(1, instruction.bytes());
     assert_eq!(message.bytes(), host_diff("hello"));
+}
+
+// MARK: Diffs from an older state (CLI-LAB.md, Bug 2)
+
+/// mosh-server sends a small diff from the state the client last acked
+/// (`attempt_prospective_resend_optimization`), not from the newest state
+/// it sent: over a 500 ms round trip the live probe saw `0→1, 0→2, 0→3,
+/// 0→4, 1→5, 1→6, 1→7, 5→8`. mosh-client keeps every state since the acked
+/// one and applies each. Holding only the newest, this transport applied
+/// one state per round trip (5 of every 15 received, frames ~750 ms apart
+/// instead of 250 ms), and whatever the server snapshotted mid-redraw
+/// stayed up that long.
+#[test]
+fn a_diff_from_an_older_held_state_applies() {
+    let mut rig = Rig::new();
+    let first = rig.datagram(0, 1, 0, 1, 0, &host_diff("a"));
+    rig.receive(&first);
+    assert_eq!(rig.frames().len(), 1);
+    // The ack for state 1 is still on its way: the server diffs from 0.
+    let second = rig.datagram(1, 2, 0, 2, 0, &host_diff("ab"));
+    rig.receive(&second);
+    let diag = rig.transport.diagnostics();
+    assert_eq!(diag.applied_host_num, 2);
+    assert_eq!(diag.gap_events, 0);
+    // The terminal shows "a": it gets only what state 2 adds.
+    let frames = rig.frames();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].bytes, b"b");
+}
+
+/// One server state every 250 ms over a 500 ms round trip, each diffed from
+/// the newest state the server has heard acked (and throwing away the ones
+/// before it), as mosh-server does for small changes. Every state is shown,
+/// a frame every 250 ms, and the terminal fed every frame always looks like
+/// the server's screen of the state shown.
+#[test]
+fn at_a_500_ms_round_trip_every_state_is_shown() {
+    const ONE_WAY_MS: u64 = 250;
+    const STATES: u64 = 40;
+    let mut rig = Rig::new();
+    let start = rig.now;
+    rig.transport.start(80, 24, start);
+    rig.events();
+
+    // The server's screens: a clock on the top line, a prompt being typed
+    // at, and output scrolling the region above the status line.
+    let mut screens = vec![Framebuffer::new(80, 24)];
+    for n in 1..=STATES {
+        let mut screen = screens.last().unwrap().clone();
+        let text = match n % 4 {
+            0 => format!("\x1b[1;23r\x1b[23;1H\nline {n}\x1b[r"),
+            1 => format!("\x1b[24;1H\x1b[7m status {n} \x1b[0m\x1b[K"),
+            _ => String::new(),
+        } + &format!(
+            "\x1b[1;60HTue 19 Nov 12:00:{:02}\x1b[22;1H$ {}",
+            n % 60,
+            "x".repeat(n as usize % 30)
+        );
+        screen.apply(text.as_bytes());
+        screens.push(screen);
+    }
+
+    // In flight: (arrival time, datagram) each way.
+    let mut to_client: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut to_server: Vec<(u64, u64)> = Vec::new();
+    let mut server_acked = 0;
+    let mut pane = Framebuffer::new(80, 24);
+    let mut frame_times = Vec::new();
+    let mut seq = 0;
+    let end = start + (STATES + 4) * 250;
+    while rig.now < end {
+        let now = rig.now;
+        // The server hears acks...
+        for &(_, ack) in to_server.iter().filter(|(at, _)| *at <= now) {
+            server_acked = server_acked.max(ack);
+        }
+        to_server.retain(|(at, _)| *at > now);
+        // ...and every 250 ms sends its next state, from the acked one.
+        let since = now - start;
+        if since > 0 && since.is_multiple_of(250) && since / 250 <= STATES {
+            let new = since / 250;
+            let old = server_acked;
+            let diff = encode_host_message(&[HostInstruction::HostBytes(new_frame(
+                true,
+                &screens[old as usize],
+                &screens[new as usize],
+            ))]);
+            let instruction = Instruction {
+                old_num: old,
+                new_num: new,
+                throwaway_num: old,
+                diff,
+                ..Instruction::default()
+            };
+            for datagram in
+                server_datagrams(&rig.server, seq, seq + 1, &instruction, 0, u16::MAX, 1300)
+            {
+                to_client.push((now + ONE_WAY_MS, datagram));
+                seq += 1;
+            }
+        }
+        let arrived: Vec<Vec<u8>> = to_client
+            .iter()
+            .filter(|(at, _)| *at <= now)
+            .map(|(_, datagram)| datagram.clone())
+            .collect();
+        to_client.retain(|(at, _)| *at > now);
+        for datagram in arrived {
+            rig.receive(&datagram);
+        }
+        rig.pass(10);
+        for event in rig.events() {
+            match event {
+                Event::HostFrame(frame) => {
+                    pane.apply(&frame.bytes);
+                    frame_times.push(rig.now);
+                    let shown = rig.transport.diagnostics().applied_host_num as usize;
+                    assert!(pane.looks_like(&screens[shown]), "state {shown}");
+                }
+                Event::Transmit(datagram) => {
+                    let ack = client_instruction(&rig.server, &datagram).ack_num;
+                    to_server.push((rig.now + ONE_WAY_MS, ack));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let diag = rig.transport.diagnostics();
+    assert_eq!(diag.applied_host_num, STATES);
+    assert_eq!(diag.host_states_shown, STATES);
+    assert_eq!(diag.gap_events, 0);
+    // Most frames were rendered from a held state: the diff named a state
+    // older than the one the terminal showed.
+    assert!(diag.host_frames_rendered > STATES / 2, "{diag:?}");
+    // The server throws states away a round trip behind: a few held.
+    assert!(diag.held_states <= 5, "{diag:?}");
+    let gaps: Vec<u64> = frame_times.windows(2).map(|w| w[1] - w[0]).collect();
+    assert!(gaps.iter().all(|&gap| gap <= 260), "{gaps:?}");
+    eprintln!(
+        "{} states shown of {STATES}, frames every {} ms, {} held ({} bytes)",
+        diag.host_states_shown,
+        gaps.iter().sum::<u64>() / gaps.len() as u64,
+        diag.held_states,
+        diag.held_bytes
+    );
 }
