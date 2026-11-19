@@ -31,7 +31,7 @@
 # cargo fingerprints some of them, so a build from Xcode and one from a
 # shell would keep invalidating each other's work. In the same environment
 # either way, cargo rebuilds nothing when nothing changed, the library keeps
-# its timestamp, and Xcode does not relink. The toolchain is the one
+# its timestamp, and the app is not relinked for it (below). The toolchain is the one
 # rust-toolchain.toml pins, through rustup; a missing Rust target is added
 # the first time it is needed.
 set -euo pipefail
@@ -117,6 +117,17 @@ case "$package" in
 esac
 echo "note: $package for ${CONFIGURATION:-a build by hand} with the cargo profile $profile"
 
+# What the library was before cargo (inode, size, mtime), each target's.
+# Xcode does not count it among the link's inputs (`-lmoshpit_ffi` in
+# OTHER_LDFLAGS): with no Swift changed it skips the link whatever cargo
+# did, and the app ships the previous Rust (Canary 174 and 175). When cargo
+# changed the library, the link's output goes, so the link runs. The
+# background build (build-ios-background.sh) removes it up front instead.
+signature() {
+    stat -f '%i %z %m' "$root/target/$1/$profile/lib${package//-/_}.a" 2>/dev/null || echo none
+}
+relink=""
+
 cd "$root"
 for arch in $archs; do
     case "$platform/$arch" in
@@ -133,6 +144,16 @@ for arch in $archs; do
         echo "note: adding the Rust target $target to $(basename "$sysroot")"
         env -i "${env_args[@]}" rustup target add "$target"
     fi
+    before="$(signature "$target")"
     env -i "${env_args[@]}" nice -n "$niceness" \
         cargo build --locked -p "$package" --profile "$profile" --target "$target"
+    [ "$(signature "$target")" = "$before" ] || relink=yes
 done
+if [ -n "$relink" ] && [ -z "${MOSHPIT_RUST_IN_BACKGROUND:-}" ] \
+    && [ -n "${TARGET_BUILD_DIR:-}" ] && [ -n "${EXECUTABLE_PATH:-}" ]; then
+    echo "note: the Rust library changed: the app relinks"
+    rm -f "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
+    if [ -n "${OBJECT_FILE_DIR_normal:-}" ] && [ -n "${EXECUTABLE_NAME:-}" ]; then
+        rm -f "$OBJECT_FILE_DIR_normal"/*/Binary/"$EXECUTABLE_NAME"
+    fi
+fi

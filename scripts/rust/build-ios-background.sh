@@ -31,15 +31,24 @@ if [ -f "$state/pid" ]; then
 fi
 rm -f "$state/status" "$state/status.tmp" "$state/log" "$state/pid"
 
-# The link must not be judged up to date before cargo is done: with no
-# Swift changed, Xcode would check the old archive now, find it unchanged
-# and skip the link. Without the archive the link always runs (and waits).
-# Cargo puts it back from deps/ without rebuilding when nothing changed.
+# The link must not be judged up to date before cargo is done. Xcode does
+# not count the library (`-lmoshpit_ffi`, OTHER_LDFLAGS) among the link's
+# inputs at all: with no Swift changed it skipped the link and shipped the
+# previous Rust (Canary 174 and 175, built at 22d87cfc, still ran the
+# breadcrumb's old pane segment), even with the archive deleted here. What
+# it does check is the link's output: without the app's executable the link
+# always runs, and waits for this build.
 rm -f "$root"/target/*/"${MOSHPIT_RUST_PROFILE:-app}"/libmoshpit_ffi.a
+if [ -n "${TARGET_BUILD_DIR:-}" ] && [ -n "${EXECUTABLE_PATH:-}" ]; then
+    rm -f "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
+fi
+if [ -n "${OBJECT_FILE_DIR_normal:-}" ] && [ -n "${EXECUTABLE_NAME:-}" ]; then
+    rm -f "$OBJECT_FILE_DIR_normal"/*/Binary/"$EXECUTABLE_NAME"
+fi
 
 (
     rc=0
-    "$root/scripts/rust/build-ios.sh" "$@" || rc=$?
+    MOSHPIT_RUST_IN_BACKGROUND=1 "$root/scripts/rust/build-ios.sh" "$@" || rc=$?
     echo "$rc" >"$state/status.tmp"
     mv "$state/status.tmp" "$state/status"
 ) </dev/null >"$state/log" 2>&1 &

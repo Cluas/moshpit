@@ -147,6 +147,54 @@ if [ "$status" -eq 0 ] || [ -n "$calls" ]; then
     fail "an unknown profile was built: exit $status, cargo asked [$calls]"
 fi
 
+# Xcode does not count the library among the link's inputs (Canary 174 and
+# 175 shipped the previous Rust): when cargo changes it, the app's
+# executable goes, so the link runs; when cargo leaves it be, the
+# executable stays (no relink for nothing); the background build, which
+# removes it up front, leaves it to the link. A copy of the script in a
+# repository of its own, whose cargo writes the library when asked to.
+repo="$work/repo"
+mkdir -p "$repo/scripts/rust" "$work/relink-home/bin" "$work/products/Moshpit.app"
+cp "$script" "$repo/scripts/rust/build-ios.sh"
+cp "$fake/bin/rustc" "$fake/bin/rustup" "$work/relink-home/bin/"
+cat > "$work/relink-home/bin/cargo" <<CARGO
+#!/bin/bash
+echo "\$* | CARGO_TARGET_DIR=\$CARGO_TARGET_DIR" >> "$work/calls"
+if [ -e "$work/cargo-writes" ]; then
+    mkdir -p "\$CARGO_TARGET_DIR/aarch64-apple-ios/app-canary"
+    echo "\$RANDOM" >> "\$CARGO_TARGET_DIR/aarch64-apple-ios/app-canary/libmoshpit_ffi.a"
+fi
+CARGO
+chmod +x "$work/relink-home/bin/"*
+exe="$work/products/Moshpit.app/Moshpit"
+relink_run() {
+    local saved="$script"
+    script="$repo/scripts/rust/build-ios.sh"
+    run CARGO_HOME="$work/relink-home" CONFIGURATION=Release MOSHPIT_RUST_PROFILE=app-canary \
+        PLATFORM_NAME=iphoneos ARCHS=arm64 TARGET_BUILD_DIR="$work/products" \
+        EXECUTABLE_PATH=Moshpit.app/Moshpit "$@" --
+    script="$saved"
+}
+echo linked > "$exe"
+touch "$work/cargo-writes"
+relink_run
+[ "$status" -eq 0 ] || fail "relink, library changed: exit $status: $output"
+[ ! -e "$exe" ] || fail "the library changed and the app's executable stayed: Xcode would skip the link"
+echo linked > "$exe"
+rm "$work/cargo-writes"
+relink_run
+{ [ "$status" -eq 0 ] && [ -e "$exe" ]; } \
+    || fail "the library unchanged and the app's executable went (exit $status): $output"
+touch "$work/cargo-writes"
+relink_run MOSHPIT_RUST_IN_BACKGROUND=1
+{ [ "$status" -eq 0 ] && [ -e "$exe" ]; } \
+    || fail "the background build removed the executable after the fact (exit $status): $output"
+rm -f "$work/cargo-writes"
+# shellcheck disable=SC2016 # the script's own words
+if ! grep -qF 'rm -f "$TARGET_BUILD_DIR/$EXECUTABLE_PATH"' "$root/scripts/rust/build-ios-background.sh"; then
+    fail "the background build no longer removes the app's executable before cargo runs"
+fi
+
 # The manifests the script and the link rely on.
 spec="$work/spec.json"
 (cd "$root" && xcodegen dump --type json --spec project.yml > "$spec")
