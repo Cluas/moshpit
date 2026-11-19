@@ -20,6 +20,17 @@ Replaying needs only cargo.
 scripts/cli-lab/drive.py claude tmux --out /tmp/clilab-fx --ready shortcuts
 # mosh-client with its own prediction display on:
 scripts/cli-lab/drive.py codex mosh --predict always --out /tmp/clilab-fx
+# A slow link: a UDP relay (scripts/cli-lab/udp_delay.py) with a 500 ms round
+# trip between the mosh client and mosh-server; name gets -rtt500.
+scripts/cli-lab/drive.py codex mosh-tmux --rtt 500 --out /tmp/clilab-fx
+# Moshpit's own mosh transport instead of mosh-client (name gets -rs): the
+# pane bytes are the HostFrames crates/mosh/examples/mosh_harness prints.
+cargo build --release -p moshpit-mosh --example mosh_harness
+scripts/cli-lab/drive.py codex mosh-tmux --rtt 500 \
+  --moshpit $CARGO_TARGET_DIR/release/examples/mosh_harness --out /tmp/clilab-fx
+# fake_model.py: LAB_LONG=N appends N lines to the answer, LAB_PACE=S is the
+# pause between streamed pieces (default 0.15 s).
+LAB_LONG=40 scripts/cli-lab/drive.py codex mosh-tmux --rtt 500 --out /tmp/clilab-fx
 
 # Everything, in parallel per path, with tmux references added (about 4 minutes):
 OUT=/tmp/clilab-fx scripts/cli-lab/record-all.sh
@@ -77,6 +88,7 @@ Concealed text (fg = bg) counts as blank, and wide-char spacers are skipped.
   The input row is the row that begins with the prompt seen just before Enter.
   If the host sent nothing between key k and key k+1, key k is skipped: that is host lag, not the view's fault.
 - **steady**: between the first key and Enter, no frame shows less typed text than an earlier frame, and a visible cursor stays on the input row (invariant c: no torn frames, no cursor jumps).
+- **cursor**: from the first key to the end, the answer streaming in included, a visible cursor is only ever on the input row (CLI recordings only: a shell's cursor rightly leaves its prompt).
 - **predicted** (mosh recordings only): the same replay with Moshpit's predictive echo set to `Always` (srtt 250 ms, each key acked by the next chunk).
   It may differ from the plain replay only on the input row, and the predicted cursor stays on that row.
 
@@ -116,8 +128,12 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | qoder-tmux | pass (at the input box) | — | — | — |
 | qoder-ssh | pass (at the input box) | — | — | — |
 | qoder-mosh | pass (at the input box) | — | — | — |
+| codex-mosh-tmux-rtt500-rs | — (no tmux reference) | lags (echo over 500 ms) | pass | — |
 
-Totals: 79 green, 0 red.
+Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh and codex-mosh-tmux pass.
+codex-mosh-tmux-rtt500-rs is **red** (bug 2, below).
+
+Totals: 85 green, 1 red (ignored).
 
 ### Per CLI
 
@@ -176,70 +192,96 @@ Later it sends `ESC[>0q`, `OSC 7501 ;?` and `ESC[c` again.
 On exit it sends `ESC[>4m ESC[<u` (modifyOtherKeys off, pop kitty flags).
 It hides the cursor at start (`ESC[?25l`) and shows it only on exit; the caret is drawn by Qoder itself.
 
-Hypotheses, most likely first:
+### What Qoder's code says (1.1.92 bundle, read, not run)
 
-- **H1-a. The input renders as in a non-interactive or CI terminal.**
-  The Ink family shows this exact symptom when it decides it is not interactive: no input echo, Enter still submits.
-  The lab hit it with Gemini because of `CI=""`.
-  Check the user's tmux environment for `CI`, `CONTINUOUS_INTEGRATION` or `BUILD_NUMBER` (`tmux show-env -g`), and Qoder's own TTY checks.
-  This would explain why it happens inside tmux only: tmux's global environment can carry variables that the plain SSH login doesn't.
-- **H1-b. The keyboard protocol.**
-  Qoder asks for kitty flags (`ESC[?u`) and modifyOtherKeys (`ESC[>4;?m`).
-  Inside tmux, tmux answers, not Moshpit.
-  If, given those answers, Qoder expects letters as key events (CSI u), then plain letters arrive as text it does not insert, while `\r` still submits.
-  Moshpit's core does encode kitty and CSI u (`crates/term/src/input.rs`).
-  Check this with tmux `extended-keys` on and off, and with the bytes Moshpit sends for a letter after Qoder starts (the input-trace rig).
-- **H1-c. Colour.**
-  tmux in control mode answers `OSC 11 ;?` with black (see Gotchas).
-  If Qoder picks the typed text's colour from the background it was told, and Moshpit actually draws a light background, the text is drawn in an invisible colour.
-  The harness counts fg = bg as blank, so a fixture would catch this, but Qoder exits before any typed text exists.
-- **Ruled out for the core:** concealed text left on.
-  `ESC[8m` is reset by `ESC[0m` within the first 30 bytes, and the box matches tmux.
+Qoder's TUI is a fork of Gemini CLI's (its own Ink renderer).
+At start-up it queries the terminal (`TerminalCapabilityManager`) and acts on the answers:
 
-To settle bug 1, record one real Qoder session on the user's machine: `drive.py`'s tmux path with the user's own account, outside this lab.
-Then compare the bytes after typing `h` with tmux's capture.
+- **Keyboard.** It turns the kitty protocol on (`ESC[>1u`, flag 1 only) if the terminal answered `ESC[?u`, else modifyOtherKeys (`ESC[>4;2m`) if the answer to `ESC[>4;?m` was level 2 or more, else neither.
+  Flag 1 and modifyOtherKeys level 2 both still send a plain letter as itself.
+  In the lab's tmux (default `extended-keys`) it turned on neither.
+- **CI.** It goes headless only for `CI=true`, `GITHUB_ACTIONS=true`, a stdin or stdout that is not a TTY, or `-p`.
+  Headless means no input box at all.
+  Its renderer has no is-in-ci frame suppression (no `CONTINUOUS_INTEGRATION` check anywhere in the bundle).
+- **Colour.** With the theme left on `auto` (the default), it picks the theme from the `OSC 11` answer.
+  It first takes a theme whose background equals the answer exactly, else a light or dark default by luminance.
+  The light themes paint text in a fixed dark colour: "Default Light" is `#000000` on `#FFFFFF`, and others are `#444`, `#5c6166` or `#24292E`.
+  It warns only when the theme was set by hand and does not match.
+
+### Conclusion: H1-c, the colour
+
+- **H1-a (CI) is ruled out.** A CI variable makes Qoder headless, with no input box. The user sees the box.
+- **H1-b (keyboard) is unlikely.** Even when tmux reports modifyOtherKeys or kitty, Qoder asks for modes in which letters stay plain text.
+  The lab sent plain letters to it through tmux with neither mode on.
+- **H1-c (colour) fits every part of the report.**
+  Inside tmux, tmux answers `OSC 11`, not Moshpit.
+  It answers with a client terminal's colour, or black in control mode.
+  If the answer is light (for example, the user's Mac terminal is light and is attached to the same tmux), Qoder picks a light theme and types in near-black.
+  On Moshpit's dark background, that text is invisible, while Enter still sends.
+  Over plain SSH, Moshpit answers itself, with the background it draws.
+  The new test `the_background_query_answers_the_background_drawn` (`crates/term/tests/cases.rs`) checks this for a light and a dark palette, so nothing in the core needs fixing.
+
+To confirm on the friend's machine:
+
+1. Inside that tmux, run `printf '\e]11;?\e\\'; cat -v`, then press Enter. An answer like `rgb:ffff/ffff/ffff` (light) confirms the cause.
+2. In Qoder, type `/theme` and pick a dark theme, or set `ui.theme` in its settings. If typed text shows again, the cause is confirmed.
+3. Which terminal and colour scheme do they use on the desktop, and is that client attached to the same tmux session?
+
+The fix belongs in Qoder: an `auto` theme should not trust `OSC 11` inside tmux, or it should honour `COLORFGBG`, which it already reads.
+A user-side workaround: set Qoder's theme explicitly.
 
 ## Bug 2: over mosh only, the cursor jumps up and down
 
-**Not reproduced on loopback.**
-Every mosh fixture is steady, with Moshpit's prediction off and on, and with mosh-client's own prediction.
+**Reproduced with Moshpit's own transport over a 500 ms round trip.**
+It is not reproduced with mosh-client.
+The red tests are `codex_mosh_tmux_rtt500_rs_cursor` (`crates/term/tests/cli_lab.rs`) and `a_diff_from_an_older_held_state_applies` (`crates/mosh/tests/transport.rs`).
+Both are `#[ignore = "red: ..."]` until the fix below lands.
 
-What the fixtures do show:
+What was recorded:
 
-| recording | DEC 2026 sync blocks | `?25l` / `?25h` | chunks |
-|---|---|---|---|
-| codex-ssh | 70 | 25 / 69 | 107 |
-| codex-mosh | **0** | 12 / 12 | 31 |
-| qwen-ssh | 48 | 35 / 36 | 197 |
-| qwen-mosh | **0** | 25 / 25 | 66 |
-| copilot-ssh | 37 | 1 / 0 | 80 |
-| copilot-mosh | **0** | 2 / 1 | 48 |
+- **mosh-client:** claude, codex, gemini and qwen over `mosh` and `mosh-tmux`, with `udp_delay.py` at 500 ms round trip, and with long streamed answers (`LAB_LONG=40`). No cursor left the input row.
+- **Moshpit's transport (`mosh_harness live`):** the same set through the relay.
+  codex-mosh-tmux-rtt500-rs shows, while the answer streams in, one frame with the visible cursor at the end of "Line 2 of a longer answer" (row 15, col 51), 4 rows above the input row.
+  That state's bytes end in `ESC[16;45Hslowly.ESC[?25h`.
 
-Hypotheses:
+Why:
 
-- **H2-a. mosh drops synchronized output (main hypothesis).**
-  Over tmux and ssh, Codex, Qwen and Copilot wrap each redraw in `ESC[?2026h … ESC[?2026l`.
-  The core holds publishing during a sync block (`sync_deadline`), so no frame ever shows the cursor halfway through a redraw.
-  mosh-server parses the bytes into its own framebuffer and sends screen states, so the markers never reach Moshpit (0 in every mosh fixture).
-  A state taken while the CLI is mid-redraw has the cursor at the redraw point, usually the status line or the bottom of the box.
-  The next state has it back in the input.
-  On a viewer that looks like the cursor jumping down and up.
-  On loopback mosh-server collects for about 8 ms and the CLI finishes its write first, so the lab sees whole states.
-  Over a real link (send interval tied to RTT, a CLI that writes in several pieces) it does not.
-  Next experiment: put a delay relay (the 510 ms rig) between mosh-client and mosh-server, and rerun `codex mosh` and `qwen mosh`.
-  Steady should go red.
-- **H2-b. Cursor visibility rides on mosh states.**
-  Each mosh state carries cursor visibility (`?25l` / `?25h` above, one pair per state).
-  A state sampled while the CLI had the cursor shown at a parked position draws it there for one frame.
-  This is the same mechanism as H2-a, seen through visibility.
-- **H2-c. Prediction overlay at a parked cursor.**
-  Moshpit's predictive echo places its guess at the cursor mosh reports.
-  If that cursor is parked (H2-a), the guess and its cursor are drawn there until the echo arrives.
-  The predicted check passes on loopback.
-  It needs the delayed link from H2-a to show a difference.
-- A possible fix, for later: over mosh, do not move a visible cursor off the row it was on for less than one RTT (debounce cursor moves).
-  Or ask the CLIs to keep the cursor hidden during redraws.
-  Both are outside this lab.
+1. Inside tmux, Codex turns DEC 2026 off. tmux redraws the pane with the cursor visible at whatever it writes last, then moves it back to the input.
+   mosh-server snapshots that pane into states.
+   A state taken mid-redraw has the cursor on the answer.
+   mosh-client shows such a state too, but only until the next one, about 250 ms later.
+2. Moshpit's transport shows each state for about 750 ms.
+   The probe (`date` every 100 ms through the 500 ms relay) received a state every 250 ms, but the transport applied only 5 of every 15:
+
+   ```
+   0→1  0→2  0→3  0→4  1→5  1→6  1→7  5→8  5→9  5→10  8→11 …   (old→new, as mosh-server sent them)
+   ok   gap  gap  gap  ok   gap  gap  ok   gap  gap   ok
+   ```
+
+   For a small diff, mosh-server diffs from the state the client last acked (`attempt_prospective_resend_optimization`: the resend is no bigger, or under 1000 bytes and at most 100 bytes more).
+   That ack is a round trip old.
+   mosh-client keeps every state since the acked one (`received_states`) and applies each diff to the state it names.
+   `Transport` keeps one state (`applied_host_num`), so it drops every diff whose base it has moved past, and waits for its own ack to come round.
+   So a round trip plus `ACK_DELAY` passes between frames, and whatever state happened to land stays up 3× longer than on mosh-client.
+   On a phone link it is the same, scaled by its round trip.
+
+The fix (not in this change; it is a transport design change):
+
+- Keep a framebuffer per host state since the acked one, as mosh-client does.
+- Apply each diff to the state it names.
+- Hand the pane the difference between what it shows and the new state.
+  mosh's diffs are relative to their old state's screen, so they cannot be replayed on a newer screen.
+
+This needs an emulator in the transport, or in the session's mosh path, plus a screen-to-bytes repaint.
+It is the root cause of the cursor jump and of the slow frame rate over mosh.
+It is worth doing on its own.
+
+A cheaper mitigation: over mosh, hold a visible cursor's move off the input row for one frame interval (debounce).
+It hides the symptom but not the slow frames.
+
+Earlier hypotheses, for the record: H2-a (no DEC 2026 over mosh) is the cause of the mid-redraw states.
+H2-b (visibility rides on states) is part of it.
+H2-c (prediction overlay) is not needed to show the jump.
 
 ## Fixed: Gemini torn frame (tmux, ssh)
 

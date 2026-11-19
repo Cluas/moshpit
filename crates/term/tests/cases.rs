@@ -280,6 +280,33 @@ fn osc_titles_links_replies() {
     assert_eq!(t.take_replies(), b"\x1b[1;1R\x1b[2;2R\x1b[0n");
 }
 
+/// `OSC 11 ;?` is answered with the background the view draws, light or
+/// dark: CLIs such as Qoder pick their theme from it, and one told the
+/// wrong background draws its text in a colour that vanishes on the real
+/// one (CLI-LAB.md, bug 1).
+#[test]
+fn the_background_query_answers_the_background_drawn() {
+    for bg in [0x1c1c1e, 0xfafafa] {
+        let mut t = term(10, 4, 100);
+        t.set_palette(moshpit_term::Palette {
+            background: moshpit_term::Rgb {
+                r: (bg >> 16) as u8,
+                g: (bg >> 8) as u8,
+                b: bg as u8,
+            },
+            ..Default::default()
+        });
+        t.feed(b"\x1b]11;?\x1b\\");
+        let reply = String::from_utf8(t.take_replies()).unwrap();
+        let [r, g, b] = [bg >> 16, (bg >> 8) & 0xff, bg & 0xff];
+        let want = format!("rgb:{r:02x}{r:02x}/{g:02x}{g:02x}/{b:02x}{b:02x}");
+        assert!(
+            reply.starts_with("\x1b]11;") && reply.contains(&want),
+            "{bg:06x}: {reply:?}"
+        );
+    }
+}
+
 #[test]
 fn strings_are_swallowed() {
     both(10, 4, 100, &[b"\x1b_Gf=100;AAAA\x1b\\X"], |t| {
