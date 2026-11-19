@@ -303,20 +303,19 @@ fn no_intent(rx: &std::sync::mpsc::Receiver<String>) {
     }
 }
 
-/// The bar's ＋ shows on every iPhone (375 pt and up) and gives way on a
-/// narrower screen (an iPad's Slide Over), where the breadcrumb's three
-/// targets need the room.
+/// The bar has no ＋ at any width: each segment makes its own kind (its
+/// list ends in a New row), so the breadcrumb keeps the room.
 #[test]
-fn the_bars_plus_gives_way_on_a_narrow_screen() {
+fn the_bar_has_no_plus() {
     let message = chrome("train", "1", "claude", true);
-    let (app, channel) = open_phone(&message, 375.0, "label:1");
-    assert!(
-        app.screen().matches("label:New…").unwrap(),
-        "on a 375 pt iPhone"
-    );
-    assert_targets(&app, ["train", "1", "claude"]);
-    channel.close();
-    let (app, channel) = open_phone(&message, 320.0, "label:1");
-    assert!(!app.screen().matches("label:New…").unwrap(), "320 pt: gone");
-    channel.close();
+    for width in [320.0, 375.0, 440.0] {
+        let (app, channel) = open_phone(&message, width, "label:1");
+        assert!(!app.screen().matches("label:New…").unwrap(), "{width} pt");
+        assert!(
+            !app.screen().matches("id:terminal-new").unwrap(),
+            "{width} pt"
+        );
+        assert_targets(&app, ["train", "1", "claude"]);
+        channel.close();
+    }
 }

@@ -1973,18 +1973,10 @@ extension TerminalScreen {
         case .newPane(let window):
             Haptics.tap()
             withMultiplexer { $0.newPane(inWindow: window) }
-        case .newWindow(let name):
-            Haptics.tap()
-            withMultiplexer { $0.newWindow(named: name) }
-        case .newSession(let name):
-            Haptics.tap()
-            withMultiplexer { $0.newSession(named: name) }
         case .renameWindow(let window, let name):
             withMultiplexer { $0.renameWindow(window, to: name) }
         case .killPane(let pane):
             withMultiplexer { $0.killPane(pane) }
-        case .killWindow(let window):
-            withMultiplexer { $0.killWindow(window) }
         case .imageSent(let id):
             if let entry = active?.imageUploads.entries.first(where: { $0.id.uuidString == id }) {
                 insertUploadedImage(entry)

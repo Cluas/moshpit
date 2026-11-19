@@ -325,7 +325,7 @@ fn terminal_screens() -> Vec<Finding> {
                     &channel,
                     &json!({"op": "overview", "open": true}).to_string(),
                 );
-                app.wait_for("id:overview-new-window").unwrap();
+                app.wait_for("id:overview-new-pane").unwrap();
             }
             let what = if overview { "overview" } else { "terminal" };
             found.extend(both_sizes(&mut app, &natives, what, locale, &[]));

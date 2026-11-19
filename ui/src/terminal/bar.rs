@@ -7,8 +7,12 @@
 //! [`IconButton`]; the transport capsule is a status dot and `mosh` or
 //! `SSH`; the breadcrumb says `session › project › agent●`, named by
 //! Home's rules ([`Crumbs::names`]), each segment a button, the agent's
-//! segment amber while it waits on you. The colors are tokens: the page
-//! is light on a light terminal theme ([`crate::screen::Params::terminal`]).
+//! segment amber while it waits on you. A segment opens its level
+//! ([`segment_target`]): the session's and the window's quick lists, each
+//! ending in its New row, and the pane's page of the window's panes,
+//! ending in New pane. The bar has no ＋ of its own. The colors are
+//! tokens: the page is light on a light terminal theme
+//! ([`crate::screen::Params::terminal`]).
 
 use std::time::Duration;
 
@@ -17,8 +21,6 @@ use nsh_core::prelude::*;
 use super::{
     Crumb, Ctx, Intent, line,
     model::{Crumbs, LinkState, Mux, PillKind, Signal as AgentSignal},
-    picker::{Kind, Vocab, new_prompt},
-    prompt::Prompts,
 };
 use crate::{
     connection_form::JumpRoute,
@@ -27,7 +29,6 @@ use crate::{
         alert::alert_dialog,
         button::{IconButtonSize, IconVariant, icon_button},
         icon::{IconSize, Tone, icon},
-        menu::{MenuEntry, menu},
         motion::Duration as Motion,
         status::{Status, status_dot},
         tokens::token,
@@ -40,11 +41,12 @@ pub(crate) fn height(compact: bool) -> f32 {
     if compact { 40.0 } else { 44.0 }
 }
 
-/// The height of the capsule and the breadcrumb, within the bar's row.
+/// The height of the back button, the capsule and the breadcrumb, within
+/// the bar's row.
 const PIECE: f32 = 36.0;
 
 /// The bar.
-pub(crate) fn top_bar(ctx: Ctx, prompts: Prompts) -> AnyElement {
+pub(crate) fn top_bar(ctx: Ctx) -> AnyElement {
     let compact = {
         let ctx = ctx.clone();
         computed(move || ctx.compact())
@@ -67,8 +69,7 @@ pub(crate) fn top_bar(ctx: Ctx, prompts: Prompts) -> AnyElement {
                     .px(px(16.0))
                     .child(leading_button(ctx.clone()))
                     .child(pill(ctx.clone()))
-                    .child(breadcrumb(ctx.clone()))
-                    .child(create_button(ctx.clone(), prompts)),
+                    .child(breadcrumb(ctx.clone())),
             ),
         )
         // The hairline at the bar's bottom, over it.
@@ -136,7 +137,9 @@ fn anchored(view: View, ctx: Ctx, name: &'static str, target: ElementRef) -> Vie
         .on_layout(move |_: &Bounds<Points>| measure())
 }
 
-/// Back, or the iPad's sidebar toggle: a glass icon button, 44 pt.
+/// Back, or the iPad's sidebar toggle: a glass icon button drawn as tall
+/// as the capsule and the breadcrumb ([`PIECE`]), its target the system's
+/// 44 pt (the button's own slop).
 fn leading_button(ctx: Ctx) -> AnyElement {
     let sidebar = {
         let ctx = ctx.clone();
@@ -158,176 +161,13 @@ fn leading_button(ctx: Ctx) -> AnyElement {
             };
             icon_button(symbol, label)
                 .variant(IconVariant::Glass)
-                .size(IconButtonSize::Md)
+                .size(IconButtonSize::Chrome)
                 .test_id(id)
                 .on_press(ctx.asking(intent))
                 .into_element()
         })
     })
     .into_element()
-}
-
-// --- New: ＋ ------------------------------------------------------------------
-
-/// What the bar's ＋ can make, by the menu's ids.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Create {
-    /// A window (herdr: a tab) in the session shown.
-    Window,
-    /// A pane split from the window shown.
-    Pane,
-    /// A session (herdr: a workspace).
-    Session,
-}
-
-impl Create {
-    pub fn id(self) -> &'static str {
-        match self {
-            Create::Window => "new-window",
-            Create::Pane => "new-pane",
-            Create::Session => "new-session",
-        }
-    }
-
-    pub fn named(id: &str) -> Option<Create> {
-        [Create::Window, Create::Pane, Create::Session]
-            .into_iter()
-            .find(|c| c.id() == id)
-    }
-}
-
-/// The ＋ menu's entries on `mux`: a new window (tab), a new pane split
-/// from the window shown (greyed out when no window is), a new session
-/// (workspace). The words are the ones the overview, the pane menus and
-/// the sessions page say.
-pub fn create_entries(mux: Mux, has_window: bool) -> Vec<MenuEntry> {
-    let herdr = mux == Mux::Herdr;
-    vec![
-        MenuEntry::new(
-            Create::Window.id(),
-            if herdr {
-                t!("New tab")
-            } else {
-                t!("New window")
-            },
-        )
-        .symbol("plus.rectangle.on.rectangle"),
-        MenuEntry::new(Create::Pane.id(), t!("New Pane"))
-            .symbol("rectangle.split.2x1")
-            .disabled(!has_window),
-        MenuEntry::new(
-            Create::Session.id(),
-            if herdr {
-                t!("New Workspace")
-            } else {
-                t!("New Session")
-            },
-        )
-        .symbol("square.stack"),
-    ]
-}
-
-/// What the ＋ shows for: a live tree on a multiplexer, and the window it
-/// shows (the pane's split goes there).
-fn create_target(ctx: &Ctx) -> Option<(Mux, Option<String>)> {
-    ctx.chrome.with(|c| {
-        let crumbs = c.crumbs.as_ref().filter(|crumbs| crumbs.live)?;
-        if c.mux == Mux::None {
-            return None;
-        }
-        let window = crumbs.tree.as_ref().and_then(|t| t.active_window.clone());
-        Some((c.mux, window))
-    })
-}
-
-/// The bar's ＋ (a glass 44 pt circle, as Back is): the system menu of
-/// [`create_entries`]. A window or a session is named first by the host's
-/// prompt (blank: the program names it); a pane is made at once. Shown
-/// only over a live multiplexer's tree.
-/// The narrowest screen the bar's ＋ shows on.
-const CREATE_MIN_WIDTH: f32 = 360.0;
-
-fn create_button(ctx: Ctx, prompts: Prompts) -> AnyElement {
-    // Under 360 pt (an iPad's narrowest split, Slide Over) the ＋ would
-    // squeeze the breadcrumb's three 44 pt segments out of their capsule;
-    // there the pickers' own ＋ (a tap on the window or the session) makes
-    // them instead.
-    let target = {
-        let ctx = ctx.clone();
-        computed(move || {
-            (window().width.0 >= CREATE_MIN_WIDTH)
-                .then(|| create_target(&ctx))
-                .flatten()
-        })
-    };
-    dynamic(move || {
-        let Some((mux, window)) = target.get() else {
-            return view().into_element();
-        };
-        let (ctx, prompts) = (ctx.clone(), prompts.clone());
-        untracked(move || {
-            let label = t!("New…");
-            let has_window = window.is_some();
-            let drawing = view().accessibility_elements_hidden(true).child(
-                icon_button("plus", label.clone())
-                    .variant(IconVariant::Glass)
-                    .size(IconButtonSize::Md),
-            );
-            let pick = move |id: String| {
-                if let Some(create) = Create::named(&id) {
-                    create_from(&ctx, &prompts, mux, window.clone(), create);
-                }
-            };
-            view()
-                .relative()
-                .flex_shrink_0()
-                .child(drawing)
-                .child(menu(
-                    create_entries(mux, has_window),
-                    Some("terminal-new"),
-                    move || label.clone(),
-                    pick,
-                ))
-                .into_element()
-        })
-    })
-    .into_element()
-}
-
-/// Does `create` from the ＋: asks the name first for a window or a
-/// session, splits `window` at once.
-pub(crate) fn create_from(
-    ctx: &Ctx,
-    prompts: &Prompts,
-    mux: Mux,
-    window: Option<String>,
-    create: Create,
-) {
-    let kind = match create {
-        Create::Pane => {
-            if let Some(window) = window {
-                ctx.ask(Intent::NewPane(window));
-            }
-            return;
-        }
-        Create::Window => Kind::Windows,
-        Create::Session => Kind::Sessions,
-    };
-    let tell = ctx.tell.clone();
-    let ask = ctx.tell.clone();
-    prompts.ask(
-        &move |event| ask(Intent::Prompt(event)),
-        new_prompt(kind, &Vocab::of(mux)),
-        move |text| {
-            let Some(text) = text else { return };
-            let name = text.trim();
-            let name = (!name.is_empty()).then(|| name.to_owned());
-            tell(match create {
-                Create::Session => Intent::NewSession(name),
-                _ => Intent::NewWindow(name),
-            });
-        },
-    );
 }
 
 // --- The transport capsule -------------------------------------------------
@@ -699,7 +539,6 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
         let target = segment_box(content, separator_width, shrink);
         match &ctx {
             Some(ctx) => {
-                let ask = ctx.asking(Intent::Crumb(crumb));
                 let target = target
                     .role(AccessibilityRole::Button)
                     .label(label)
@@ -710,35 +549,11 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
                     })
                     .disabled(!live)
                     .active(|s| s.opacity(0.5));
-                if crumb == Crumb::Session {
-                    return target
-                        .on_press(move || {
-                            if live {
-                                ask()
-                            }
-                        })
-                        .into_element();
-                }
-                // The window and the pane open the pane overview (the old
-                // lists before the session's tree has come); held, the old
-                // lists (until the owner has tried the overview).
-                let overview = ctx.overview;
-                let switcher = ctx.switcher;
-                let list = ctx.asking(Intent::Crumb(crumb));
+                let ctx = ctx.clone();
                 target
                     .on_press(move || {
-                        if !live {
-                            return;
-                        }
-                        if switcher.with_untracked(|s| s.tree.is_some()) {
-                            overview.set(true)
-                        } else {
-                            list()
-                        }
-                    })
-                    .on_long_press(move || {
                         if live {
-                            ask()
+                            press_segment(&ctx, crumb)
                         }
                     })
                     .into_element()
@@ -818,6 +633,35 @@ fn row(plan: &Crumbs, names: &super::model::Names, named: bool, ctx: Option<Ctx>
         ));
     }
     row.into_element()
+}
+
+/// Where a segment's press goes: the session (herdr: workspace) and the
+/// window (herdr: tab) to their quick pickers, the host's lists hung from
+/// the breadcrumb, each ending in its "＋ New…" row; the pane to the
+/// window's pane page, ending in "＋ New pane" (its list before the
+/// session's tree has come).
+pub fn segment_target(crumb: Crumb, has_tree: bool) -> SegmentTarget {
+    match crumb {
+        Crumb::Pane if has_tree => SegmentTarget::PanePage,
+        crumb => SegmentTarget::Picker(crumb),
+    }
+}
+
+/// What a segment opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SegmentTarget {
+    /// The host's quick picker of that level.
+    Picker(Crumb),
+    /// The pane page (the overview).
+    PanePage,
+}
+
+fn press_segment(ctx: &Ctx, crumb: Crumb) {
+    let has_tree = ctx.switcher.with_untracked(|s| s.tree.is_some());
+    match segment_target(crumb, has_tree) {
+        SegmentTarget::PanePage => ctx.overview.set(true),
+        SegmentTarget::Picker(crumb) => ctx.ask(Intent::Crumb(crumb)),
+    }
 }
 
 /// The multiplexer's symbol, as the `ui` layer's icons take it (a
@@ -943,6 +787,28 @@ fn identity(ctx: &Ctx) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The session's and the window's segments open their quick lists;
+    /// the pane's opens the pane page once the tree is here, the list of
+    /// panes before.
+    #[test]
+    fn each_segment_opens_its_level() {
+        for has_tree in [false, true] {
+            assert_eq!(
+                segment_target(Crumb::Session, has_tree),
+                SegmentTarget::Picker(Crumb::Session)
+            );
+            assert_eq!(
+                segment_target(Crumb::Window, has_tree),
+                SegmentTarget::Picker(Crumb::Window)
+            );
+        }
+        assert_eq!(segment_target(Crumb::Pane, true), SegmentTarget::PanePage);
+        assert_eq!(
+            segment_target(Crumb::Pane, false),
+            SegmentTarget::Picker(Crumb::Pane)
+        );
+    }
 
     /// The pill's dot (what `TransportConnState.transientTint` pinned for
     /// the SwiftUI pill, gone in D8): offline, with nothing being attempted,

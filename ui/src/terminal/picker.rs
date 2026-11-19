@@ -52,8 +52,9 @@ use crate::{
         alert::{AlertDialogOptions, alert_dialog},
         icon::{Tone, icon},
         page::page,
-        row::{PADDING_X, row as list_row},
+        row::{PADDING_X, RowTone, row as list_row},
         section::section,
+        status::Status,
         tokens::{number, token},
         typography::TextToken,
     },
@@ -378,6 +379,11 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
                     Some(window) => format!("{head} · {}", active_window_title(row, window, vocab)),
                     None => head,
                 }
+            } else if let Some(agent) = &row.agent {
+                // What runs there, as the active row's window says it.
+                agent.clone()
+            } else if !row.command.is_empty() {
+                display_command(&row.command)
             } else if row.attached {
                 t!("attached")
             } else {
@@ -425,6 +431,18 @@ pub fn title(kind: Kind, vocab: &Vocab) -> String {
         Kind::Windows => vocab.windows.clone(),
         Kind::Sessions => vocab.sessions.clone(),
         Kind::Panes => t!("Select Pane"),
+    }
+}
+
+/// The list's last row, which makes one more of what it lists: a tmux
+/// window or a herdr tab, a session or a workspace, a pane.
+pub fn new_row_title(kind: Kind, mux: Mux) -> String {
+    match (kind, mux) {
+        (Kind::Windows, Mux::Herdr) => t!("New tab"),
+        (Kind::Windows, _) => t!("New window"),
+        (Kind::Sessions, Mux::Herdr) => t!("New Workspace"),
+        (Kind::Sessions, _) => t!("New Session"),
+        (Kind::Panes, _) => t!("New Pane"),
     }
 }
 
@@ -502,7 +520,7 @@ pub fn kill_question(kind: Kind, row: &Row, picker: &Picker, vocab: &Vocab) -> A
         .cancel("cancel", t!("Cancel"))
 }
 
-/// The ＋'s question: the new window's or session's name (blank: the
+/// The New row's question: the new window's or session's name (blank: the
 /// program names it).
 pub fn new_prompt(kind: Kind, vocab: &Vocab) -> Prompt {
     let noun = if kind == Kind::Sessions {
@@ -579,14 +597,35 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
     let list = element_ref();
     // The list opens on the active row once per presentation.
     let revealed = stored(false);
+    let new: Rc<dyn Fn()> = {
+        let (tell, prompts) = (tell.clone(), prompts.clone());
+        Rc::new(move || {
+            let (kind, mux) = picker.with_untracked(|p| (p.kind, p.mux));
+            match kind {
+                Kind::Panes => tell(json!({"ev": "new"})),
+                Kind::Windows | Kind::Sessions => {
+                    let answer_to = tell.clone();
+                    prompts.ask(&*tell, new_prompt(kind, &Vocab::of(mux)), move |text| {
+                        let Some(text) = text else { return };
+                        let name = text.trim();
+                        answer_to(json!({
+                            "ev": "new",
+                            "name": (!name.is_empty()).then_some(name),
+                        }));
+                    });
+                }
+            }
+        })
+    };
     let body = {
-        let tell = tell.clone();
+        let (tell, new) = (tell.clone(), new.clone());
         move || {
             let tell = tell.clone();
+            let new = new.clone();
             let rows = dynamic(move || {
                 let now = picker.get();
-                let tell = tell.clone();
-                untracked(move || rows_section(&now, list, revealed, tell))
+                let (tell, new) = (tell.clone(), new.clone());
+                untracked(move || rows_section(&now, list, revealed, tell, new))
             });
             let foot = dynamic(move || {
                 let (kind, mux) = (kind.get(), mux.get());
@@ -608,28 +647,6 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             .into_element()
         }
     };
-    let new: Rc<dyn Fn()> = {
-        let (tell, prompts) = (tell.clone(), prompts.clone());
-        Rc::new(move || {
-            let (kind, mux) = picker.with_untracked(|p| (p.kind, p.mux));
-            match kind {
-                Kind::Panes => tell(json!({"ev": "new"})),
-                Kind::Windows | Kind::Sessions => {
-                    let answer_to = tell.clone();
-                    prompts.ask(&*tell, new_prompt(kind, &Vocab::of(mux)), move |text| {
-                        let Some(text) = text else { return };
-                        let name = text.trim();
-                        answer_to(json!({
-                            "ev": "new",
-                            "name": (!name.is_empty()).then_some(name),
-                        }));
-                    });
-                }
-            }
-        })
-    };
-    // A share's picker makes nothing: no ＋.
-    let sending = computed(move || picker.with(|p| p.send.is_some()));
     view()
         .flex_1()
         .relative()
@@ -641,30 +658,14 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             body,
             tell.clone(),
         ))
-        .child(dynamic(move || {
-            let new = (!sending.get()).then(|| new.clone());
-            untracked(move || {
-                nav_bar::root_bar(nav_bar::NavBar {
-                    metrics: bar,
-                    back_title: String::new(),
-                    title: Box::new(move || title(kind.get(), &Vocab::of(mux.get()))),
-                    leading: None,
-                    trailing: new
-                        .map(|new| nav_bar::BarButton {
-                            label: t!("New"),
-                            content: nav_bar::BarContent::Symbol("plus"),
-                            enabled: computed(|| true),
-                            emphasized: false,
-                            test_id: "mux-picker-new",
-                            on_press: Box::new(move || new()),
-                            menu: None,
-                        })
-                        .into_iter()
-                        .collect(),
-                    on_back: Box::new(|| {}),
-                    scrolled,
-                })
-            })
+        .child(nav_bar::root_bar(nav_bar::NavBar {
+            metrics: bar,
+            back_title: String::new(),
+            title: Box::new(move || title(kind.get(), &Vocab::of(mux.get()))),
+            leading: None,
+            trailing: Vec::new(),
+            on_back: Box::new(|| {}),
+            scrolled,
         }))
 }
 
@@ -733,12 +734,24 @@ fn signal_tone(signal: AgentSignal) -> Tone {
     }
 }
 
-/// The picker's rows on one card; the active one opens in view.
+/// The dot beside the agents' state.
+fn signal_status(signal: AgentSignal) -> Status {
+    match signal {
+        AgentSignal::Attention => Status::Attention,
+        AgentSignal::Working => Status::Working,
+        AgentSignal::Done => Status::Done,
+    }
+}
+
+/// The picker's rows on one card, the active one checked and opened in
+/// view, and last the row that makes a new one (none in a share's
+/// picker: it sends to a pane, it makes nothing).
 fn rows_section(
     picker: &Picker,
     list: ElementRef,
     revealed: Stored<bool>,
     tell: Tell,
+    new: Rc<dyn Fn()>,
 ) -> AnyElement {
     let vocab = Vocab::of(picker.mux);
     let mut card = section().test_id("mux-picker-rows");
@@ -765,7 +778,8 @@ fn rows_section(
         if let Some(signal) = row.signal {
             item = item
                 .value(signal_label(signal))
-                .value_tone(signal_tone(signal));
+                .value_tone(signal_tone(signal))
+                .value_dot(signal_status(signal));
         }
         let inset = item.inset();
         let target = element_ref();
@@ -800,6 +814,15 @@ fn rows_section(
                 .child(item),
             inset,
         );
+    }
+    if picker.send.is_none() {
+        let item = list_row(new_row_title(picker.kind, picker.mux))
+            .leading(icon(symbol("plus")).tone(Tone::Primary))
+            .tone(RowTone::Primary)
+            .on_press(move || new())
+            .test_id("mux-picker-new");
+        let inset = item.inset();
+        card = card.item(item, inset);
     }
     card.into_element()
 }

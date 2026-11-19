@@ -118,6 +118,12 @@ fn chrome() -> Value {
     })
 }
 
+/// The switcher's live tree the host posts beside the chrome (the pane
+/// page is drawn from it).
+fn switcher() -> Value {
+    json!({"op": "switcher", "tree": chrome()["crumbs"]["tree"], "hintSeen": true})
+}
+
 /// A token's value in one appearance.
 fn token(name: &str, light: bool) -> Rgba {
     tokens::colors(&AppTheme::default())
@@ -165,8 +171,11 @@ fn the_breadcrumb_says_session_project_agent() {
         next_intent(&heard),
         json!({"ev": "crumb", "crumb": "window"})
     );
+    // The pane's segment opens the window's pane page (the tree is here).
+    post(&mut app.0, &channel, &switcher().to_string());
     app.0.press("label:claude, needs you").unwrap();
-    assert_eq!(next_intent(&heard), json!({"ev": "crumb", "crumb": "pane"}));
+    assert_eq!(next_intent(&heard), json!({"ev": "overview", "open": true}));
+    app.0.press("id:terminal-overview-done").unwrap();
     // The agent waits: its words are `warning-text`; the others `foreground`.
     assert!(close(
         color_of(&app, "claude"),
@@ -375,87 +384,89 @@ fn the_session_is_never_named_twice() {
     channel.close();
 }
 
-/// The bar's ＋ is always there on a live terminal: a system menu of New
-/// window (herdr: New tab), a split of the window in use, and New session
-/// (herdr: New workspace). A window or a session asks its name first (the
-/// host's prompt, blank: the program names it); the split goes at once.
+/// Each segment of the breadcrumb opens what makes and picks its level:
+/// the session's (herdr: workspace's) and the window's (herdr: tab's) quick
+/// lists, which end in their New row, and the pane's page of the window's
+/// panes, which ends in New pane. The bar has no ＋ of its own.
 #[test]
-fn the_bars_plus_makes_a_window_a_pane_or_a_session() {
+fn each_segment_opens_its_own_level() {
     let (mut app, channel, natives) =
         start_observing(Screen::Terminal, Params::default(), "terminal-screen");
     let heard = hear(&channel);
     post(&mut app.0, &channel, &chrome().to_string());
     app.0.wait_for("id:terminal-breadcrumb").unwrap();
-    let menu = natives
-        .find("moshpit/menu", "terminal-new")
-        .expect("the bar's ＋");
-    let titles: Vec<(String, bool)> = natives
-        .prop(menu, "items")
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|i| {
-            (
-                i["id"].as_str().unwrap().to_owned(),
-                i["disabled"].as_bool().unwrap_or(false),
-            )
-        })
-        .collect();
-    assert_eq!(
-        titles,
-        [
-            ("new-window".to_owned(), false),
-            ("new-pane".to_owned(), false),
-            ("new-session".to_owned(), false),
-        ]
+    assert!(
+        natives.find("moshpit/menu", "terminal-new").is_none(),
+        "no ＋ menu"
     );
-    let items = natives.prop(menu, "items").unwrap();
-    assert_eq!(items[0]["title"], "New window");
-    assert_eq!(items[2]["title"], "New Session");
-
-    // The split: at once, in the window in use.
-    common::emit(&mut app.0, menu, "select", json!("new-pane"));
+    assert!(!app.0.screen().matches("id:terminal-new").unwrap(), "no ＋");
+    app.0.press("label:train").unwrap();
     assert_eq!(
         next_intent(&heard),
-        json!({"ev": "new-pane", "window": "@1"})
+        json!({"ev": "crumb", "crumb": "session"})
     );
+    app.0.press("label:trainer").unwrap();
+    assert_eq!(
+        next_intent(&heard),
+        json!({"ev": "crumb", "crumb": "window"})
+    );
+    post(&mut app.0, &channel, &switcher().to_string());
+    app.0.press("label:claude, needs you").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "overview", "open": true}));
+    app.0.wait_for("id:overview-new-pane").unwrap();
+    app.0.press("id:terminal-overview-done").unwrap();
+    // The page asked for its pictures, told where its cell is: then closed.
+    let closed = std::iter::repeat_with(|| next_intent(&heard))
+        .find(|e| e["ev"] == "overview")
+        .unwrap();
+    assert_eq!(closed, json!({"ev": "overview", "open": false}));
 
-    // A window and a session: the name first.
-    for (pick, title, said) in [
-        ("new-window", "New Window", "new-window"),
-        ("new-session", "New Session", "new-session"),
-    ] {
-        common::emit(&mut app.0, menu, "select", json!(pick));
-        let prompt = next_intent(&heard);
-        assert_eq!(prompt["ev"], "prompt", "{pick}");
-        assert_eq!(prompt["title"], title, "{pick}");
-        let id = prompt["id"].as_u64().unwrap();
-        post(
-            &mut app.0,
-            &channel,
-            &json!({"op": "prompted", "id": id, "text": " build "}).to_string(),
-        );
-        assert_eq!(next_intent(&heard), json!({"ev": said, "name": "build"}));
-        common::emit(&mut app.0, menu, "select", json!(pick));
-        let id = next_intent(&heard)["id"].as_u64().unwrap();
-        post(
-            &mut app.0,
-            &channel,
-            &json!({"op": "prompted", "id": id, "text": ""}).to_string(),
-        );
-        assert_eq!(next_intent(&heard), json!({"ev": said, "name": null}));
-    }
-
-    // herdr: a tab and a workspace.
-    let mut herdr = chrome();
-    herdr["mux"] = json!("herdr");
-    herdr["crumbs"]["tree"]["mux"] = json!("herdr");
-    post(&mut app.0, &channel, &herdr.to_string());
+    // Before the tree comes, the pane's segment opens the list of panes.
+    let mut bare = chrome();
+    bare["crumbs"].as_object_mut().unwrap().remove("tree");
+    let (mut app, channel2, _) =
+        start_observing(Screen::Terminal, Params::default(), "terminal-screen");
+    let heard = hear(&channel2);
+    post(&mut app.0, &channel2, &bare.to_string());
     app.0.wait_for("id:terminal-breadcrumb").unwrap();
-    let menu = natives.find("moshpit/menu", "terminal-new").unwrap();
-    let items = natives.prop(menu, "items").unwrap();
-    assert_eq!(items[0]["title"], "New tab");
-    assert_eq!(items[2]["title"], "New Workspace");
+    app.0.press("label:claude, needs you").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "crumb", "crumb": "pane"}));
+    channel.close();
+    channel2.close();
+}
+
+/// The back button is drawn as tall as the breadcrumb beside it (it was
+/// 44 pt, taller than every other piece of the bar), and still takes a
+/// 44 pt touch.
+#[test]
+fn the_back_button_is_the_breadcrumbs_height() {
+    let (mut app, channel, slops) = phone();
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    let nodes = app.0.screen().layout_nodes();
+    let height_of = |id: &str| {
+        nodes
+            .iter()
+            .find(|n| n.test_id.as_deref() == Some(id))
+            .unwrap_or_else(|| panic!("{id}"))
+            .bounds
+            .size
+    };
+    let back = height_of("terminal-back");
+    let crumb = height_of("terminal-breadcrumb");
+    assert!(
+        (back.height.0 - crumb.height.0).abs() < 0.5,
+        "back {back:?}, breadcrumb {crumb:?}"
+    );
+    assert!(back.height.0 < 44.0 && (back.width.0 - back.height.0).abs() < 0.5);
+    let node = app
+        .0
+        .screen()
+        .press_target("id:terminal-back")
+        .unwrap()
+        .unwrap();
+    let slop = slops.of(node);
+    assert!(back.height.0 + slop.top.0 + slop.bottom.0 >= 44.0);
+    assert!(back.width.0 + slop.left.0 + slop.right.0 >= 44.0);
     channel.close();
 }

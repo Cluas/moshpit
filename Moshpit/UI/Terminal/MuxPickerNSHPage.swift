@@ -176,15 +176,26 @@ struct MuxPickerState: Equatable {
             let activeWindow = snapshot.activeWindowId.flatMap { snapshot.windows[$0] }
             rows = snapshot.sortedSessions.map { session in
                 var row = Row(id: session.id, name: session.name, attached: session.isAttached)
+                // Every session says what runs in it and how its agents are
+                // (the quick picker's rows): its active window's active pane,
+                // and the signal of all its panes together.
+                let own = snapshot.windows(inSession: session.id)
+                let panes = own.flatMap { snapshot.panes(inWindow: $0.id) }
+                row.signal = agentSignalsAggregate(signals: panes.map { hooks[$0.id]?.dot(herdr: herdr) })
+                let pane: PaneInfo?
                 if session.id == snapshot.activeSessionId {
                     row.windows = windows.count
                     row.window = activeWindow.map { "\($0.index):\($0.name)" }
                     // What names that window the way its row is named.
-                    let pane = snapshot.activePaneId.flatMap { snapshot.panes[$0] }
-                    row.command = pane?.command ?? ""
-                    row.path = pane?.path
-                    row.agent = pane.flatMap { hooks[$0.id]?.agent }.flatMap { $0.isEmpty ? nil : $0 }
+                    pane = snapshot.activePaneId.flatMap { snapshot.panes[$0] }
+                } else {
+                    let window = own.first { $0.isActive } ?? own.first
+                    let inWindow = window.map { snapshot.panes(inWindow: $0.id) } ?? []
+                    pane = inWindow.first { $0.isActive } ?? inWindow.first
                 }
+                row.command = pane?.command ?? ""
+                row.path = pane?.path
+                row.agent = pane.flatMap { hooks[$0.id]?.agent }.flatMap { $0.isEmpty ? nil : $0 }
                 return row
             }
         case .panes:

@@ -1,42 +1,30 @@
-//! The pane overview (the pane-switching design's steps 2 and 3: names,
-//! states and pictures): every pane of the session, one card per window,
-//! over the terminal screen.
+//! The pane page (the pane-switching design's steps 2 and 3: names,
+//! states and pictures): the panes of the window shown, a card each, over
+//! the terminal screen. It is the one full-screen grid: the session and the
+//! window (herdr: workspace and tab) are picked from the host's quick
+//! pickers, hung from the breadcrumb.
 //!
-//! - Opened from the breadcrumb's window and pane segments (a long press on
-//!   them still opens the old lists, until the owner has tried this), ⌘K,
-//!   and VoiceOver's Show all panes on the terminal (the host's
-//!   `{"op": "overview", "open": true}`); closed by Done, ⌘K again, Escape,
-//!   or a pane picked.
-//! - A card holds its window's panes: one fills it, two side by side, three
-//!   as a tall one and two stacked, four in a grid; past four, three and
-//!   "+N". The panes drawn are the card's picture of its layout. A pane
-//!   says what runs in it and its agent's state, with the state's dot; the
-//!   current one has the accent's ring. Under the card: the window's name
-//!   by Home's rules and its most urgent state, or its panes, or what runs
-//!   in it.
-//! - A window of one pane: a press on it switches to that pane
-//!   ([`Intent::SelectPane`]), at once. A window of more: a press on its
-//!   panes opens the window's pane page, the same grid of cards one level
-//!   down, one card per pane (its picture, then what runs in it and its
-//!   state, and its ⋯: the pane's menu), and last "＋ New pane", as the
-//!   windows' last card is "＋ New window". There a pane picked switches
-//!   to it; the bar's back (Windows, herdr Tabs) or Escape goes back up.
-//!   (The phone's card is some 127 pt wide: a pane in it is too small a
-//!   target to pick, and a row of "＋ New pane" under every card took more
-//!   room than it gave.)
-//! - Its long press
-//!   is the host's menu (`overview-pane-<id>`: Open, New Pane, Rename
-//!   window…, Kill pane…), its pick coming back as `{"op": "overview-act"}`;
-//!   the card's ⋯ is the system's menu (New Pane, Rename window…, Kill
-//!   window…). A rename asks for the name (the host's prompt); a kill asks
-//!   on NSH's action sheet first. The last card makes a new window.
-//! - The session's capsule opens the sessions list.
+//! - Opened from the breadcrumb's pane segment, ⌘K, and VoiceOver's Show
+//!   all panes on the terminal (the host's `{"op": "overview", "open":
+//!   true}`); closed by Done, ⌘K again, Escape, or a pane picked.
+//! - A card per pane of the window shown: its picture, then what runs in
+//!   it and its state (the state's dot first), and its ⋯ (the pane's
+//!   menu); the current one has the accent's ring. Last, "＋ New pane",
+//!   which splits the window at once.
+//! - A pane picked switches to it ([`Intent::SelectPane`]) and the page
+//!   goes.
+//! - Its long press is the host's menu (`overview-pane-<id>`: Open, New
+//!   Pane, Rename window…, Kill pane…), its pick coming back as `{"op":
+//!   "overview-act"}`; a rename asks for the name (the host's prompt); a
+//!   kill asks on NSH's action sheet first.
+//! - The bar's capsule names the window and opens the windows' quick
+//!   picker (herdr: tabs), as the breadcrumb's window segment does.
 //! - Pictures (B658): a pane's cell shows the end of its screen as tiny
 //!   text, read from the terminals the session already keeps (every pane of
 //!   an SSH tmux attach has one; a mosh or herdr session only the pane it
 //!   shows): asked for once on opening and for panes that come while it is
-//!   open, never drawn live. A pane without one shows its name and state
-//!   only. Decorative: hidden from screen readers.
+//!   open, never drawn live. A pane without one shows the terminal's
+//!   symbol. Decorative: hidden from screen readers.
 //! - Its coming and going (B658): the page fades (`base` in, `fast` out;
 //!   a cross-fade of `fast` both ways under reduced motion), and tells the
 //!   host where the shown pane's cell is (`overview-anchor`), so the live
@@ -44,8 +32,9 @@
 //!   pane's cell is, so its terminal grows from there. The motion is the
 //!   host's, under the page; nothing waits for it.
 //!
-//! The overview reads the tree the switcher already has (`{"op":
-//! "switcher"}`): the active session, whole.
+//! The page reads the tree the switcher already has (`{"op":
+//! "switcher"}`): the active session, whole; it shows the window of the
+//! pane in view.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -66,7 +55,6 @@ use crate::{
     nav_bar,
     ui::{
         alert::alert_dialog,
-        button::{Variant, button},
         icon::{IconSize, Tone, icon},
         menu::{MenuEntry, menu},
         motion::{Duration, ENTER},
@@ -82,8 +70,7 @@ pub const CARD_MIN: f32 = 160.0;
 /// Between cards, across and down.
 pub const GAP: f32 = 12.0;
 pub const ROW_GAP: f32 = 20.0;
-/// The panes' box in a card: two rows of panes of at least the touch
-/// target.
+/// A card's box: its pane's picture.
 pub const BOX: f32 = 112.0;
 /// A picture's text and its line (points): a texture to recognise a
 /// screen by, not to read.
@@ -94,10 +81,8 @@ pub const PICTURE_ROWS: usize = 24;
 /// Wide enough for any row at [`PICTURE_TEXT`]: a row is cut by its cell,
 /// never wrapped.
 const PICTURE_WIDTH: f32 = 1200.0;
-/// Between two panes of a card: the window's own dividers.
-const DIVIDER: f32 = 2.0;
 
-/// One pane of a card.
+/// One pane of a window.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cell {
     pub pane: String,
@@ -228,13 +213,15 @@ impl Overview {
     pub fn card(&self, window: &str) -> Option<&Card> {
         self.cards.iter().find(|c| c.window == window)
     }
-}
 
-/// How many of a card's `n` panes show, and how many hide behind "+N": all
-/// of up to four; three and the rest past that (the window's pane page
-/// shows them all).
-pub fn shown(n: usize) -> (usize, usize) {
-    if n <= 4 { (n, 0) } else { (3, n - 3) }
+    /// The window the page shows: the one holding the pane in view (the
+    /// first, when none is).
+    pub fn shown(&self) -> Option<&Card> {
+        self.cards
+            .iter()
+            .find(|c| c.current())
+            .or_else(|| self.cards.first())
+    }
 }
 
 /// How many columns of cards fit `width`.
@@ -265,48 +252,6 @@ pub fn fade_ms(reduced: bool, showing: bool) -> f32 {
     match (reduced, showing) {
         (false, true) => Duration::Base.nominal_ms(),
         _ => Duration::Fast.nominal_ms(),
-    }
-}
-
-/// The words a card's second line says, with the state's status when it
-/// has one: the strongest state ("Needs you · 3m" for one pane, "Needs you
-/// · 3 panes" for more), else the panes ("3 panes"), else what runs in its
-/// one pane.
-pub fn card_line(
-    card: &Card,
-    now: f64,
-    words: &Words,
-    panes: &dyn Fn(i64) -> String,
-) -> (String, Option<Status>) {
-    let count = card.cells.len();
-    match card.strongest() {
-        Some(signal) => {
-            let lone = (count == 1).then(|| card.cells[0].clone());
-            let state = lone
-                .as_ref()
-                .map(|cell| stop_of(cell, card))
-                .or_else(|| {
-                    card.cells
-                        .iter()
-                        .find(|c| c.signal == Some(signal))
-                        .map(|c| stop_of(c, card))
-                })
-                .and_then(|s| switcher::state_line(&s, now, words));
-            let (words_line, status, _) = state.expect("the strongest signal is some pane's");
-            if count == 1 {
-                (words_line, Some(status))
-            } else {
-                // Many panes: the state's word alone, then how many.
-                let word = words_line
-                    .split(" · ")
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned();
-                (format!("{word} · {}", panes(count as i64)), Some(status))
-            }
-        }
-        None if count == 1 => (card.cells[0].name.clone(), None),
-        None => (panes(count as i64), None),
     }
 }
 
@@ -385,33 +330,6 @@ pub fn pane_entries(mux: HomeMux) -> Vec<MenuEntry> {
     ]
 }
 
-/// What a card's ⋯ offers: split it, rename it, kill it.
-pub fn window_entries(mux: HomeMux) -> Vec<MenuEntry> {
-    let herdr = mux == HomeMux::Herdr;
-    vec![
-        MenuEntry::new("new-pane", t!("New Pane")).symbol("rectangle.split.2x1"),
-        MenuEntry::new(
-            "rename",
-            if herdr {
-                t!("Rename tab…")
-            } else {
-                t!("Rename window…")
-            },
-        )
-        .symbol("pencil"),
-        MenuEntry::new(
-            "kill",
-            if herdr {
-                t!("Close tab…")
-            } else {
-                t!("Kill window…")
-            },
-        )
-        .symbol("trash")
-        .destructive(),
-    ]
-}
-
 // --- Acting ---------------------------------------------------------------------
 
 /// What the page does for a menu's pick on pane `pane` (`open`, `new-pane`,
@@ -473,53 +391,6 @@ pub(crate) fn act_on_pane(
     }
 }
 
-/// What the page does for a card's ⋯ pick on window `window`.
-pub(crate) fn act_on_window(
-    ctx: &Ctx,
-    prompts: &Prompts,
-    overview: &Overview,
-    action: &str,
-    window: &str,
-) {
-    let Some(card) = overview.card(window) else {
-        return;
-    };
-    match action {
-        "new-pane" => ctx.ask(Intent::NewPane(card.window.clone())),
-        "rename" => rename(ctx, prompts, overview.mux, card),
-        "kill" => {
-            let vocab = vocab(overview.mux);
-            let row = window_row(card);
-            let snapshot = picker::Picker {
-                kind: Kind::Windows,
-                mux: picker_mux(overview.mux),
-                rows: vec![row.clone()],
-                active: None,
-                send: None,
-            };
-            let answer = picker::kill_question(Kind::Windows, &row, &snapshot, &vocab).show();
-            let ctx = ctx.clone();
-            let window = card.window.clone();
-            drop(spawn(async move {
-                if answer
-                    .await
-                    .is_ok_and(|r| r.action.as_deref() == Some("kill"))
-                {
-                    ctx.ask(Intent::KillWindow(window));
-                }
-            }));
-        }
-        _ => {}
-    }
-}
-
-fn picker_mux(mux: HomeMux) -> super::model::Mux {
-    match mux {
-        HomeMux::Tmux => super::model::Mux::Tmux,
-        HomeMux::Herdr => super::model::Mux::Herdr,
-    }
-}
-
 /// A card as the picker's window row: what its questions name.
 fn window_row(card: &Card) -> Row {
     Row {
@@ -559,24 +430,6 @@ fn rename(ctx: &Ctx, prompts: &Prompts, mux: HomeMux, card: &Card) {
                 id,
                 name: name.to_owned(),
             });
-        },
-    );
-}
-
-/// Asks for a new window's name (blank: the program names it), then makes
-/// it.
-fn new_window(ctx: &Ctx, prompts: &Prompts, mux: HomeMux) {
-    let tell = ctx.tell.clone();
-    let ask = ctx.tell.clone();
-    prompts.ask(
-        &move |event| ask(Intent::Prompt(event)),
-        picker::new_prompt(Kind::Windows, &vocab(mux)),
-        move |text| {
-            let Some(text) = text else { return };
-            let name = text.trim();
-            tell(Intent::NewWindow(
-                (!name.is_empty()).then(|| name.to_owned()),
-            ));
         },
     );
 }
@@ -694,7 +547,7 @@ pub(crate) fn ask_pictures(ctx: &Ctx, model: Memo<Overview>) {
         }
         let (panes, current) = model.with(|o| {
             let panes: Vec<String> = o
-                .cards
+                .shown()
                 .iter()
                 .flat_map(|c| c.cells.iter().map(|c| c.pane.clone()))
                 .collect();
@@ -725,23 +578,10 @@ pub(crate) fn ask_pictures(ctx: &Ctx, model: Memo<Overview>) {
 pub(crate) fn overview(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
     let open = ctx.overview;
     let visible = computed(move || open.get());
-    // The window whose pane page shows; none: the windows. Every opening
-    // starts at the windows.
-    let focus = signal(None::<String>);
-    effect(move || {
-        if !open.get() {
-            untracked(|| focus.set(None));
-        }
-    });
-    // Escape goes back up from a pane page, else closes it (a hardware
-    // keyboard; the terminal has given up the keyboard while it is up).
+    // Escape closes it (a hardware keyboard; the terminal has given up the
+    // keyboard while it is up).
     on_key("escape", move |_: &str| {
-        if !open.get_untracked() {
-            return;
-        }
-        if focus.with_untracked(Option::is_some) {
-            focus.set(None);
-        } else {
+        if open.get_untracked() {
             open.set(false);
         }
     });
@@ -752,7 +592,7 @@ pub(crate) fn overview(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> Any
         .child(switcher::appearing_ms(
             visible,
             |showing| fade_ms(reduce_motion(), showing),
-            move || page(ctx.clone(), model, prompts.clone(), focus),
+            move || page(ctx.clone(), model, prompts.clone()),
         ))
         .into_element()
 }
@@ -765,14 +605,8 @@ struct Anchor {
     told: Stored<Option<(String, [f32; 4])>>,
 }
 
-/// The page: its bar, the summary, the cards (the windows', or a
-/// window's panes').
-fn page(
-    ctx: Ctx,
-    model: Memo<Overview>,
-    prompts: Prompts,
-    focus: Signal<Option<String>>,
-) -> AnyElement {
+/// The page: its bar, the summary, the shown window's pane cards.
+fn page(ctx: Ctx, model: Memo<Overview>, prompts: Prompts) -> AnyElement {
     let anchor = Anchor {
         target: element_ref(),
         told: stored(None),
@@ -802,7 +636,7 @@ fn page(
         .h(move || px(window().height.0))
         .bg(move || token("background"))
         .test_id("terminal-overview")
-        .child(bar(ctx.clone(), model, focus))
+        .child(bar(ctx.clone(), model))
         .child(
             scroll()
                 .flex_1()
@@ -813,28 +647,20 @@ fn page(
                         .px(px(number("space-page")))
                         .pt(px(4.0))
                         .gap(px(12.0))
-                        .child(summary(model, focus))
-                        .child(cards(ctx.clone(), model, prompts, anchor, focus))
+                        .child(summary(model))
+                        .child(cards(ctx.clone(), model, prompts, anchor))
                         .child(view().h(move || px(32.0 + safe_area().bottom.0))),
                 ),
         )
         .into_element()
 }
 
-/// The overview's bar: the session (its list), or on a pane page back to
-/// the windows; Done.
-fn bar(ctx: Ctx, model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyElement {
-    let session = computed(move || model.with(|o| o.session.clone()));
-    // A pane page shown (its window still there): back to the windows.
-    let down = computed(move || {
-        focus.with(|f| {
-            f.as_ref()
-                .is_some_and(|w| model.with(|o| o.card(w).is_some()))
-        })
-    });
-    let herdr = computed(move || model.with(|o| o.mux == HomeMux::Herdr));
-    // herdr's workspace wears its own symbol, as in the breadcrumb (B656).
-    let symbol = computed(move || model.with(|o| vocab(o.mux).session_icon));
+/// The page's bar: the window shown (its quick picker), Done.
+fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
+    let window =
+        computed(move || model.with(|o| o.shown().map(|c| c.place.clone()).unwrap_or_default()));
+    // herdr's tab wears its own symbol, as in the breadcrumb (B656).
+    let symbol = computed(move || model.with(|o| vocab(o.mux).window_icon));
     let close = {
         let open = ctx.overview;
         Rc::new(move || open.set(false))
@@ -848,26 +674,7 @@ fn bar(ctx: Ctx, model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyEle
                 .items_center()
                 .justify_between()
                 .px(px(number("space-page")))
-                .child(dynamic(move || {
-                    if !down.get() {
-                        let ctx = ctx.clone();
-                        return untracked(move || capsule(ctx, session, symbol));
-                    }
-                    // Back names the page it goes to, as the system's does.
-                    let words = if herdr.get() {
-                        t!("Tabs")
-                    } else {
-                        t!("Windows")
-                    };
-                    untracked(move || {
-                        button(words)
-                            .variant(Variant::Bar)
-                            .icon("chevron.backward")
-                            .on_press(move || focus.set(None))
-                            .test_id("terminal-overview-back")
-                            .into_element()
-                    })
-                }))
+                .child(capsule(ctx, window, symbol))
                 .child(nav_bar::text_button(
                     t!("Done"),
                     true,
@@ -878,19 +685,21 @@ fn bar(ctx: Ctx, model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyEle
         .into_element()
 }
 
-/// The bar's session capsule (the sessions list).
-fn capsule(ctx: Ctx, session: Memo<String>, symbol: Memo<&'static str>) -> AnyElement {
+/// The bar's window capsule: the windows' quick picker (herdr: tabs), as
+/// the breadcrumb's window segment opens it.
+fn capsule(ctx: Ctx, window: Memo<String>, symbol: Memo<&'static str>) -> AnyElement {
     // The finger's target is the bar's 44 pt; the capsule
     // drawn in it is 36 (B654).
     view()
         .h(px(44.0))
         .min_w(px(44.0))
+        .flex_shrink(1.0)
         .justify_center()
         .role(AccessibilityRole::Button)
-        .label(move || session.get())
-        .test_id("terminal-overview-session")
+        .label(move || window.get())
+        .test_id("terminal-overview-window")
         .active(|s| s.opacity(0.5))
-        .on_press(ctx.asking(Intent::Crumb(Crumb::Session)))
+        .on_press(ctx.asking(Intent::Crumb(Crumb::Window)))
         .child(
             view()
                 .flex_row()
@@ -912,8 +721,9 @@ fn capsule(ctx: Ctx, session: Memo<String>, symbol: Memo<&'static str>) -> AnyEl
                     })
                 }))
                 .child(
-                    chrome_text(TextToken::Subhead, move || session.get())
+                    chrome_text(TextToken::Subhead, move || window.get())
                         .number_of_lines(1u32)
+                        .flex_shrink(1.0)
                         .text_color(move || token("foreground")),
                 )
                 .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
@@ -921,34 +731,26 @@ fn capsule(ctx: Ctx, session: Memo<String>, symbol: Memo<&'static str>) -> AnyEl
         .into_element()
 }
 
-/// "4 windows · 7 panes", and how many wait on you; on a window's pane
-/// page, "trainer · 3 panes" and its own.
-fn summary(model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyElement {
+/// "trainer · 3 panes", and how many wait on you.
+fn summary(model: Memo<Overview>) -> AnyElement {
     dynamic(move || {
-        let shown = focus.get();
-        let (words, waiting) = model.with(|o| {
-            let panes = |n: usize| crate::plural!("%lld panes", n as i64);
-            match shown.as_deref().and_then(|w| o.card(w)) {
-                Some(card) => {
-                    let waiting = card
-                        .cells
-                        .iter()
-                        .filter(|c| c.signal == Some(AgentSignal::Attention))
-                        .count();
-                    (
-                        format!("{} · {}", card.place, panes(card.cells.len())),
-                        waiting,
-                    )
-                }
-                None => {
-                    let windows = if o.mux == HomeMux::Herdr {
-                        crate::plural!("%lld tabs", o.cards.len() as i64)
-                    } else {
-                        crate::plural!("%lld windows", o.cards.len() as i64)
-                    };
-                    (format!("{windows} · {}", panes(o.panes())), o.waiting())
-                }
+        let (words, waiting) = model.with(|o| match o.shown() {
+            Some(card) => {
+                let waiting = card
+                    .cells
+                    .iter()
+                    .filter(|c| c.signal == Some(AgentSignal::Attention))
+                    .count();
+                (
+                    format!(
+                        "{} · {}",
+                        card.place,
+                        crate::plural!("%lld panes", card.cells.len() as i64)
+                    ),
+                    waiting,
+                )
             }
+            None => (String::new(), 0),
         });
         untracked(move || {
             // The badge goes under the count when the two don't fit
@@ -978,24 +780,17 @@ fn summary(model: Memo<Overview>, focus: Signal<Option<String>>) -> AnyElement {
     .into_element()
 }
 
-/// The page's cards: the windows', or, a window's pane page shown, its
-/// panes'. The swap cross-fades over `fast` (a plain cut under reduced
-/// motion, the token's time then 0).
-fn cards(
-    ctx: Ctx,
-    model: Memo<Overview>,
-    prompts: Prompts,
-    anchor: Anchor,
-    focus: Signal<Option<String>>,
-) -> AnyElement {
+/// The shown window's pane cards. Another window shown (picked from the
+/// windows' picker while the page is up) cross-fades over `fast` (a plain
+/// cut under reduced motion, the token's time then 0).
+fn cards(ctx: Ctx, model: Memo<Overview>, prompts: Prompts, anchor: Anchor) -> AnyElement {
     let fade = animated_value(1.0_f32);
     let level = stored(None::<String>);
     view()
         .bind_opacity(&fade)
         .child(dynamic(move || {
             let overview = model.get();
-            let shown = focus.get();
-            let card = shown.as_deref().and_then(|w| overview.card(w)).cloned();
+            let card = overview.shown().cloned();
             let ctx = ctx.clone();
             let prompts = prompts.clone();
             untracked(move || {
@@ -1009,7 +804,7 @@ fn cards(
                 }
                 match card {
                     Some(card) => pane_grid(ctx, overview, card, prompts, anchor),
-                    None => grid(ctx, overview, prompts, anchor, focus),
+                    None => view().into_element(),
                 }
             })
         }))
@@ -1032,25 +827,6 @@ fn rows_of(items: Vec<AnyElement>) -> AnyElement {
         rows = rows.child(row);
     }
     rows.into_element()
-}
-
-/// The cards, in rows of as many columns as fit, and the new window's.
-fn grid(
-    ctx: Ctx,
-    overview: Overview,
-    prompts: Prompts,
-    anchor: Anchor,
-    focus: Signal<Option<String>>,
-) -> AnyElement {
-    let now = switcher::unix_now();
-    let words = Words::here();
-    let mut items: Vec<AnyElement> = overview
-        .cards
-        .iter()
-        .map(|card| card_view(&ctx, &overview, card, &prompts, now, &words, anchor, focus))
-        .collect();
-    items.push(new_card(ctx.clone(), overview.mux, prompts.clone()));
-    rows_of(items)
 }
 
 /// A card's words under its box: its title, its second line (the state's
@@ -1130,147 +906,8 @@ fn card_label(
         .into_element()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn card_view(
-    ctx: &Ctx,
-    overview: &Overview,
-    card: &Card,
-    prompts: &Prompts,
-    now: f64,
-    words: &Words,
-    anchor: Anchor,
-    focus: Signal<Option<String>>,
-) -> AnyElement {
-    let many = card.cells.len() > 1;
-    let (count, more) = shown(card.cells.len());
-    // A window of one pane: its cell is the button (a press switches to
-    // it). Of more: the cells are the window's picture, and the box is the
-    // button, to the window's pane page.
-    let cells: Vec<AnyElement> = card.cells[..count]
-        .iter()
-        .map(|cell| {
-            let role = if many {
-                CellRole::Picture
-            } else {
-                CellRole::Pick
-            };
-            cell_view(ctx, card, cell, role, now, words, anchor)
-        })
-        .collect();
-    let more_view = (more > 0).then(|| {
-        view()
-            .flex_1()
-            .min_h(px(44.0))
-            .items_center()
-            .justify_center()
-            .bg(move || token("muted"))
-            .child(
-                chrome_text(TextToken::Headline, format!("+{more}"))
-                    .text_color(move || token("foreground")),
-            )
-            .into_element()
-    });
-    let boxed = panes_box(cells, more_view);
-    let panes = |n: i64| crate::plural!("%lld panes", n);
-    let (line, status) = card_line(card, now, words, &panes);
-    // Screen readers hear a lone pane's minutes as minutes (B653).
-    let said = match card.cells.as_slice() {
-        [cell] if status.is_some() => cell
-            .signal
-            .map(|signal| spoken_state(signal, cell.since, now))
-            .unwrap_or_else(|| line.clone()),
-        _ => line.clone(),
-    };
-    let boxed = if many {
-        // One target over the panes: what it opens is the window's panes,
-        // said as the window and what its panes hold.
-        let mut parts = vec![card.place.clone(), said.clone()];
-        if card.current() {
-            parts.push(t!("current"));
-        }
-        let window = card.window.clone();
-        view()
-            .role(AccessibilityRole::Button)
-            .label(parts.join(", "))
-            .accessibility_state(AccessibilityState {
-                selected: card.current(),
-                ..AccessibilityState::default()
-            })
-            .test_id(&format!("overview-panes-{}", card.window))
-            .rounded(px(number("radius")))
-            .border_curve(BorderCurve::Continuous)
-            .overflow_hidden()
-            .active(|s| s.opacity(0.6))
-            .on_press(move || focus.set(Some(window.clone())))
-            .child(boxed)
-            .into_element()
-    } else {
-        boxed
-    };
-    let more_label = t!("More for %@", arg1 = card.place.clone());
-    let window_id = card.window.clone();
-    let act = {
-        let ctx = ctx.clone();
-        let prompts = prompts.clone();
-        let overview = overview.clone();
-        move |action: String| act_on_window(&ctx, &prompts, &overview, &action, &window_id)
-    };
-    let label = card_label(
-        card.place.clone(),
-        line,
-        said,
-        status,
-        window_entries(overview.mux),
-        format!("overview-window-menu-{}", card.window),
-        more_label,
-        act,
-    );
-    view()
-        .test_id(&format!("overview-card-{}", card.window))
-        .child(boxed)
-        .child(label)
-        .into_element()
-}
-
-/// The panes' box: its cells laid out by how many there are.
-fn panes_box(mut cells: Vec<AnyElement>, more: Option<AnyElement>) -> AnyElement {
-    let frame = view()
-        .h(px(BOX))
-        .rounded(px(number("radius")))
-        .border_curve(BorderCurve::Continuous)
-        .overflow_hidden()
-        .bg(move || token("border"))
-        .gap(px(DIVIDER));
-    let row = || view().flex_row().flex_1().gap(px(DIVIDER));
-    match (cells.len(), more) {
-        (1, None) => frame.child(cells.remove(0)).into_element(),
-        (2, None) => frame.child(row().children(cells)).into_element(),
-        (3, None) => {
-            let right = view()
-                .flex_1()
-                .gap(px(DIVIDER))
-                .children(cells.split_off(1));
-            frame
-                .child(row().child(cells.remove(0)).child(right))
-                .into_element()
-        }
-        (_, more) => {
-            let mut cells = cells.into_iter();
-            let top = row().children(cells.by_ref().take(2).collect::<Vec<_>>());
-            let mut bottom = row();
-            for c in cells {
-                bottom = bottom.child(c);
-            }
-            if let Some(more) = more {
-                bottom = bottom.child(more);
-            }
-            frame.child(top).child(bottom).into_element()
-        }
-    }
-}
-
-/// A window's pane page: a card per pane, in the windows' grid, and last
-/// "＋ New pane", as the windows' last card is "＋ New window".
+/// The window's pane page: a card per pane, in rows of as many columns as
+/// fit, and last "＋ New pane".
 fn pane_grid(
     ctx: Ctx,
     overview: Overview,
@@ -1306,18 +943,6 @@ fn pane_card(
     words: &Words,
     anchor: Anchor,
 ) -> AnyElement {
-    let boxed = panes_box(
-        vec![cell_view(
-            ctx,
-            card,
-            cell,
-            CellRole::Card,
-            now,
-            words,
-            anchor,
-        )],
-        None,
-    );
     let (line, status, said) = match cell.signal {
         Some(signal) => match switcher::state_line(&stop_of(cell, card), now, words) {
             Some((line, status, _)) => (line, Some(status), spoken_state(signal, cell.since, now)),
@@ -1325,6 +950,15 @@ fn pane_card(
         },
         None => (String::new(), None, String::new()),
     };
+    // The pane in its box (the box clips the ring).
+    let boxed = view()
+        .h(px(BOX))
+        .rounded(px(number("radius")))
+        .border_curve(BorderCurve::Continuous)
+        .overflow_hidden()
+        .bg(move || token("border"))
+        .child(cell_view(ctx, cell, status, now, anchor))
+        .into_element();
     let pane = cell.pane.clone();
     let act = {
         let ctx = ctx.clone();
@@ -1372,31 +1006,15 @@ fn new_pane_card(ctx: &Ctx, window: &str) -> AnyElement {
         .into_element()
 }
 
-/// What a pane's cell is for.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CellRole {
-    /// A window of one pane: the cell is the button, its words in it.
-    Pick,
-    /// A pane of a window of more: drawn, its words in it, the press its
-    /// box's (to the pane page).
-    Picture,
-    /// A pane page's card: the button, its picture alone (its words are
-    /// under the box).
-    Card,
-}
-
-/// One pane: its picture, what runs in it and its state (a pane page's
-/// card: its picture alone), the current one ringed.
+/// One pane's picture in its card's box, the current one ringed; its
+/// state's dot in the corner. The button: a press switches to it.
 fn cell_view(
     ctx: &Ctx,
-    card: &Card,
     cell: &Cell,
-    role: CellRole,
+    status: Option<Status>,
     now: f64,
-    words: &Words,
     anchor: Anchor,
 ) -> AnyElement {
-    let state = switcher::state_line(&stop_of(cell, card), now, words);
     let mut label_parts = vec![cell.name.clone()];
     if let Some(signal) = cell.signal {
         // In words, minutes said as minutes (B653: "13m" is the eye's).
@@ -1413,16 +1031,13 @@ fn cell_view(
         let pane = cell.pane.clone();
         move || tell_anchor(&ctx, anchor.target, pane.clone(), anchor.told)
     });
-    // The host's long-press menu finds the pane by its id, whatever the
-    // cell is for.
+    // The host's long-press menu finds the pane by its id.
     let mut v = view()
         .flex_1()
         .min_w(px(0.0))
         .min_h(px(44.0))
         .relative()
         .p(px(8.0))
-        .justify_end()
-        .gap(px(2.0))
         .bg(move || token("card"))
         .on_layout(move |b: &Bounds<Points>| {
             size.replace(Some(b.size));
@@ -1430,55 +1045,32 @@ fn cell_view(
                 tell();
             }
         })
-        .test_id(&format!("overview-pane-{}", cell.pane));
-    if role == CellRole::Picture {
-        // Its box is the button and says the window: the cell is drawn
-        // only.
-        v = v.accessibility_elements_hidden(true);
-    } else {
-        v = v
-            .role(AccessibilityRole::Button)
-            .label(label_parts.join(", "))
-            .accessibility_state(AccessibilityState {
-                selected: cell.current,
-                ..AccessibilityState::default()
-            })
-            .active(|s| s.bg(move || token("accent")))
-            .on_press({
-                let ctx = ctx.clone();
-                move |e: &PressEvent| {
-                    // The cell's place: where the press is in the surface,
-                    // less where it is in the cell.
-                    let rect = size.get().map(|s| {
-                        [
-                            e.page_position.x.0 - e.position.x.0,
-                            e.page_position.y.0 - e.position.y.0,
-                            s.width.0,
-                            s.height.0,
-                        ]
-                    });
-                    pick_from(&ctx, &pane, rect)
-                }
-            });
-    }
-    v = v.child(picture(ctx, &cell.pane, role == CellRole::Card));
-    if role != CellRole::Card {
-        v = v.child(
-            chrome_text(TextToken::Subhead, cell.name.clone())
-                .number_of_lines(1u32)
-                .text_color(move || token("foreground")),
-        );
-    }
-    if let Some((words, status, line_tone)) = state {
-        if role != CellRole::Card {
-            // Two lines, as the card's (B834): a pane on a phone is some
-            // 72 pt wide, and German's "Wartet auf dich" is wider.
-            v = v.child(
-                chrome_text(TextToken::Caption, words)
-                    .number_of_lines(2u32)
-                    .text_color(move || token(line_tone)),
-            );
-        }
+        .test_id(&format!("overview-pane-{}", cell.pane))
+        .role(AccessibilityRole::Button)
+        .label(label_parts.join(", "))
+        .accessibility_state(AccessibilityState {
+            selected: cell.current,
+            ..AccessibilityState::default()
+        })
+        .active(|s| s.bg(move || token("accent")))
+        .on_press({
+            let ctx = ctx.clone();
+            move |e: &PressEvent| {
+                // The cell's place: where the press is in the surface, less
+                // where it is in the cell.
+                let rect = size.get().map(|s| {
+                    [
+                        e.page_position.x.0 - e.position.x.0,
+                        e.page_position.y.0 - e.position.y.0,
+                        s.width.0,
+                        s.height.0,
+                    ]
+                });
+                pick_from(&ctx, &pane, rect)
+            }
+        })
+        .child(picture(ctx, &cell.pane));
+    if let Some(status) = status {
         v = v.child(
             view()
                 .absolute()
@@ -1502,12 +1094,11 @@ fn cell_view(
     v.into_element()
 }
 
-/// Pane `pane`'s picture, filling what its cell leaves above its words:
+/// Pane `pane`'s picture, filling its cell:
 /// the end of its screen as tiny text ([`picture_rows`]), as many rows as
-/// fit; nothing until (unless) the host has one, or, `placeholder` (a
-/// pane page's card, whose words are under it), the terminal's symbol.
+/// fit; the terminal's symbol until (unless) the host has one.
 /// Decorative.
-fn picture(ctx: &Ctx, pane: &str, placeholder: bool) -> AnyElement {
+fn picture(ctx: &Ctx, pane: &str) -> AnyElement {
     let pictures = ctx.pictures;
     let height = signal(0.0_f32);
     let rows = {
@@ -1537,9 +1128,6 @@ fn picture(ctx: &Ctx, pane: &str, placeholder: bool) -> AnyElement {
         .child(dynamic(move || {
             let rows = rows.get();
             if rows.is_empty() {
-                if !placeholder {
-                    return view().into_element();
-                }
                 return untracked(|| {
                     view()
                         .absolute()
@@ -1566,32 +1154,6 @@ fn picture(ctx: &Ctx, pane: &str, placeholder: bool) -> AnyElement {
                 .test_id(&id)
                 .into_element()
         }))
-        .into_element()
-}
-
-/// The last card: a new window (herdr: tab), named first.
-fn new_card(ctx: Ctx, mux: HomeMux, prompts: Prompts) -> AnyElement {
-    let words = if mux == HomeMux::Herdr {
-        t!("New tab")
-    } else {
-        t!("New window")
-    };
-    view()
-        .h(px(BOX))
-        .items_center()
-        .justify_center()
-        .gap(px(6.0))
-        .rounded(px(number("radius")))
-        .border_curve(BorderCurve::Continuous)
-        .border(px(1.0))
-        .border_color(move || token("border-strong"))
-        .role(AccessibilityRole::Button)
-        .label(words.clone())
-        .test_id("overview-new-window")
-        .active(|s| s.bg(move || token("accent")))
-        .on_press(move || new_window(&ctx, &prompts, mux))
-        .child(icon("plus").size(IconSize::Lg).tone(Tone::Muted))
-        .child(chrome_text(TextToken::Subhead, words).text_color(move || token("muted-foreground")))
         .into_element()
 }
 
@@ -1688,14 +1250,6 @@ mod tests {
             working: "Working".into(),
             finished: "Finished".into(),
             now: "now".into(),
-        }
-    }
-
-    fn panes(n: i64) -> String {
-        if n == 1 {
-            "1 pane".into()
-        } else {
-            format!("{n} panes")
         }
     }
 
@@ -1829,35 +1383,15 @@ mod tests {
     }
 
     #[test]
-    fn past_four_panes_a_card_shows_three_and_more() {
-        assert_eq!(shown(1), (1, 0));
-        assert_eq!(shown(4), (4, 0));
-        assert_eq!(shown(6), (3, 3));
-    }
-
-    #[test]
-    fn a_cards_line_says_its_strongest_state_or_what_it_holds() {
-        let overview = Overview::of(&work("%1"), &english());
-        let line = |i: usize| card_line(&overview.cards[i], 1600.0 + 180.0, &english(), &panes);
-        assert_eq!(line(0), ("Working · 13m".into(), Some(Status::Working)));
-        assert_eq!(
-            line(1),
-            ("Needs you · 3 panes".into(), Some(Status::Attention)),
-            "many panes: the strongest state, then how many"
-        );
-        assert_eq!(line(2), ("2 panes".into(), None));
-        assert_eq!(line(3), ("Finished".into(), Some(Status::Done)));
-    }
-
-    #[test]
-    fn a_card_alone_without_an_agent_says_what_runs() {
-        let mut tree = work("%1");
-        tree.hooks.clear();
-        let overview = Overview::of(&tree, &english());
-        assert_eq!(
-            card_line(&overview.cards[0], 0.0, &english(), &panes),
-            ("codex".into(), None)
-        );
+    fn the_page_shows_the_window_of_the_pane_in_view() {
+        let overview = Overview::of(&work("%3"), &english());
+        assert_eq!(overview.shown().map(|c| c.window.as_str()), Some("@2"));
+        let overview = Overview::of(&work("%14"), &english());
+        assert_eq!(overview.shown().map(|c| c.window.as_str()), Some("@5"));
+        // No pane in view (a reconnect's tree): the first window.
+        let overview = Overview::of(&work("%99"), &english());
+        assert_eq!(overview.shown().map(|c| c.window.as_str()), Some("@1"));
+        assert!(Overview::default().shown().is_none());
     }
 
     #[test]

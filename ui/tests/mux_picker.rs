@@ -1,6 +1,7 @@
 //! The terminal's pickers on a headless engine: the windows, sessions and
-//! panes the host posts, in the multiplexer's words; a row picks, the ＋
-//! asks for a name (the host's prompt) or splits a pane, a row's menu
+//! panes the host posts, in the multiplexer's words; a row picks, the list's
+//! last row (New window, tab, session, workspace, pane) asks for a name
+//! (the host's prompt) or splits a pane, a row's menu
 //! renames after asking and kills after NSH's action sheet; the app's
 //! language.
 
@@ -64,7 +65,7 @@ fn windows_show_in_tmux_words_and_a_row_picks() {
 }
 
 #[test]
-fn the_plus_asks_a_window_its_name_and_splits_a_pane_at_once() {
+fn the_new_row_asks_a_window_its_name_and_splits_a_pane_at_once() {
     let (mut app, channel) = open(Params::default());
     let heard = hear(&channel);
     show(&mut app, &channel, &windows("tmux"));
@@ -413,8 +414,17 @@ fn a_held_shares_picker_lists_panes_by_place_and_sends_to_the_one_picked() {
         }),
     );
     app.wait_for("id:mux-picker-row-%9").unwrap();
-    for text in ["Select Pane", "work · review", "work · claude", "Panes running claude come first."] {
-        assert!(app.screen().shows(text), "{text}: {:?}", app.screen().texts());
+    for text in [
+        "Select Pane",
+        "work · review",
+        "work · claude",
+        "Panes running claude come first.",
+    ] {
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
     }
     assert!(!app.screen().shows("⌃"), "a key under a share's picker");
     assert!(
@@ -427,5 +437,64 @@ fn a_held_shares_picker_lists_panes_by_place_and_sends_to_the_one_picked() {
     app.press("id:mux-picker-row-%2").unwrap();
     assert_eq!(next(&heard), json!({"ev": "select", "id": "%2"}));
     quiet(&heard);
+    channel.close();
+}
+
+/// The rows' ids in order, the New row's included.
+fn row_ids(app: &Headless) -> Vec<String> {
+    app.screen()
+        .layout_nodes()
+        .into_iter()
+        .filter_map(|n| n.test_id.map(|t| t.to_string()))
+        .filter(|t| t.starts_with("mux-picker-row-") || t == "mux-picker-new")
+        .collect()
+}
+
+/// Every list ends in its New row, in the multiplexer's words, a full row
+/// (never a nav-bar ＋); a share's list has none.
+#[test]
+fn every_list_ends_in_its_new_row() {
+    let (mut app, channel) = open(Params::default());
+    let sessions = |mux: &str| {
+        json!({
+            "op": "picker", "kind": "sessions", "mux": mux, "active": "$0",
+            "rows": [
+                {"id": "$0", "name": "work", "windows": 2, "command": "zsh"},
+                {"id": "$1", "name": "play", "windows": 1, "command": "htop", "signal": "attention"}
+            ]
+        })
+    };
+    let mut panes = windows("tmux");
+    panes["kind"] = json!("panes");
+    for (list, title) in [
+        (windows("tmux"), "New window"),
+        (windows("herdr"), "New tab"),
+        (sessions("tmux"), "New Session"),
+        (sessions("herdr"), "New Workspace"),
+        (panes, "New Pane"),
+    ] {
+        show(&mut app, &channel, &list);
+        app.wait_for("id:mux-picker-new").unwrap();
+        app.wait_for(&format!("label:{title}")).unwrap();
+        let ids = row_ids(&app);
+        assert_eq!(
+            ids.last().map(String::as_str),
+            Some("mux-picker-new"),
+            "{title}: {ids:?}"
+        );
+        assert!(ids.len() > 1, "{title}: {ids:?}");
+        let new = app
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .find(|n| n.test_id.as_deref() == Some("mux-picker-new"))
+            .unwrap()
+            .bounds;
+        assert!(new.size.height.0 >= 44.0, "{title}: {new:?}");
+    }
+    // A session not in use says what runs in it.
+    show(&mut app, &channel, &sessions("tmux"));
+    app.wait_for("id:mux-picker-row-$1").unwrap();
+    assert!(app.screen().shows("htop"), "{:?}", app.screen().texts());
     channel.close();
 }

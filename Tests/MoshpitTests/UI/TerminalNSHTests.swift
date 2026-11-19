@@ -174,11 +174,8 @@ struct TerminalNSHTests {
             (["ev": "overview", "open": false], .overview(false)),
             (["ev": "select-pane", "id": "%3"], .selectPane("%3")),
             (["ev": "new-pane", "window": "@2"], .newPane("@2")),
-            (["ev": "new-window", "name": "build"], .newWindow("build")),
-            (["ev": "new-window", "name": NSNull()], .newWindow(nil)),
             (["ev": "rename-window", "id": "@2", "name": "trainer"], .renameWindow("@2", "trainer")),
             (["ev": "kill-pane", "id": "%6"], .killPane("%6")),
-            (["ev": "kill-window", "id": "@5"], .killWindow("@5")),
         ]
         for (message, intent) in cases {
             #expect(TerminalNSHIntent(message) == intent, "\(message)")

@@ -483,16 +483,12 @@ enum TerminalNSHIntent: Equatable {
     case imageSent(String)
     /// The pane overview opened (closed).
     case overview(Bool)
-    /// The overview's: switch to a pane, split a window, a new window,
-    /// rename a window, kill a pane or a window.
+    /// The pane page's: switch to a pane, split its window, rename the
+    /// window, kill a pane.
     case selectPane(String)
     case newPane(String)
-    case newWindow(String?)
-    /// The bar's ＋ menu: a new session (herdr: workspace), optionally named.
-    case newSession(String?)
     case renameWindow(String, String)
     case killPane(String)
-    case killWindow(String)
     case dictation(Panel)
     case attachment(Panel)
     case preview(Panel)
@@ -550,16 +546,12 @@ enum TerminalNSHIntent: Equatable {
             self = .preview(panel)
         case "overview":
             self = .overview(message["open"] as? Bool ?? false)
-        case "select-pane", "kill-pane", "kill-window":
+        case "select-pane", "kill-pane":
             guard let id = message["id"] as? String else { return nil }
-            self = ev == "select-pane" ? .selectPane(id) : ev == "kill-pane" ? .killPane(id) : .killWindow(id)
+            self = ev == "select-pane" ? .selectPane(id) : .killPane(id)
         case "new-pane":
             guard let window = message["window"] as? String else { return nil }
             self = .newPane(window)
-        case "new-window":
-            self = .newWindow(message["name"] as? String)
-        case "new-session":
-            self = .newSession(message["name"] as? String)
         case "rename-window":
             guard let id = message["id"] as? String, let name = message["name"] as? String else { return nil }
             self = .renameWindow(id, name)

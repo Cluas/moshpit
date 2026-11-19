@@ -378,10 +378,14 @@ pub enum IconVariant {
 /// What a bar's button dims to while pressed (§4.18: UIKit's bar).
 const BAR_PRESSED: f32 = 0.2;
 
-/// An icon button's size: drawn 32 or 44 pt square, 44 pt to the touch.
+/// An icon button's size: drawn 32, 36 or 44 pt square, 44 pt to the touch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IconButtonSize {
     Sm,
+    /// As tall as a bar's capsules (36 pt): the terminal's back beside its
+    /// transport capsule and breadcrumb. Its symbol keeps a bar button's
+    /// size; its target is still 44 pt.
+    Chrome,
     Md,
 }
 
@@ -389,6 +393,7 @@ impl IconButtonSize {
     pub fn side(self) -> f32 {
         match self {
             IconButtonSize::Sm => 32.0,
+            IconButtonSize::Chrome => 36.0,
             IconButtonSize::Md => 44.0,
         }
     }
@@ -396,7 +401,7 @@ impl IconButtonSize {
     fn icon(self) -> IconSize {
         match self {
             IconButtonSize::Sm => IconSize::Md,
-            IconButtonSize::Md => IconSize::Lg,
+            IconButtonSize::Chrome | IconButtonSize::Md => IconSize::Lg,
         }
     }
 }
