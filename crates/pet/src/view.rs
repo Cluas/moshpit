@@ -73,6 +73,10 @@ pub struct PetView {
     /// The app icon Home offers now (B668), after the hatch or a new look.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<IconOffer>,
+    /// Where on its card's top edge the person dragged it: 0 its own place
+    /// at the trailing end, 1 as far toward the leading end as it goes.
+    #[serde(default)]
+    pub spot: f32,
 }
 
 /// The app icon the pet offers (B668, the owner's call): once it hatches,

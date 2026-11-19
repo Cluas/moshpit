@@ -1469,6 +1469,11 @@ void uniffi_moshpit_ffi_fn_method_petmachine_set_listener(uint64_t ptr, RustBuff
 void uniffi_moshpit_ffi_fn_method_petmachine_set_pace(uint64_t ptr, RustBuffer pace, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_SPOT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_SPOT
+void uniffi_moshpit_ffi_fn_method_petmachine_set_spot(uint64_t ptr, double spot, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_TALK
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_TALK
 void uniffi_moshpit_ffi_fn_method_petmachine_set_talk(uint64_t ptr, int8_t talk, RustCallStatus *_Nonnull out_status
@@ -4525,6 +4530,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_listener(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_PACE
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_pace(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_SPOT
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_SPOT
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_spot(void
     
 );
 #endif

@@ -17,6 +17,15 @@
 //! Once it has hatched, and each time it grows into a new look, Home asks
 //! whether to make it the app icon ([`icon_offer`], B668): the host
 //! switches only on a yes (`{"ev": "icon", "switch": true}`).
+//!
+//! It can be dragged ([`perched`]): picked up, it hangs from the finger and
+//! sways, following it along the card and, on a rubber band, up and down.
+//! Let go, it crawls back to the card's top edge under where it was
+//! dropped, and holds on there with a little squash and a tap of the
+//! haptics. Where along the edge it holds on is the person's: the host
+//! keeps it on this device (`{"ev": "pet-spot", "spot": 0.4}`, 0 its own
+//! place at the trailing end, 1 the leading end) and posts it back in
+//! [`PetView::spot`]; the card it sits on stays the one Home picks for it.
 
 use std::{
     cell::{Cell, RefCell},
@@ -37,8 +46,9 @@ use super::{
     model::{self, AgentState, Connection, Link},
 };
 use crate::ui::{
-    bubble::speech,
+    bubble::{Tail, speech_toward},
     button::{Size, Variant, button},
+    motion::Duration as Motion,
     companion::{Figure, companion},
     section::{Inset, section},
     tokens::token,
@@ -116,6 +126,70 @@ const FROM_END: f32 = 56.0;
 const SAYS_GAP: f32 = 2.0;
 const SAYS_HALF_LINE: f32 = 15.0;
 
+/// Clear of the card's leading corner, at the far end of the edge.
+const FROM_START: f32 = 12.0;
+/// How far it can be moved along an edge `width` wide, from its own place
+/// toward the leading end.
+pub fn reach(width: f32) -> f32 {
+    (width - FROM_END - TARGET - FROM_START).max(0.0)
+}
+
+/// Where it holds on (0 to 1, [`PetView::spot`]) when let go `x` points
+/// from its own place (negative: toward the leading end) on an edge
+/// `width` wide: under where it was dropped, never past either end.
+pub fn spot_at(x: f32, width: f32) -> f32 {
+    let reach = reach(width);
+    if reach <= 0.0 || !x.is_finite() {
+        return 0.0;
+    }
+    (-x / reach).clamp(0.0, 1.0)
+}
+
+/// Its translation from its own place for `spot` on an edge `width` wide.
+pub fn x_of(spot: f32, width: f32) -> f32 {
+    -spot.clamp(0.0, 1.0) * reach(width)
+}
+
+/// The rubber band while it's held: up and down it follows the finger
+/// closely at first, then harder, never more than 90 pt off the edge (the
+/// cards around stay where they are).
+const LIFT_IN: [f32; 5] = [-240.0, -60.0, 0.0, 60.0, 240.0];
+const LIFT_OUT: [f32; 5] = [-90.0, -50.0, 0.0, 50.0, 90.0];
+
+/// Where it hangs for a finger `y` points off the edge ([`LIFT_IN`]).
+pub fn lifted(y: f32) -> f32 {
+    if !y.is_finite() {
+        return 0.0;
+    }
+    let y = y.clamp(LIFT_IN[0], LIFT_IN[4]);
+    let i = (0..4).find(|&i| y <= LIFT_IN[i + 1]).unwrap_or(3);
+    let t = (y - LIFT_IN[i]) / (LIFT_IN[i + 1] - LIFT_IN[i]);
+    LIFT_OUT[i] + t * (LIFT_OUT[i + 1] - LIFT_OUT[i])
+}
+
+/// How fast it crawls, in points a second, and the crawl's shortest and
+/// longest: a short way is still a few steps, a long one isn't a wait.
+const CRAWL_SPEED: f32 = 260.0;
+const CRAWL_MIN_MS: f32 = 220.0;
+const CRAWL_MAX_MS: f32 = 900.0;
+/// One step: up and down by [`HOP`] points.
+const STEP_MS: f32 = 150.0;
+const HOP: f32 = 3.0;
+
+/// How long the crawl over `distance` points takes, in milliseconds.
+pub fn crawl_ms(distance: f32) -> f32 {
+    if !distance.is_finite() || distance <= 0.5 {
+        return 0.0;
+    }
+    (distance / CRAWL_SPEED * 1000.0).clamp(CRAWL_MIN_MS, CRAWL_MAX_MS)
+}
+
+/// Held, it's a little bigger (lifted toward you) and sways this many
+/// degrees either way.
+const HELD_SCALE: f32 = 1.12;
+const SWAY: f32 = 7.0;
+const SWAY_MS: f32 = 900.0;
+
 /// The page's pet state: what the host posted, and the moment last played.
 #[derive(Clone)]
 pub(crate) struct PetCtx {
@@ -133,6 +207,12 @@ pub(crate) struct PetCtx {
     /// The line in its bubble, numbered.
     pub(crate) saying: Signal<Option<(u64, String)>>,
     said: Rc<Cell<u64>>,
+    /// Where the person last let it go (0 to 1), before the host has kept
+    /// it and posted it back.
+    dropped: Signal<Option<f32>>,
+    /// It's held or crawling back: it doesn't take a new drag, wears its
+    /// plain pose, and its card is drawn over the ones around it.
+    pub(crate) moving: Signal<bool>,
 }
 
 impl PetCtx {
@@ -147,7 +227,17 @@ impl PetCtx {
             chatter: Rc::new(RefCell::new(Chatter::default())),
             saying: signal(None),
             said: Rc::new(Cell::new(0)),
+            dropped: signal(None),
+            moving: signal(false),
         }
+    }
+
+    /// Where along its card's edge it holds on (0 to 1): where it was last
+    /// let go, else where the host keeps it.
+    fn spot(&self) -> f32 {
+        self.dropped
+            .get()
+            .unwrap_or_else(|| self.view.with(|v| v.as_ref().map_or(0.0, |v| v.spot)))
     }
 
     /// `cue` happened at `now`: the pet says a line if it talks and the
@@ -268,29 +358,224 @@ pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
                 .with(|p| p.as_ref().is_some_and(|(p, _)| *p == at))
         })
     };
+    let width = signal(0.0_f32);
+    let moving = ctx.pet.moving;
     view()
         .w_full()
         .relative()
+        // Held or crawling, it goes over the cards after this one.
+        .z_index(move || if here.get() && moving.get() { 2 } else { 0 })
+        .on_layout(move |b: &Bounds<Points>| width.set(b.size.width.0))
         .child(child)
-        .child(when(move || here.get(), move || perched(ctx.clone())))
+        .child(when(move || here.get(), move || perched(ctx.clone(), width)))
         .into_element()
 }
 
-fn perched(ctx: Ctx) -> AnyElement {
-    let saying = ctx.pet.saying;
-    target(ctx)
+/// Where it is while dragged and as it crawls back: across the edge (`x`,
+/// which the drag moves), the finger's height (`held`, on the rubber
+/// band), the way still to crawl up or down (`crawl`) and its steps
+/// (`hop`); and how it looks held (`lift`, `sway`).
+#[derive(Clone, Copy)]
+struct Drag {
+    x: AnimatedValue,
+    held: AnimatedValue,
+    crawl: AnimatedValue,
+    hop: AnimatedValue,
+    lift: AnimatedValue,
+    sway: AnimatedValue,
+}
+
+impl Drag {
+    fn new() -> Drag {
+        Drag {
+            x: animated_value(0.0),
+            held: animated_value(0.0),
+            crawl: animated_value(0.0),
+            hop: animated_value(0.0),
+            lift: animated_value(1.0),
+            sway: animated_value(0.0),
+        }
+    }
+
+    /// Picked up: lifted toward the finger, swaying.
+    fn pick_up(self) {
+        haptic(Haptic::Impact(HapticImpact::Medium));
+        if reduce_motion() {
+            return;
+        }
+        drop(self.lift.spring(HELD_SCALE, settle()));
+        drop(self.sway.keyframes(
+            [
+                Keyframe::new(0.0),
+                Keyframe::new(SWAY),
+                Keyframe::new(0.0),
+                Keyframe::new(-SWAY),
+                Keyframe::new(0.0),
+            ],
+            KeyframeTiming::new(SWAY_MS)
+                .easing(Easing::EaseInOut)
+                .infinite(),
+        ));
+    }
+
+    /// Let go `x` across and `y` down from its place: it crawls to `to`
+    /// on the edge, in steps, and holds on. How long that takes (ms).
+    fn crawl_to(self, x: f32, y: f32, to: f32) -> f32 {
+        let hanging = lifted(y);
+        // Where it hangs is now the way back, not the finger's.
+        self.crawl.set(hanging);
+        self.held.set(0.0);
+        self.sway.stop();
+        let ms = if reduce_motion() {
+            0.0
+        } else {
+            crawl_ms((to - x).hypot(hanging))
+        };
+        if ms <= 0.0 {
+            self.x.set(to);
+            self.crawl.set(0.0);
+            self.sway.set(0.0);
+            self.lift.set(1.0);
+            return 0.0;
+        }
+        drop(self.sway.timing(0.0, Motion::Fast.ms(), Easing::EaseOut));
+        drop(self.lift.timing(1.0, Motion::Fast.ms(), Easing::EaseOut));
+        drop(self.x.timing(to, ms, Easing::Linear));
+        drop(self.crawl.timing(0.0, ms, Easing::Linear));
+        let steps = (ms / STEP_MS).round().max(1.0);
+        drop(self.hop.keyframes(
+            [
+                Keyframe::new(0.0),
+                Keyframe::new(-HOP),
+                Keyframe::new(0.0),
+            ],
+            KeyframeTiming::new(ms / steps)
+                .easing(Easing::EaseInOut)
+                .iterations(Some(steps as u32)),
+        ));
+        ms
+    }
+
+    /// It got there: a little squash as it takes hold.
+    fn hold_on(self) {
+        haptic(Haptic::Impact(HapticImpact::Light));
+        if reduce_motion() {
+            return;
+        }
+        drop(self.lift.keyframes(
+            [
+                Keyframe::new(1.0),
+                Keyframe::new(0.88),
+                Keyframe::new(1.05),
+                Keyframe::new(1.0),
+            ],
+            KeyframeTiming::new(Motion::Slow.ms()).easing(Easing::EaseOut),
+        ));
+    }
+}
+
+/// The spring it's lifted on.
+fn settle() -> Spring {
+    crate::ui::motion::structural_spring(None)
+        .unwrap_or_else(|| Spring::new(1.0).damping_ratio(1.0))
+}
+
+/// It perches on the card's top edge `width` wide, where the person put
+/// it, and can be dragged along it ([`Drag`]).
+fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
+    let pet = ctx.pet.clone();
+    let saying = pet.saying;
+    let moving = pet.moving;
+    let drag = Drag::new();
+    let spot = {
+        let pet = pet.clone();
+        computed(move || pet.spot())
+    };
+    // It sits where it was put, on this card's width; not while it's held
+    // or crawling (the crawl ends there).
+    effect(move || {
+        let at = x_of(spot.get(), width.get());
+        if !moving.get_untracked() {
+            drag.x.set(at);
+        }
+    });
+    let start = move |_: &PanEvent| {
+        moving.set(true);
+        drag.pick_up();
+    };
+    let end = {
+        let pet = pet.clone();
+        let tell = ctx.tell.clone();
+        move |event: &PanEvent| {
+            let x = event.value_x.unwrap_or(0.0);
+            let y = event.value_y.unwrap_or(0.0);
+            let w = width.get_untracked();
+            let was = spot.get_untracked();
+            let to_spot = if event.cancelled { was } else { spot_at(x, w) };
+            pet.dropped.set(Some(to_spot));
+            let ms = drag.crawl_to(x, y, x_of(to_spot, w));
+            let pet = pet.clone();
+            let tell = tell.clone();
+            let arrived = move || {
+                moving.set(false);
+                drag.hold_on();
+                if let Some(look) = pet.view.get_untracked().as_ref().and_then(look) {
+                    play(
+                        &pet,
+                        Figure::Pet {
+                            look,
+                            pose: Pose::Petted,
+                        },
+                    );
+                }
+                if to_spot != was {
+                    tell(json!({"ev": "pet-spot", "spot": to_spot}));
+                }
+            };
+            if ms <= 0.0 {
+                arrived();
+            } else {
+                drop(set_timeout(Duration::from_millis(ms as u64), arrived));
+            }
+        }
+    };
+    let shown_y = drag
+        .held
+        .interpolate(&LIFT_IN, &LIFT_OUT)
+        .add(&drag.crawl)
+        .add(&drag.hop);
+    // Toward the card's leading end it says its line on its trailing side.
+    let leading_half = computed(move || spot.get() > 0.5);
+    target(ctx, Some(drag))
         .absolute()
         .top(px(-ABOVE))
         .right(px(FROM_END))
         .z_index(1)
-        // What it says (§17.3): on its leading side, the bubble's bottom
-        // level with its middle, so a second line grows upward.
-        .child(
-            says(saying)
-                .absolute()
-                .right(px(TARGET + SAYS_GAP))
-                .w(px(crate::ui::bubble::MAX_WIDTH)),
-        )
+        .pan_values(Some(&drag.x), Some(&drag.held))
+        .pan_enabled(move || !moving.get())
+        .on_pan_start(start)
+        .on_pan_end(end)
+        .bind_translate_x(&drag.x)
+        .bind_translate_y(&shown_y)
+        // What it says (§17.3): beside it, the bubble's bottom level with
+        // its middle, so a second line grows upward.
+        .child(dynamic(move || {
+            let tail = if leading_half.get() {
+                Tail::Leading
+            } else {
+                Tail::Trailing
+            };
+            untracked(move || {
+                let says = says(saying, tail)
+                    .absolute()
+                    .w(px(crate::ui::bubble::MAX_WIDTH));
+                let says = match tail {
+                    Tail::Trailing => says.right(px(TARGET + SAYS_GAP)).items_end(),
+                    Tail::Leading => says.left(px(TARGET + SAYS_GAP)).items_start(),
+                };
+                says.into_element()
+            })
+        }))
         .into_element()
 }
 
@@ -318,13 +603,14 @@ pub(crate) fn alone(ctx: Ctx) -> AnyElement {
                 .items_center()
                 .child(
                     view().flex_1().h(px(TARGET)).relative().child(
-                        says(saying)
+                        says(saying, Tail::Trailing)
                             .absolute()
+                            .items_end()
                             .left(px(0.0))
                             .right(px(SAYS_GAP)),
                     ),
                 )
-                .child(target(ctx.clone()))
+                .child(target(ctx.clone(), None))
                 .child(view().flex_1())
                 .into_element()
         },
@@ -336,22 +622,27 @@ pub(crate) fn alone(ctx: Ctx) -> AnyElement {
 /// What the companion says, beside its target: the bubble's bottom level
 /// with the target's middle, so a second line grows upward; it takes no
 /// taps.
-fn says(saying: Signal<Option<(u64, String)>>) -> View {
+fn says(saying: Signal<Option<(u64, String)>>, tail: Tail) -> View {
     view()
         .bottom(px(TARGET / 2.0 - SAYS_HALF_LINE))
-        .items_end()
         .pointer_events(PointerEvents::None)
-        .child(speech(saying))
+        .child(speech_toward(saying, tail))
 }
 
 /// The companion's 44 pt target: the egg or the pet in the pose of where
 /// it sits, its taps, the moments it plays (what it says goes beside it,
-/// where it sits: [`says`]).
-fn target(ctx: Ctx) -> View {
+/// where it sits: [`says`]). On a card it can be dragged (`drag`): held or
+/// crawling, it wears its plain pose (a perch's props, a keyboard, a mug,
+/// stay on the perch).
+fn target(ctx: Ctx, drag: Option<Drag>) -> View {
     let pet = ctx.pet.clone();
     let pose = {
         let ctx = ctx.clone();
+        let moving = pet.moving;
         computed(move || {
+            if moving.get() {
+                return Pose::Idle;
+            }
             ctx.perch
                 .with(|p| p.as_ref().map_or(Pose::Idle, |(_, pose)| *pose))
         })
@@ -455,6 +746,24 @@ fn target(ctx: Ctx) -> View {
             );
         }
     };
+    let art = dynamic(move || match shown.get() {
+        Some(f) => untracked(move || companion(move || f, ART)),
+        None => untracked(|| view().into_element()),
+    });
+    // Held, it hangs from the top of its head.
+    let art = match drag {
+        Some(drag) => view()
+            .w(px(TARGET))
+            .h(px(TARGET))
+            .items_center()
+            .justify_center()
+            .origin_top()
+            .bind_scale(&drag.lift)
+            .bind_rotate(&drag.sway)
+            .child(art)
+            .into_element(),
+        None => art.into_element(),
+    };
     view()
         .w(px(TARGET))
         .h(px(TARGET))
@@ -465,10 +774,7 @@ fn target(ctx: Ctx) -> View {
         .hint(hint)
         .test_id("home-pet")
         .on_press(press)
-        .child(dynamic(move || match shown.get() {
-            Some(f) => untracked(move || companion(move || f, ART)),
-            None => untracked(|| view().into_element()),
-        }))
+        .child(art)
 }
 
 /// Whether Home asks about the app icon now (B668): the host offers it,
@@ -712,6 +1018,40 @@ mod tests {
         let (off, _) =
             parse(json!({"style": "minimal", "shown": true, "may_hatch": false})).unwrap();
         assert_eq!(figure(&off, Pose::Idle), None);
+    }
+
+    #[test]
+    fn dropped_anywhere_it_holds_on_under_the_drop_and_never_past_the_ends() {
+        // A 390 pt phone's card: 390 - 56 - 44 - 12 = 278 pt of edge.
+        let w = 390.0;
+        assert_eq!(reach(w), 278.0);
+        assert_eq!(spot_at(0.0, w), 0.0, "where it was: its own place");
+        assert_eq!(spot_at(-139.0, w), 0.5);
+        assert_eq!(spot_at(-1000.0, w), 1.0, "past the leading end");
+        assert_eq!(spot_at(80.0, w), 0.0, "never over the card's ⋯");
+        assert_eq!(x_of(spot_at(-139.0, w), w), -139.0);
+        assert_eq!(spot_at(-50.0, 80.0), 0.0, "no room: its own place");
+        assert_eq!(spot_at(f32::NAN, w), 0.0);
+        // The same spot on a wider card is as far along it.
+        assert_eq!(x_of(0.5, 744.0), -0.5 * reach(744.0));
+    }
+
+    #[test]
+    fn held_it_follows_the_finger_then_hangs_on_a_rubber_band() {
+        assert_eq!(lifted(0.0), 0.0);
+        assert!((lifted(30.0) - 25.0).abs() < 1e-4, "close at first");
+        assert!((lifted(-60.0) + 50.0).abs() < 1e-4);
+        assert_eq!(lifted(10_000.0), 90.0, "never far off the edge");
+        assert_eq!(lifted(-10_000.0), -90.0);
+        assert!(lifted(150.0) > lifted(100.0), "always the finger's way");
+    }
+
+    #[test]
+    fn it_crawls_back_at_a_pace_not_a_wait() {
+        assert_eq!(crawl_ms(0.0), 0.0, "already there");
+        assert_eq!(crawl_ms(10.0), CRAWL_MIN_MS, "a short way is still a few steps");
+        assert!((crawl_ms(130.0) - 500.0).abs() < 1e-3);
+        assert_eq!(crawl_ms(5_000.0), CRAWL_MAX_MS);
     }
 
     #[test]

@@ -466,6 +466,13 @@ final class HomeNSHModel {
         case "pet-seen":
             if visible { CompanionPet.shared.seen() }
             return nil
+        case "pet-spot":
+            // Where along its card's edge the person dragged it, kept on
+            // this device.
+            if let spot = (message["spot"] as? NSNumber)?.doubleValue {
+                CompanionPet.shared.setSpot(spot)
+            }
+            return nil
         case "icon":
             // The pet's icon card (B668): 「换」 or 「先不换」.
             CompanionPet.shared.answerIcon(switch: message["switch"] as? Bool ?? false)

@@ -35,6 +35,10 @@ pub const SHOWN_KEY: &str = "moshpit.pet.shown";
 pub const TALK_KEY: &str = "moshpit.pet.talk";
 /// The look whose app icon Home last asked about (B668): asked once a look.
 pub const ICON_ASKED_KEY: &str = "moshpit.pet.iconAsked";
+/// Where on a card's top edge the person put it: 0 its own place, at the
+/// card's trailing end; 1 as far toward the leading end as it goes. This
+/// device's alone (the card's width is this screen's).
+pub const SPOT_KEY: &str = "moshpit.pet.spot";
 
 /// What the preferences hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +143,26 @@ pub fn write_talk(defaults: &dyn Defaults, readiness: &Readiness, talk: bool) ->
     true
 }
 
+/// Where the person put it on a card's edge, 0 to 1 ([`SPOT_KEY`]); its
+/// own place (0) until they move it. Anything else reads as its own place.
+pub fn read_spot(defaults: &dyn Defaults) -> f64 {
+    match defaults.get(SPOT_KEY) {
+        Some(Plist::Double(spot)) if spot.is_finite() => spot.clamp(0.0, 1.0),
+        Some(Plist::Int(spot)) => (spot as f64).clamp(0.0, 1.0),
+        _ => 0.0,
+    }
+}
+
+/// Keeps where it was put, clamped to 0 to 1, under the same rule. Whether
+/// written.
+pub fn write_spot(defaults: &dyn Defaults, readiness: &Readiness, spot: f64) -> bool {
+    if !readiness.is_readable(defaults) || !spot.is_finite() {
+        return false;
+    }
+    defaults.set(SPOT_KEY, Some(Plist::Double(spot.clamp(0.0, 1.0))));
+    true
+}
+
 /// Keeps the style and the switch, under the same rule. Whether written.
 pub fn write_choice(
     defaults: &dyn Defaults,
@@ -230,6 +254,22 @@ mod tests {
         assert!(read_talk(&defaults), "it talks until it's told not to");
         assert!(write_talk(&defaults, &Readiness::System, false));
         assert!(!read_talk(&defaults));
+    }
+
+    #[test]
+    fn the_spot_is_its_own_place_until_moved_and_stays_on_the_edge() {
+        let defaults = MemoryDefaults::new();
+        assert_eq!(read_spot(&defaults), 0.0);
+        assert!(write_spot(&defaults, &Readiness::Always, 0.4));
+        assert_eq!(read_spot(&defaults), 0.4);
+        assert!(write_spot(&defaults, &Readiness::Always, 3.0));
+        assert_eq!(read_spot(&defaults), 1.0, "clamped to the edge");
+        assert!(!write_spot(&defaults, &Readiness::Always, f64::NAN));
+        assert_eq!(read_spot(&defaults), 1.0);
+        defaults.set(SPOT_KEY, Some(Plist::String("left".into())));
+        assert_eq!(read_spot(&defaults), 0.0, "anything else: its own place");
+        defaults.set_protected_data_available(false);
+        assert!(!write_spot(&defaults, &Readiness::System, 0.5));
     }
 
     #[test]

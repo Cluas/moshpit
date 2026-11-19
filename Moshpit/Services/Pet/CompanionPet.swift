@@ -169,6 +169,10 @@ final class CompanionPet {
     /// Settings › Appearance: 「让它说话」.
     func setTalk(_ on: Bool) { machine.setTalk(talk: on) }
 
+    /// Where along its card's edge it holds on (0 its own place, 1 the
+    /// leading end): this device's.
+    func setSpot(_ spot: Double) { machine.setSpot(spot: spot) }
+
     /// Settings › Appearance: the style (`minimal`, `pixel`) and the switch.
     func choose(style: String, shown: Bool) { machine.setChoice(style: style, shown: shown) }
 
