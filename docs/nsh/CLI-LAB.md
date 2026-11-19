@@ -177,9 +177,8 @@ Totals: 86 green.
 
 ## Bug 1: Qoder inside tmux shows no typed English, but Enter sends
 
-**Not reproduced.**
-Qoder can't be typed into without an account.
-Up to its input box, the core draws exactly what tmux draws (qoder-tmux final at the cut: box on row 13, cursor at [3, 13]).
+**Not reproduced**, including with typing (below).
+Before the typing lab, the core draws exactly what tmux draws (qoder-tmux final at the cut: box on row 13, cursor at [3, 13]).
 
 From Qoder's bytes (`qoder-tmux.jsonl`), it starts with:
 
@@ -208,27 +207,97 @@ At start-up it queries the terminal (`TerminalCapabilityManager`) and acts on th
   The light themes paint text in a fixed dark colour: "Default Light" is `#000000` on `#FFFFFF`, and others are `#444`, `#5c6166` or `#24292E`.
   It warns only when the theme was set by hand and does not match.
 
-### Conclusion: H1-c, the colour
+### Conclusion so far: not in Moshpit's tmux path; cause still open
 
-- **H1-a (CI) is ruled out.** A CI variable makes Qoder headless, with no input box. The user sees the box.
-- **H1-b (keyboard) is unlikely.** Even when tmux reports modifyOtherKeys or kitty, Qoder asks for modes in which letters stay plain text.
-  The lab sent plain letters to it through tmux with neither mode on.
-- **H1-c (colour) fits every part of the report.**
-  Inside tmux, tmux answers `OSC 11`, not Moshpit.
-  It answers with a client terminal's colour, or black in control mode.
-  If the answer is light (for example, the user's Mac terminal is light and is attached to the same tmux), Qoder picks a light theme and types in near-black.
-  On Moshpit's dark background, that text is invisible, while Enter still sends.
-  Over plain SSH, Moshpit answers itself, with the background it draws.
-  The new test `the_background_query_answers_the_background_drawn` (`crates/term/tests/cases.rs`) checks this for a light and a dark palette, so nothing in the core needs fixing.
+A later report (the friend's screen recording) adds: while typing, the input box's cursor **never moves**, and Enter still sends.
+That rules H1-c out as the whole story: invisible text would still move Qoder's caret.
+It points at the incremental frames never reaching the screen, while Enter's own repaint (below) shows the result.
 
-To confirm on the friend's machine:
+**Reaching Qoder's input box in the lab.**
+Qoder refuses a custom provider unless the account's server-side switch allows it (`allow_byok >= 2`), and `/login` needs a real account.
+The lab runs a private copy of the 1.1.92 bundle with that one check disabled: `if(!0!==s)throw new mD(...)` becomes `if(0)throw new mD(...)`.
+The renderer is untouched.
+The rest of the recipe:
 
-1. Inside that tmux, run `printf '\e]11;?\e\\'; cat -v`, then press Enter. An answer like `rgb:ffff/ffff/ffff` (light) confirms the cause.
-2. In Qoder, type `/theme` and pick a dark theme, or set `ui.theme` in its settings. If typed text shows again, the cause is confirmed.
-3. Which terminal and colour scheme do they use on the desktop, and is that client attached to the same tmux session?
+- `HOME` is a scratch directory whose `.qoder/settings.json` has a provider pointing at `http://127.0.0.1:9/v1` (nothing listens there), `security.auth.useExternal: true`, `folderTrust.enabled: false` and `general.disableAutoUpdate: true`.
+- The run passes `--fake-responses <empty file>`.
+- Keep `TMUX`, `TMUX_PANE` and `TERM_PROGRAM` from the pane.
+  An `env -i` that drops them hides the real path: with `TERM_PROGRAM=tmux`, Qoder turns on the kitty protocol (`ESC[>1u`) and modifyOtherKeys (`ESC[>4;2m`) at start.
+- Qoder still makes network calls (telemetry, changelog), so it is not a hermetic lab.
 
-The fix belongs in Qoder: an `auto` theme should not trust `OSC 11` inside tmux, or it should honour `COLORFGBG`, which it already reads.
-A user-side workaround: set Qoder's theme explicitly.
+**The probe.**
+`crates/tmux/examples/cli_type_probe.rs` runs that through the phone's real path:
+
+- a private `tmux -L` server;
+- the real `Controller` in control mode, at the phone's grid, launching from the shell with `view_return_sent`;
+- keys sent one at a time with `send_input` (`send-keys -H`);
+- every `%output` byte fed into a real `moshpit_term` core, with the core's query answers sent back as the app sends them.
+
+The probe can delay the answers (`QPROBE_DELAY`) or drop them (`QPROBE_NOANSWER`).
+It ends by printing tmux's `capture-pane` next to the core's rows and cursor.
+
+**What was tried. Every case typed correctly,** with the core's screen and cursor exactly matching tmux's (`> hello world`, cursor after it, 46×30 and 80×24):
+
+- the phone attached before Qoder started, and after;
+- the dark and the light theme;
+- tmux `extended-keys` left off, `on`, `always`, and `csi-u` format;
+- the core's answers sent at once, after 250 ms, or never;
+- Qoder's `OSC 11` background poll set to every second (`ui.terminalBackgroundPollingInterval: 1`; it is 60 s by default), so polls and their double answers land mid-typing.
+
+**What Qoder does when a key arrives, from its bytes:**
+
+- It hides the real cursor (`cursor_flag` 0) and draws its own caret as a coloured cell.
+- Each keystroke repaints with a small diff frame made only of cursor-relative moves (CUU/CUD/CUF/CUB, CR, CRLF) from where it parked the cursor, which is the caret.
+- Inside tmux it uses no synchronized output: `TMUX` set means off, and neither tmux's nor Moshpit's XTVERSION is on its list.
+- A key received while it believes the terminal lost focus refocuses it.
+  Being unfocused only slows its animation tick.
+
+**Why Enter "fixes" it.**
+`view_return_sent` arms a repaint from tmux's `capture-pane` 450 ms after Return.
+So any frame the screen missed while typing shows up after Enter.
+That fits the report whatever dropped the frames.
+
+**Two answers to every query.**
+On a tmux pane, tmux answers Qoder's queries itself:
+
+- `OSC 11` with black;
+- XTVERSION `tmux 3.6a`;
+- DA1 `ESC[?1;2;4c`.
+
+Moshpit's core answers too, one round trip later, through `send-keys -H`:
+
+- kitty flags `ESC[?0u`;
+- `OSC 11` with the background it draws;
+- XTVERSION `Moshpit 0.1.0`;
+- DA1;
+- focus-in `ESC[I` when the program enables focus reporting.
+
+Qoder's queries finish on tmux's DA1, so Moshpit's answers arrive unasked.
+In every case above, Qoder parsed them without typing anything into the box.
+Moshpit's later `OSC 11` may also be the one its background poll acts on; this is not checked.
+Herdr panes have their own answering turned off (`answersQueries`); tmux panes do not.
+This is left as is, because nothing showed it doing harm.
+
+**H1-a, H1-b and H1-c.**
+
+- H1-a (CI) stays ruled out.
+- H1-b (keyboard modes) is now tested against tmux's real encodings, and is ruled out for plain letters.
+- H1-c (colour) is real: on a dark screen, the light theme's text and caret are near-invisible.
+  It does not explain a caret that never moves.
+
+**To ask the friend:**
+
+1. Which build: App Store 1.0.8, which uses the Swift tmux path and SwiftTerm, or a Canary (Rust)?
+   The probe covers only the Rust path.
+2. After typing a few letters without pressing Enter, does the text show up if you change the screen? For example, rotate the phone, switch tmux windows and back, or leave the app and come back.
+   If it does, Qoder sent the frames and Moshpit dropped them.
+3. In the same tmux, does a plain shell echo as you type? Does Claude Code's input box?
+4. `tmux -V`, the output of `tmux show -g status pane-border-status extended-keys`, `tmux show -s extended-keys`, and `tmux list-clients`.
+   Is another device or desktop terminal attached to the same session?
+5. Inside that tmux, run `printf '\e]11;?\e\\'; cat -v` and press Enter: light or dark answer?
+   Does `/theme` with a dark theme change anything?
+6. A keyboard other than Apple's English one (a pinyin keyboard in English mode, or a third-party keyboard)?
+   A composition shows as an underlined label and is sent only on commit; Enter commits it.
 
 ## Bug 2 (fixed): over mosh only, the cursor jumps up and down
 
