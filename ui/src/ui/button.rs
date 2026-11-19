@@ -368,6 +368,10 @@ pub enum IconVariant {
     Ghost,
     /// The accent's wash under the accent's symbol.
     Tinted,
+    /// The terminal bar's capsule surface (`chrome` under a `border-strong`
+    /// hairline, never glass), so a button beside its capsules reads as one
+    /// of them; pressed, it dims as they do.
+    Capsule,
     /// In a navigation bar (§4.18): on glass a glass circle, as
     /// [`Self::Glass`]; without glass no base (the bar's material is its
     /// ground) and the symbol in the accent, dimming when pressed as the
@@ -378,13 +382,17 @@ pub enum IconVariant {
 /// What a bar's button dims to while pressed (§4.18: UIKit's bar).
 const BAR_PRESSED: f32 = 0.2;
 
+/// What a capsule dims to while pressed (the terminal bar's transport
+/// capsule's).
+pub const CAPSULE_PRESSED: f32 = 0.7;
+
 /// An icon button's size: drawn 32, 36 or 44 pt square, 44 pt to the touch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IconButtonSize {
     Sm,
     /// As tall as a bar's capsules (36 pt): the terminal's back beside its
-    /// transport capsule and breadcrumb. Its symbol keeps a bar button's
-    /// size; its target is still 44 pt.
+    /// transport capsule and breadcrumb. Its symbol is the capsules' words'
+    /// size ([`IconSize::Md`]); its target is still 44 pt.
     Chrome,
     Md,
 }
@@ -400,8 +408,8 @@ impl IconButtonSize {
 
     fn icon(self) -> IconSize {
         match self {
-            IconButtonSize::Sm => IconSize::Md,
-            IconButtonSize::Chrome | IconButtonSize::Md => IconSize::Lg,
+            IconButtonSize::Sm | IconButtonSize::Chrome => IconSize::Md,
+            IconButtonSize::Md => IconSize::Lg,
         }
     }
 }
@@ -483,7 +491,7 @@ impl IntoElement for IconButton {
         let side = size.side();
         let glass = crate::nav_bar::glass();
         let tone = toned.unwrap_or(match variant {
-            IconVariant::Glass => Tone::Foreground,
+            IconVariant::Glass | IconVariant::Capsule => Tone::Foreground,
             IconVariant::Bar if glass => Tone::Foreground,
             IconVariant::Ghost => Tone::Muted,
             IconVariant::Tinted | IconVariant::Bar => Tone::Primary,
@@ -516,6 +524,10 @@ impl IntoElement for IconButton {
                 if variant == IconVariant::Bar && !glass {
                     return s.opacity(BAR_PRESSED);
                 }
+                // As the bar's capsules beside it: dimmed, not scaled.
+                if variant == IconVariant::Capsule {
+                    return s.opacity(CAPSULE_PRESSED);
+                }
                 let s = if reduced {
                     s
                 } else {
@@ -540,6 +552,11 @@ impl IntoElement for IconButton {
                 .border_color(move || token("border-strong")),
             IconVariant::Ghost => control,
             IconVariant::Tinted => control.bg(move || token("primary-soft")),
+            IconVariant::Capsule => control
+                .border_curve(BorderCurve::Continuous)
+                .bg(move || token("chrome"))
+                .border(px(0.5))
+                .border_color(move || token("border-strong")),
         };
         if let Some(id) = &test_id {
             control = control.test_id(id);

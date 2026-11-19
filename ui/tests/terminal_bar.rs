@@ -61,9 +61,39 @@ impl Slops {
     }
 }
 
+/// The style each view was given, as the engine mounted it.
+#[derive(Clone, Default)]
+struct Styles(Arc<Mutex<HashMap<NodeId, nsh_core::ViewStyle>>>);
+
+impl Styles {
+    fn apply(&self, batch: &nsh_core::MountBatch) {
+        let mut styles = self.0.lock().unwrap();
+        for item in &batch.items {
+            if let nsh_core::MountItem::ViewStyle { id, style, .. } = item {
+                styles.insert(*id, (**style).clone());
+            }
+        }
+    }
+
+    fn of(&self, node: NodeId) -> nsh_core::ViewStyle {
+        self.0
+            .lock()
+            .unwrap()
+            .get(&node)
+            .cloned()
+            .unwrap_or_else(|| panic!("{node:?} has no style"))
+    }
+}
+
 /// The screen on an iPhone-sized engine, the hit slops observed from its
 /// first mount.
 fn phone() -> (App, Arc<Channel>, Slops) {
+    let (app, channel, slops, _) = phone_styled();
+    (app, channel, slops)
+}
+
+/// [`phone`], the views' styles observed too.
+fn phone_styled() -> (App, Arc<Channel>, Slops, Styles) {
     let channel = Channel::open();
     let mut config = EngineConfig::new(Screen::Terminal.root(&channel, &Params::default()));
     config.viewport = Size::new(Points(402.0), Points(874.0));
@@ -74,10 +104,14 @@ fn phone() -> (App, Arc<Channel>, Slops) {
     config.clock = nsh_core::time::Clock::manual(std::time::SystemTime::now());
     let mut app = common::headless(config);
     let slops = Slops::default();
-    let observed = slops.clone();
-    app.observe(move |_, batch| observed.apply(batch));
+    let styles = Styles::default();
+    let (observed, styled) = (slops.clone(), styles.clone());
+    app.observe(move |_, batch| {
+        observed.apply(batch);
+        styled.apply(batch);
+    });
     app.wait_for("id:terminal-screen").unwrap();
-    (App(app), channel, slops)
+    (App(app), channel, slops, styles)
 }
 
 /// A tmux session `train` whose window tmux named after Claude Code's
@@ -466,5 +500,107 @@ fn the_back_button_is_the_breadcrumbs_height() {
     let slop = slops.of(node);
     assert!(back.height.0 + slop.top.0 + slop.bottom.0 >= 44.0);
     assert!(back.width.0 + slop.left.0 + slop.right.0 >= 44.0);
+    channel.close();
+}
+
+/// The bar's three pieces line up (the owner, Canary 176: "这个胶囊能不能
+/// 对齐美观一点"): one height, one center line, one gap between each, and
+/// back is drawn on the capsules' own surface (it was a glass circle
+/// beside two outlined capsules).
+#[test]
+fn the_bar_pieces_are_one_row_of_capsules() {
+    let (mut app, channel, _, styles) = phone_styled();
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    let nodes = app.0.screen().layout_nodes();
+    let node = |id: &str| {
+        nodes
+            .iter()
+            .find(|n| n.test_id.as_deref() == Some(id))
+            .unwrap_or_else(|| panic!("{id}"))
+            .clone()
+    };
+    let pieces = [
+        node("terminal-back"),
+        node("terminal-transport-switch"),
+        node("terminal-breadcrumb"),
+    ];
+    let first = pieces[0].bounds;
+    for piece in &pieces {
+        let b = piece.bounds;
+        assert!(
+            (b.size.height.0 - first.size.height.0).abs() < 0.01,
+            "{:?}: {b:?} vs back {first:?}",
+            piece.test_id
+        );
+        assert!(
+            (b.center().y.0 - first.center().y.0).abs() < 0.01,
+            "{:?} off the center line: {b:?}",
+            piece.test_id
+        );
+    }
+    let gaps: Vec<f32> = pieces
+        .windows(2)
+        .map(|p| p[1].bounds.origin.x.0 - (p[0].bounds.origin.x.0 + p[0].bounds.size.width.0))
+        .collect();
+    assert!(
+        (gaps[0] - gaps[1]).abs() < 0.01 && gaps[0] > 0.0,
+        "gaps {gaps:?}"
+    );
+    // One surface: fill, hairline, corners, no glass.
+    let (back, crumb) = (styles.of(pieces[0].id), styles.of(pieces[2].id));
+    let pill = styles.of(pieces[1].id);
+    for (name, s) in [("pill", &pill), ("breadcrumb", &crumb)] {
+        assert_eq!(
+            back.background_color, s.background_color,
+            "back's fill vs {name}'s"
+        );
+        assert_eq!(back.borders, s.borders, "back's hairline vs {name}'s");
+        assert_eq!(
+            back.glass_effect, s.glass_effect,
+            "back's glass vs {name}'s"
+        );
+        assert_eq!(back.continuous_corners, s.continuous_corners, "{name}");
+    }
+    channel.close();
+}
+
+/// The breadcrumb is as wide as its segments: it was stretched to the
+/// bar's end, an empty run after `claude`. A longer project name widens it;
+/// on the narrowest phone it stops at the bar's padding and the words
+/// shrink (crumb_targets.rs).
+#[test]
+fn the_breadcrumb_hugs_its_segments() {
+    let (mut app, channel, _) = phone();
+    post(&mut app.0, &channel, &chrome().to_string());
+    app.0.wait_for("id:terminal-breadcrumb").unwrap();
+    let capsule = |app: &App| {
+        app.0
+            .screen()
+            .layout_nodes()
+            .into_iter()
+            .find(|n| n.test_id.as_deref() == Some("terminal-breadcrumb"))
+            .unwrap()
+            .bounds
+    };
+    let short = capsule(&app);
+    let end = short.origin.x.0 + short.size.width.0;
+    assert!(end < 402.0 - 16.0 - 8.0, "room left after it: {short:?}");
+    // The session still spells its name (the full segments fit).
+    assert!(app.0.screen().shows("train"));
+    let mut longer = chrome();
+    longer["crumbs"]["tree"]["panes"][0]["path"] = json!("/home/cluas/src/trainer2");
+    post(&mut app.0, &channel, &longer.to_string());
+    app.0.wait_for("label:trainer2").unwrap();
+    let long = capsule(&app);
+    assert!(
+        long.size.width.0 > short.size.width.0 + 4.0
+            && long.origin.x.0 + long.size.width.0 < 402.0 - 16.0 - 0.5,
+        "it grows with its words: {short:?} -> {long:?}"
+    );
+    assert!(
+        (long.origin.x.0 - short.origin.x.0).abs() < 0.01,
+        "its start stays"
+    );
     channel.close();
 }

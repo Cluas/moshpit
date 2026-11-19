@@ -3,9 +3,12 @@
 //!
 //! A system navigation bar's 44 pt (40 in iPad landscape) on the `chrome`
 //! material, from the top of the screen down to its edge, a `border`
-//! hairline under it. Back (or the iPad's sidebar toggle) is a glass
-//! [`IconButton`]; the transport capsule is a status dot and `mosh` or
-//! `SSH`; the breadcrumb says `session › project › agent●`, named by
+//! hairline under it. Its three pieces are one kind of capsule
+//! ([`capsule`]: 36 pt tall, `chrome` under a `border-strong` hairline),
+//! 8 pt apart on one center line, each as wide as what it shows: back (or
+//! the iPad's sidebar toggle) a circle, an [`IconButton`]; the transport
+//! capsule a status dot and `mosh` or `SSH`; the breadcrumb, hugging its
+//! segments up to the room left (then they shrink), says `session › project › agent●`, named by
 //! Home's rules ([`Crumbs::names`]), each segment a button, the agent's
 //! segment amber while it waits on you. A segment opens its level
 //! (`Intent::Crumb`): the host's quick list of that level (sessions,
@@ -26,7 +29,7 @@ use crate::{
     face::Design,
     ui::{
         alert::alert_dialog,
-        button::{IconButtonSize, IconVariant, icon_button},
+        button::{CAPSULE_PRESSED, IconButtonSize, IconVariant, icon_button},
         icon::{IconSize, Tone, icon},
         motion::Duration as Motion,
         status::{Status, status_dot},
@@ -43,6 +46,21 @@ pub(crate) fn height(compact: bool) -> f32 {
 /// The height of the back button, the capsule and the breadcrumb, within
 /// the bar's row.
 const PIECE: f32 = 36.0;
+
+/// The bar's capsule: [`PIECE`] tall, its words 12 pt in from its ends,
+/// `chrome` under a `border-strong` hairline (back's circle, an
+/// [`IconVariant::Capsule`] button, is drawn the same).
+fn capsule(view: View) -> View {
+    view.h(px(PIECE))
+        .flex_row()
+        .items_center()
+        .px(px(12.0))
+        .rounded_full()
+        .border_curve(BorderCurve::Continuous)
+        .bg(move || token("chrome"))
+        .border(px(0.5))
+        .border_color(move || token("border-strong"))
+}
 
 /// The bar.
 pub(crate) fn top_bar(ctx: Ctx) -> AnyElement {
@@ -136,9 +154,9 @@ fn anchored(view: View, ctx: Ctx, name: &'static str, target: ElementRef) -> Vie
         .on_layout(move |_: &Bounds<Points>| measure())
 }
 
-/// Back, or the iPad's sidebar toggle: a glass icon button drawn as tall
-/// as the capsule and the breadcrumb ([`PIECE`]), its target the system's
-/// 44 pt (the button's own slop).
+/// Back, or the iPad's sidebar toggle: a circle of the capsules' height
+/// ([`PIECE`]) on their surface, its symbol their words' size, its target
+/// the system's 44 pt (the button's own slop).
 fn leading_button(ctx: Ctx) -> AnyElement {
     let sidebar = {
         let ctx = ctx.clone();
@@ -159,7 +177,7 @@ fn leading_button(ctx: Ctx) -> AnyElement {
                 ("chevron.left", t!("Back"), "terminal-back", Intent::Back)
             };
             icon_button(symbol, label)
-                .variant(IconVariant::Glass)
+                .variant(IconVariant::Capsule)
                 .size(IconButtonSize::Chrome)
                 .test_id(id)
                 .on_press(ctx.asking(intent))
@@ -242,30 +260,21 @@ fn pill(ctx: Ctx) -> AnyElement {
                 .into_element()
         })
     });
-    view()
+    capsule(view())
         .flex_shrink_0()
-        .h(px(PIECE))
         .hit_slop(EdgeInsets {
-            top: Points(4.0),
+            top: Points((TARGET - PIECE) / 2.0),
             right: Points(0.0),
-            bottom: Points(4.0),
+            bottom: Points((TARGET - PIECE) / 2.0),
             left: Points(0.0),
         })
-        .flex_row()
-        .items_center()
         .gap(px(8.0))
-        .px(px(12.0))
-        .rounded_full()
-        .border_curve(BorderCurve::Continuous)
-        .bg(move || token("chrome"))
-        .border(px(0.5))
-        .border_color(move || token("border-strong"))
         .role(AccessibilityRole::Button)
         .label(move || word.get())
         .hint(t!("Double tap to switch between SSH and Mosh"))
         .test_id("terminal-transport-switch")
         .anchored(ctx.clone(), "pill", ctx.pill)
-        .active(|s| s.opacity(0.7))
+        .active(|s| s.opacity(CAPSULE_PRESSED))
         .on_press({
             let ctx = ctx.clone();
             move || confirm_switch(&ctx)
@@ -389,14 +398,21 @@ pub(crate) fn confirm_switch(ctx: &Ctx) {
 /// The breadcrumb's capsule: `session › project › agent●`, or the
 /// connection's identity while there is no tree. The remembered plan of a
 /// connection coming back is dimmed and inert.
+///
+/// The capsule is as wide as its segments, not the bar's rest: a capsule
+/// stretched past its last word read as an empty field. It sits in a slot
+/// that takes the room left; when the segments need more than that, the
+/// capsule stops at the slot's end and they shrink.
 fn breadcrumb(ctx: Ctx) -> AnyElement {
     let crumbs = {
         let ctx = ctx.clone();
         computed(move || ctx.chrome.with(|c| c.crumbs.clone()))
     };
     let retained = computed(move || crumbs.with(|c| c.as_ref().is_some_and(|c| !c.live)));
-    // The session's name first, its icon alone only when the three full
-    // segments overflow the capsule.
+    // The session's name first, its icon alone only when the capsule with
+    // the three full segments is wider than the slot. Both are measured
+    // outside the capsule shown, so a squeezed (narrower) capsule never
+    // decides it stays squeezed.
     let room = signal(0.0_f32);
     let natural = signal(0.0_f32);
     let squeezed = computed(move || natural.get() > room.get() + 0.5);
@@ -404,6 +420,31 @@ fn breadcrumb(ctx: Ctx) -> AnyElement {
         let ctx = ctx.clone();
         computed(move || ctx.still())
     };
+    // The capsule with the full segments, unseen, unbounded (the measuring
+    // copy: the same boxes, no buttons).
+    let measured = dynamic(move || {
+        let crumbs = crumbs.get();
+        untracked(move || match crumbs {
+            Some(plan) => {
+                let names = plan.names(&t!("agent"));
+                capsule(view())
+                    .absolute()
+                    .left(px(0.0))
+                    .top(px(0.0))
+                    .opacity(0.0)
+                    .pointer_events(PointerEvents::None)
+                    .accessibility_elements_hidden(true)
+                    .on_layout(move |b: &Bounds<Points>| {
+                        if (natural.get_untracked() - b.size.width.0).abs() > 0.25 {
+                            natural.set(b.size.width.0);
+                        }
+                    })
+                    .child(row(&plan, &names, true, None))
+                    .into_element()
+            }
+            None => view().into_element(),
+        })
+    });
     let content = {
         let ctx = ctx.clone();
         dynamic(move || {
@@ -417,52 +458,21 @@ fn breadcrumb(ctx: Ctx) -> AnyElement {
             untracked(move || match crumbs {
                 Some(plan) => {
                     let names = plan.names(&t!("agent"));
-                    let full = row(&plan, &names, true, None);
-                    let measured = view()
-                        .absolute()
-                        .left(px(0.0))
-                        .top(px(0.0))
-                        .opacity(0.0)
-                        .pointer_events(PointerEvents::None)
-                        .accessibility_elements_hidden(true)
-                        .on_layout(move |b: &Bounds<Points>| {
-                            if (natural.get_untracked() - b.size.width.0).abs() > 0.25 {
-                                natural.set(b.size.width.0);
-                            }
-                        })
-                        .child(full);
-                    let shown = dynamic(move || {
+                    dynamic(move || {
                         let squeeze = plan.squeezable && squeezed.get();
                         let (plan, names, ctx) = (plan.clone(), names.clone(), ctx.clone());
                         untracked(move || row(&plan, &names, !squeeze, Some(ctx)))
-                    });
-                    view()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .relative()
-                        .flex_row()
-                        .items_center()
-                        .child(measured)
-                        .child(shown)
-                        .into_element()
+                    })
+                    .into_element()
                 }
                 None => identity(&ctx),
             })
         })
     };
-    view()
-        .flex_1()
+    let shown = capsule(view())
+        .flex_shrink(1.0)
         .min_w(px(0.0))
-        .h(px(PIECE))
         .relative()
-        .flex_row()
-        .items_center()
-        .px(px(12.0))
-        .rounded_full()
-        .border_curve(BorderCurve::Continuous)
-        .bg(move || token("chrome"))
-        .border(px(0.5))
-        .border_color(move || token("border-strong"))
         // No clip: the segments' targets reach past the capsule's top and
         // bottom (a view that clips hands its children no touch outside
         // it); the words truncate inside it on their own.
@@ -470,22 +480,31 @@ fn breadcrumb(ctx: Ctx) -> AnyElement {
         .anchored(ctx.clone(), "breadcrumb", element_ref())
         .child(
             view()
-                .flex_1()
+                .flex_shrink(1.0)
                 .min_w(px(0.0))
                 .flex_row()
                 .items_center()
-                .on_layout(move |b: &Bounds<Points>| {
-                    if (room.get_untracked() - b.size.width.0).abs() > 0.25 {
-                        room.set(b.size.width.0);
-                    }
-                })
                 .opacity(move || if retained.get() { 0.45_f32 } else { 1.0 })
                 .transition_opacity()
                 // At once through a protocol switch (nothing moves then).
                 .duration(move || if still.get() { 0.0 } else { Motion::Base.ms() })
                 .disabled(move || retained.get())
                 .child(content),
-        )
+        );
+    // The room left in the bar, the capsule at its start.
+    view()
+        .flex_1()
+        .min_w(px(0.0))
+        .relative()
+        .flex_row()
+        .items_center()
+        .on_layout(move |b: &Bounds<Points>| {
+            if (room.get_untracked() - b.size.width.0).abs() > 0.25 {
+                room.set(b.size.width.0);
+            }
+        })
+        .child(measured)
+        .child(shown)
         .into_element()
 }
 
@@ -735,7 +754,7 @@ fn identity(ctx: &Ctx) -> AnyElement {
         .chrome
         .with_untracked(|c| (c.user.clone(), c.host.clone(), c.mux));
     let mut row = view()
-        .flex_1()
+        .flex_shrink(1.0)
         .min_w(px(0.0))
         .flex_row()
         .items_center()

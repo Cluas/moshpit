@@ -190,13 +190,15 @@ fn the_bars_symbols_are_the_keys_words_size() {
             ],
             "the bar",
         );
-        // A navigation bar's button keeps a bar button's size.
+        // Back is one of the bar's capsules: its symbol is their words'
+        // size (`IconSize::Md`), not a bar button's (it read heavier than
+        // the capsules beside it, Canary 176).
         let back = symbols_in(&app, &natives, "terminal-back");
         assert!(!back.is_empty(), "the back button draws a symbol");
         for symbol in back {
             assert_eq!(
                 symbol.points,
-                f64::from(IconSize::Lg.points_at(scale)),
+                f64::from(IconSize::Md.points_at(scale)),
                 "{symbol:?}"
             );
         }
