@@ -616,3 +616,30 @@ fn rig_sanity_proto_writer_matches_host_encoder() {
     message.field_bytes(1, instruction.bytes());
     assert_eq!(message.bytes(), host_diff("hello"));
 }
+
+// MARK: Diffs from an older state (CLI-LAB.md, Bug 2)
+
+/// mosh-server sends a small diff from the state the client last acked
+/// (`attempt_prospective_resend_optimization`), not from the newest state
+/// it sent: over a 500 ms round trip the live probe saw `0→1, 0→2, 0→3,
+/// 0→4, 1→5, 1→6, 1→7, 5→8`. mosh-client keeps every state since the acked
+/// one and applies each; this transport holds one, so it applies one state
+/// per round trip (5 of every 15 received here, frames ~750 ms apart
+/// instead of 250 ms) and whatever the server snapshotted mid-redraw stays
+/// up that long. Red until the transport can apply a diff from a state it
+/// held before the one it shows.
+#[test]
+#[ignore = "red: needs a framebuffer per held host state (CLI-LAB.md, Bug 2)"]
+fn a_diff_from_an_older_held_state_applies() {
+    let mut rig = Rig::new();
+    let first = rig.datagram(0, 1, 0, 1, 0, &host_diff("a"));
+    rig.receive(&first);
+    assert_eq!(rig.frames().len(), 1);
+    // The ack for state 1 is still on its way: the server diffs from 0.
+    let second = rig.datagram(1, 2, 0, 2, 0, &host_diff("ab"));
+    rig.receive(&second);
+    let diag = rig.transport.diagnostics();
+    assert_eq!(diag.applied_host_num, 2);
+    assert_eq!(diag.gap_events, 0);
+    assert_eq!(rig.frames().len(), 1);
+}

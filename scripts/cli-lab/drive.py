@@ -414,14 +414,64 @@ def run_mosh(argv, env, a, rec, work, tmpdir, in_tmux):
     port, key = m.group(1), m.group(2)
     cenv = {"MOSH_KEY": key, "MOSH_PREDICTION_DISPLAY": a.predict, "TERM": "xterm-256color",
             "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8", "PATH": os.environ["PATH"], "HOME": tmpdir}
+    relay = None
+    if a.rtt:
+        # A slow link: mosh-client talks to a relay that delays each
+        # datagram by half the round trip, both ways.
+        front = free_port()
+        relay = subprocess.Popen([sys.executable, "-I", os.path.join(HERE, "udp_delay.py"),
+                                  str(front), port, str(a.rtt // 2)])
+        port = str(front)
+        time.sleep(0.2)
+    if a.moshpit:
+        try:
+            run_moshpit_client(port, key, a, rec)
+        finally:
+            if relay:
+                relay.kill()
+            subprocess.run(["pkill", "-f", f"mosh-server new -s -i 127.0.0.1 -c 256 -l LANG=en_US.UTF-8 -- /bin/sh -c cd \"\\$0\" && exec \"\\$@\" {work}"])
+            if in_tmux:
+                tmux_cmd(f"clilab-m{a.cli}", tmpdir)("kill-server")
+        return
     pid, fd = spawn_pty([shutil.which("mosh-client"), "127.0.0.1", port], cenv, a.cols, a.rows, work)
     try:
         drive_keys(pty_reader(fd), lambda k: os.write(fd, key_bytes(k)), a, rec)
     finally:
         kill(pid)
+        if relay:
+            relay.kill()
         subprocess.run(["pkill", "-f", f"mosh-server new -s -i 127.0.0.1 -c 256 -l LANG=en_US.UTF-8 -- /bin/sh -c cd \"\\$0\" && exec \"\\$@\" {work}"])
         if in_tmux:
             tmux_cmd(f"clilab-m{a.cli}", tmpdir)("kill-server")
+
+
+def run_moshpit_client(port, key, a, rec):
+    """Moshpit's own mosh transport (crates/mosh, `mosh_harness live`) in
+    place of mosh-client: the bytes recorded are the host bytes of each state
+    as the transport hands them to the terminal, with the echo ack it
+    carried. Keys go on a fixed schedule (the harness takes no input): the
+    boot wait, then one key every --delay s, then --reply s."""
+    steps = [f"wait:{int(a.boot * 1000)}"]
+    for k in keys_for(a.text):
+        steps += [f"type:{key_bytes(k).hex()}", f"wait:{int(a.delay * 1000)}"]
+    steps.append(f"wait:{int(a.reply * 1000)}")
+    proc = subprocess.Popen([a.moshpit, "live", "127.0.0.1", port, key, str(10**9), *steps],
+                            stdout=subprocess.PIPE, text=True)
+    sent = {}
+    for line in proc.stdout:
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == "frame":
+            b = bytes.fromhex(f[3]) if len(f) > 3 else b""
+            rec.f.write(json.dumps({"t": rec.ms(), "o": base64.b64encode(scrub(b)).decode(),
+                                    "a": int(f[2])}) + "\n")
+            rec.seen = (rec.seen + b)[-200000:]
+        elif f[0] == "sent":
+            k = bytes.fromhex(f[3])
+            rec.f.write(json.dumps({"t": rec.ms(), "k": "Enter" if k == b"\r" else k.decode(),
+                                    "n": int(f[2])}) + "\n")
+    proc.wait()
 
 
 def main():
@@ -443,10 +493,16 @@ def main():
     p.add_argument("--freeze", default=None,
                    help="once --ready shows, SIGSTOP processes matching this and type nothing")
     p.add_argument("--predict", default="never", help="mosh-client MOSH_PREDICTION_DISPLAY")
+    p.add_argument("--rtt", type=int, default=0,
+                   help="mosh paths: round trip in ms through a delay relay (udp_delay.py)")
+    p.add_argument("--moshpit", default=None,
+                   help="mosh paths: Moshpit's mosh transport (path to the mosh_harness example) "
+                        "in place of mosh-client; the boot wait is --boot s, fixed")
     a = p.parse_args()
 
     name = a.name or f"{a.cli}-{a.path}" + (f"-pred-{a.predict}" if a.path.startswith("mosh") and
-                                            a.predict != "never" else "")
+                                            a.predict != "never" else "") + \
+        (f"-rtt{a.rtt}" if a.rtt else "") + ("-rs" if a.moshpit else "")
     root = os.path.join(os.path.realpath(LAB), name)
     shutil.rmtree(root, ignore_errors=True)
     home, work, tmpdir = f"{root}/home", f"{root}/work", f"{root}/t"

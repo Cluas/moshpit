@@ -6,6 +6,7 @@ each streaming one canned multi-line reply. Never forwards anywhere.
     fake_model.py <port> [<log>]
 """
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,10 @@ REPLY = [
     "3. Keep the cursor after the text.\n",
     "Done: 你好，世界。",
 ]
+# LAB_LONG=N: a reply of N more lines, one every LAB_PACE s (a long answer
+# streaming in, with the CLI's spinner and status line ticking meanwhile).
+REPLY += [f"Line {i} of a longer answer, streamed in slowly.\n" for i in range(int(os.environ.get("LAB_LONG", 0)))]
+PACE = float(os.environ.get("LAB_PACE", "0.15"))
 MODEL = "lab-model"
 LOG = open(sys.argv[2], "a") if len(sys.argv) > 2 else None
 
@@ -102,7 +107,7 @@ class H(BaseHTTPRequestHandler):
         base = {"id": "c1", "object": "chat.completion.chunk", "created": 0, "model": MODEL}
         self.sse({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]})
         for part in REPLY:
-            time.sleep(0.15)
+            time.sleep(PACE)
             self.sse({**base, "choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}]})
         self.sse({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                   "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
@@ -121,7 +126,7 @@ class H(BaseHTTPRequestHandler):
         self.sse({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
                  "content_block_start")
         for part in REPLY:
-            time.sleep(0.15)
+            time.sleep(PACE)
             self.sse({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": part}},
                      "content_block_delta")
         self.sse({"type": "content_block_stop", "index": 0}, "content_block_stop")
@@ -141,7 +146,7 @@ class H(BaseHTTPRequestHandler):
         self.sse({"type": "response.content_part.added", "item_id": "msg_1", "output_index": 0, "content_index": 0,
                   "part": {"type": "output_text", "text": "", "annotations": []}}, "response.content_part.added")
         for part in REPLY:
-            time.sleep(0.15)
+            time.sleep(PACE)
             self.sse({"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0,
                       "content_index": 0, "delta": part}, "response.output_text.delta")
         text = "".join(REPLY)
@@ -168,7 +173,7 @@ class H(BaseHTTPRequestHandler):
             return self.send_json(chunks if "stream" in path.lower() else chunks[-1])
         self.sse_start()
         for c in chunks:
-            time.sleep(0.15)
+            time.sleep(PACE)
             self.sse(c)
 
 

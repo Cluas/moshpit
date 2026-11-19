@@ -19,8 +19,8 @@
 
 mod common;
 use base64::Engine as _;
-use moshpit_term::{Options, ScrollOnClear, Terminal, cell_flags as F, predict::PredictMode};
 use moshpit_term::coalesce::Coalescer;
+use moshpit_term::{Options, ScrollOnClear, Terminal, cell_flags as F, predict::PredictMode};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -264,12 +264,17 @@ fn input_of(rec: &Rec, p: &Play) -> Result<Input, String> {
         .rev()
         .find(|s| s.keys == n)
         .ok_or("no frame before Enter")?;
-    for row in &before.shown.rows {
-        if let Some(i) = row.find(&rec.text) {
-            return Ok(Input {
-                prompt: row[..i].to_string(),
-                col: row[..i].chars().count(),
-            });
+    // Over a slow link the whole text may show only after Enter was sent
+    // (the echo is a round trip away): the first frame that has it then.
+    let later = p.steps.iter().filter(|s| s.keys > n);
+    for s in std::iter::once(before).chain(later) {
+        for row in &s.shown.rows {
+            if let Some(i) = row.find(&rec.text) {
+                return Ok(Input {
+                    prompt: row[..i].to_string(),
+                    col: row[..i].chars().count(),
+                });
+            }
         }
     }
     Err(format!(
@@ -415,6 +420,32 @@ fn check_steady(rec: &Rec, p: &Play) -> Result<(), String> {
     }
 }
 
+/// From the first key to the end (the reply streaming in included), a
+/// visible cursor is on an input row: a row that starts with the prompt
+/// (the box may move). A frame with the cursor anywhere else is the cursor
+/// jumping: a state taken while the CLI was redrawing.
+fn check_cursor(rec: &Rec, p: &Play) -> Result<(), String> {
+    let inp = input_of(rec, p)?;
+    let mut bad = vec![];
+    for (i, s) in p.steps.iter().enumerate() {
+        let Some((col, row)) = s.shown.cursor.filter(|_| s.keys > 0) else {
+            continue;
+        };
+        let line = s.shown.rows.get(row as usize).map_or("", String::as_str);
+        if !line.starts_with(inp.prompt.trim_end()) {
+            bad.push(format!(
+                "frame {i} ({} keys): cursor at row {row} col {col}: {line:?}",
+                s.keys
+            ));
+        }
+    }
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(bad.join("\n"))
+    }
+}
+
 /// With predictions on, frames differ from the plain replay's only on the
 /// input row, and a visible cursor stays on it.
 fn check_predicted(rec: &Rec, plain: &Play, mode: PredictMode) -> Result<(), String> {
@@ -456,6 +487,7 @@ enum Check {
     Final,
     Typed,
     Steady,
+    Cursor,
     Predicted,
 }
 
@@ -466,6 +498,7 @@ fn run(name: &str, check: Check) -> Result<(), String> {
         Check::Final => check_final(&rec, &plain),
         Check::Typed => check_typed(&rec, &plain),
         Check::Steady => check_steady(&rec, &plain),
+        Check::Cursor => check_cursor(&rec, &plain),
         Check::Predicted => check_predicted(&rec, &plain, PredictMode::Always),
     }
 }
@@ -568,18 +601,10 @@ lab!(
 );
 lab!(gemini_tmux_final, "gemini-tmux", Final);
 lab!(gemini_tmux_typed, "gemini-tmux", Typed);
-lab!(
-    gemini_tmux_steady,
-    "gemini-tmux",
-    Steady
-);
+lab!(gemini_tmux_steady, "gemini-tmux", Steady);
 lab!(gemini_ssh_final, "gemini-ssh", Final);
 lab!(gemini_ssh_typed, "gemini-ssh", Typed);
-lab!(
-    gemini_ssh_steady,
-    "gemini-ssh",
-    Steady
-);
+lab!(gemini_ssh_steady, "gemini-ssh", Steady);
 lab!(gemini_mosh_final, "gemini-mosh", Final);
 lab!(gemini_mosh_typed, "gemini-mosh", Typed);
 lab!(gemini_mosh_steady, "gemini-mosh", Steady);
@@ -607,6 +632,25 @@ lab!(copilot_mosh_predicted, "copilot-mosh", Predicted);
 lab!(qoder_tmux_final, "qoder-tmux", Final);
 lab!(qoder_ssh_final, "qoder-ssh", Final);
 lab!(qoder_mosh_final, "qoder-mosh", Final);
+// A visible cursor stays on the input row while the CLI answers.
+lab!(claude_tmux_cursor, "claude-tmux", Cursor);
+lab!(claude_mosh_cursor, "claude-mosh", Cursor);
+lab!(codex_tmux_cursor, "codex-tmux", Cursor);
+lab!(codex_mosh_cursor, "codex-mosh", Cursor);
+lab!(codex_mosh_tmux_cursor, "codex-mosh-tmux", Cursor);
+// Codex inside tmux over Moshpit's own transport (`-rs`, recorded with
+// mosh_harness) and a 500 ms round trip, a long streamed answer.
+lab!(
+    codex_mosh_tmux_rtt500_rs_steady,
+    "codex-mosh-tmux-rtt500-rs",
+    Steady
+);
+lab!(
+    #[ignore = "red: the mosh cursor jump (CLI-LAB.md, Bug 2): the transport applies one host state per round trip, so a state mosh-server snapshotted mid-redraw stays up ~0.75 s"]
+    codex_mosh_tmux_rtt500_rs_cursor,
+    "codex-mosh-tmux-rtt500-rs",
+    Cursor
+);
 
 const ALL: &[&str] = &[
     "shell-tmux",
@@ -634,6 +678,7 @@ const ALL: &[&str] = &[
     "qoder-tmux",
     "qoder-ssh",
     "qoder-mosh",
+    "codex-mosh-tmux-rtt500-rs",
 ];
 
 /// `cargo test --test cli_lab -- --ignored --nocapture lab_table`: every
@@ -642,7 +687,13 @@ const ALL: &[&str] = &[
 #[ignore = "report, not a check"]
 fn lab_table() {
     for name in ALL {
-        for check in [Check::Final, Check::Typed, Check::Steady, Check::Predicted] {
+        for check in [
+            Check::Final,
+            Check::Typed,
+            Check::Steady,
+            Check::Cursor,
+            Check::Predicted,
+        ] {
             let rec = load(name);
             if matches!(check, Check::Final) && rec.refs.is_empty() {
                 continue;
