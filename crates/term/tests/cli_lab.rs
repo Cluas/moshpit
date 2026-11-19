@@ -20,11 +20,14 @@
 mod common;
 use base64::Engine as _;
 use moshpit_term::{Options, ScrollOnClear, Terminal, cell_flags as F, predict::PredictMode};
+use moshpit_term::coalesce::Coalescer;
 use serde_json::Value;
+use std::time::{Duration, Instant};
 
 enum Ev {
-    Out(Vec<u8>),
-    Key(String),
+    /// Bytes, and when they came (ms).
+    Out(Vec<u8>, u64),
+    Key(String, u64),
 }
 
 struct Rec {
@@ -62,12 +65,14 @@ fn load(name: &str) -> Rec {
         refs: vec![],
     };
     for v in lines {
+        let t = v["t"].as_u64().unwrap_or(0);
         if let Some(o) = v["o"].as_str() {
             rec.events.push(Ev::Out(
                 base64::engine::general_purpose::STANDARD.decode(o).unwrap(),
+                t,
             ));
         } else if let Some(k) = v["k"].as_str() {
-            rec.events.push(Ev::Key(k.to_string()));
+            rec.events.push(Ev::Key(k.to_string(), t));
         } else if let Some(r) = v["ref"].as_array() {
             let rows = r
                 .iter()
@@ -141,7 +146,9 @@ struct Play {
     end: Terminal,
 }
 
-/// Feeds the recording chunk by chunk, publishing a frame after each.
+/// Feeds the recording chunk by chunk, each chunk a read, and publishes a
+/// frame when a pane would: when the output held is due
+/// ([`moshpit_term::coalesce`], at the chunks' recorded times).
 /// `predict`: mosh's predictive echo on, each key acked by the first chunk
 /// after it (the host's echo).
 fn play(rec: &Rec, predict: Option<PredictMode>) -> Play {
@@ -170,19 +177,44 @@ fn play_to(rec: &Rec, predict: Option<PredictMode>, n: usize) -> Play {
     }
     let mut shown = Shown::default();
     let mut steps = vec![];
-    let mut keys = vec![];
+    let mut keys: Vec<String> = vec![];
     let mut sent = 0u64;
     let mut acked = 0u64;
+    let t0 = Instant::now();
+    let at = |ms: u64| t0 + Duration::from_millis(ms);
+    let mut held = Coalescer::default();
+    // A pane's publish: not inside a synchronized update.
+    let mut publish = |t: &mut Terminal, shown: &mut Shown, keys: usize, held: &mut Coalescer| {
+        held.framed();
+        if t.sync_deadline().is_none() {
+            shown.apply(t);
+            steps.push(Step {
+                keys,
+                shown: shown.clone(),
+            });
+        }
+    };
     for ev in &rec.events[..n] {
+        let now = match ev {
+            Ev::Out(_, ms) | Ev::Key(_, ms) => at(*ms),
+        };
+        // What was due before this event, with the keys sent before it.
+        if held.due().is_some_and(|d| d < now) && t.sync_deadline().is_none() {
+            publish(&mut t, &mut shown, keys.len(), &mut held);
+        }
         match ev {
-            Ev::Out(b) => {
+            Ev::Out(b, _) => {
                 t.feed(b);
                 if acked < sent {
                     acked = sent;
                     t.predict_echo_ack(acked);
                 }
+                held.output(now, t.sync_settled());
+                if held.ready(now) && t.sync_deadline().is_none() {
+                    publish(&mut t, &mut shown, keys.len(), &mut held);
+                }
             }
-            Ev::Key(k) => {
+            Ev::Key(k, _) => {
                 keys.push(k.clone());
                 if predict.is_some() {
                     let bytes = if k == "Enter" {
@@ -197,11 +229,6 @@ fn play_to(rec: &Rec, predict: Option<PredictMode>, n: usize) -> Play {
                 }
             }
         }
-        shown.apply(&mut t);
-        steps.push(Step {
-            keys: keys.len(),
-            shown: shown.clone(),
-        });
     }
     if t.sync_deadline().is_some() {
         t.flush_sync();
@@ -316,7 +343,7 @@ fn check_typed(rec: &Rec, p: &Play) -> Result<(), String> {
         .events
         .iter()
         .enumerate()
-        .filter(|(_, e)| matches!(e, Ev::Key(_)))
+        .filter(|(_, e)| matches!(e, Ev::Key(..)))
         .map(|(i, _)| i)
         .collect();
     // The screen when key k+1 is sent: k keys were sent before it.
@@ -326,7 +353,7 @@ fn check_typed(rec: &Rec, p: &Play) -> Result<(), String> {
         let next = at.get(k).copied().unwrap_or(rec.events.len());
         if !rec.events[at[k - 1]..next]
             .iter()
-            .any(|e| matches!(e, Ev::Out(_)))
+            .any(|e| matches!(e, Ev::Out(..)))
         {
             continue;
         }
@@ -542,7 +569,6 @@ lab!(
 lab!(gemini_tmux_final, "gemini-tmux", Final);
 lab!(gemini_tmux_typed, "gemini-tmux", Typed);
 lab!(
-    #[ignore = "red: Gemini erases and redraws its input box in one write (no DEC 2026) that arrives in two reads; the frame published between them has no input row (torn)"]
     gemini_tmux_steady,
     "gemini-tmux",
     Steady
@@ -550,7 +576,6 @@ lab!(
 lab!(gemini_ssh_final, "gemini-ssh", Final);
 lab!(gemini_ssh_typed, "gemini-ssh", Typed);
 lab!(
-    #[ignore = "red: Gemini erases and redraws its input box in one write (no DEC 2026) that arrives in two reads; the frame published between them has no input row (torn)"]
     gemini_ssh_steady,
     "gemini-ssh",
     Steady
@@ -630,7 +655,7 @@ fn lab_table() {
                 && !rec
                     .events
                     .iter()
-                    .any(|e| matches!(e, Ev::Key(k) if k == "Enter"))
+                    .any(|e| matches!(e, Ev::Key(k, _) if k == "Enter"))
             {
                 continue;
             }

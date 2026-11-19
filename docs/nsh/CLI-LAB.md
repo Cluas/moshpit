@@ -67,8 +67,8 @@ The lab root `/private/tmp/L` has the same length as `/Users/dev/lab`, so column
 
 ### The checks
 
-`crates/term/tests/cli_lab.rs` feeds each recording chunk by chunk and publishes a frame after every chunk.
-That is the worst case: a pane publishes after a read whenever the view has taken the previous frame (`pane.rs` `publish`).
+`crates/term/tests/cli_lab.rs` feeds each recording chunk by chunk, each chunk one read at its recorded time.
+It publishes a frame when a pane would: once the output held is due (`crates/term/src/coalesce.rs`, see "Frame coalescing" below).
 The checks run on what those frames show.
 Concealed text (fg = bg) counts as blank, and wide-char spacers are skipped.
 
@@ -104,8 +104,8 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | codex-mosh | pass | pass | pass | pass |
 | codex-mosh-tmux | pass | pass | pass | pass |
 | codex-mosh-pred-always | pass | pass | pass | pass |
-| gemini-tmux | pass | pass | **red** | — |
-| gemini-ssh | pass | pass | **red** | — |
+| gemini-tmux | pass | pass | pass | — |
+| gemini-ssh | pass | pass | pass | — |
 | gemini-mosh | pass | pass | pass | pass |
 | qwen-tmux | pass | pass | pass | — |
 | qwen-ssh | pass | pass | pass | — |
@@ -117,7 +117,7 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | qoder-ssh | pass (at the input box) | — | — | — |
 | qoder-mosh | pass (at the input box) | — | — | — |
 
-Totals: 77 green, 2 red (`gemini_tmux_steady`, `gemini_ssh_steady`).
+Totals: 79 green, 0 red.
 
 ### Per CLI
 
@@ -127,8 +127,8 @@ Totals: 77 green, 2 red (`gemini_tmux_steady`, `gemini_ssh_steady`).
   That is host lag, and the typed check skips it.
 - **Codex**: all green.
   It runs with `--no-daemon`: the app-server daemon socket under `/private/tmp/codex-daemon-<uid>` collides when runs go in parallel.
-- **Gemini CLI**: red on steady for tmux and ssh, a torn frame (see below).
-  mosh is green, because mosh-server sends whole screen states.
+- **Gemini CLI**: all green since frame coalescing.
+  Before it, steady was red over tmux and ssh: a torn frame (see below).
 - **Qwen Code**: all green.
   An update notice shows up above the input box while you type and moves the box down.
   The checks follow the box by its prompt.
@@ -241,16 +241,26 @@ Hypotheses:
   Or ask the CLIs to keep the cursor hidden during redraws.
   Both are outside this lab.
 
-## Red: Gemini torn frame (tmux, ssh)
+## Fixed: Gemini torn frame (tmux, ssh)
 
 Gemini 0.22.4 does not use DEC 2026.
 Its Ink renderer erases the whole box (`ESC[2K ESC[1A` × 13) and redraws it in one write.
 That write arrives in two reads, at the same millisecond.
-The frame published between them has the box half erased, with no input row.
-That is the frame `gemini_tmux_steady` and `gemini_ssh_steady` flag.
+Publishing after every read showed the box half erased, with no input row, for one frame.
 
-Whether a viewer sees it depends on the view's timing: the pane publishes after a read once the view has taken the last frame.
-So the flash is real but short.
-A fix would hold a publish while an erase-up run hasn't been followed by any drawing yet.
-Another option is to publish on the display's tick rather than per read.
-Over mosh it does not happen, because mosh-server sends whole states.
+## Frame coalescing
+
+A pane no longer frames each read pass as it ends (`crates/term/src/coalesce.rs`, used by `pane.rs`).
+It frames the output it parsed once one of these holds:
+
+- the stream has been quiet for **4 ms** (`QUIET`) since the last read;
+- **16 ms** (`CAP`, one display refresh) have passed since the first byte not framed yet, so a stream that never pauses still paints at display rate;
+- the output ended with the end of a synchronized update (`ESC[?2026l`, nothing unsynchronized after it): the remote said the screen is whole, so it is framed at once.
+
+Inside a synchronized update nothing is framed, as before (the 150 ms deadline still applies).
+A backlog (every read a full 64 KB) still frames every 16 ms.
+
+Why 4 ms: of the lab's gaps of 20 ms or less between two reads (979 of them, keys excluded), 76% are under 1 ms and 87% at most 4 ms.
+A split write arrives back to back, so 4 ms catches it, while a typed echo waits at most 4 ms more.
+That is a quarter of a 60 Hz frame: the echo shows one display refresh later only when it lands within 4 ms before a refresh.
+CLIs that wrap their redraws in DEC 2026 (Claude Code, Codex, Qwen and Copilot outside tmux) pay nothing: the end of the update frames at once.
