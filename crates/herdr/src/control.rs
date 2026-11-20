@@ -311,11 +311,12 @@ pub fn kill_pane(pane_id: &str) -> String {
     format!("pane close {}", quote(pane_id))
 }
 
-/// What a pane's screen shows, as text (`pane read`): the overview's
-/// picture of a pane the phone doesn't show (B751). Takes no pane, moves no
-/// focus.
+/// What a pane's screen shows, with its colours (`pane read --format
+/// ansi`, SGR in the text): the overview's picture of a pane the phone
+/// doesn't show (B751), stripped there, and a swipe's peek, drawn as the
+/// terminal draws. Takes no pane, moves no focus.
 pub fn pane_read(pane_id: &str) -> String {
-    format!("pane read {} --format text", quote(pane_id))
+    format!("pane read {} --format ansi", quote(pane_id))
 }
 
 /// Semantic keys for `pane id`, encoded by herdr against the pane's real

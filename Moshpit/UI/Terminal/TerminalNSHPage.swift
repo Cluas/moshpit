@@ -339,12 +339,14 @@ final class TerminalNSHModel {
         snapshots = control
         control?.onPaneSnapshot = { [weak self] pane, rows in
             guard let self else { return }
+            // The screen's pictures are text; the peek draws the colours.
+            let text = PaneSnapshotText.plain(rows)
             if self.overviewOpen {
-                _ = self.post(["op": "pictures", "panes": [pane: rows]])
+                _ = self.post(["op": "pictures", "panes": [pane: text]])
             }
             if self.swipePanes.contains(pane) {
                 self.swipeRows[pane] = rows
-                _ = self.post(["op": "swipe-pictures", "panes": [pane: rows]])
+                _ = self.post(["op": "swipe-pictures", "panes": [pane: text]])
             }
         }
     }
@@ -864,12 +866,49 @@ struct TerminalNSHChrome: Equatable {
 
 /// What asks a session's multiplexer for the screens of panes the phone
 /// doesn't show, for the overview's pictures (B751): tmux's control (one
-/// `capture-pane` each) or herdr's (`pane read`). Never fed to a pane.
+/// `capture-pane -e` each) or herdr's (`pane read --format ansi`). Never fed
+/// to a pane. The rows come with their colours as escape sequences: the
+/// swipe's peek draws them (``CoreTerminalView/picture(of:size:)``), the
+/// screen's text pictures take them ``PaneSnapshotText/plain(_:)``.
 @MainActor
 protocol PaneSnapshotting: AnyObject {
     var onPaneSnapshot: ((String, [String]) -> Void)? { get set }
     func snapshotPanes(_ panes: [String])
     func stopSnapshots()
+}
+
+/// A snapshot's rows as text: its escape sequences out (SGR, an OSC 8
+/// link's, any other CSI, OSC or two-byte escape).
+enum PaneSnapshotText {
+    nonisolated static func plain(_ rows: [String]) -> [String] {
+        rows.map(plain)
+    }
+
+    nonisolated static func plain(_ row: String) -> String {
+        guard row.contains("\u{1B}") else { return row }
+        var out = String.UnicodeScalarView()
+        var scalars = row.unicodeScalars.makeIterator()
+        while let s = scalars.next() {
+            guard s == "\u{1B}" else {
+                out.append(s)
+                continue
+            }
+            switch scalars.next() {
+            case "["?:
+                // CSI: parameters and intermediates up to a final byte.
+                while let c = scalars.next(), !(0x40...0x7E).contains(c.value) {}
+            case "]"?:
+                // OSC: up to BEL or ST (ESC \).
+                while let c = scalars.next() {
+                    if c == "\u{07}" { break }
+                    if c == "\u{1B}" { _ = scalars.next(); break }
+                }
+            default:
+                break
+            }
+        }
+        return String(out)
+    }
 }
 
 extension RustTmuxController: PaneSnapshotting {}
