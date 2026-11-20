@@ -23,9 +23,10 @@
 //!   page asks for the new name (the host's text prompt, [`super::prompt`])
 //!   or confirms the kill (NSH's action sheet) before telling the host.
 //!
-//! A pane list shows each pane's screen under its row: the host posts the
-//! screens it has, and each one it reads later, as `{"op": "pictures",
-//! "panes": {id: [rows]}}` (the overview's pictures, [`super::overview`]).
+//! A pane list previews each pane but the shown one under its row: the last
+//! lines its screen says ([`preview_lines`]). The host posts the screens it
+//! has, and each one it reads later, as `{"op": "pictures", "panes": {id:
+//! [rows]}}`.
 //!
 //! The list opens on the active row (centered once, as `ScrollViewReader`
 //! does; a later refresh never moves it).
@@ -38,14 +39,13 @@
 
 use std::{collections::HashMap, rc::Rc, sync::Arc};
 
-use nsh_core::{EllipsizeMode, LineHeight, prelude::*};
+use nsh_core::{EllipsizeMode, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{
     folder::symbol,
     model::{Mux, Signal as AgentSignal},
-    overview::picture_rows,
     prompt::{Answer, Prompt, Prompts},
 };
 use crate::{
@@ -793,8 +793,11 @@ fn rows_section(
                 .value(signal_label(signal))
                 .value_tone(signal_tone(signal));
         }
-        if picker.kind == Kind::Panes && picker.send.is_none() {
-            item = item.below(pane_picture(row.id.clone(), pictures));
+        if picker.kind == Kind::Panes
+            && picker.send.is_none()
+            && picker.active.as_deref() != Some(row.id.as_str())
+        {
+            item = item.below(pane_preview(row.id.clone(), pictures));
         }
         let inset = item.inset();
         let target = element_ref();
@@ -833,58 +836,81 @@ fn rows_section(
     card.into_element()
 }
 
-/// How many of a pane's rows its picture in the list shows, and their size.
-pub const PANE_PICTURE_ROWS: usize = 10;
-const PANE_PICTURE_TEXT: f32 = 7.0;
-const PANE_PICTURE_LINE: f32 = 8.5;
-const PANE_PICTURE_INSET: f32 = 8.0;
+/// How many lines of a pane's screen its row previews.
+pub const PREVIEW_LINES: usize = 2;
 
-/// Pane `pane`'s screen under its row: the end of it as small text on the
-/// terminal's ground (the overview's picture, [`picture_rows`]); nothing
-/// until the host has it. Decorative (the row says its words).
-fn pane_picture(pane: String, pictures: Signal<HashMap<String, Vec<String>>>) -> AnyElement {
-    let id = format!("mux-picker-picture-{pane}");
-    let rows = computed(move || {
+/// Whether `line` is a rule: an agent's input box edge, a divider.
+fn is_rule(line: &str) -> bool {
+    let count = line.chars().count();
+    let ruled = line
+        .chars()
+        .filter(|c| matches!(c, '─' | '━' | '═' | '╌' | '┄' | '-' | '—' | '▔' | '▁'))
+        .count();
+    count >= 8 && ruled * 10 >= count * 8
+}
+
+/// What a pane's screen says last, as its row previews it: the last
+/// [`PREVIEW_LINES`] lines with words. An agent's input box at the bottom
+/// (a rule in the last eight lines: Claude's, Codex's) is cut with
+/// everything under it (the empty prompt, the mode line), so the preview is
+/// what the agent said, not the box it waits in; box edges, rules and a
+/// bare prompt say nothing either.
+pub fn preview_lines(rows: &[String]) -> Vec<String> {
+    let mut end = rows.len();
+    while end > 0 && rows[end - 1].trim().is_empty() {
+        end -= 1;
+    }
+    if let Some(top) = (end.saturating_sub(8)..end).find(|&i| is_rule(rows[i].trim())) {
+        end = top;
+    }
+    let mut lines: Vec<String> = rows[..end]
+        .iter()
+        .rev()
+        .map(|row| {
+            row.trim_matches(|c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║'))
+                .to_owned()
+        })
+        .filter(|line| {
+            !line.is_empty()
+                && !is_rule(line)
+                && !matches!(line.as_str(), ">" | "›" | "❯" | "$" | "%" | "#")
+        })
+        .take(PREVIEW_LINES)
+        .collect();
+    lines.reverse();
+    lines
+}
+
+/// Pane `pane`'s preview under its row: what its screen says last
+/// ([`preview_lines`]), a line each, in the terminal's face; nothing until
+/// the host has the screen. The shown pane has none: its screen is behind
+/// the sheet. Decorative (the row says its words).
+fn pane_preview(pane: String, pictures: Signal<HashMap<String, Vec<String>>>) -> AnyElement {
+    let id = format!("mux-picker-preview-{pane}");
+    let lines = computed(move || {
         pictures.with(|p| {
             p.get(&pane)
-                .map(|rows| picture_rows(rows, PANE_PICTURE_ROWS))
+                .map(|rows| preview_lines(rows))
                 .unwrap_or_default()
         })
     });
     dynamic(move || {
-        let rows = rows.get();
-        if rows.is_empty() {
+        let lines = lines.get();
+        if lines.is_empty() {
             return view().into_element();
         }
-        let lines = rows.len() as u32;
-        view()
-            .w_full()
-            .h(px(
-                PANE_PICTURE_ROWS as f32 * PANE_PICTURE_LINE + 2.0 * PANE_PICTURE_INSET
-            ))
-            .mt(px(8.0))
-            .p(px(PANE_PICTURE_INSET))
-            .overflow_hidden()
-            .rounded(px(number("radius")))
-            .border_curve(BorderCurve::Continuous)
-            .bg(move || token("background"))
-            .border(px(1.0))
-            .border_color(move || token("border"))
-            .justify_end()
-            .pointer_events(PointerEvents::None)
-            .test_id(&id)
-            .child(
-                text(rows.join("\n"))
-                    .w(px(1200.0))
-                    .font_family("monospace")
-                    .text_size(px(PANE_PICTURE_TEXT))
-                    .line_height(LineHeight::Points(px(PANE_PICTURE_LINE)))
-                    .allow_font_scaling(false)
-                    .number_of_lines(lines)
-                    .text_overflow(EllipsizeMode::Clip)
+        let mut column = view().w_full().min_w(px(0.0)).test_id(&id);
+        for line in lines {
+            column = column.child(
+                TextToken::MonoFootnote
+                    .apply(text(line))
+                    .number_of_lines(1u32)
+                    .text_overflow(EllipsizeMode::Tail)
+                    .min_w(px(0.0))
                     .text_color(move || token("muted-foreground")),
-            )
-            .into_element()
+            );
+        }
+        column.into_element()
     })
     .into_element()
 }
