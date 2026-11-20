@@ -16,7 +16,8 @@ enum MuxPickerKind: String {
 /// pick handed back to the screen, which asks for a name (UIKit's alert
 /// with a text field, ``NSHTextPrompt``) or confirms a kill (NSH's action
 /// sheet) before the host acts. If its screen can't run, the picker says
-/// so (``NSHPageFailed``).
+/// so (``NSHPageFailed``). A pane list shows each pane's screen under its
+/// row (``MuxPickerModel/showPictures(of:from:)``).
 struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
     let controller: C
     let kind: MuxPickerKind
@@ -41,8 +42,15 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
                     onEvent: { if case .muxPicker(let event) = $0 { handle(event) } },
                     onFailure: { failed = true })
                     .nshPage()
-                    .onAppear { show(state) }
-                    .onChange(of: state) { _, new in show(new) }
+                    .onAppear {
+                        show(state)
+                        if kind == .panes { model.showPictures(of: state.rows.map(\.id), from: controller) }
+                    }
+                    .onChange(of: state) { _, new in
+                        show(new)
+                        if kind == .panes { model.showPictures(of: new.rows.map(\.id), from: controller) }
+                    }
+                    .onDisappear { model.stopPictures() }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -224,10 +232,64 @@ struct MuxPickerState: Equatable {
 final class MuxPickerModel {
     private(set) weak var surface: NSHSurface?
     private var state: MuxPickerState?
+    /// The panes' screens the screen has been told, by pane.
+    private var pictures: [String: [String]] = [:]
+    /// The panes asked for, and whose snapshots the list now hears.
+    private var asked: Set<String> = []
+    private weak var snapshots: PaneSnapshotting?
+    /// Who heard the snapshots before the list (the terminal page's
+    /// overview and swipe): told too, and given them back when it closes.
+    private var heard: ((String, [String]) -> Void)?
 
     func attach(_ surface: NSHSurface) {
         self.surface = surface
         if let state { surface.post(.muxPicker(state: state.page)) }
+        if !pictures.isEmpty { _ = surface.post(["op": "pictures", "panes": pictures]) }
+    }
+
+    /// Each of `panes`' screens under its row: the terminals the controller
+    /// keeps (a tmux attach feeds every pane's) at once, the others read
+    /// (``PaneSnapshotting``: mosh keeps the shown pane's only, herdr
+    /// reads them) and shown as each comes. A pane asked about once is
+    /// not asked again while the list is open.
+    func showPictures(of panes: [String], from controller: some MultiplexerControlling) {
+        let fresh = panes.filter { !asked.contains($0) }
+        guard !fresh.isEmpty else { return }
+        asked.formUnion(fresh)
+        var have: [String: [String]] = [:]
+        if let source = controller as? PaneTerminalSource {
+            for pane in fresh {
+                guard let rows = source.existingSurface(for: pane)?.screenRows(),
+                      rows.contains(where: { !$0.isEmpty }) else { continue }
+                have[pane] = rows
+            }
+        }
+        if !have.isEmpty { tell(have) }
+        let missing = fresh.filter { have[$0] == nil }
+        guard !missing.isEmpty, let snapshots = controller as? PaneSnapshotting else { return }
+        if self.snapshots == nil {
+            self.snapshots = snapshots
+            heard = snapshots.onPaneSnapshot
+            snapshots.onPaneSnapshot = { [weak self] pane, rows in
+                self?.heard?(pane, rows)
+                guard let self, self.asked.contains(pane) else { return }
+                self.tell([pane: rows])
+            }
+        }
+        snapshots.snapshotPanes(missing)
+    }
+
+    /// The list closed: the snapshots go back to who heard them before.
+    func stopPictures() {
+        snapshots?.onPaneSnapshot = heard
+        snapshots = nil
+        heard = nil
+        asked = []
+    }
+
+    private func tell(_ panes: [String: [String]]) {
+        pictures.merge(panes) { _, new in new }
+        _ = surface?.post(["op": "pictures", "panes": panes])
     }
 
     /// ``attach(_:)``, the model filled from `current` (the page's picker as
