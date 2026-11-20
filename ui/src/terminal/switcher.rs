@@ -346,9 +346,10 @@ pub(crate) fn tell_neighbours(ctx: &Ctx, order: Memo<Order>) {
 
 /// Asks the host for the screens of the panes either side: when they
 /// change, and again as each swipe starts (what they show now). The host
-/// answers for the panes whose terminal it keeps (a tmux attach has one
-/// per pane; a mosh or herdr session only the one it shows), so on those
-/// the strip stays words.
+/// answers at once for the panes whose terminal it keeps (a tmux attach has
+/// one per pane), then with a snapshot of each other one (mosh, herdr, a
+/// pane never shown) as it comes. A pane no longer either side loses its
+/// picture here.
 pub(crate) fn ask_pictures(ctx: &Ctx, order: Memo<Order>) {
     let swiping = ctx.swiping;
     let asked = stored(None::<Vec<String>>);
@@ -366,7 +367,16 @@ pub(crate) fn ask_pictures(ctx: &Ctx, order: Memo<Order>) {
             return;
         }
         asked.replace(Some(panes.clone()));
-        untracked(|| ctx.ask(Intent::SwipePictures(panes)));
+        untracked(|| {
+            let stale = ctx
+                .swipe_pictures
+                .with(|p| p.keys().any(|pane| !panes.contains(pane)));
+            if stale {
+                ctx.swipe_pictures
+                    .update(|p| p.retain(|pane, _| panes.contains(pane)));
+            }
+            ctx.ask(Intent::SwipePictures(panes));
+        });
     });
 }
 

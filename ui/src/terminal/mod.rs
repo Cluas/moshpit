@@ -670,10 +670,17 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                     }
                 }
                 Message::SwipePictures(pictures) => {
-                    // The newest screens of the panes either side, the
-                    // ones before dropped (a pane left is not shown again).
-                    if ctx.swipe_pictures.with_untracked(|p| *p != pictures) {
-                        ctx.swipe_pictures.set(pictures);
+                    // The newest screens of the panes either side, as they
+                    // come (the kept terminals' at once, each snapshot on
+                    // its own); a pane no longer either side is dropped
+                    // when the strip asks anew (`switcher::ask_pictures`).
+                    let changed = ctx.swipe_pictures.with_untracked(|p| {
+                        pictures
+                            .iter()
+                            .any(|(pane, rows)| p.get(pane) != Some(rows))
+                    });
+                    if changed {
+                        ctx.swipe_pictures.update(|p| p.extend(pictures));
                     }
                 }
                 Message::Rekey => {

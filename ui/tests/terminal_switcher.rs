@@ -228,21 +228,46 @@ fn the_strip_shows_the_screens_either_side_the_host_has() {
         next_of(&heard, "swipe-pictures")["panes"],
         json!(["%2", "%4"])
     );
-    // A mosh session has only the shown pane's screen: the host answers
-    // with none, and the strip is words again.
+    // A mosh session keeps only the shown pane's terminal: the host answers
+    // with none at once, then each snapshot as it comes, on its own. One
+    // pane's answer keeps the other's picture.
     post(
         &mut app.0,
         &channel,
         &json!({"op": "swipe-pictures", "panes": {}}).to_string(),
     );
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "swipe-pictures", "panes": {"%4": ["dev@trainer:~/src/trainer$ git status"]}})
+            .to_string(),
+    );
     app.0.run_for(Duration::from_millis(200)).unwrap();
     assert!(
         app.0
             .screen()
-            .id("id:terminal-backstage-next-thumb")
-            .is_err()
+            .texts()
+            .contains(&"dev@trainer:~/src/trainer$ git status"),
+        "{:?}",
+        app.0.screen().texts()
     );
-    assert!(app.0.screen().shows("trainer"));
+    app.0
+        .wait_for("id:terminal-backstage-previous-thumb")
+        .unwrap();
+    // Moved on: the panes no longer either side lose their pictures, and
+    // the strip is words until the new ones' come.
+    post(&mut app.0, &channel, &switcher(work("tmux", "%6"), true));
+    assert_eq!(
+        next_of(&heard, "swipe-pictures")["panes"],
+        json!(["%5", "%7"])
+    );
+    app.0.run_for(Duration::from_millis(200)).unwrap();
+    for thumb in [
+        "id:terminal-backstage-previous-thumb",
+        "id:terminal-backstage-next-thumb",
+    ] {
+        assert!(app.0.screen().id(thumb).is_err(), "{thumb}");
+    }
     channel.close();
 }
 
