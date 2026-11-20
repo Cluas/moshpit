@@ -344,6 +344,10 @@ pub fn signal_label(signal: AgentSignal) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Shown {
     pub icon: String,
+    /// A pane's number (what tmux's `display-panes` shows), drawn as plain
+    /// digits in the icon's place: a boxed `N.square` symbol read as a
+    /// form's checkbox rather than a number.
+    pub number: Option<u32>,
     pub title: String,
     pub meta: String,
 }
@@ -355,6 +359,7 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
             let panes = crate::plural!("%lld panes", i64::from(row.panes.unwrap_or(0)));
             Shown {
                 icon: vocab.window_icon.to_owned(),
+                number: None,
                 title: window_row_title(row, vocab),
                 meta: if row.command.is_empty() {
                     panes
@@ -385,6 +390,7 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
             };
             Shown {
                 icon: vocab.session_icon.to_owned(),
+                number: None,
                 title: session_title(row, &picker.rows),
                 meta,
             }
@@ -401,11 +407,8 @@ pub fn shown(row: &Row, picker: &Picker, vocab: &Vocab) -> Shown {
                 None => row.command.clone(),
             };
             Shown {
-                icon: if index <= 50 {
-                    format!("{index}.square")
-                } else {
-                    "number.square".to_owned()
-                },
+                icon: String::new(),
+                number: Some(index),
                 title,
                 // A share's picker lists every pane of the tree: where each
                 // is, rather than its program again.
@@ -748,11 +751,7 @@ fn rows_section(
         let id = row.id.clone();
         let tell = tell.clone();
         let mut item = list_row(shown.title.clone())
-            .leading(icon(symbol(&shown.icon)).tone(if active {
-                Tone::Primary
-            } else {
-                Tone::Muted
-            }))
+            .leading(row_lead(&shown, active))
             .check(move || active)
             .on_press({
                 let id = id.clone();
@@ -802,6 +801,24 @@ fn rows_section(
         );
     }
     card.into_element()
+}
+
+/// A row's leading lane: its symbol, or a pane's number as plain digits,
+/// in the accent on the active row.
+fn row_lead(shown: &Shown, active: bool) -> AnyElement {
+    let tone = if active { Tone::Primary } else { Tone::Muted };
+    match shown.number {
+        Some(number) => TextToken::Body
+            .apply(text(number.to_string()))
+            .font_weight(FontWeight::SEMIBOLD)
+            .tabular_nums()
+            .text_center()
+            .w(px(crate::ui::row::LEADING))
+            .text_color(move || token(tone.token()))
+            .test_id(&format!("mux-picker-number-{number}"))
+            .into_element(),
+        None => icon(symbol(&shown.icon)).tone(tone).into_element(),
+    }
 }
 
 /// Under the card: the hint, and the multiplexer's keys at the trailing
