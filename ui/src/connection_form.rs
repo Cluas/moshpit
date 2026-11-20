@@ -1071,7 +1071,7 @@ pub fn ConnectionFormScreen(props: ScreenProps) -> impl IntoElement {
                     title: Box::new(move || title.clone()),
                     leading: Some(nav_bar::BarButton {
                         label: t!("Cancel"),
-                        content: nav_bar::BarContent::Text,
+                        content: nav_bar::BarContent::Close,
                         enabled: computed(|| true),
                         emphasized: false,
                         test_id: "connection-form-cancel",
@@ -1080,7 +1080,7 @@ pub fn ConnectionFormScreen(props: ScreenProps) -> impl IntoElement {
                     }),
                     trailing: vec![nav_bar::BarButton {
                         label: t!("Save"),
-                        content: nav_bar::BarContent::Text,
+                        content: nav_bar::BarContent::Confirm,
                         enabled: savable,
                         emphasized: true,
                         test_id: "save-connection",

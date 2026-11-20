@@ -228,7 +228,7 @@ pub fn AccentEditorScreen(props: ScreenProps) -> impl IntoElement {
             title: Box::new(title),
             leading: Some(nav_bar::BarButton {
                 label: t!("Cancel"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "accent-editor-cancel",
@@ -240,7 +240,7 @@ pub fn AccentEditorScreen(props: ScreenProps) -> impl IntoElement {
             }),
             trailing: vec![nav_bar::BarButton {
                 label: t!("Save"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Confirm,
                 enabled: computed(|| true),
                 emphasized: true,
                 test_id: "accent-editor-save",

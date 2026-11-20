@@ -178,6 +178,16 @@ pub enum BarContent {
     /// (`Image(systemName:)` at 14 pt semibold in the accent, in a 32 pt
     /// circle of the accent at 11% stroked with it at 24%).
     Circled(&'static str),
+    /// A sheet's way out without keeping anything (Cancel, or the Done of a
+    /// sheet that only shows): on glass iOS 26's own, an xmark in a glass
+    /// circle (SwiftUI's `Button(role: .close)`), its label for screen
+    /// readers; below iOS 26 its label, in text.
+    Close,
+    /// A sheet's confirming action (Save, Done): on glass iOS 26's own, a
+    /// checkmark in the accent's prominent circle (SwiftUI's
+    /// `Button(role: .confirm)`), its label for screen readers; below iOS 26
+    /// its label, in text.
+    Confirm,
     /// Its label, in text, that can be busy: while `busy` holds, the
     /// spinner takes the label's place at the same width, the button takes
     /// no press and screen readers hear it busy (Send while the mail is
@@ -525,7 +535,9 @@ pub(crate) fn edge_inset(content: &BarContent, glass: bool) -> f32 {
         return margin();
     }
     match content {
-        BarContent::Text | BarContent::Busy(_) => margin() - TEXT_PAD,
+        BarContent::Text | BarContent::Busy(_) | BarContent::Close | BarContent::Confirm => {
+            margin() - TEXT_PAD
+        }
         BarContent::Symbol(_) => margin() - SYMBOL_SLACK,
         BarContent::Circled(_) => margin(),
     }
@@ -724,10 +736,11 @@ fn back_button(
     })
 }
 
-/// A text button of the bar, for a bar drawn elsewhere (Settings' large
-/// title, [`crate::home::bar::large_bar`]): Done, in the commit's semibold
-/// when `emphasized`.
-pub fn text_button(
+/// The way out of a sheet, for a bar drawn elsewhere (Settings' large
+/// title, [`crate::home::bar::large_bar`], the overview's): Done, in the
+/// commit's semibold when `emphasized` below iOS 26, the xmark's glass
+/// circle on glass ([`BarContent::Close`]).
+pub fn close_button(
     label: String,
     emphasized: bool,
     test_id: &'static str,
@@ -736,7 +749,7 @@ pub fn text_button(
     bar_button(
         BarButton {
             label,
-            content: BarContent::Text,
+            content: BarContent::Close,
             enabled: computed(|| true),
             emphasized,
             test_id,
@@ -749,7 +762,8 @@ pub fn text_button(
 
 /// A button of the bar (§4.18), R2's: a text in a bar button (in a glass
 /// capsule on glass; Save, Send semibold), a symbol in a bar icon button,
-/// the accent's circle in a tinted small one. A button with a menu is
+/// the accent's circle in a tinted small one below iOS 26; on glass every
+/// symbol, the sheet's close and confirm included, in a 44 pt circle. A button with a menu is
 /// UIKit's, laid over a drawing of it that takes no touch (a second
 /// pressable under the menu would be a covered one).
 fn bar_button(button_: BarButton, glass: bool) -> AnyElement {
@@ -764,7 +778,7 @@ fn bar_button(button_: BarButton, glass: bool) -> AnyElement {
     } = button_;
     if let Some(BarMenu { entries, on_select }) = menu {
         let drawing = match content {
-            BarContent::Text | BarContent::Busy(_) => {
+            BarContent::Text | BarContent::Busy(_) | BarContent::Close | BarContent::Confirm => {
                 let weight = if emphasized {
                     FontWeight::SEMIBOLD
                 } else {
@@ -834,7 +848,22 @@ fn bar_button(button_: BarButton, glass: bool) -> AnyElement {
     let on_press: std::rc::Rc<dyn Fn()> = std::rc::Rc::from(on_press);
     let inert = move || !enabled.get();
     match content {
-        BarContent::Text => {
+        // iOS 26's sheet buttons: one 44 pt circle each, as the bar's
+        // symbols (one size in a bar; a word in a capsule is wider than
+        // the system's own).
+        BarContent::Close if glass => icon_button("xmark", label)
+            .variant(IconVariant::Bar)
+            .disabled(inert)
+            .on_press(move || on_press())
+            .test_id(test_id)
+            .into_element(),
+        BarContent::Confirm if glass => icon_button("checkmark", label)
+            .variant(IconVariant::BarCommit)
+            .disabled(inert)
+            .on_press(move || on_press())
+            .test_id(test_id)
+            .into_element(),
+        BarContent::Text | BarContent::Close | BarContent::Confirm => {
             let control = button(label)
                 .variant(if emphasized {
                     Variant::BarCommit
@@ -874,15 +903,17 @@ fn bar_button(button_: BarButton, glass: bool) -> AnyElement {
                 control
             }
         }
-        BarContent::Symbol(name) => icon_button(name, label)
-            .variant(IconVariant::Bar)
+        // Below iOS 26 the accent's circle; on glass the bar's glass
+        // circle, as every other symbol in it.
+        BarContent::Circled(name) if !glass => icon_button(name, label)
+            .variant(IconVariant::Tinted)
+            .size(IconButtonSize::Sm)
             .disabled(inert)
             .on_press(move || on_press())
             .test_id(test_id)
             .into_element(),
-        BarContent::Circled(name) => icon_button(name, label)
-            .variant(IconVariant::Tinted)
-            .size(IconButtonSize::Sm)
+        BarContent::Symbol(name) | BarContent::Circled(name) => icon_button(name, label)
+            .variant(IconVariant::Bar)
             .disabled(inert)
             .on_press(move || on_press())
             .test_id(test_id)

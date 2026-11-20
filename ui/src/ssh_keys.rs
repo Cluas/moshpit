@@ -231,7 +231,7 @@ pub fn SshKeysScreen(props: ScreenProps) -> impl IntoElement {
         title: nav_bar::fixed(t!("SSH Keys")),
         leading: Some(nav_bar::BarButton {
             label: t!("Done"),
-            content: nav_bar::BarContent::Text,
+            content: nav_bar::BarContent::Close,
             enabled: computed(|| true),
             emphasized: false,
             test_id: "ssh-keys-done",

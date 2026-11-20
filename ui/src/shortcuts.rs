@@ -244,7 +244,7 @@ pub fn ShortcutsScreen(props: ScreenProps) -> impl IntoElement {
             title: nav_bar::fixed(t!("Shortcuts")),
             leading: Some(nav_bar::BarButton {
                 label: t!("Done"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "shortcuts-done",

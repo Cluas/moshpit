@@ -862,7 +862,7 @@ fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
                                 .child(icon("chevron.down").size(IconSize::Sm).tone(Tone::Muted)),
                         ),
                 )
-                .child(nav_bar::text_button(
+                .child(nav_bar::close_button(
                     t!("Done"),
                     true,
                     "terminal-overview-done",
