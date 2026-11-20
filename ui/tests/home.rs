@@ -982,7 +982,12 @@ fn a_tap_reaches_the_egg_on_each_cards_edge_and_the_page_asks_to_hatch() {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
             match heard.recv_timeout(left) {
-                Ok(json) if serde_json::from_str::<serde_json::Value>(&json).ok().as_ref() == Some(want) => {
+                Ok(json)
+                    if serde_json::from_str::<serde_json::Value>(&json)
+                        .ok()
+                        .as_ref()
+                        == Some(want) =>
+                {
                     return true;
                 }
                 Ok(_) => {}
@@ -1028,7 +1033,10 @@ fn a_tap_reaches_the_egg_on_each_cards_edge_and_the_page_asks_to_hatch() {
         }
         // iCloud settled: the host says it may, and the page asks.
         post(&mut app, &channel, &pet(3, true, true));
-        assert!(told(&heard, &json!({"ev": "hatch"})), "{perch}: no hatch asked");
+        assert!(
+            told(&heard, &json!({"ev": "hatch"})),
+            "{perch}: no hatch asked"
+        );
         channel.close();
     }
 }
@@ -1135,7 +1143,11 @@ fn the_egg_waits_on_the_empty_home_and_goes_to_the_first_card() {
         serde_json::from_str(&companion(true, Some(("hatched", 1)), 0, false)).unwrap();
     talking["talk"] = json!(true);
     post(&mut app, &channel, &talking.to_string());
-    post(&mut app, &channel, r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#);
+    post(
+        &mut app,
+        &channel,
+        r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#,
+    );
     app.press("id:home-pet").unwrap();
     find(&mut app, "id:home-pet-says");
     let nodes = app.screen().layout_nodes();
@@ -1316,7 +1328,10 @@ fn a_dead_card_says_why_its_host_didnt_answer() {
             Params::default(),
             "Jump host “bastion”: 192.0.2.10 refused the connection on port 2222.",
         ),
-        (zh_hans(), "跳板主机「bastion」：192.0.2.10 拒绝了端口 2222 上的连接。"),
+        (
+            zh_hans(),
+            "跳板主机「bastion」：192.0.2.10 拒绝了端口 2222 上的连接。",
+        ),
     ] {
         let mut connections = card("192.0.2.10", Why::Refused, false);
         connections[0].failure.as_mut().unwrap().leg = Some("bastion".into());
@@ -1428,14 +1443,18 @@ fn home_asks_about_the_pets_icon_and_tells_the_host_the_answer() {
         }
         message.to_string()
     };
-    let offer = |keep_default: bool| json!({"id": "tun", "species": "tun", "keep_default": keep_default});
+    let offer =
+        |keep_default: bool| json!({"id": "tun", "species": "tun", "keep_default": keep_default});
     for (answer, keep_default) in [("home-icon-change", false), ("home-icon-not-yet", true)] {
         let (mut app, channel, _) = phone(Params::default());
         let heard = hear(&channel);
         show(&mut app, &channel, hosts());
         post(&mut app, &channel, &pet(None));
         find(&mut app, "id:home-pet");
-        assert!(!app.screen().shows("Make Tun the app icon?"), "no offer, no card");
+        assert!(
+            !app.screen().shows("Make Tun the app icon?"),
+            "no offer, no card"
+        );
         post(&mut app, &channel, &pet(Some(offer(keep_default))));
         find(&mut app, "text:Make Tun the app icon?");
         for id in ["home-icon-change", "home-icon-not-yet"] {
@@ -1480,7 +1499,11 @@ fn a_tap_on_the_pet_answers_in_a_bubble_unless_it_is_told_not_to_talk() {
         let (mut app, channel, _) = phone(Params::default());
         show(&mut app, &channel, hosts());
         post(&mut app, &channel, &pet(talk));
-        post(&mut app, &channel, r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#);
+        post(
+            &mut app,
+            &channel,
+            r#"{"op":"visible","visible":true,"hour":14,"day":20000}"#,
+        );
         find(&mut app, "id:home-pet");
         app.press("id:home-pet").unwrap();
         let says = app
@@ -1501,10 +1524,20 @@ fn the_host_s_top_brings_needs_you_back_into_view() {
     let (mut app, channel, _) = phone(Params::default());
     show(&mut app, &channel, hosts());
     find(&mut app, "id:home-needs-you");
-    let at = |app: &mut Headless| node(&app.screen().layout_nodes(), "home-needs-you").bounds.origin.y.0;
+    let at = |app: &mut Headless| {
+        node(&app.screen().layout_nodes(), "home-needs-you")
+            .bounds
+            .origin
+            .y
+            .0
+    };
     let top = at(&mut app);
     app.scroll("id:home-list", Points(700.0)).unwrap();
-    assert!(at(&mut app) < top - 100.0, "scrolled away: {} from {top}", at(&mut app));
+    assert!(
+        at(&mut app) < top - 100.0,
+        "scrolled away: {} from {top}",
+        at(&mut app)
+    );
     post(&mut app, &channel, r#"{"op":"top"}"#);
     app.wait_for("id:home-needs-you").unwrap();
     for _ in 0..40 {
@@ -1513,7 +1546,11 @@ fn the_host_s_top_brings_needs_you_back_into_view() {
         }
         app.run_for(std::time::Duration::from_millis(50)).unwrap();
     }
-    assert!((at(&mut app) - top).abs() < 1.0, "back at the top: {} vs {top}", at(&mut app));
+    assert!(
+        (at(&mut app) - top).abs() < 1.0,
+        "back at the top: {} vs {top}",
+        at(&mut app)
+    );
     assert!(Message::parse(r#"{"op":"top"}"#).is_ok());
     channel.close();
 }
@@ -1819,7 +1856,11 @@ fn a_jump_hosts_row_ends_the_list_and_opens_them() {
     let heard = hear(&channel);
     show_with_jump_hosts(&mut app, &channel, vec![saved_box("c-dev", "dev-box")], 2);
     find(&mut app, "id:home-jump-hosts");
-    assert!(app.screen().shows("Jump hosts (2)"), "{:?}", app.screen().texts());
+    assert!(
+        app.screen().shows("Jump hosts (2)"),
+        "{:?}",
+        app.screen().texts()
+    );
     app.press("id:home-jump-hosts").unwrap();
     assert_eq!(next(&heard), json!({"ev": "jump-hosts"}));
     // None: no row.
@@ -1836,7 +1877,11 @@ fn only_jump_hosts_still_leaves_the_row_and_reads_in_chinese() {
     let (mut app, channel, _) = phone(zh_hans());
     show_with_jump_hosts(&mut app, &channel, Vec::new(), 1);
     find(&mut app, "id:home-jump-hosts");
-    assert!(app.screen().shows("跳板主机（1）"), "{:?}", app.screen().texts());
+    assert!(
+        app.screen().shows("跳板主机（1）"),
+        "{:?}",
+        app.screen().texts()
+    );
     assert!(!app.screen().matches("id:home-add-empty").unwrap());
     channel.close();
 }
@@ -1851,10 +1896,75 @@ fn a_card_whose_jump_host_was_deleted_says_so_and_opens_its_form() {
     gone.via_gone = true;
     show(&mut app, &channel, vec![gone, saved_box("c-ok", "ok-box")]);
     find(&mut app, "id:connection-card-dev-box");
-    assert!(app.screen().shows("Jump host deleted"), "{:?}", app.screen().texts());
+    assert!(
+        app.screen().shows("Jump host deleted"),
+        "{:?}",
+        app.screen().texts()
+    );
     app.press("id:connection-card-dev-box").unwrap();
     assert_eq!(next(&heard), json!({"ev": "edit", "connection": "c-dev"}));
     app.press("id:connection-card-ok-box").unwrap();
     assert_eq!(next(&heard), json!({"ev": "connect", "connection": "c-ok"}));
+    channel.close();
+}
+
+/// Dragged along its card's edge and let go, it crawls there, holds on,
+/// tells the host where, and is where it's drawn: a second drag picks it
+/// up from there (Canary 179: the pan turned itself off as it began, so
+/// it never moved).
+#[test]
+fn the_pet_dragged_along_the_edge_holds_on_there_and_can_be_dragged_again() {
+    let pet = json!({
+        "op": "pet", "style": "pixel", "shown": true, "may_hatch": false, "seq": 0,
+        "pet": {
+            "seed": "07070707070707070707070707070707", "stage": 1, "hatch_hour": 14,
+            "flags": 0, "crowned": false, "name": "", "species": "tun",
+            "hatched_at": 1_800_000_000, "tasks": 12,
+            "traits": {"fur": "natural", "shiny": false, "pattern": "plain", "eyes": "dot", "size": "regular"},
+            "history": [], "found": []
+        }
+    })
+    .to_string();
+    let (mut app, channel, _) = phone(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, hosts());
+    post(&mut app, &channel, &pet);
+    find(&mut app, "id:home-pet");
+    let at = |app: &Headless| {
+        node(&app.screen().layout_nodes(), "home-pet")
+            .bounds
+            .origin
+            .x
+            .0
+    };
+    let spot = |heard: &_| loop {
+        let event = next(heard);
+        if event["ev"] == "pet-spot" {
+            break event["spot"].as_f64().unwrap();
+        }
+    };
+    let home = at(&app);
+    app.drag(
+        "id:home-pet",
+        nsh_core::geometry::point(px(-120.0), px(0.0)),
+    )
+    .unwrap();
+    app.wait(std::time::Duration::from_millis(1500)).unwrap();
+    let first = spot(&heard);
+    assert!(first > 0.0, "it moved toward the leading end: {first}");
+    let moved = at(&app);
+    assert!(
+        (home - moved - 120.0).abs() < 25.0,
+        "its place in layout is under the drop: {home} → {moved}"
+    );
+    app.drag("id:home-pet", nsh_core::geometry::point(px(-60.0), px(0.0)))
+        .unwrap();
+    app.wait(std::time::Duration::from_millis(1500)).unwrap();
+    let second = spot(&heard);
+    assert!(
+        second > first,
+        "dragged again from where it was: {first} → {second}"
+    );
+    assert!(at(&app) < moved);
     channel.close();
 }
