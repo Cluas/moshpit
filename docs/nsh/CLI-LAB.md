@@ -97,7 +97,7 @@ A red one carries `#[ignore = "red: <reason>"]`.
 
 ## Results
 
-Versions: tmux 3.6a, mosh 1.4.0, Claude Code 2.1.327, Codex 0.166.0, Gemini CLI 0.22.4, Qwen Code 0.28.0, Copilot CLI 1.0.8, Qoder 1.1.92. Size 80×24.
+Versions: tmux 3.6a, mosh 1.4.0, Claude Code 2.1.327, Codex 0.166.0, Gemini CLI 0.22.4, Qwen Code 0.28.0, Copilot CLI 1.0.8, Qoder 1.1.92, CodeBuddy Code 2.185.0, Cursor Agent 2025.09.18-7ae6800. Size 80×24.
 `*-mosh-pred-always` is mosh-client with its own prediction display on (`MOSH_PREDICTION_DISPLAY=always`).
 The "prediction on" column is Moshpit's predictive echo applied in the replay.
 
@@ -128,12 +128,20 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | qoder-tmux | pass (at the input box) | — | — | — |
 | qoder-ssh | pass (at the input box) | — | — | — |
 | qoder-mosh | pass (at the input box) | — | — | — |
+| codebuddy-tmux | pass | pass | pass | — |
+| codebuddy-ssh | pass | pass | pass | — |
+| codebuddy-mosh | pass | pass | pass | pass |
+| codebuddy-mosh-tmux | pass | pass | pass | pass |
+| cursor-tmux | pass | pass | pass | — |
+| cursor-ssh | pass | pass | pass | — |
+| cursor-mosh | pass | pass | pass | pass |
+| cursor-mosh-tmux | pass | pass | pass | pass |
 | codex-mosh-tmux-rtt500-rs | — (no tmux reference) | lags (echo over 500 ms) | pass | — |
 
-Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh, codex-mosh-tmux and codex-mosh-tmux-rtt500-rs pass.
+Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh, codex-mosh-tmux, codex-mosh-tmux-rtt500-rs, and every codebuddy and cursor recording pass.
 codex-mosh-tmux-rtt500-rs was red until bug 2 (below) was fixed.
 
-Totals: 86 green.
+Totals: 122 green.
 
 ### Per CLI
 
@@ -156,12 +164,28 @@ Totals: 86 green.
   So only its first screens are recorded (`--text -`).
   `tmux_ref.py --before 'Custom.?Provider'` cuts the recording there.
   At that cut the core matches tmux on every path: the input box and the cursor inside it.
+- **CodeBuddy 2.185.0**: all green, with a real (fake) model reply.
+  No login: `CODEBUDDY_BASE_URL=<fake>/v1`, `CODEBUDDY_API_KEY` and `CODEBUDDY_MODEL` together send it to OpenAI chat completions (streamed) on `fake_model.py`.
+  A scratch `~/.codebuddy/settings.json` with `{"trustedDirectories": [<work>]}` skips the folder-trust dialog.
+  One message makes three POSTs (the second-to-last is a prompt suggestion).
+  It still tries to send telemetry to the internet ("Report Service" TLS errors in its log), so it is not hermetic.
+- **Cursor Agent 2025.09.18-7ae6800**: all green at the input box; it types, but there is no model reply.
+  What it takes to get there without an account:
+  - `-e <fake>`: `CURSOR_API_ENDPOINT` alone is not enough, because the `-e` option's default (`https://api2.cursor.sh`) wins for the login.
+  - `CURSOR_API_KEY`: exchanged at `POST /auth/exchange_user_api_key` for an access and refresh token. `fake_model.py` returns an unsigned JWT; Cursor reads only its `exp`.
+  - A private copy of the bundle (`/tmp/clisrc/cursor-agent-2025.09.18-lab`, outside the repo) with the macOS keychain token store turned off (`if(p7t()==="darwin")return new fke(e)` → `if(0)...`), so the tokens go to `~/.cursor/auth.json` in the scratch home.
+    The stock build writes them with `security add-generic-password` into the login keychain, which hangs under the lab and would touch the real keychain.
+  - Every Connect-RPC unary call (`/aiserver.v1.*`: privacy mode, team settings, models, default model, server config, download URL) gets an empty protobuf message; analytics `TrackEvents` gets `{}`.
+  - A trusted workspace: the empty file `~/.cursor/projects/<work path, non-alphanumerics as ->/.workspace-trusted`.
+  - A model in `$XDG_CONFIG_HOME/cursor/cli-config.json` (`agent.v1.ModelDetails` JSON).
+    Without it the empty model list makes Cursor print "No model found" and a Node `PromiseRejectionHandledWarning` to stderr in the middle of its first frames.
+    That moved the box down a row compared with tmux's own capture, but the core still matched tmux's replay of the same bytes: not a Moshpit bug.
+  - No reply: Enter posts to `/agent.v1.AgentService/RunSSE` and `/aiserver.v1.BidiService/BidiAppend` (with `network.useHttp1ForAgent`), Cursor's own protobuf agent protocol.
+    Stubbing that is out of scope, so the typed and steady checks cover typing only.
 - **Skipped**:
 
   | CLI | reason |
   |---|---|
-  | Cursor (`cursor-agent`) | needs a login before it draws anything usable |
-  | CodeBuddy 2.185.0 | needs a login; it never draws an input box |
   | iFlow 0.5.19 | the published tarball fails with `ERR_MODULE_NOT_FOUND` |
   | OpenCode | not installed and not in the tarball cache |
 
