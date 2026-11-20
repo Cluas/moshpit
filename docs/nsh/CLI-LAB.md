@@ -97,7 +97,7 @@ A red one carries `#[ignore = "red: <reason>"]`.
 
 ## Results
 
-Versions: tmux 3.6a, mosh 1.4.0, Claude Code 2.1.327, Codex 0.166.0, Gemini CLI 0.22.4, Qwen Code 0.28.0, Copilot CLI 1.0.8, Qoder 1.1.92, CodeBuddy Code 2.185.0, Cursor Agent 2025.09.18-7ae6800. Size 80×24.
+Versions: tmux 3.6a, mosh 1.4.0, Claude Code 2.1.327, Codex 0.166.0, Gemini CLI 0.22.4, Qwen Code 0.28.0, Copilot CLI 1.0.8, Qoder 1.1.92, CodeBuddy Code 2.185.0, Cursor Agent 2025.09.18-7ae6800, OpenCode 1.19.6. Size 80×24.
 `*-mosh-pred-always` is mosh-client with its own prediction display on (`MOSH_PREDICTION_DISPLAY=always`).
 The "prediction on" column is Moshpit's predictive echo applied in the replay.
 
@@ -136,12 +136,16 @@ The "prediction on" column is Moshpit's predictive echo applied in the replay.
 | cursor-ssh | pass | pass | pass | — |
 | cursor-mosh | pass | pass | pass | pass |
 | cursor-mosh-tmux | pass | pass | pass | pass |
+| opencode-tmux | pass | pass | pass | — |
+| opencode-ssh | pass | pass | pass | — |
+| opencode-mosh | pass | pass | pass | pass |
+| opencode-mosh-tmux | pass | pass | pass | pass |
 | codex-mosh-tmux-rtt500-rs | — (no tmux reference) | lags (echo over 500 ms) | pass | — |
 
-Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh, codex-mosh-tmux, codex-mosh-tmux-rtt500-rs, and every codebuddy and cursor recording pass.
+Cursor check: claude-tmux, claude-mosh, codex-tmux, codex-mosh, codex-mosh-tmux, codex-mosh-tmux-rtt500-rs, and every codebuddy, cursor and opencode recording pass.
 codex-mosh-tmux-rtt500-rs was red until bug 2 (below) was fixed.
 
-Totals: 122 green.
+Totals: 140 green.
 
 ### Per CLI
 
@@ -182,12 +186,22 @@ Totals: 122 green.
     That moved the box down a row compared with tmux's own capture, but the core still matched tmux's replay of the same bytes: not a Moshpit bug.
   - No reply: Enter posts to `/agent.v1.AgentService/RunSSE` and `/aiserver.v1.BidiService/BidiAppend` (with `network.useHttp1ForAgent`), Cursor's own protobuf agent protocol.
     Stubbing that is out of scope, so the typed and steady checks cover typing only.
+- **OpenCode 1.19.6**: all green, with a real (fake) model reply.
+  It is a native binary (npm `opencode-ai` pulls in `opencode-darwin-arm64`), installed with `npm install --prefix /tmp/clisrc/opencode opencode-ai`; its TUI is its own renderer, not Ink.
+  It uses the alternate screen, wraps each redraw in DEC 2026, and shows the real cursor in its input box.
+  No login: a scratch `$XDG_CONFIG_HOME/opencode/opencode.json` defines a provider `lab` (`npm: "@ai-sdk/openai-compatible"`, `options.baseURL` = `fake_model.py`/v1, a dummy key) as the only enabled one, with `autoupdate: false` and `share: "disabled"`.
+  `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` point into the scratch home too.
+  The env turns off update checks, the models.dev fetch, LSP downloads, default plugins and reading Claude Code's files (`OPENCODE_DISABLE_*`).
+  One message makes two streamed POSTs to `/v1/chat/completions` (the title, then the answer).
+  At start it runs `npm install @opencode-ai/plugin` in its config dir; `npm_config_registry=http://127.0.0.1:9/` makes that fail fast.
+  With it, `lsof` shows no connection off 127.0.0.1 during a run, and the screen is unchanged.
+  The cursor check ignores indent: before the first message the box is centred (3 columns in), and after it the session view draws the box 2 columns in.
+  The cursor is in the box in both, so this is a layout change, not a jump.
 - **Skipped**:
 
   | CLI | reason |
   |---|---|
   | iFlow 0.5.19 | the published tarball fails with `ERR_MODULE_NOT_FOUND` |
-  | OpenCode | not installed and not in the tarball cache |
 
 ### Gotchas found while building the lab
 
