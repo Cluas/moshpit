@@ -3,8 +3,17 @@
 OpenAI Responses, Anthropic Messages and Gemini streamGenerateContent,
 each streaming one canned multi-line reply. Never forwards anywhere.
 
+For cursor-agent it also stands in for Cursor's backend just far enough to
+draw the input box: the API-key exchange gets a dummy token, and every
+Connect-RPC unary call (`/aiserver.v1.*`, binary protobuf) gets an empty
+message, i.e. every field at its default. The agent itself runs over
+Cursor's own protobuf protocol (`/agent.v1.AgentService/RunSSE` plus
+`/aiserver.v1.BidiService/BidiAppend`), which this server does not speak:
+no Cursor reply.
+
     fake_model.py <port> [<log>]
 """
+import base64
 import json
 import os
 import sys
@@ -30,6 +39,12 @@ def log(*parts):
     if LOG:
         LOG.write(" ".join(str(p) for p in parts) + "\n")
         LOG.flush()
+
+
+def jwt():
+    part = lambda o: base64.urlsafe_b64encode(json.dumps(o).encode()).rstrip(b"=").decode()
+    # cursor-agent reads only `exp` (it refreshes within 5 minutes of it).
+    return part({"alg": "none", "typ": "JWT"}) + "." + part({"sub": "lab", "exp": 4102444800}) + ".lab"
 
 
 class H(BaseHTTPRequestHandler):
@@ -87,6 +102,10 @@ class H(BaseHTTPRequestHandler):
         req = self.body()
         log("POST", self.path, "stream=%s" % req.get("stream"))
         p = self.path
+        if p.startswith("/auth/exchange_user_api_key"):
+            return self.send_json({"accessToken": jwt(), "refreshToken": jwt()})
+        if p.startswith("/aiserver.v1."):
+            return self.connect_unary()
         if p.rstrip("/").endswith("/messages") or "/messages?" in p:
             return self.anthropic(req)
         if "/responses" in p:
@@ -95,6 +114,17 @@ class H(BaseHTTPRequestHandler):
             return self.gemini(p)
         if "chat/completions" in p:
             return self.chat(req)
+        self.send_json({})
+
+    def connect_unary(self):
+        ct = self.headers.get("content-type", "")
+        if ct.startswith("application/proto"):
+            # An empty protobuf message.
+            self.send_response(200)
+            self.send_header("content-type", "application/proto")
+            self.send_header("content-length", "0")
+            self.end_headers()
+            return
         self.send_json({})
 
     def chat(self, req):

@@ -12,6 +12,7 @@ ready() {
         gemini|qwen) echo '@path' ;;
         copilot) echo 'trust' ;;
         qoder|codebuddy) echo 'shortcuts' ;;
+        cursor) echo commands ;;
         shell) echo '\$' ;;
     esac
 }
@@ -29,7 +30,7 @@ rec() { # cli path [extra...]
     # shellcheck disable=SC2046
     python3 "$here/drive.py" "$cli" "$path" --out "$out" $(opts "$cli") "$@" >"/tmp/L/$cli-$path$*.log" 2>&1
 }
-clis=${CLIS:-"shell qoder claude codex gemini qwen copilot codebuddy"}
+clis=${CLIS:-"shell qoder claude codex gemini qwen copilot codebuddy cursor"}
 for path in ${PATHS:-tmux ssh mosh}; do
     for cli in $clis; do rec "$cli" "$path" & done
     wait
@@ -39,7 +40,7 @@ for cli in ${MOSH_EXTRA:-claude codex}; do
     rec "$cli" mosh-tmux &
     rec "$cli" mosh --predict always &
 done
-for cli in ${MOSH_TMUX_EXTRA:-codebuddy}; do rec "$cli" mosh-tmux & done
+for cli in ${MOSH_TMUX_EXTRA:-codebuddy cursor}; do rec "$cli" mosh-tmux & done
 wait
 # tmux's reading of the same bytes: Qoder's screen before its exit, and
 # every recording that has no live tmux capture.

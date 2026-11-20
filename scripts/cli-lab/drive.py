@@ -107,6 +107,21 @@ def clis(port, home, work):
         os.makedirs(d, exist_ok=True)
         json.dump({"trustedDirectories": [work]}, open(os.path.join(d, "settings.json"), "w"))
 
+    def setup_cursor():
+        # A trusted workspace skips the trust dialog. A model in the config:
+        # the stub's model list is empty, and with no model Cursor prints
+        # "No model found" to stderr in the middle of its first frames.
+        d = os.path.join(home, ".cursor", "projects", re.sub(r"[^a-zA-Z0-9]+", "-", work).strip("-"))
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, ".workspace-trusted"), "w").close()
+        d = os.path.join(home, ".config", "cursor")
+        os.makedirs(d, exist_ok=True)
+        model = {"modelId": "lab-model", "displayModelId": "lab-model", "displayName": "lab-model",
+                 "displayNameShort": "lab-model", "aliases": []}
+        json.dump({"version": 1, "permissions": {"allow": [], "deny": []}, "editor": {"vimMode": False},
+                   "model": model, "hasChangedDefaultModel": False, "network": {"useHttp1ForAgent": True}},
+                  open(os.path.join(d, "cli-config.json"), "w"))
+
     return {
         "qoder": ([node, f"{CLISRC}/qoder-ai-qodercli-1.1.92/package/bundle/qodercli.js"],
                   {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base + "/v1", "OPENAI_MODEL": "lab-model"}, setup_qoder),
@@ -125,7 +140,10 @@ def clis(port, home, work):
         "codebuddy": ([node, f"{CLISRC}/tencent-ai-codebuddy-code-2.185.0/package/bin/codebuddy"],
                       {"CODEBUDDY_BASE_URL": base + "/v1", "CODEBUDDY_API_KEY": key, "CODEBUDDY_MODEL": "lab-model"},
                       setup_codebuddy),
-        "cursor": ([shutil.which("cursor-agent") or "cursor-agent"], {}, None),
+        # A private copy whose token store is a file under HOME, not the macOS
+        # keychain (see CLI-LAB.md); the endpoint is fake_model.py.
+        "cursor": ([f"{CLISRC}/cursor-agent-2025.09.18-lab/cursor-agent", "-e", base],
+                   {"CURSOR_API_ENDPOINT": base, "CURSOR_API_KEY": key}, setup_cursor),
         "copilot": ([shutil.which("copilot") or "copilot"], {}, None),
         # A plain shell: the lab's control (readline echo, no redraws).
         "shell": (["/bin/sh"], {"PS1": "$ "}, None),

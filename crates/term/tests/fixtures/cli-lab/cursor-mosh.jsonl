@@ -1,0 +1,37 @@
+{"cli": "cursor", "path": "mosh", "cols": 80, "rows": 24, "text": "hello world", "predict": "never"}
+{"t": 248, "o": "G1s/MTA0OWgbWz8xaBtbPzVsG1tyG1swbRtbSBtbMkobWz8yNWwbW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSwobW0sKG1tLChtbSxtbMTsxSBtbPzI1aBtbMG0bWz8yMDA0bBtbPzEwMDNsG1s/MTAwMmwbWz8xMDAxbBtbPzEwMDBsG1s/MTAwNGwbWz8xMDE1bBtbPzEwMDZsG1s/MTAwNWw="}
+{"t": 500, "o": "Cg=="}
+{"t": 1425, "o": "G1s/MjVsCiAgQ3Vyc29yIEFnZW50DQogIC9Vc2Vycy9kZXYvbGFiL2N1cnNvci1tb3NoL3dvcmsNCiAgG1swOzM4OzU7OG0oY3dkIGlzIG5vdCBhIGdpdCByZXBvc2l0b3J5LCBjdXJzb3IgcnVsZXMgYW5kIGlnbm9yZSBmaWxlcyBkb24ndCBhcHBseSkNCgoKG1swbSDilIzilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJANCiDilIIg4oaSIBtbMDs3bVAbWzA7Mzg7NTs4bWxhbiwgc2VhcmNoLCBidWlsZCBhbnl0aGluZxtbMG0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICDilIINCiDilJTilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJgNCgogIGxhYi1tb2RlbA0KICAvIGNvbW1hbmRzIMK3IEAgZmlsZXMgwrcgISBzaGVsbA0KG1s/MjAwNGg="}
+{"t": 2543, "k": "h"}
+{"t": 2570, "o": "G1s5OzZIaBtbMDs3bSAbWzBtICAgICAgICAgICAgICAgICAgICAgICAgICAbWzE0OzFI"}
+{"t": 2806, "k": "e"}
+{"t": 2831, "o": "G1s5OzdIZRtbMDs3bSAbWzE0OzFIG1swbQ=="}
+{"t": 3058, "k": "l"}
+{"t": 3076, "o": "G1s5OzhIbBtbMDs3bSAbWzE0OzFIG1swbQ=="}
+{"t": 3314, "k": "l"}
+{"t": 3330, "o": "G1s5OzlIbBtbMDs3bSAbWzE0OzFIG1swbQ=="}
+{"t": 3573, "k": "o"}
+{"t": 3622, "o": "G1s5OzEwSG8bWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 3837, "k": " "}
+{"t": 3857, "o": "G1s5OzExSCAbWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 4102, "k": "w"}
+{"t": 4120, "o": "G1s5OzEySHcbWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 4378, "k": "o"}
+{"t": 4393, "o": "G1s5OzEzSG8bWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 4646, "k": "r"}
+{"t": 4663, "o": "G1s5OzE0SHIbWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 4899, "k": "l"}
+{"t": 4912, "o": "G1s5OzE1SGwbWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 5163, "k": "d"}
+{"t": 5178, "o": "G1s5OzE2SGQbWzA7N20gG1sxNDsxSBtbMG0="}
+{"t": 5432, "k": "Enter"}
+{"t": 5457, "o": "G1s3OzFIIOKUjOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUkBtbODsySOKUgiBoZWxsbyB3b3JsZCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICDilIIbWzk7MkjilJTilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJgNChtbSwogIOKsoSAbWzA7MW1HZW5lcmF0aW5nLiAgG1sxMjsySBtbMG3ilIzilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJAbWzEzOzJI4pSCIOKGkiAbWzA7N21BG1swOzM4OzU7OG1kZCBhIGZvbGxvdy11cBtbMG0gIBtbMTM7MjRIIBtbMTM7MjZIIBtbMTM7MjhIICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgG1swOzM4OzU7OG1jdHJsK2MgdG8gc3RvcBtbMG0g4pSCDQog4pSU4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4g=="}
+{"t": 5457, "o": "lIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilJgNCgogIGxhYi1tb2RlbA0KICAvIGNvbW1hbmRzIMK3IEAgZmlsZXMgwrcgISBzaGVsbA0K"}
+{"t": 5621, "o": "G1sxMTsxNkgbWzA7MW0uG1sxODsxSBtbMG0="}
+{"t": 5668, "o": "G1sxMTszSBtbMDszMm3irKIbWzE4OzFIG1swbQ=="}
+{"t": 5785, "o": "G1sxMTsxN0gbWzA7MW0uG1sxODsxSBtbMG0="}
+{"t": 5877, "o": "G1sxMTszSOKsoRtbMTg7MUg="}
+{"t": 5949, "o": "G1sxMTsxNUgbWzA7MW0gICAbWzE4OzFIG1swbQ=="}
+{"t": 5974, "o": "G1s3OzFIG1tLG1s4OzJI4pSM4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSQG1s5OzJI4pSCIOKGkiAbWzA7N21oG1swbWVsbG8gd29ybGQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIOKUgg0KIOKUlOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUmA0KG1tLG1sxMjsySCBsYWItbW9kZWwbW0sbWzEzOzJIIC8gY29tbWFuZHMgwrcgQCBmaWxlcxtbMTM7MjRIwrcbWzEzOzI2SCEbWzEzOzI4SHNoZWxsG1tLDQobW0sKChtbSwobW0sbWzE0OzFI"}
+{"t": 6013, "o": "G1s5OzZIaBtbOTsxN0gbWzA7N20gG1sxNDsxSBtbMG0="}
+{"ref": ["", "", "  Cursor Agent", "  /Users/dev/lab/cursor-mosh/work", "  (cwd is not a git repository, cursor rules and ignore files don't apply)", "", "", " ┌────────────────────────────────────────────────────────────────────────────┐", " │ → hello world                                                              │", " └────────────────────────────────────────────────────────────────────────────┘", "", "  lab-model", "  / commands · @ files · ! shell", "", "", "", "", "", "", "", "", "", "", ""], "cursor": [0, 13, 0], "at": 35}

@@ -650,6 +650,20 @@ lab!(
     "codebuddy-mosh-tmux",
     Predicted
 );
+lab!(cursor_tmux_final, "cursor-tmux", Final);
+lab!(cursor_tmux_typed, "cursor-tmux", Typed);
+lab!(cursor_tmux_steady, "cursor-tmux", Steady);
+lab!(cursor_ssh_final, "cursor-ssh", Final);
+lab!(cursor_ssh_typed, "cursor-ssh", Typed);
+lab!(cursor_ssh_steady, "cursor-ssh", Steady);
+lab!(cursor_mosh_final, "cursor-mosh", Final);
+lab!(cursor_mosh_typed, "cursor-mosh", Typed);
+lab!(cursor_mosh_steady, "cursor-mosh", Steady);
+lab!(cursor_mosh_predicted, "cursor-mosh", Predicted);
+lab!(cursor_mosh_tmux_final, "cursor-mosh-tmux", Final);
+lab!(cursor_mosh_tmux_typed, "cursor-mosh-tmux", Typed);
+lab!(cursor_mosh_tmux_steady, "cursor-mosh-tmux", Steady);
+lab!(cursor_mosh_tmux_predicted, "cursor-mosh-tmux", Predicted);
 // A visible cursor stays on the input row while the CLI answers.
 lab!(claude_tmux_cursor, "claude-tmux", Cursor);
 lab!(claude_mosh_cursor, "claude-mosh", Cursor);
@@ -660,6 +674,10 @@ lab!(codebuddy_tmux_cursor, "codebuddy-tmux", Cursor);
 lab!(codebuddy_ssh_cursor, "codebuddy-ssh", Cursor);
 lab!(codebuddy_mosh_cursor, "codebuddy-mosh", Cursor);
 lab!(codebuddy_mosh_tmux_cursor, "codebuddy-mosh-tmux", Cursor);
+lab!(cursor_tmux_cursor, "cursor-tmux", Cursor);
+lab!(cursor_ssh_cursor, "cursor-ssh", Cursor);
+lab!(cursor_mosh_cursor, "cursor-mosh", Cursor);
+lab!(cursor_mosh_tmux_cursor, "cursor-mosh-tmux", Cursor);
 // Codex inside tmux over Moshpit's own transport (`-rs`, recorded with
 // mosh_harness) and a 500 ms round trip, a long streamed answer.
 lab!(
@@ -703,6 +721,10 @@ const ALL: &[&str] = &[
     "codebuddy-ssh",
     "codebuddy-mosh",
     "codebuddy-mosh-tmux",
+    "cursor-tmux",
+    "cursor-ssh",
+    "cursor-mosh",
+    "cursor-mosh-tmux",
     "codex-mosh-tmux-rtt500-rs",
 ];
 
