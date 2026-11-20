@@ -131,7 +131,12 @@ fn panes_are_their_agents_first() {
     );
     app.wait_for("id:mux-picker-row-%2").unwrap();
     // The agent's state in words, in its color, never the color alone.
-    for text in ["claude", "2.1.227", "working", "pane 1", "⌃", "b q"] {
+    // Each pane's number in plain digits, where tmux's display-panes has it.
+    app.wait_for("id:mux-picker-number-0").unwrap();
+    app.wait_for("id:mux-picker-number-1").unwrap();
+    for text in [
+        "claude", "2.1.227", "working", "pane 1", "0", "1", "⌃", "b q",
+    ] {
         assert!(
             app.screen().shows(text),
             "{text}: {:?}",
