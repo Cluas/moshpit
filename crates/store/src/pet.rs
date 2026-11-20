@@ -39,6 +39,8 @@ pub const ICON_ASKED_KEY: &str = "moshpit.pet.iconAsked";
 /// card's trailing end; 1 as far toward the leading end as it goes. This
 /// device's alone (the card's width is this screen's).
 pub const SPOT_KEY: &str = "moshpit.pet.spot";
+/// The card the person put it on ([`write_home`]).
+pub const HOME_KEY: &str = "moshpit.pet.home";
 
 /// What the preferences hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +165,30 @@ pub fn write_spot(defaults: &dyn Defaults, readiness: &Readiness, spot: f64) -> 
     true
 }
 
+/// The card the person put it on (`needs-you`, `saved` or `host:<id>`,
+/// [`HOME_KEY`]); none until they move it there. Anything else reads as
+/// none.
+pub fn read_home(defaults: &dyn Defaults) -> Option<String> {
+    match defaults.get(HOME_KEY) {
+        Some(Plist::String(home)) if !home.is_empty() => Some(home),
+        _ => None,
+    }
+}
+
+/// Keeps the card it was put on (none: forgets it), under the same rule.
+/// Whether written.
+pub fn write_home(defaults: &dyn Defaults, readiness: &Readiness, home: Option<&str>) -> bool {
+    if !readiness.is_readable(defaults) {
+        return false;
+    }
+    defaults.set(
+        HOME_KEY,
+        home.filter(|h| !h.is_empty())
+            .map(|h| Plist::String(h.to_owned())),
+    );
+    true
+}
+
 /// Keeps the style and the switch, under the same rule. Whether written.
 pub fn write_choice(
     defaults: &dyn Defaults,
@@ -270,6 +296,27 @@ mod tests {
         assert_eq!(read_spot(&defaults), 0.0, "anything else: its own place");
         defaults.set_protected_data_available(false);
         assert!(!write_spot(&defaults, &Readiness::System, 0.5));
+    }
+
+    #[test]
+    fn the_card_it_was_put_on_is_kept_until_forgotten() {
+        let defaults = MemoryDefaults::new();
+        assert_eq!(read_home(&defaults), None, "the card Home picks");
+        assert!(write_home(
+            &defaults,
+            &Readiness::Always,
+            Some("host:c-dev")
+        ));
+        assert_eq!(read_home(&defaults).as_deref(), Some("host:c-dev"));
+        assert!(write_home(&defaults, &Readiness::Always, Some("")));
+        assert_eq!(read_home(&defaults), None, "empty: forgotten");
+        assert!(write_home(&defaults, &Readiness::Always, Some("saved")));
+        assert!(write_home(&defaults, &Readiness::Always, None));
+        assert_eq!(read_home(&defaults), None);
+        defaults.set(HOME_KEY, Some(Plist::Int(3)));
+        assert_eq!(read_home(&defaults), None, "anything else: none");
+        defaults.set_protected_data_available(false);
+        assert!(!write_home(&defaults, &Readiness::System, Some("saved")));
     }
 
     #[test]

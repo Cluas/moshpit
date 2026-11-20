@@ -77,6 +77,11 @@ pub struct PetView {
     /// at the trailing end, 1 as far toward the leading end as it goes.
     #[serde(default)]
     pub spot: f32,
+    /// The card the person put it on, which it keeps to while that card
+    /// is on Home: `needs-you`, `saved` or `host:<id>`. None: the card Home
+    /// picks for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
 }
 
 /// The app icon the pet offers (B668, the owner's call): once it hatches,

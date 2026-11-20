@@ -509,12 +509,16 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     share_breath();
     let now = signal(unix_now());
     let _ticker = set_interval(Duration::from_secs(30), move || now.set(unix_now()));
-    let perch = computed(move || {
-        state.with(|s| {
-            s.as_ref()
-                .and_then(|s| pet::perch(&s.connections, &agent_word()))
+    let perch = {
+        let pet = pet_ctx.clone();
+        computed(move || {
+            let home = pet.home();
+            state.with(|s| {
+                s.as_ref()
+                    .and_then(|s| pet::perch(&s.connections, &agent_word(), home.as_ref()))
+            })
         })
-    });
+    };
     let creatures = computed(move || pet_view.with(|v| pet::creatures(v.as_ref())));
     let ctx = Ctx {
         tell: tell_host(channel),
@@ -704,6 +708,7 @@ fn list(
                 view()
                     .w_full()
                     .mt(move || gap(has_held.get()))
+                    .z_index(pet::over(&ctx, |p| *p == pet::Perch::NeedsYou))
                     .child(top_group(summary, waiting, ctx.clone()))
             }
         }))
@@ -713,6 +718,7 @@ fn list(
                 view()
                     .w_full()
                     .mt(move || gap(has_held.get() || top.get()))
+                    .z_index(pet::over(&ctx, |p| matches!(p, pet::Perch::Host(_))))
                     .child(connections_group(hosts, ctx.clone()))
             }
         }))
@@ -722,6 +728,7 @@ fn list(
                 view()
                     .w_full()
                     .mt(move || gap(has_held.get() || top.get() || has_hosts.get()))
+                    .z_index(pet::over(&ctx, |p| *p == pet::Perch::Saved))
                     .child(saved_group(saved, ctx.clone()))
             }
         }))

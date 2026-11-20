@@ -19,13 +19,16 @@
 //! switches only on a yes (`{"ev": "icon", "switch": true}`).
 //!
 //! It can be dragged ([`perched`]): picked up, it hangs from the finger and
-//! sways, following it along the card and, on a rubber band, up and down.
-//! Let go, it crawls back to the card's top edge under where it was
-//! dropped, and holds on there with a little squash and a tap of the
-//! haptics. Where along the edge it holds on is the person's: the host
-//! keeps it on this device (`{"ev": "pet-spot", "spot": 0.4}`, 0 its own
-//! place at the trailing end, 1 the leading end) and posts it back in
-//! [`PetView::spot`]; the card it sits on stays the one Home picks for it.
+//! sways, following it anywhere on the page. Let go over another card, it
+//! goes there: the card it sits on is then the person's while that card is
+//! on Home (`{"ev": "pet-home", "home": "host:c-dev"}`, [`Perch::key`]; the
+//! host keeps it on this device and posts it back in [`PetView::home`]),
+//! in the pose of what that card holds. Let go anywhere else, it crawls
+//! back to its card. Either way it crawls to the card's top edge under
+//! where it was dropped and holds on there with a little squash and a tap
+//! of the haptics. Where along the edge is the person's too
+//! (`{"ev": "pet-spot", "spot": 0.4}`, 0 its own place at the trailing end,
+//! 1 the leading end, [`PetView::spot`]).
 
 use std::{
     cell::{Cell, RefCell},
@@ -68,45 +71,101 @@ pub enum Perch {
     Saved,
 }
 
-/// Where the companion sits and how, from what Home shows.
-pub fn perch(connections: &[Connection], fallback: &str) -> Option<(Perch, Pose)> {
-    if !model::needs_you(connections, fallback).is_empty() {
-        return Some((Perch::NeedsYou, Pose::Waiting));
+impl Perch {
+    /// How the host keeps it ([`PetView::home`]): `needs-you`, `saved` or
+    /// `host:<id>`.
+    pub fn key(&self) -> String {
+        match self {
+            Perch::NeedsYou => "needs-you".into(),
+            Perch::Saved => "saved".into(),
+            Perch::Host(id) => format!("host:{id}"),
+        }
     }
-    let rank = |s: AgentState| match s {
+
+    /// The perch `key` names; none for anything else.
+    pub fn from_key(key: &str) -> Option<Perch> {
+        match key {
+            "needs-you" => Some(Perch::NeedsYou),
+            "saved" => Some(Perch::Saved),
+            _ => key
+                .strip_prefix("host:")
+                .filter(|id| !id.is_empty())
+                .map(|id| Perch::Host(id.to_owned())),
+        }
+    }
+}
+
+fn rank(state: AgentState) -> u8 {
+    match state {
         AgentState::NeedsYou => 0,
         AgentState::Working => 1,
         AgentState::Done => 2,
         AgentState::Idle => 3,
-    };
-    let busiest = connections
-        .iter()
-        .filter(|c| c.link == Link::Live)
-        .filter_map(|c| {
-            model::agent_rows(c, fallback)
-                .iter()
-                .map(|a| a.state)
-                .min_by_key(|s| rank(*s))
-                .map(|s| (rank(s), c, s))
-        })
-        .min_by_key(|(r, ..)| *r);
-    if let Some((_, c, state)) = busiest {
-        let pose = match state {
-            AgentState::NeedsYou => Pose::Waiting,
-            AgentState::Working => Pose::Working,
-            AgentState::Done => Pose::Done,
-            AgentState::Idle => Pose::Idle,
-        };
-        return Some((Perch::Host(c.id.clone()), pose));
     }
-    if let Some(c) = connections.iter().find(|c| c.link.has_session()) {
-        let pose = match c.link {
+}
+
+/// A live host's agent most in need, if it has any.
+fn busiest(c: &Connection, fallback: &str) -> Option<AgentState> {
+    if c.link != Link::Live {
+        return None;
+    }
+    model::agent_rows(c, fallback)
+        .iter()
+        .map(|a| a.state)
+        .min_by_key(|s| rank(*s))
+}
+
+/// Its pose on a host's card: its busiest agent's state, else how the
+/// host's link is.
+fn host_pose(c: &Connection, fallback: &str) -> Pose {
+    match busiest(c, fallback) {
+        Some(AgentState::NeedsYou) => Pose::Waiting,
+        Some(AgentState::Working) => Pose::Working,
+        Some(AgentState::Done) => Pose::Done,
+        Some(AgentState::Idle) => Pose::Idle,
+        None => match c.link {
             Link::Dead if c.failure.is_some() => Pose::Error,
             Link::Dead => Pose::Sleeping,
             Link::Stalled => Pose::Error,
             _ => Pose::Idle,
-        };
-        return Some((Perch::Host(c.id.clone()), pose));
+        },
+    }
+}
+
+/// Where the companion sits and how, from what Home shows: on the card the
+/// person put it on (`home`) while Home shows that card, else on the one
+/// Home picks.
+pub fn perch(
+    connections: &[Connection],
+    fallback: &str,
+    home: Option<&Perch>,
+) -> Option<(Perch, Pose)> {
+    let waiting = !model::needs_you(connections, fallback).is_empty();
+    match home {
+        Some(Perch::NeedsYou) if waiting => return Some((Perch::NeedsYou, Pose::Waiting)),
+        Some(Perch::Saved) if connections.iter().any(|c| c.link == Link::Saved) => {
+            return Some((Perch::Saved, Pose::Sleeping));
+        }
+        Some(Perch::Host(id)) => {
+            if let Some(c) = connections
+                .iter()
+                .find(|c| c.id == *id && c.link.has_session())
+            {
+                return Some((Perch::Host(id.clone()), host_pose(c, fallback)));
+            }
+        }
+        _ => {}
+    }
+    if waiting {
+        return Some((Perch::NeedsYou, Pose::Waiting));
+    }
+    let most = connections
+        .iter()
+        .filter_map(|c| busiest(c, fallback).map(|s| (rank(s), c)))
+        .min_by_key(|(r, _)| *r)
+        .map(|(_, c)| c);
+    if let Some(c) = most.or_else(|| connections.iter().find(|c| c.link.has_session())) {
+        return Some((Perch::Host(c.id.clone()), host_pose(c, fallback)));
     }
     connections
         .iter()
@@ -150,21 +209,52 @@ pub fn x_of(spot: f32, width: f32) -> f32 {
     -spot.clamp(0.0, 1.0) * reach(width)
 }
 
-/// The rubber band while it's held: up and down it follows the finger
-/// closely at first, then harder, never more than 90 pt off the edge (the
-/// cards around stay where they are).
-const LIFT_IN: [f32; 5] = [-240.0, -60.0, 0.0, 60.0, 240.0];
-const LIFT_OUT: [f32; 5] = [-90.0, -50.0, 0.0, 50.0, 90.0];
+/// A card on the page, where it is: its top left corner in the page's
+/// coordinates, its width and height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Place {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
 
-/// Where it hangs for a finger `y` points off the edge ([`LIFT_IN`]).
-pub fn lifted(y: f32) -> f32 {
-    if !y.is_finite() {
-        return 0.0;
+impl Place {
+    /// The middle of its target, held on this card's edge at `spot`.
+    fn held_at(&self, spot: f32) -> (f32, f32) {
+        (
+            self.x + self.width - FROM_END - TARGET / 2.0 + x_of(spot, self.width),
+            self.y - ABOVE + TARGET / 2.0,
+        )
     }
-    let y = y.clamp(LIFT_IN[0], LIFT_IN[4]);
-    let i = (0..4).find(|&i| y <= LIFT_IN[i + 1]).unwrap_or(3);
-    let t = (y - LIFT_IN[i]) / (LIFT_IN[i + 1] - LIFT_IN[i]);
-    LIFT_OUT[i] + t * (LIFT_OUT[i + 1] - LIFT_OUT[i])
+
+    /// Whether the pet's middle at `y` is over this card: on it, or over
+    /// its top edge, where it would sit.
+    fn takes(&self, y: f32) -> bool {
+        y >= self.y - TARGET && y < self.y + self.height
+    }
+}
+
+/// Where it goes when let go with its middle at `at` (page coordinates):
+/// the card it's over among `cards` when that isn't `here`, where along
+/// that card's edge (the spot under it) and how far it then is from
+/// there (to crawl). None: over its own card, or over none.
+pub fn landing(
+    at: (f32, f32),
+    cards: &[(Perch, Place)],
+    here: &Perch,
+) -> Option<(Perch, f32, (f32, f32))> {
+    if !at.0.is_finite() || !at.1.is_finite() {
+        return None;
+    }
+    if cards.iter().any(|(p, c)| p == here && c.takes(at.1)) {
+        return None;
+    }
+    let (perch, card) = cards.iter().find(|(p, c)| p != here && c.takes(at.1))?;
+    let own = card.held_at(0.0);
+    let spot = spot_at(at.0 - own.0, card.width);
+    let rest = card.held_at(spot);
+    Some((perch.clone(), spot, (at.0 - rest.0, at.1 - rest.1)))
 }
 
 /// How fast it crawls, in points a second, and the crawl's shortest and
@@ -210,6 +300,15 @@ pub(crate) struct PetCtx {
     /// Where the person last let it go (0 to 1), before the host has kept
     /// it and posted it back.
     dropped: Signal<Option<f32>>,
+    /// The card it was last put on, before the host has kept it and
+    /// posted it back.
+    homed: Signal<Option<Perch>>,
+    /// Let go over another card: how far from its place on that card it
+    /// was let go, for the crawl there once it's drawn on it.
+    landing: Rc<Cell<Option<(f32, f32)>>>,
+    /// The cards it can sit on, where they are on the page when asked.
+    cards: Rc<RefCell<Vec<(u64, Perch, ElementRef)>>>,
+    card_ids: Rc<Cell<u64>>,
     /// It's held or crawling back: it doesn't take a new drag, wears its
     /// plain pose, and its card is drawn over the ones around it.
     pub(crate) moving: Signal<bool>,
@@ -228,8 +327,49 @@ impl PetCtx {
             saying: signal(None),
             said: Rc::new(Cell::new(0)),
             dropped: signal(None),
+            homed: signal(None),
+            landing: Rc::new(Cell::new(None)),
+            cards: Rc::new(RefCell::new(Vec::new())),
+            card_ids: Rc::new(Cell::new(0)),
             moving: signal(false),
         }
+    }
+
+    /// The card the person put it on: where it was last let go, else what
+    /// the host keeps. Tracked.
+    pub(crate) fn home(&self) -> Option<Perch> {
+        self.homed.get().or_else(|| {
+            self.view.with(|v| {
+                v.as_ref()
+                    .and_then(|v| v.home.as_deref())
+                    .and_then(Perch::from_key)
+            })
+        })
+    }
+
+    /// Where the cards it can sit on are on the page now.
+    async fn places(&self) -> Vec<(Perch, Place)> {
+        let cards: Vec<_> = self
+            .cards
+            .borrow()
+            .iter()
+            .map(|(_, p, r)| (p.clone(), *r))
+            .collect();
+        let mut places = Vec::with_capacity(cards.len());
+        for (perch, card) in cards {
+            if let Some(m) = card.measure().await {
+                places.push((
+                    perch,
+                    Place {
+                        x: m.page.x.0,
+                        y: m.page.y.0,
+                        width: m.frame.size.width.0,
+                        height: m.frame.size.height.0,
+                    },
+                ));
+            }
+        }
+        places
     }
 
     /// Where along its card's edge it holds on (0 to 1): where it was last
@@ -360,9 +500,19 @@ pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
     };
     let width = signal(0.0_f32);
     let moving = ctx.pet.moving;
+    // Where it is, for a drop from another card.
+    let card = element_ref();
+    {
+        let pet = ctx.pet.clone();
+        let id = pet.card_ids.get() + 1;
+        pet.card_ids.set(id);
+        pet.cards.borrow_mut().push((id, at.clone(), card));
+        cleanup(move || pet.cards.borrow_mut().retain(|(i, ..)| *i != id));
+    }
     view()
         .w_full()
         .relative()
+        .element_ref(&card)
         // Held or crawling, it goes over the cards after this one.
         .z_index(move || if here.get() && moving.get() { 2 } else { 0 })
         .on_layout(move |b: &Bounds<Points>| width.set(b.size.width.0))
@@ -374,10 +524,21 @@ pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
         .into_element()
 }
 
+/// Over the cards after its own, while it's held or crawling: whether the
+/// group around a card it can sit on (`holds`) is drawn over the groups
+/// after it, so it goes over them too.
+pub(crate) fn over(ctx: &Ctx, holds: fn(&Perch) -> bool) -> impl Fn() -> i32 + 'static {
+    let (perch, moving) = (ctx.perch, ctx.pet.moving);
+    move || {
+        let held = moving.get() && perch.with(|p| p.as_ref().is_some_and(|(p, _)| holds(p)));
+        if held { 1 } else { 0 }
+    }
+}
+
 /// Where it is while dragged and as it crawls back: across the edge (`x`,
-/// which the drag moves), the finger's height (`held`, on the rubber
-/// band), the way still to crawl up or down (`crawl`) and its steps
-/// (`hop`); and how it looks held (`lift`, `sway`).
+/// which the drag moves), the finger's height (`held`), the way still to
+/// crawl up or down (`crawl`) and its steps (`hop`); and how it looks held
+/// (`lift`, `sway`).
 #[derive(Clone, Copy)]
 struct Drag {
     x: AnimatedValue,
@@ -426,7 +587,7 @@ impl Drag {
     /// Let go `x` across and `y` down from its place: it crawls to `to`
     /// on the edge, in steps, and holds on. How long that takes (ms).
     fn crawl_to(self, x: f32, y: f32, to: f32) -> f32 {
-        let hanging = lifted(y);
+        let hanging = if y.is_finite() { y } else { 0.0 };
         // Where it hangs is now the way back, not the finger's.
         self.crawl.set(hanging);
         self.held.set(0.0);
@@ -512,33 +673,22 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
         moving.set(true);
         drag.pick_up();
     };
-    let end = {
+    // It got to `to_spot` on this card: its place moves under it, it holds
+    // on, and the host keeps where.
+    let arrive = {
         let pet = pet.clone();
         let tell = ctx.tell.clone();
-        move |event: &PanEvent| {
-            let x = event.value_x.unwrap_or(0.0);
-            let y = event.value_y.unwrap_or(0.0);
-            let w = width.get_untracked();
-            let was = rest.get_untracked();
-            let from = x_of(was, w);
-            let to_spot = if event.cancelled {
-                was
-            } else {
-                spot_at(from + x, w)
-            };
-            pet.dropped.set(Some(to_spot));
-            crawling.set(true);
-            let ms = drag.crawl_to(x, y, x_of(to_spot, w) - from);
+        move |to_spot: f32| {
             let pet = pet.clone();
             let tell = tell.clone();
-            let arrived = move || {
-                // It holds on there: its place moves under it.
+            move || {
                 rest.set(to_spot);
                 drag.x.set(0.0);
                 crawling.set(false);
                 moving.set(false);
                 drag.hold_on();
-                if let Some(look) = pet.view.get_untracked().as_ref().and_then(look) {
+                let view = pet.view.get_untracked();
+                if let Some(look) = view.as_ref().and_then(look) {
                     play(
                         &pet,
                         Figure::Pet {
@@ -547,10 +697,17 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
                         },
                     );
                 }
-                if to_spot != was {
+                if view.as_ref().is_none_or(|v| v.spot != to_spot) {
                     tell(json!({"ev": "pet-spot", "spot": to_spot}));
                 }
-            };
+            }
+        }
+    };
+    let crawl = {
+        let arrive = arrive.clone();
+        move |x: f32, y: f32, to: f32, to_spot: f32| {
+            let ms = drag.crawl_to(x, y, to);
+            let arrived = arrive(to_spot);
             if ms <= 0.0 {
                 arrived();
             } else {
@@ -558,11 +715,68 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
             }
         }
     };
-    let shown_y = drag
-        .held
-        .interpolate(&LIFT_IN, &LIFT_OUT)
-        .add(&drag.crawl)
-        .add(&drag.hop);
+    // Let go over another card, it was taken off that one: it crawls from
+    // where it was let go to its place on this one.
+    if let Some((x, y)) = pet.landing.take() {
+        let to_spot = rest.get_untracked();
+        crawling.set(true);
+        drag.x.set(x);
+        crawl(x, y, 0.0, to_spot);
+    }
+    let end = {
+        let pet = pet.clone();
+        let ctx = ctx.clone();
+        let crawl = crawl.clone();
+        move |event: &PanEvent| {
+            let x = event.value_x.unwrap_or(0.0);
+            let y = event.value_y.unwrap_or(0.0);
+            let w = width.get_untracked();
+            let was = rest.get_untracked();
+            let from = x_of(was, w);
+            crawling.set(true);
+            let back = {
+                let pet = pet.clone();
+                let crawl = crawl.clone();
+                move |to_spot: f32| {
+                    pet.dropped.set(Some(to_spot));
+                    crawl(x, y, x_of(to_spot, w) - from, to_spot);
+                }
+            };
+            if event.cancelled {
+                back(was);
+                return;
+            }
+            let here = ctx
+                .perch
+                .with_untracked(|p| p.as_ref().map(|(p, _)| p.clone()));
+            let Some(here) = here else {
+                back(spot_at(from + x, w));
+                return;
+            };
+            // Over which card: the page says where they are.
+            let pet = pet.clone();
+            let tell = ctx.tell.clone();
+            drop(spawn(async move {
+                let places = pet.places().await;
+                let at = places
+                    .iter()
+                    .find(|(p, _)| *p == here)
+                    .map(|(_, c)| c.held_at(was))
+                    .map(|(cx, cy)| (cx + x, cy + y));
+                match at.and_then(|at| landing(at, &places, &here)) {
+                    Some((to, to_spot, off)) => {
+                        // Drawn on that card from here on, where it was let go.
+                        pet.landing.set(Some(off));
+                        pet.dropped.set(Some(to_spot));
+                        tell(json!({"ev": "pet-home", "home": to.key()}));
+                        pet.homed.set(Some(to));
+                    }
+                    None => back(spot_at(from + x, w)),
+                }
+            }));
+        }
+    };
+    let shown_y = drag.held.add(&drag.crawl).add(&drag.hop);
     // Toward the card's leading end it says its line on its trailing side.
     let leading_half = computed(move || spot.get() > 0.5);
     target(ctx, Some(drag))
@@ -998,11 +1212,14 @@ mod tests {
 
     #[test]
     fn it_perches_on_the_saved_card_when_nothing_is_up_and_nowhere_without_hosts() {
-        assert_eq!(perch(&[], "agent"), None);
+        assert_eq!(perch(&[], "agent", None), None);
         let saved = state(
             r#"{"connections":[{"id":"a","name":"a","initial":"A","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"saved"}],"version":""}"#,
         );
-        assert_eq!(perch(&saved, "agent"), Some((Perch::Saved, Pose::Sleeping)));
+        assert_eq!(
+            perch(&saved, "agent", None),
+            Some((Perch::Saved, Pose::Sleeping))
+        );
     }
 
     #[test]
@@ -1011,14 +1228,14 @@ mod tests {
             r#"{"connections":[{"id":"a","name":"a","initial":"A","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"live"}],"version":""}"#,
         );
         assert_eq!(
-            perch(&live, "agent"),
+            perch(&live, "agent", None),
             Some((Perch::Host("a".into()), Pose::Idle))
         );
         let dead = state(
             r#"{"connections":[{"id":"b","name":"b","initial":"B","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"dead"}],"version":""}"#,
         );
         assert_eq!(
-            perch(&dead, "agent"),
+            perch(&dead, "agent", None),
             Some((Perch::Host("b".into()), Pose::Sleeping))
         );
     }
@@ -1055,14 +1272,106 @@ mod tests {
         assert_eq!(x_of(0.5, 744.0), -0.5 * reach(744.0));
     }
 
+    fn host(id: &str, link: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","name":"{id}","initial":"A","user":"u","host":"h","mosh":false,"udpPort":60000,"link":"{link}"}}"#
+        )
+    }
+
     #[test]
-    fn held_it_follows_the_finger_then_hangs_on_a_rubber_band() {
-        assert_eq!(lifted(0.0), 0.0);
-        assert!((lifted(30.0) - 25.0).abs() < 1e-4, "close at first");
-        assert!((lifted(-60.0) + 50.0).abs() < 1e-4);
-        assert_eq!(lifted(10_000.0), 90.0, "never far off the edge");
-        assert_eq!(lifted(-10_000.0), -90.0);
-        assert!(lifted(150.0) > lifted(100.0), "always the finger's way");
+    fn put_on_a_card_it_stays_there_while_home_shows_that_card() {
+        let hosts = state(&format!(
+            r#"{{"connections":[{},{},{}],"version":""}}"#,
+            host("a", "live"),
+            host("b", "dead"),
+            host("c", "saved")
+        ));
+        assert_eq!(
+            perch(&hosts, "agent", None),
+            Some((Perch::Host("a".into()), Pose::Idle)),
+            "the first host up"
+        );
+        let b = Perch::Host("b".into());
+        assert_eq!(
+            perch(&hosts, "agent", Some(&b)),
+            Some((b.clone(), Pose::Sleeping)),
+            "in the pose of what that card holds"
+        );
+        assert_eq!(
+            perch(&hosts, "agent", Some(&Perch::Saved)),
+            Some((Perch::Saved, Pose::Sleeping))
+        );
+        // A card Home doesn't show: the one Home picks.
+        for gone in [
+            Perch::Host("c".into()),
+            Perch::Host("z".into()),
+            Perch::NeedsYou,
+        ] {
+            assert_eq!(
+                perch(&hosts, "agent", Some(&gone)).map(|(p, _)| p),
+                Some(Perch::Host("a".into())),
+                "{gone:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_card_it_was_put_on_is_kept_by_a_key() {
+        for perch in [Perch::NeedsYou, Perch::Saved, Perch::Host("c-dev:2".into())] {
+            assert_eq!(Perch::from_key(&perch.key()), Some(perch));
+        }
+        assert_eq!(Perch::Host("c-dev".into()).key(), "host:c-dev");
+        assert_eq!(Perch::from_key("host:"), None);
+        assert_eq!(Perch::from_key("elsewhere"), None);
+    }
+
+    #[test]
+    fn let_go_over_another_card_it_goes_there_under_the_finger() {
+        let card = |y: f32| Place {
+            x: 16.0,
+            y,
+            width: 358.0,
+            height: 120.0,
+        };
+        let here = Perch::Host("a".into());
+        let cards = [
+            (Perch::NeedsYou, card(100.0)),
+            (here.clone(), card(300.0)),
+            (Perch::Saved, card(500.0)),
+        ];
+        // Its own place on a card: 16 + 358 - 56 - 22 = 296 across, 22 - 39
+        // = 17 pt over the edge.
+        assert_eq!(card(300.0).held_at(0.0), (296.0, 283.0));
+        assert_eq!(landing((296.0, 283.0), &cards, &here), None, "where it was");
+        assert_eq!(
+            landing((200.0, 400.0), &cards, &here),
+            None,
+            "on its own card"
+        );
+        assert_eq!(
+            landing((200.0, 700.0), &cards, &here),
+            None,
+            "under every card"
+        );
+        assert_eq!(
+            landing((200.0, 260.0), &cards, &here),
+            None,
+            "over its own edge"
+        );
+        // Dropped on the saved card, past its middle: under the finger.
+        let (to, spot, off) = landing((150.0, 520.0), &cards, &here).unwrap();
+        assert_eq!(to, Perch::Saved);
+        let reach = reach(358.0);
+        assert!((spot - 146.0 / reach).abs() < 1e-4, "{spot}");
+        assert!(off.0.abs() < 1e-3, "no way across: {off:?}");
+        assert!(
+            (off.1 - 37.0).abs() < 1e-3,
+            "37 pt down from its edge: {off:?}"
+        );
+        // Over the card above's edge.
+        let (to, spot, _) = landing((400.0, 70.0), &cards, &here).unwrap();
+        assert_eq!((to, spot), (Perch::NeedsYou, 0.0), "never past its ⋯");
+        assert_eq!(landing((f32::NAN, 520.0), &cards, &here), None);
     }
 
     #[test]

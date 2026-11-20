@@ -1454,6 +1454,11 @@ void uniffi_moshpit_ffi_fn_method_petmachine_set_choice(uint64_t ptr, RustBuffer
 void uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(uint64_t ptr, RustBuffer cloud, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_HOME
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_HOME
+void uniffi_moshpit_ffi_fn_method_petmachine_set_home(uint64_t ptr, RustBuffer home, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_ICON
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_METHOD_PETMACHINE_SET_ICON
 void uniffi_moshpit_ffi_fn_method_petmachine_set_icon(uint64_t ptr, RustBuffer current, int8_t by_hand, RustCallStatus *_Nonnull out_status
@@ -4534,6 +4539,12 @@ uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_choice(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_CLOUD
 uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_HOME
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_METHOD_PETMACHINE_SET_HOME
+uint16_t uniffi_moshpit_ffi_checksum_method_petmachine_set_home(void
     
 );
 #endif

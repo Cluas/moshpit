@@ -63,6 +63,8 @@ struct State {
     icon_asked: Option<String>,
     /// Where on a card's edge the person put it (0 to 1).
     spot: f64,
+    /// The card the person put it on (`needs-you`, `saved`, `host:<id>`).
+    home: Option<String>,
     /// Whether the preferences could be believed when they were read (B865):
     /// a launch before the first unlock read them as empty, and they are
     /// read again once they can be ([`PetMachine::reload_if_needed`]).
@@ -132,6 +134,7 @@ impl PetMachine {
             moment: s.moment,
             talk: s.talk,
             spot: s.spot as f32,
+            home: s.home.clone(),
         }
     }
 
@@ -184,6 +187,7 @@ impl PetMachine {
             icon: None,
             icon_asked: stored::read_icon_asked(&defaults),
             spot: stored::read_spot(&defaults),
+            home: stored::read_home(&defaults),
             read_trusted,
         };
         Arc::new(Self {
@@ -452,6 +456,21 @@ impl PetMachine {
         self.notify();
     }
 
+    /// The card the person put it on on Home (`needs-you`, `saved` or
+    /// `host:<id>`), which it keeps to while that card is there; none (or
+    /// empty) gives it back to the card Home picks. Kept on this device.
+    pub fn set_home(&self, home: Option<String>) {
+        let home = home.filter(|h| !h.is_empty());
+        let mut s = lock(&self.state);
+        if s.home == home {
+            return;
+        }
+        stored::write_home(&self.defaults, &Readiness::System, home.as_deref());
+        s.home = home;
+        drop(s);
+        self.notify();
+    }
+
     /// How fast it grows: `faster`, `medium` (the default) or `slower`.
     pub fn set_pace(&self, pace: String) {
         let thresholds = match pace.as_str() {
@@ -517,6 +536,7 @@ impl PetMachine {
         s.talk = stored::read_talk(&self.defaults);
         s.icon_asked = stored::read_icon_asked(&self.defaults);
         s.spot = stored::read_spot(&self.defaults);
+        s.home = stored::read_home(&self.defaults);
         drop(s);
         if let Some(record) = keep {
             self.keep(&record);
@@ -878,6 +898,33 @@ mod tests {
         m.set_spot(0.75);
         let again = PetMachine::new(prefs, "phone".into());
         assert_eq!(message(&again)["spot"], 0.75, "kept over a relaunch");
+    }
+
+    #[test]
+    fn the_card_it_was_put_on_is_kept_on_this_device() {
+        let prefs = Arc::new(Prefs::default());
+        let m = PetMachine::new(prefs.clone(), "phone".into());
+        let listener = Arc::new(Count::default());
+        m.set_listener(Some(listener.clone()));
+        assert!(message(&m).get("home").is_none(), "the card Home picks");
+        m.set_home(Some("host:c-dev".into()));
+        assert_eq!(message(&m)["home"], "host:c-dev");
+        assert_eq!(*lock(&listener.0), 1);
+        m.set_home(Some("host:c-dev".into()));
+        assert_eq!(*lock(&listener.0), 1, "nothing changed: nothing told");
+        let again = PetMachine::new(prefs.clone(), "phone".into());
+        assert_eq!(
+            message(&again)["home"],
+            "host:c-dev",
+            "kept over a relaunch"
+        );
+        m.set_home(Some(String::new()));
+        assert!(message(&m).get("home").is_none(), "given back");
+        assert!(
+            message(&PetMachine::new(prefs, "phone".into()))
+                .get("home")
+                .is_none()
+        );
     }
 
     /// Preferences that read as nothing, and keep nothing, while sealed:
