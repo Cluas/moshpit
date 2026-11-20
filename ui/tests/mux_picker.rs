@@ -505,7 +505,9 @@ fn row_ids(app: &Headless) -> Vec<String> {
         .layout_nodes()
         .into_iter()
         .filter_map(|n| n.test_id.map(|t| t.to_string()))
-        .filter(|t| t.starts_with("mux-picker-row-") || t == "mux-picker-new")
+        .filter(|t| {
+            (t.starts_with("mux-picker-row-") && !t.ends_with("-below")) || t == "mux-picker-new"
+        })
         .collect()
 }
 
