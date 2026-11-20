@@ -149,6 +149,7 @@ pub fn chrome(app: &App, page: &TerminalPage) -> Chrome {
                 Degrade::TmuxMissing => Missing::Tmux,
                 Degrade::HerdrMissing | Degrade::HerdrUnavailable => Missing::Herdr,
             },
+            installing: false,
         })
     };
     if let (Some(banner), Some(dismissed)) = (&chrome.banner, &page.banner_dismissed)
@@ -193,7 +194,7 @@ fn banner_key(banner: &Banner) -> String {
     match banner {
         Banner::ReturnPath { .. } => "return-path".to_owned(),
         Banner::Roam { .. } => "roam".to_owned(),
-        Banner::Degrade { missing } => format!("degrade-{missing:?}"),
+        Banner::Degrade { missing, .. } => format!("degrade-{missing:?}"),
     }
 }
 
