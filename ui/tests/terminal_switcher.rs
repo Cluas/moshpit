@@ -187,6 +187,66 @@ fn the_strip_under_the_terminal_names_where_a_swipe_goes() {
 }
 
 #[test]
+fn the_strip_shows_the_screens_either_side_the_host_has() {
+    let (mut app, channel, heard) = open();
+    post(&mut app.0, &channel, &chrome("tmux", "none").to_string());
+    post(&mut app.0, &channel, &switcher(work("tmux", "%3"), true));
+    assert_eq!(
+        next_of(&heard, "swipe-pictures"),
+        json!({"ev": "swipe-pictures", "panes": ["%2", "%4"]}),
+        "asked for the panes either side as soon as they are known"
+    );
+    // A tmux attach keeps each pane's terminal: both screens come.
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "swipe-pictures", "panes": {
+            "%2": ["dev@trainer:~$ claude", "", "> Allow edit to train.py?", "", ""],
+            "%4": ["dev@trainer:~/src/trainer$ ls", "data  train.py"]
+        }})
+        .to_string(),
+    );
+    app.0
+        .wait_for("id:terminal-backstage-previous-thumb")
+        .unwrap();
+    app.0.wait_for("id:terminal-backstage-next-thumb").unwrap();
+    assert!(
+        app.0
+            .screen()
+            .texts()
+            .contains(&"dev@trainer:~$ claude\n\n> Allow edit to train.py?"),
+        "the screen's end, trailing blanks cut: {:?}",
+        app.0.screen().texts()
+    );
+    // Each swipe asks again for what they show now.
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "swipe", "active": true}).to_string(),
+    );
+    assert_eq!(
+        next_of(&heard, "swipe-pictures")["panes"],
+        json!(["%2", "%4"])
+    );
+    // A mosh session has only the shown pane's screen: the host answers
+    // with none, and the strip is words again.
+    post(
+        &mut app.0,
+        &channel,
+        &json!({"op": "swipe-pictures", "panes": {}}).to_string(),
+    );
+    app.0.run_for(Duration::from_millis(200)).unwrap();
+    assert!(
+        app.0
+            .screen()
+            .id("id:terminal-backstage-next-thumb")
+            .is_err()
+    );
+    assert!(app.0.screen().shows("trainer"));
+    channel.close();
+}
+
+#[test]
 fn the_hint_shows_once_and_asks_for_a_nudge() {
     let (mut app, channel, heard) = open();
     post(&mut app.0, &channel, &chrome("tmux", "none").to_string());

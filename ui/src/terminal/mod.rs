@@ -102,6 +102,11 @@ pub enum Message {
     /// terminals the session already keeps (B658). A pane left out has no
     /// picture.
     Pictures(HashMap<String, Vec<String>>),
+    /// `{"op": "swipe-pictures", "panes": {"%1": ["row", …]}}`: the screens
+    /// of the panes either side, for the strip a swipe uncovers; only the
+    /// ones the session keeps a terminal for (a tmux attach's), so a mosh
+    /// or herdr session's neighbours stay words.
+    SwipePictures(HashMap<String, Vec<String>>),
 }
 
 #[derive(serde::Deserialize)]
@@ -179,6 +184,9 @@ impl Message {
                 .map_err(error),
             "pictures" => serde_json::from_value::<overview::PicturesFields>(fields)
                 .map(|f| Message::Pictures(f.panes))
+                .map_err(error),
+            "swipe-pictures" => serde_json::from_value::<overview::PicturesFields>(fields)
+                .map(|f| Message::SwipePictures(f.panes))
                 .map_err(error),
             "rekey" if fields.as_object().is_some_and(|f| f.is_empty()) => Ok(Message::Rekey),
             "rekey" => Err("terminal: rekey: takes no fields".to_owned()),
@@ -334,6 +342,8 @@ pub enum Intent {
         panes: Vec<String>,
         current: Option<String>,
     },
+    /// The swipe's strip asks for the pictures of the panes either side.
+    SwipePictures(Vec<String>),
     /// Where pane `pane`'s cell is in the overview (the surface's points):
     /// the one shown, which the live terminal shrinks into and grows back
     /// from (`picked` false), or the one just picked, which the pane's
@@ -406,6 +416,7 @@ impl Intent {
             Intent::Pictures { panes, current } => {
                 json!({"ev": "pictures", "panes": panes, "current": current})
             }
+            Intent::SwipePictures(panes) => json!({"ev": "swipe-pictures", "panes": panes}),
             Intent::OverviewAnchor { pane, rect, picked } => {
                 json!({"ev": "overview-anchor", "pane": pane, "rect": rect, "picked": picked})
             }
@@ -456,6 +467,8 @@ pub(crate) struct Ctx {
     pub overview: Signal<bool>,
     /// The overview's pane pictures, by pane id, while it is open.
     pub pictures: Signal<HashMap<String, Vec<String>>>,
+    /// The pictures of the panes either side, for the swipe's strip.
+    pub swipe_pictures: Signal<HashMap<String, Vec<String>>>,
 }
 
 impl Ctx {
@@ -587,11 +600,13 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
         swiping: signal(false),
         overview: signal(false),
         pictures: signal(HashMap::new()),
+        swipe_pictures: signal(HashMap::new()),
     };
     let prompts = prompt::Prompts::default();
     shortcuts::bind(&ctx, &keys);
     let order = switcher::order(&ctx);
     switcher::tell_neighbours(&ctx, order);
+    switcher::ask_pictures(&ctx, order);
     let panes = overview::model(&ctx);
     overview::tell_open(&ctx);
     overview::ask_pictures(&ctx, panes);
@@ -652,6 +667,13 @@ pub fn TerminalScreen(props: ScreenProps) -> impl IntoElement {
                     // is dropped with the rest).
                     if ctx.overview.get_untracked() {
                         ctx.pictures.update(|p| p.extend(pictures));
+                    }
+                }
+                Message::SwipePictures(pictures) => {
+                    // The newest screens of the panes either side, the
+                    // ones before dropped (a pane left is not shown again).
+                    if ctx.swipe_pictures.with_untracked(|p| *p != pictures) {
+                        ctx.swipe_pictures.set(pictures);
                     }
                 }
                 Message::Rekey => {
