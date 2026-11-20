@@ -131,6 +131,13 @@ pub fn mosh_take_path(renderer_key: &str) -> String {
 /// its attach: between attaches, and once the loop has parked, there is no
 /// pid to kill.
 ///
+/// An attach herdr turns away because a read of its terminal is on its way
+/// (herdr 0.9.5: "terminal attach failed: terminal … has a read in
+/// progress; retry": a `pane read` for a picker's or the overview's
+/// picture, the pane picked a moment later) is no park: the loop goes round
+/// and attaches again, 0.2 s apart, up to 25 times, then parks as on any
+/// other refusal.
+///
 /// The first attach waits (up to 3 s) while the tty is still 80×24:
 /// mosh-server starts its program at that size, before the client's
 /// first resize lands, and an attach that came up then resized the pane
@@ -168,7 +175,7 @@ pub fn raw_attach_loop_command(renderer_key: &str, custom_path: Option<&str>) ->
         ),
     };
     let script = format!(
-        "mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; echo $$ > \"{looped}\"; f=1; while :; do \
+        "mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; echo $$ > \"{looped}\"; f=1; r=0; while :; do \
          tid=$(cat \"{target}\" 2>/dev/null); \
          if [ -n \"$tid\" ]; then \
          if [ -n \"$f\" ]; then f=; n=0; \
@@ -180,7 +187,10 @@ pub fn raw_attach_loop_command(renderer_key: &str, custom_path: Option<&str>) ->
          [ \\\"\\$(cat \\\"{target}\\\" 2>/dev/null)\\\" = \\\"\\$0\\\" ] || exit 137; \
          rm -f \\\"{go}\\\"; \
          {launch}\" \"$tid\"; \
-         s=$?; rm -f \"{pid}\"; printf \"\\033[0m\\033[H\\033[2J\"; \
+         s=$?; rm -f \"{pid}\"; \
+         if [ $s -lt 128 ] && [ $r -lt 25 ] && grep -q \"read in progress\" \"{err}\" 2>/dev/null; then \
+         r=$((r+1)); sleep 0.2; continue; fi; r=0; \
+         printf \"\\033[0m\\033[H\\033[2J\"; \
          if [ $s -lt 128 ]; then echo \"$s $tid\" > \"{stop}\"; \
          while [ ! -e \"{go}\" ]; do [ -e \"{target}\" ] || exit 0; sleep 0.1; done; \
          rm -f \"{stop}\"; f=1; fi; \
