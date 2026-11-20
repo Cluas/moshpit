@@ -1037,7 +1037,12 @@ final class TerminalNSHStage {
             peek = made
         }
         guard let peek else { return }
-        if !rows.isEmpty, rows != peek.rows { peek.rows = rows }
+        if !rows.isEmpty, rows != peek.rows {
+            // Drawn by the live terminal, in its colours and cells: the
+            // pane's own screen, when it replaces the peek, looks the same.
+            peek.picture = host.surface.picture(of: rows, size: host.container.bounds.size)
+            peek.rows = rows
+        }
         peek.bounds = host.container.bounds
         peek.center = host.container.center
         let width = slot.bounds.width
@@ -1403,21 +1408,24 @@ final class TerminalNSHSlot: NSHComponent {
     }
 }
 
-/// The screen of a pane either side, as the swipe brings it in: its rows
-/// as plain text in the terminal's own font, ground and cell height, laid
-/// out where that terminal lays its grid. A picture, never touched.
+/// The screen of a pane either side, as the swipe brings it in: a picture
+/// drawn as a terminal draws (its colours, glyphs, grid and ground), else
+/// its rows as plain text in the terminal's own font, ground and cell
+/// height, laid out where that terminal lays its grid. Never touched.
 final class TerminalPeekView: UIView {
     let pane: String
+    /// The rows the picture was drawn from (a pane only read).
     var rows: [String] = [] { didSet { setNeedsDisplay() } }
     private let font: UIFont
     private let lineHeight: CGFloat
     private let originX: CGFloat
     private let ink: UIColor
-    /// The pane's own terminal's picture: drawn instead of `rows`.
-    private let picture: UIImage?
+    /// Drawn instead of `rows` as text.
+    var picture: UIImage? { didSet { setNeedsDisplay() } }
 
-    /// Plain rows in the live terminal's font, ground and ink: what that
-    /// terminal shows its default text in, so the two match.
+    /// A pane only read: its rows drawn by the live terminal
+    /// (``CoreTerminalView/picture(of:size:)``) once they are set, else as
+    /// plain text in that terminal's font, ground and ink.
     init(pane: String, from surface: CoreTerminalView) {
         self.pane = pane
         font = surface.font

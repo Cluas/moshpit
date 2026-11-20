@@ -291,7 +291,7 @@ final class MuxPickerModel {
             snapshots.onPaneSnapshot = { [weak self] pane, rows in
                 self?.heard?(pane, rows)
                 guard let self, self.asked.contains(pane) else { return }
-                self.tell([pane: rows])
+                self.tell([pane: PaneSnapshotText.plain(rows)])
             }
         }
         snapshots.snapshotPanes(missing)

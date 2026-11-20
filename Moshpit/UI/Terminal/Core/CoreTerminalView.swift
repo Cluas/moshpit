@@ -1208,6 +1208,43 @@ final class CoreTerminalView: UIView {
         return renderer.image(of: rows, size: size, xOffset: x, yOffset: renderShift, cursorShown: false)
     }
 
+    /// `screen` (a pane's rows with their colours as SGR, as tmux's
+    /// `capture-pane -e` and herdr's `pane read --format ansi` give them)
+    /// drawn `size` big as this terminal would draw it: its font, palette,
+    /// cell grid and ground; no cursor. A swipe's peek of a pane a mosh or
+    /// herdr session reads but doesn't show, so it doesn't change look (no
+    /// colours, other glyph widths) when that pane's own screen replaces
+    /// it. Nil if the core refuses a scratch terminal.
+    func picture(of screen: [String], size: CGSize) -> UIImage? {
+        let cols = max(1, Int(size.width / metrics.width))
+        let count = max(1, Int(size.height / metrics.height))
+        guard let scratch = mp_term_new(UInt16(clamping: cols), UInt16(clamping: count), 0) else { return nil }
+        defer { mp_term_close(scratch) }
+        if let (ansi, background, foreground) = appliedPalette {
+            ansi.withUnsafeBufferPointer {
+                mp_term_set_palette(scratch, $0.baseAddress!, foreground, background, style.cursorColor)
+            }
+        }
+        // No wrap (a row wider than this grid is cut, not pushed on to the
+        // next), no cursor; the rows from the top, as the pane shows them.
+        // tmux carries the SGR state from one row to the next: no reset.
+        let text = "\u{1B}[?7l\u{1B}[?25l" + screen.prefix(count).joined(separator: "\r\n")
+        let bytes = Array(text.utf8)
+        bytes.withUnsafeBufferPointer { buffer in
+            if let base = buffer.baseAddress { mp_term_feed(scratch, base, buffer.count) }
+        }
+        let grid = CoreTermRows()
+        grid.reset(cols: cols, rows: count, background: style.background)
+        guard let frame = mp_term_frame(scratch) else { return nil }
+        grid.apply(frame)
+        mp_frame_free(frame)
+        var look = style
+        look.ground = nil
+        let renderer = CoreTermCGRenderer(metrics: metrics, style: look)
+        let x = Self.gridOrigin(width: size.width, cols: cols, cellWidth: metrics.width, scale: metrics.scale)
+        return renderer.image(of: grid, size: size, xOffset: x, yOffset: 0, cursorShown: false)
+    }
+
     /// A still picture of the terminal as it shows (the keyboard cover).
     func snapshot() -> UIView {
         let renderer = CoreTermCGRenderer(metrics: metrics, style: style)

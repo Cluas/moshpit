@@ -1,5 +1,5 @@
 //! B751 on a private herdr (`--session mw10b-…` under a temp HOME, its
-//! socket checked to be its own): `herdr pane read <id> --format text`, the
+//! socket checked to be its own): `herdr pane read <id> --format ansi`, the
 //! overview's picture of a herdr pane never shown, moves nothing. Not the
 //! focus (B683 pinned who moves it), not the layout, not a pane's size, not
 //! who owns the size: herdr's whole snapshot reads the same after reading
@@ -36,7 +36,7 @@ fn reading_a_pane_moves_nothing() {
     let focused = herdr.focused();
     let (before, _) = herdr.run(&["api", "snapshot"]);
     for pane in [&a, &b, &a, &b] {
-        let (text, code) = herdr.run(&["pane", "read", pane, "--format", "text"]);
+        let (text, code) = herdr.run(&["pane", "read", pane, "--format", "ansi"]);
         assert_eq!(code, 0, "{pane}: {text}");
         println!("read {pane}: {} lines", text.lines().count());
     }

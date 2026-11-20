@@ -3,7 +3,7 @@
 //! The phone's terminal shows one pane (the frame channel's, or mosh's
 //! renderer); the others' screens are nowhere on the phone. While the
 //! overview is open it asks for them once: one `herdr pane read <id>
-//! --format text` each, at most [`READS_IN_FLIGHT`] at a time, the rest
+//! --format ansi` each, at most [`READS_IN_FLIGHT`] at a time, the rest
 //! queued. A read takes nothing: not the focus, not a pane, not a size
 //! (checked on a private herdr: the server's snapshot reads the same after
 //! it). Its text goes to the overview as [`Event::PaneRead`], never into
