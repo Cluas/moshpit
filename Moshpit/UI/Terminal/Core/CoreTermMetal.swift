@@ -832,7 +832,8 @@ final class CoreTermMetalCanvas: UIView {
                     let cell = src[c]
                     let flags = Int(cell.flags)
                     var bg = flags & Int(MP_CELL_SELECTED) != 0 ? style.selection
-                        : flags & Int(MP_CELL_MATCH) != 0 ? style.match : cell.bg
+                        : flags & Int(MP_CELL_MATCH) != 0 ? style.match
+                        : cell.bg == style.blended ? style.background : cell.bg
                     var fg = cell.fg
                     if c == block || (blockWide && c == block + 1) {
                         fg = bg

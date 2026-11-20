@@ -110,13 +110,23 @@ struct CoreTermStyle: Equatable {
     /// when it isn't ``background`` (B495): the colour the grid shows at
     /// its edges, which a remote can make other than the theme's.
     var ground: UInt32?
+    /// The ground the grid paints when the eye can't tell it from
+    /// ``background`` (``CoreTerminalView/blends(_:into:)``): drawn as
+    /// ``background``. A desktop's dark theme left in a pane (herdr sends a
+    /// pane's default background as a colour once a program in it set
+    /// OSC 11 — Rosé Pine from a morning's WezTerm in one Claude pane, the
+    /// theme's own in the next) made two panes of one session black and
+    /// slate on the phone.
+    var blended: UInt32?
 
     /// The colour outside the grid.
     var outside: UInt32 { ground ?? background }
 
-    /// A cell's background as drawn: the selection and a search match tint it.
+    /// A cell's background as drawn: the selection and a search match tint
+    /// it; a ``blended`` ground is the theme's background.
     @inline(__always) func background(of cell: MpDrawCell) -> UInt32 {
-        coreHas(cell, Int(MP_CELL_SELECTED)) ? selection : coreHas(cell, Int(MP_CELL_MATCH)) ? match : cell.bg
+        coreHas(cell, Int(MP_CELL_SELECTED)) ? selection : coreHas(cell, Int(MP_CELL_MATCH)) ? match
+            : cell.bg == blended ? background : cell.bg
     }
 }
 
