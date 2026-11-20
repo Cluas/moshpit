@@ -101,6 +101,12 @@ def clis(port, home, work):
                    "model": {"name": "lab-model"}, "general": {"disableAutoUpdate": True}},
                   open(os.path.join(d, "settings.json"), "w"))
 
+    def setup_codebuddy():
+        # A trusted folder skips the trust dialog.
+        d = os.path.join(home, ".codebuddy")
+        os.makedirs(d, exist_ok=True)
+        json.dump({"trustedDirectories": [work]}, open(os.path.join(d, "settings.json"), "w"))
+
     return {
         "qoder": ([node, f"{CLISRC}/qoder-ai-qodercli-1.1.92/package/bundle/qodercli.js"],
                   {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base + "/v1", "OPENAI_MODEL": "lab-model"}, setup_qoder),
@@ -116,7 +122,9 @@ def clis(port, home, work):
         "iflow": ([node, f"{CLISRC}/iflow-ai-iflow-cli-0.5.19/package/bundle/entry.js"],
                   {"IFLOW_API_KEY": key, "IFLOW_BASE_URL": base + "/v1", "IFLOW_MODEL_NAME": "lab-model"},
                   setup_iflow),
-        "codebuddy": ([node, f"{CLISRC}/tencent-ai-codebuddy-code-2.185.0/package/bin/codebuddy"], {}, None),
+        "codebuddy": ([node, f"{CLISRC}/tencent-ai-codebuddy-code-2.185.0/package/bin/codebuddy"],
+                      {"CODEBUDDY_BASE_URL": base + "/v1", "CODEBUDDY_API_KEY": key, "CODEBUDDY_MODEL": "lab-model"},
+                      setup_codebuddy),
         "cursor": ([shutil.which("cursor-agent") or "cursor-agent"], {}, None),
         "copilot": ([shutil.which("copilot") or "copilot"], {}, None),
         # A plain shell: the lab's control (readline echo, no redraws).

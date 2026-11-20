@@ -20,7 +20,7 @@
 mod common;
 use base64::Engine as _;
 use moshpit_term::coalesce::Coalescer;
-use moshpit_term::{Options, ScrollOnClear, Terminal, cell_flags as F, predict::PredictMode};
+use moshpit_term::{cell_flags as F, predict::PredictMode, Options, ScrollOnClear, Terminal};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -632,12 +632,34 @@ lab!(copilot_mosh_predicted, "copilot-mosh", Predicted);
 lab!(qoder_tmux_final, "qoder-tmux", Final);
 lab!(qoder_ssh_final, "qoder-ssh", Final);
 lab!(qoder_mosh_final, "qoder-mosh", Final);
+lab!(codebuddy_tmux_final, "codebuddy-tmux", Final);
+lab!(codebuddy_tmux_typed, "codebuddy-tmux", Typed);
+lab!(codebuddy_tmux_steady, "codebuddy-tmux", Steady);
+lab!(codebuddy_ssh_final, "codebuddy-ssh", Final);
+lab!(codebuddy_ssh_typed, "codebuddy-ssh", Typed);
+lab!(codebuddy_ssh_steady, "codebuddy-ssh", Steady);
+lab!(codebuddy_mosh_final, "codebuddy-mosh", Final);
+lab!(codebuddy_mosh_typed, "codebuddy-mosh", Typed);
+lab!(codebuddy_mosh_steady, "codebuddy-mosh", Steady);
+lab!(codebuddy_mosh_predicted, "codebuddy-mosh", Predicted);
+lab!(codebuddy_mosh_tmux_final, "codebuddy-mosh-tmux", Final);
+lab!(codebuddy_mosh_tmux_typed, "codebuddy-mosh-tmux", Typed);
+lab!(codebuddy_mosh_tmux_steady, "codebuddy-mosh-tmux", Steady);
+lab!(
+    codebuddy_mosh_tmux_predicted,
+    "codebuddy-mosh-tmux",
+    Predicted
+);
 // A visible cursor stays on the input row while the CLI answers.
 lab!(claude_tmux_cursor, "claude-tmux", Cursor);
 lab!(claude_mosh_cursor, "claude-mosh", Cursor);
 lab!(codex_tmux_cursor, "codex-tmux", Cursor);
 lab!(codex_mosh_cursor, "codex-mosh", Cursor);
 lab!(codex_mosh_tmux_cursor, "codex-mosh-tmux", Cursor);
+lab!(codebuddy_tmux_cursor, "codebuddy-tmux", Cursor);
+lab!(codebuddy_ssh_cursor, "codebuddy-ssh", Cursor);
+lab!(codebuddy_mosh_cursor, "codebuddy-mosh", Cursor);
+lab!(codebuddy_mosh_tmux_cursor, "codebuddy-mosh-tmux", Cursor);
 // Codex inside tmux over Moshpit's own transport (`-rs`, recorded with
 // mosh_harness) and a 500 ms round trip, a long streamed answer.
 lab!(
@@ -677,6 +699,10 @@ const ALL: &[&str] = &[
     "qoder-tmux",
     "qoder-ssh",
     "qoder-mosh",
+    "codebuddy-tmux",
+    "codebuddy-ssh",
+    "codebuddy-mosh",
+    "codebuddy-mosh-tmux",
     "codex-mosh-tmux-rtt500-rs",
 ];
 
