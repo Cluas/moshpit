@@ -17,11 +17,13 @@ import UIKit
 ///
 /// - a pane switch slides the new pane in from the swipe's side once a
 ///   swipe has happened (the controller's 0.22 s), and fades otherwise;
-/// - a sideways drag moves the terminal with the finger, uncovering the
-///   page's backstage under the slot (the pane it would go to), and
-///   rubber-bands where the page names no neighbour; let go past a third of
-///   the width or flicked, the terminal flies on and the neighbour is
-///   asked for (``onSwitchPane``), else it springs back (the pane-switch
+/// - a sideways drag moves the terminal with the finger, and the screen of
+///   the pane it would go to follows it in from that side (a peek, when
+///   there is a picture of it; the page's backstage, its name, when not),
+///   and rubber-bands where the page names no neighbour; let go past half
+///   the width or flicked, the terminal flies on, the peek lands in its
+///   place until the pane's own screen is up, and the neighbour is asked
+///   for (``onSwitchPane``); else both spring back (the pane-switch
 ///   design's step 1, `ui/src/terminal/switcher.rs`);
 /// - a reconnect's kept frame (the retired controller's pane, frozen,
 ///   untouchable) stays until the new attach has painted, then cross-fades
@@ -439,11 +441,16 @@ final class TerminalNSHStage {
     /// black), which showed around a tmux pane's inset as a black strip
     /// beside the terminal's own grey.
     private func paint(_ slot: TerminalNSHSlotView) {
-        guard let hex = appearance?.theme.backgroundHex,
-              let rgb = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "# ")), radix: 16)
-        else { return }
-        slot.backgroundColor = UIColor(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
-                                       blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+        guard let ground = Self.color(appearance?.theme.backgroundHex) else { return }
+        slot.backgroundColor = ground
+    }
+
+    /// `#rrggbb` as a colour.
+    static func color(_ hex: String?) -> UIColor? {
+        guard let hex, let rgb = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "# ")), radix: 16)
+        else { return nil }
+        return UIColor(red: CGFloat((rgb >> 16) & 0xFF) / 255, green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                       blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
     }
 
     /// A slot came into (or left) a window: the newest one in a window
@@ -634,6 +641,22 @@ final class TerminalNSHStage {
             applyFocus()
             return
         }
+        // A swipe's peek of this pane landed in its place: the terminal goes
+        // under it at once, and the peek lifts when its screen is up.
+        if !reconnect, landed, let peek, case .pane(_, let pane) = target.source, pane == peek.pane, swiped != nil {
+            if old.coordinator !== next.coordinator {
+                old.coordinator?.onSwipe = nil
+                old.coordinator?.onStep = nil
+                old.coordinator?.onShowAll = nil
+            }
+            retire(old, duration: duration, slideForward: nil)
+            next.container.alpha = 1
+            next.container.transform = .identity
+            peek.superview?.bringSubviewToFront(peek)
+            liftPeek(over: next.coordinator)
+            applyFocus()
+            return
+        }
         if let forward = slide, let slot = next.container.superview {
             let width = slot.bounds.width
             next.container.transform = CGAffineTransform(translationX: forward ? width : -width, y: 0)
@@ -761,9 +784,10 @@ final class TerminalNSHStage {
     // MARK: The sideways swipe
 
     /// How far the drag goes, as a share of the width, before a lift
-    /// switches; a flick faster than ``flickSpeed`` (points a second) past
+    /// switches (half: held short of it, the peek is only looked at); a
+    /// flick faster than ``flickSpeed`` (points a second) past
     /// ``flickDistance`` switches too.
-    static let commitShare: CGFloat = 0.35
+    static let commitShare: CGFloat = 0.5
     static let flickSpeed: CGFloat = 500
     static let flickDistance: CGFloat = 24
     /// Where nothing is: the drag moves the terminal a quarter as far, never
@@ -805,6 +829,18 @@ final class TerminalNSHStage {
     private var committed: (forward: Bool, at: CFTimeInterval)?
     /// The terminal a committed swipe threw, while it flies.
     private weak var flying: Hosted?
+    /// The screen of a pane either side the page has a picture of (the
+    /// snapshots `swipe-pictures` asked for), by id.
+    var peekRows: ((String) -> [String]?)?
+    /// The peek following the drag, or landed in the terminal's place after
+    /// a switch until the pane's own screen is up.
+    private var peek: TerminalPeekView?
+    /// The peek landed: the switch it stands in for.
+    private var landed = false
+    /// How long a landed peek waits for the pane's screen at most; one whose
+    /// terminal never veils lifts sooner.
+    static let peekHeldFor: CFTimeInterval = 1.2
+    static let peekUnveiledFor: CFTimeInterval = 0.4
 
     func setNeighbours(previous: String?, next: String?) {
         neighbours = (previous, next)
@@ -850,6 +886,7 @@ final class TerminalNSHStage {
                 host.container.transform = presentation.affineTransform()
             }
             host.container.layer.removeAllAnimations()
+            dropPeek()
             drag = Drag(host: host)
             uncover(true)
             onSwiping?(true)
@@ -859,6 +896,7 @@ final class TerminalNSHStage {
             let toward = neighbour(dx)
             let x = toward == nil ? Self.rubberBand(dx) : dx
             host.container.transform = CGAffineTransform(translationX: x, y: 0)
+            followPeek(dx: toward == nil ? 0 : dx, host: host)
             let past = toward != nil && abs(dx) > width * Self.commitShare
             if past != drag.past { Haptics.select() }
             drag.past = past
@@ -892,8 +930,11 @@ final class TerminalNSHStage {
 
     /// Springs `host` back to its place, at the lift's speed.
     private func settle(_ host: Hosted, velocity: CGFloat) {
+        let peek = self.peek
+        let off = peek.map { $0.transform.tx - host.container.transform.tx } ?? 0
         let done = { [weak self] in
             guard let self, self.drag == nil else { return }
+            if let peek, self.peek === peek { self.dropPeek() }
             self.uncover(false)
             self.onSwiping?(false)
         }
@@ -901,19 +942,25 @@ final class TerminalNSHStage {
             host.container.transform = .identity
             return done()
         }
-        spring(host, to: 0, velocity: velocity, completion: done)
+        spring(host, to: 0, velocity: velocity, alongside: {
+            peek?.transform = CGAffineTransform(translationX: off, y: 0)
+        }, completion: done)
     }
 
     /// The structural spring (critically damped) moving `host` to `x` from
     /// where it is, carrying the lift's `velocity`.
-    private func spring(_ host: Hosted, to x: CGFloat, velocity: CGFloat, completion: @escaping () -> Void) {
+    private func spring(_ host: Hosted, to x: CGFloat, velocity: CGFloat, alongside: (() -> Void)? = nil,
+                        completion: @escaping () -> Void) {
         let from = host.container.transform.tx
         let distance = x - from
         let relative = abs(distance) > 1 ? velocity / distance : 0
         let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: relative, dy: 0))
         let animator = UIViewPropertyAnimator(duration: Self.springResponse, timingParameters: timing)
         animator.isUserInteractionEnabled = true
-        animator.addAnimations { host.container.transform = CGAffineTransform(translationX: x, y: 0) }
+        animator.addAnimations {
+            host.container.transform = CGAffineTransform(translationX: x, y: 0)
+            alongside?()
+        }
         animator.addCompletion { _ in completion() }
         animator.startAnimation()
     }
@@ -926,10 +973,20 @@ final class TerminalNSHStage {
     private func commit(_ host: Hosted, to pane: String, forward: Bool, toward x: CGFloat, velocity: CGFloat) {
         committed = (forward, CACurrentMediaTime())
         flying = host
+        // The peek of that pane lands where the terminal was.
+        let peek = self.peek?.pane == pane ? self.peek : nil
+        if peek == nil { dropPeek() }
+        landed = peek != nil
         onSwitchPane?(pane, forward)
         let done = { [weak self, weak host] in
             guard let self else { return }
-            if let host, self.hosted === host, self.drag == nil {
+            if let host, self.hosted === host, self.drag == nil, let peek, self.peek === peek, self.landed {
+                // The one terminal, switched in place: back under the peek,
+                // which lifts once the pane's screen is up.
+                host.container.transform = .identity
+                peek.superview?.bringSubviewToFront(peek)
+                self.liftPeek(over: host.coordinator)
+            } else if let host, self.hosted === host, self.drag == nil {
                 // Still this terminal: it switched in place (or the new pane
                 // isn't here yet). It comes back from the other side.
                 if self.reduceMotion {
@@ -946,8 +1003,66 @@ final class TerminalNSHStage {
             self.uncover(false)
             self.onSwiping?(false)
         }
-        guard !reduceMotion else { return done() }
-        spring(host, to: x, velocity: velocity, completion: done)
+        guard !reduceMotion else {
+            peek?.transform = .identity
+            return done()
+        }
+        spring(host, to: x, velocity: velocity, alongside: { peek?.transform = .identity }, completion: done)
+    }
+
+    // MARK: The peek
+
+    /// The peek of the pane a drag of `dx` goes to, `dx` along: beside the
+    /// terminal on the side it uncovers. None without a picture of it (the
+    /// backstage names it), or toward nothing (`dx` 0).
+    private func followPeek(dx: CGFloat, host: Hosted) {
+        guard dx != 0, let pane = neighbour(dx), let slot = host.container.superview else { return dropPeek() }
+        let rows = pictures(of: [pane], current: nil)[pane] ?? peekRows?(pane) ?? []
+        if peek?.pane != pane {
+            dropPeek()
+            guard !rows.isEmpty else { return }
+            let made = TerminalPeekView(pane: pane, from: host.surface,
+                                        ground: Self.color(appearance?.theme.backgroundHex),
+                                        ink: Self.color(appearance?.theme.foregroundHex))
+            made.isUserInteractionEnabled = false
+            slot.insertSubview(made, belowSubview: host.container)
+            peek = made
+        }
+        guard let peek else { return }
+        if !rows.isEmpty, rows != peek.rows { peek.rows = rows }
+        peek.bounds = host.container.bounds
+        peek.center = host.container.center
+        let width = slot.bounds.width
+        peek.transform = CGAffineTransform(translationX: dx + (dx < 0 ? width : -width), y: 0)
+    }
+
+    /// Lifts the landed peek once the terminal under it shows the pane's
+    /// screen: its switch veil came and went, or never came within
+    /// ``peekUnveiledFor``; at most ``peekHeldFor``.
+    private func liftPeek(over coordinator: CoreTerminalHost.Coordinator?,
+                          since: CFTimeInterval = CACurrentMediaTime(), veiled: Bool = false) {
+        guard landed, let peek else { return }
+        let age = CACurrentMediaTime() - since
+        let covered = coordinator?.isCoverPresented ?? false
+        let saw = veiled || covered
+        if (!covered && (saw || age > Self.peekUnveiledFor)) || age > Self.peekHeldFor {
+            landed = false
+            self.peek = nil
+            UIView.animate(withDuration: 0.15, delay: 0, options: [.allowUserInteraction]) {
+                peek.alpha = 0
+            } completion: { _ in peek.removeFromSuperview() }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak coordinator] in
+            self?.liftPeek(over: coordinator, since: since, veiled: saw)
+        }
+    }
+
+    /// The peek out at once.
+    private func dropPeek() {
+        landed = false
+        peek?.removeFromSuperview()
+        peek = nil
     }
 
     /// One pane on (VoiceOver's Next pane / Previous pane, a lift on a view
@@ -1270,5 +1385,51 @@ final class TerminalNSHSlot: NSHComponent {
 
     func destroy() {
         stage?.slotDestroyed(slot)
+    }
+}
+
+/// The screen of a pane either side, as the swipe brings it in: its rows
+/// as plain text in the terminal's own font, ground and cell height, laid
+/// out where that terminal lays its grid. A picture, never touched.
+final class TerminalPeekView: UIView {
+    let pane: String
+    var rows: [String] = [] { didSet { setNeedsDisplay() } }
+    private let font: UIFont
+    private let lineHeight: CGFloat
+    private let originX: CGFloat
+    private let ink: UIColor
+
+    init(pane: String, from surface: CoreTerminalView, ground: UIColor?, ink: UIColor?) {
+        self.pane = pane
+        font = surface.font
+        lineHeight = max(surface.cellSize.height, 1)
+        originX = surface.gridOriginX
+        let ground = ground ?? surface.view.backgroundColor ?? .black
+        self.ink = ink ?? Self.ink(on: ground)
+        super.init(frame: .zero)
+        backgroundColor = ground
+        contentMode = .redraw
+        accessibilityElementsHidden = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Light text on a dark ground, dark on a light one.
+    private static func ink(on ground: UIColor) -> UIColor {
+        var white: CGFloat = 0
+        var alpha: CGFloat = 0
+        ground.getWhite(&white, alpha: &alpha)
+        return white < 0.5 ? UIColor(white: 0.85, alpha: 1) : UIColor(white: 0.15, alpha: 1)
+    }
+
+    override func draw(_ rect: CGRect) {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink]
+        for (i, row) in rows.enumerated() {
+            let y = CGFloat(i) * lineHeight
+            if y > bounds.height { break }
+            guard y + lineHeight >= rect.minY, y <= rect.maxY, !row.isEmpty else { continue }
+            (row as NSString).draw(at: CGPoint(x: originX, y: y), withAttributes: attributes)
+        }
     }
 }

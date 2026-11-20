@@ -132,6 +132,7 @@ final class TerminalNSHModel {
         stage.onGround = { [weak self] ground in self?.ground = ground }
         stage.onSwiping = { [weak self] active in self?.surface?.post(["op": "swipe", "active": active]) }
         stage.onShowAll = { [weak self] in self?.surface?.post(["op": "overview", "open": true]) }
+        stage.peekRows = { [weak self] pane in self?.swipeRows[pane] }
     }
     @ObservationIgnored private weak var surface: NSHSurface?
     @ObservationIgnored private(set) var chrome: TerminalNSHChrome?
@@ -326,7 +327,11 @@ final class TerminalNSHModel {
     /// one either side.
     @ObservationIgnored private weak var snapshots: (any PaneSnapshotting)?
     /// The panes either side the swipe's strip last asked about.
-    @ObservationIgnored private var swipePanes: Set<String> = []
+    @ObservationIgnored private var swipePanes: Set<String> = [] {
+        didSet { swipeRows = swipeRows.filter { swipePanes.contains($0.key) } }
+    }
+    /// Their screens, as posted: what the swipe's peek shows.
+    @ObservationIgnored private var swipeRows: [String: [String]] = [:]
 
     func watch(snapshots control: (any PaneSnapshotting)?) {
         guard control !== snapshots else { return }
@@ -338,6 +343,7 @@ final class TerminalNSHModel {
                 _ = self.post(["op": "pictures", "panes": [pane: rows]])
             }
             if self.swipePanes.contains(pane) {
+                self.swipeRows[pane] = rows
                 _ = self.post(["op": "swipe-pictures", "panes": [pane: rows]])
             }
         }
@@ -449,6 +455,7 @@ final class TerminalNSHModel {
             guard let panes = message["panes"] as? [String] else { return nil }
             swipePanes = Set(panes)
             let pictures = stage.pictures(of: panes, current: nil)
+            swipeRows.merge(pictures) { _, new in new }
             _ = post(["op": "swipe-pictures", "panes": pictures])
             let missing = panes.filter { pictures[$0] == nil }
             if !missing.isEmpty { snapshots?.snapshotPanes(missing) }
