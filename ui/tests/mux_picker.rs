@@ -169,7 +169,7 @@ fn panes_are_their_agents_first() {
 }
 
 #[test]
-fn panes_show_their_screens_under_their_rows() {
+fn other_panes_preview_what_their_screens_say_last() {
     let (mut app, channel) = open(Params::default());
     show(
         &mut app,
@@ -177,40 +177,60 @@ fn panes_show_their_screens_under_their_rows() {
         &json!({
             "op": "picker", "kind": "panes", "mux": "tmux", "active": "%1",
             "rows": [
-                {"id": "%1", "index": 0, "command": "2.1.227", "agent": "claude", "signal": "working"},
-                {"id": "%2", "index": 1, "command": "zsh"}
+                {"id": "%1", "index": 0, "command": "zsh"},
+                {"id": "%2", "index": 1, "command": "2.1.326", "agent": "claude", "signal": "done"},
+                {"id": "%3", "index": 2, "command": "zsh"}
             ]
         }),
     );
-    app.wait_for("id:mux-picker-row-%2").unwrap();
+    app.wait_for("id:mux-picker-row-%3").unwrap();
     // Words only until the host has a screen.
-    assert!(app.screen().id("id:mux-picker-picture-%1").is_err());
+    assert!(app.screen().id("id:mux-picker-preview-%2").is_err());
+    // Claude's screen: what it said, then its input box and mode line.
+    let rule = "─".repeat(40);
     show(
         &mut app,
         &channel,
         &json!({"op": "pictures", "panes": {
-            "%1": ["dev@gpu-01:~$ claude", "", "> Allow edit to train.py?", "", ""]
+            "%1": ["dev@gpu-01:~$ make", "ok"],
+            "%2": [
+                "Fixed the duplicate upload in run_local.cjs.",
+                "",
+                "* Worked for 3m 45s · done Thursday 11:59 PM",
+                "",
+                rule, "› ", rule,
+                "  ▸▸ bypass permissions on (shift+tab to cycle)",
+                "", ""
+            ]
         }}),
     );
-    app.wait_for("id:mux-picker-picture-%1").unwrap();
+    app.wait_for("id:mux-picker-preview-%2").unwrap();
+    let texts = app.screen().texts();
+    for said in [
+        "Fixed the duplicate upload in run_local.cjs.",
+        "* Worked for 3m 45s · done Thursday 11:59 PM",
+    ] {
+        assert!(texts.contains(&said), "{said}: {texts:?}");
+    }
     assert!(
-        app.screen()
-            .texts()
-            .contains(&"dev@gpu-01:~$ claude\n\n> Allow edit to train.py?"),
-        "the screen's end, trailing blanks cut: {:?}",
-        app.screen().texts()
+        !texts.iter().any(|t| t.contains("bypass permissions")),
+        "the box it waits in is no preview: {texts:?}"
     );
-    // A later one comes on its own and keeps the first; the row still picks.
+    // The shown pane is behind the sheet: no preview of it.
+    assert!(app.screen().id("id:mux-picker-preview-%1").is_err());
+    assert!(!texts.contains(&"ok"));
+    // A later screen comes on its own and keeps the first; a row still picks.
     show(
         &mut app,
         &channel,
-        &json!({"op": "pictures", "panes": {"%2": ["dev@gpu-01:~$ ls", "data  train.py"]}}),
+        &json!({"op": "pictures", "panes": {"%3": ["dev@gpu-01:~$ ls", "data  train.py", "dev@gpu-01:~$"]}}),
     );
-    app.wait_for("id:mux-picker-picture-%2").unwrap();
-    assert!(app.screen().id("id:mux-picker-picture-%1").is_ok());
+    app.wait_for("id:mux-picker-preview-%3").unwrap();
+    assert!(app.screen().shows("data  train.py"));
+    assert!(app.screen().id("id:mux-picker-preview-%2").is_ok());
     let heard = hear(&channel);
-    app.press("id:mux-picker-row-%2").unwrap();
-    assert_eq!(next(&heard), json!({"ev": "select", "id": "%2"}));
+    app.press("id:mux-picker-row-%3").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "select", "id": "%3"}));
 }
 
 #[test]

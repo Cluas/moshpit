@@ -16,8 +16,9 @@ enum MuxPickerKind: String {
 /// pick handed back to the screen, which asks for a name (UIKit's alert
 /// with a text field, ``NSHTextPrompt``) or confirms a kill (NSH's action
 /// sheet) before the host acts. If its screen can't run, the picker says
-/// so (``NSHPageFailed``). A pane list shows each pane's screen under its
-/// row (``MuxPickerModel/showPictures(of:from:)``).
+/// so (``NSHPageFailed``). A pane list previews what the other panes'
+/// screens say last under their rows
+/// (``MuxPickerModel/showPictures(of:from:)``).
 struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
     let controller: C
     let kind: MuxPickerKind
@@ -44,11 +45,11 @@ struct MuxPickerNSHPage<C: MultiplexerControlling>: View {
                     .nshPage()
                     .onAppear {
                         show(state)
-                        if kind == .panes { model.showPictures(of: state.rows.map(\.id), from: controller) }
+                        if kind == .panes { model.showPictures(of: state.previewed, from: controller) }
                     }
                     .onChange(of: state) { _, new in
                         show(new)
-                        if kind == .panes { model.showPictures(of: new.rows.map(\.id), from: controller) }
+                        if kind == .panes { model.showPictures(of: new.previewed, from: controller) }
                     }
                     .onDisappear { model.stopPictures() }
             }
@@ -214,6 +215,12 @@ struct MuxPickerState: Equatable {
                            signal: hook?.dot(herdr: herdr))
             }
         }
+    }
+
+    /// The panes whose rows preview their screens: all but the one shown,
+    /// whose screen is behind the sheet.
+    var previewed: [String] {
+        rows.map(\.id).filter { $0 != active }
     }
 
     /// The list as the page bridge carries it.
