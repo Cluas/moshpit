@@ -44,3 +44,36 @@ fn reading_a_pane_moves_nothing() {
     assert_eq!(herdr.focused(), focused, "the focus stayed");
     assert_eq!(before, after, "the snapshot is the same after the reads");
 }
+
+/// The read the app sends (`control::pane_read`) gives the pane's screen
+/// from its top row, not the last lines of scrollback and screen together:
+/// after a clear (Claude's redraw) herdr's default source answered lines
+/// from before it, and a swipe's peek showed an older screen than the one
+/// that replaced it.
+#[test]
+#[ignore = "live: a private herdr server"]
+fn the_read_is_the_screen_after_a_clear() {
+    if !PrivateHerdr::available() {
+        eprintln!("skipped: no herdr");
+        return;
+    }
+    let herdr = PrivateHerdr::start();
+    let pane = herdr.panes()[0].clone();
+    let script = herdr.home.join("bin/paint");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\ni=0; while [ $i -lt 200 ]; do echo \"old line $i\"; i=$((i+1)); done\n\
+         printf '\\033[2J\\033[H'\nprintf 'TOP visible\\n'\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    herdr.run(&["pane", "run", &pane, "paint"]);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let command = moshpit_herdr::control::pane_read(&format!("{pane}"));
+    let args: Vec<&str> = command.split_whitespace().map(|arg| arg.trim_matches('\'')).collect();
+    let (text, code) = herdr.run(&args);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.starts_with("TOP visible"), "the screen from its top: {text:?}");
+    assert!(!text.contains("old line"), "no scrollback: {text:?}");
+}
