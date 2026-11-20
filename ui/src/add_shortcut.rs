@@ -538,7 +538,7 @@ pub fn AddShortcutScreen(props: ScreenProps) -> impl IntoElement {
             }),
             leading: Some(nav_bar::BarButton {
                 label: t!("Cancel"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "shortcut-cancel",
@@ -550,7 +550,7 @@ pub fn AddShortcutScreen(props: ScreenProps) -> impl IntoElement {
             }),
             trailing: vec![nav_bar::BarButton {
                 label: t!("Save"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Confirm,
                 enabled: can_save,
                 emphasized: true,
                 test_id: "shortcut-save",

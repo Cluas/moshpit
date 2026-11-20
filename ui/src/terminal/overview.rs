@@ -676,7 +676,7 @@ fn bar(ctx: Ctx, model: Memo<Overview>) -> AnyElement {
                 .justify_between()
                 .px(px(number("space-page")))
                 .child(capsule(ctx, window, symbol))
-                .child(nav_bar::text_button(
+                .child(nav_bar::close_button(
                     t!("Done"),
                     true,
                     "terminal-overview-done",

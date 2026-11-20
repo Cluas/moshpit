@@ -893,7 +893,7 @@ fn hub(root: View, state: State, tell: Tell, anchors: Anchors, ready: Memo<bool>
         .into_element()
     };
     let done_button: large::Build =
-        Rc::new(move || nav_bar::text_button(t!("Done"), true, "settings-done", done.clone()));
+        Rc::new(move || nav_bar::close_button(t!("Done"), true, "settings-done", done.clone()));
     root.child(crate::boundary::ready_body(
         move || ready.get(),
         body,
@@ -1305,7 +1305,7 @@ impl Ports {
     fn save_button(self) -> nav_bar::BarButton {
         nav_bar::BarButton {
             label: t!("Save"),
-            content: nav_bar::BarContent::Text,
+            content: nav_bar::BarContent::Confirm,
             enabled: computed(|| true),
             emphasized: true,
             test_id: "settings-udp-save",

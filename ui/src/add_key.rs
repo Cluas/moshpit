@@ -280,7 +280,7 @@ pub fn AddKeyScreen(props: ScreenProps) -> impl IntoElement {
                     title: nav_bar::fixed(t!("Add Key")),
                     leading: Some(nav_bar::BarButton {
                         label: t!("Cancel"),
-                        content: nav_bar::BarContent::Text,
+                        content: nav_bar::BarContent::Close,
                         enabled: computed(|| true),
                         emphasized: false,
                         test_id: "add-key-cancel",

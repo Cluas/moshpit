@@ -254,3 +254,37 @@ fn the_back_title_gives_way_to_back_then_to_the_chevron() {
     }
     channel.close();
 }
+
+/// On glass a sheet's buttons are iOS 26's own (the owner's report: Add
+/// Connection's Cancel and Save were glass capsules too big beside the
+/// title, SSH Keys' ＋ a small accent circle beside Done's capsule): one
+/// 44 pt circle each, the xmark to leave, the checkmark to keep, their
+/// words for screen readers. Below iOS 26, the words.
+#[test]
+fn on_glass_a_sheets_buttons_are_the_systems_circles() {
+    let circle = |app: &App, id: &str| {
+        let nodes = app.screen().layout_nodes();
+        let b = node(&nodes, id).unwrap_or_else(|| panic!("no {id}")).bounds;
+        assert_eq!((b.size.width.0, b.size.height.0), (44.0, 44.0), "{id}");
+    };
+    let (app, channel) = form("en", (26, 0));
+    circle(&app, "connection-form-cancel");
+    circle(&app, "save-connection");
+    assert!(!app.screen().shows("Cancel"), "{:?}", app.screen().texts());
+    for label in ["label:Cancel", "label:Save"] {
+        assert!(app.screen().matches(label).unwrap(), "{label}");
+    }
+    channel.close();
+
+    let (app, channel) = form("en", (18, 2));
+    for words in ["Cancel", "Save"] {
+        assert!(app.screen().shows(words), "{words}");
+    }
+    channel.close();
+
+    let (mut app, channel) = phone(Screen::SshKeys, "en", None, "ssh-keys", (26, 0));
+    app.wait_for("id:ssh-keys-add").unwrap();
+    circle(&app, "ssh-keys-done");
+    circle(&app, "ssh-keys-add");
+    channel.close();
+}

@@ -336,7 +336,7 @@ pub fn ThemeEditorScreen(props: ScreenProps) -> impl IntoElement {
             title: Box::new(title),
             leading: Some(nav_bar::BarButton {
                 label: t!("Cancel"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "theme-editor-cancel",
@@ -366,7 +366,7 @@ pub fn ThemeEditorScreen(props: ScreenProps) -> impl IntoElement {
                 },
                 nav_bar::BarButton {
                     label: t!("Save"),
-                    content: nav_bar::BarContent::Text,
+                    content: nav_bar::BarContent::Confirm,
                     enabled: computed(|| true),
                     emphasized: true,
                     test_id: "theme-editor-save",

@@ -303,7 +303,7 @@ fn sheet_bar(
             None,
             nav_bar::BarButton {
                 label: t!("Done"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Confirm,
                 enabled: computed(|| true),
                 emphasized: true,
                 test_id: "agent-task-done",
@@ -333,7 +333,7 @@ fn sheet_bar(
         (
             Some(nav_bar::BarButton {
                 label: t!("Cancel"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "agent-task-cancel",

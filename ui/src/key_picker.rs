@@ -168,7 +168,7 @@ pub fn KeyPickerScreen(props: ScreenProps) -> impl IntoElement {
             title: nav_bar::fixed(t!("Select Key")),
             leading: Some(nav_bar::BarButton {
                 label: t!("Cancel"),
-                content: nav_bar::BarContent::Text,
+                content: nav_bar::BarContent::Close,
                 enabled: computed(|| true),
                 emphasized: false,
                 test_id: "key-picker-cancel",

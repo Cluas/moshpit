@@ -9,8 +9,9 @@ import SwiftUI
 /// - the passphrase of a key stored behind one, and what the server asks
 ///   at sign-in beyond the password (B563): the system's alert with a
 ///   field, as NSH's alerts are the system's but have no field. A secret is
-///   typed only into the host's own field (NSH-GAPS #11). Return answers,
-///   as the card's field did.
+///   typed only into the host's own field (NSH-GAPS #11). Return answers
+///   (the field's submit: no preferred action, whose iOS 26 blue the
+///   accent can't reach), as the card's field did.
 ///
 /// They replace the SwiftUI cards (`hostKeyPromptCard`,
 /// `KeyPassphrasePromptCard`, `SignInQuestionCard`), word for word.
@@ -31,6 +32,20 @@ private struct ConnectPrompts: ViewModifier {
     @State private var secret = ""
     @State private var answer = ""
 
+    /// The passphrase's answer (Unlock, or Return in its field).
+    private func unlock(_ prompt: TerminalViewModel.KeyPassphrasePrompt) {
+        let typed = secret
+        secret = ""
+        prompt.decide(typed)
+    }
+
+    /// The question's answer (Send, or Return in its field).
+    private func send(_ question: TerminalViewModel.SignInQuestion) {
+        let typed = answer
+        answer = ""
+        question.decide(typed)
+    }
+
     func body(content: Content) -> some View {
         let key = passphrase()
         let asked = question()
@@ -43,16 +58,14 @@ private struct ConnectPrompts: ViewModifier {
                    presenting: key) { prompt in
                 SecureField(String(localized: "Passphrase"), text: $secret)
                     .accessibilityIdentifier("passphrase-field")
+                    .onSubmit { unlock(prompt) }
                 Button(String(localized: "Cancel"), role: .cancel) {
                     secret = ""
                     prompt.decide(nil)
                 }
-                Button(String(localized: "Unlock")) {
-                    let typed = secret
-                    secret = ""
-                    prompt.decide(typed)
-                }
-                .keyboardShortcut(.defaultAction)
+                // No preferred action: iOS 26 paints it its own blue under
+                // the accent's words; Return in the field answers instead.
+                Button(String(localized: "Unlock")) { unlock(prompt) }
             } message: { prompt in
                 Text(prompt.message)
             }
@@ -70,16 +83,12 @@ private struct ConnectPrompts: ViewModifier {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .accessibilityIdentifier("sign-in-answer")
+                .onSubmit { send(question) }
                 Button(String(localized: "Cancel"), role: .cancel) {
                     answer = ""
                     question.decide(nil)
                 }
-                Button(String(localized: "Send")) {
-                    let typed = answer
-                    answer = ""
-                    question.decide(typed)
-                }
-                .keyboardShortcut(.defaultAction)
+                Button(String(localized: "Send")) { send(question) }
             } message: { question in
                 Text(verbatim: question.words)
             }

@@ -377,6 +377,10 @@ pub enum IconVariant {
     /// ground) and the symbol in the accent, dimming when pressed as the
     /// system bar's buttons do.
     Bar,
+    /// A bar's confirming action (§4.18): on glass the symbol on the
+    /// accent's circle (iOS 26's prominent glass, SwiftUI's
+    /// `Button(role: .confirm)`); without glass as [`Self::Bar`].
+    BarCommit,
 }
 
 /// What a bar's button dims to while pressed (§4.18: UIKit's bar).
@@ -493,8 +497,9 @@ impl IntoElement for IconButton {
         let tone = toned.unwrap_or(match variant {
             IconVariant::Glass | IconVariant::Capsule => Tone::Foreground,
             IconVariant::Bar if glass => Tone::Foreground,
+            IconVariant::BarCommit if glass => Tone::OnPrimary,
             IconVariant::Ghost => Tone::Muted,
-            IconVariant::Tinted | IconVariant::Bar => Tone::Primary,
+            IconVariant::Tinted | IconVariant::Bar | IconVariant::BarCommit => Tone::Primary,
         });
         let mut control = nsh_base::button()
             .accessibility_label(label)
@@ -521,7 +526,7 @@ impl IntoElement for IconButton {
             )
             .focus_visible(|s| s.outline(px(2.0)).outline_color(move || token("ring")))
             .active(move |s| {
-                if variant == IconVariant::Bar && !glass {
+                if matches!(variant, IconVariant::Bar | IconVariant::BarCommit) && !glass {
                     return s.opacity(BAR_PRESSED);
                 }
                 // As the bar's capsules beside it: dimmed, not scaled.
@@ -536,7 +541,7 @@ impl IntoElement for IconButton {
                 match variant {
                     IconVariant::Ghost => s.bg(move || token("accent")),
                     // A glass circle only scales (§4.18).
-                    IconVariant::Bar => s,
+                    IconVariant::Bar | IconVariant::BarCommit => s,
                     _ => s.opacity(0.75),
                 }
             });
@@ -544,7 +549,8 @@ impl IntoElement for IconButton {
             IconVariant::Glass | IconVariant::Bar if glass => {
                 control.glass_effect(GlassEffect::Regular)
             }
-            IconVariant::Bar => control,
+            IconVariant::BarCommit if glass => control.bg(move || token("primary")),
+            IconVariant::Bar | IconVariant::BarCommit => control,
             IconVariant::Glass => control
                 .bg(move || token("chrome"))
                 .backdrop_blur(px(20.0))
