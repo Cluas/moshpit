@@ -858,7 +858,6 @@ struct TerminalScreen: View {
                 active?.viewModel.errorMessage = nil
                 reconnect()
             }
-            .keyboardShortcut(.defaultAction)
         } else {
             Button("OK") {
                 showError = false

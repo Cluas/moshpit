@@ -300,28 +300,36 @@ struct HomeView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .accessibilityIdentifier("card-input-field")
+                .onSubmit { submitCardInput(input) }
             Button("Cancel", role: .cancel) { cardModal = nil }
-            Button(input.confirmLabel) {
-                let typed = cardModalText
-                cardModal = nil
-                if let refusal = input.refuses?(typed) {
-                    var again = input
-                    again.message = Text(refusal)
-                    again.initialText = typed
-                    // Once this alert has gone: one alert at a time.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(400))
-                        cardModalText = typed
-                        cardModal = ConnectionCard.Modal(kind: .input(again))
-                    }
-                    return
-                }
-                input.apply(typed)
-            }
-            .keyboardShortcut(.defaultAction)
+            // No preferred action: iOS 26 fills it with its own blue that
+            // the accent can't reach (the accent's words on a blue capsule),
+            // as NSHTextPrompt's alerts leave it; Return submits instead.
+            Button(input.confirmLabel) { submitCardInput(input) }
         case .notice:
             Button("OK") { cardModal = nil }
         }
+    }
+
+    /// The input alert's confirm (its button, or Return in its field): a
+    /// name the multiplexer would not take as typed asks again, the reason
+    /// as its message, the text kept.
+    private func submitCardInput(_ input: ConnectionCard.InputRequest) {
+        let typed = cardModalText
+        cardModal = nil
+        if let refusal = input.refuses?(typed) {
+            var again = input
+            again.message = Text(refusal)
+            again.initialText = typed
+            // Once this alert has gone: one alert at a time.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                cardModalText = typed
+                cardModal = ConnectionCard.Modal(kind: .input(again))
+            }
+            return
+        }
+        input.apply(typed)
     }
 
     // MARK: Layouts
