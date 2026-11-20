@@ -4,7 +4,8 @@
 //! [`super::repair`]); until then tmux sends it only what changes, so a pane
 //! never visited has an empty terminal and the overview an empty card. While
 //! the overview is open it asks for those panes' screens once: one
-//! `capture-pane -p -e` per pane (the visible rows only, with their colours
+//! `capture-pane -p -e -N` per pane (the visible rows only, to their last
+//! cell, so a row's background reaches its edge, with their colours
 //! and attributes as SGR, which the overview strips and a swipe's peek
 //! draws), at most
 //! [`SNAPSHOTS_IN_FLIGHT`] at a time, the rest queued.
@@ -103,7 +104,7 @@ impl Controller {
             self.snapshots.in_flight.insert(pane.clone());
             let generation = self.snapshots.generation;
             self.send_command(
-                format!("capture-pane -p -e -t {pane}"),
+                format!("capture-pane -p -e -N -t {pane}"),
                 Reply::Snapshot { pane, generation },
             );
         }

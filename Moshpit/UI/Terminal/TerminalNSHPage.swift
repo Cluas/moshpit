@@ -884,8 +884,10 @@ enum PaneSnapshotText {
         rows.map(plain)
     }
 
+    /// `row`'s text: its escapes left out, and the blanks after its last
+    /// character (a snapshot's row runs to the pane's edge).
     nonisolated static func plain(_ row: String) -> String {
-        guard row.contains("\u{1B}") else { return row }
+        guard row.contains("\u{1B}") else { return trimmed(row) }
         var out = String.UnicodeScalarView()
         var scalars = row.unicodeScalars.makeIterator()
         while let s = scalars.next() {
@@ -907,7 +909,12 @@ enum PaneSnapshotText {
                 break
             }
         }
-        return String(out)
+        return trimmed(String(out))
+    }
+
+    private nonisolated static func trimmed(_ row: String) -> String {
+        guard row.last == " " else { return row }
+        return String(row[..<(row.lastIndex { $0 != " " }.map { row.index(after: $0) } ?? row.startIndex)])
     }
 }
 
