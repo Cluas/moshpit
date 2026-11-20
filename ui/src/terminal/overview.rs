@@ -81,7 +81,7 @@ pub const PICTURE_LINE: f32 = 5.5;
 pub const PICTURE_ROWS: usize = 24;
 /// Wide enough for any row at [`PICTURE_TEXT`]: a row is cut by its cell,
 /// never wrapped.
-const PICTURE_WIDTH: f32 = 1200.0;
+pub const PICTURE_WIDTH: f32 = 1200.0;
 
 /// One pane of a window.
 #[derive(Debug, Clone, PartialEq)]

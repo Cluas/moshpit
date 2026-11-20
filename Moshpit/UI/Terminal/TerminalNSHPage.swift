@@ -432,6 +432,14 @@ final class TerminalNSHModel {
             // drops an answer once that pane's live screen has come.
             snapshots?.snapshotPanes(panes)
             return nil
+        case "swipe-pictures":
+            // The screens of the panes either side, for the strip a swipe
+            // uncovers: only the terminals the stage already keeps (each
+            // pane's on a tmux attach; none but the shown one's on mosh or
+            // herdr, whose neighbours stay words). Never a snapshot.
+            guard let panes = message["panes"] as? [String] else { return nil }
+            _ = post(["op": "swipe-pictures", "panes": stage.pictures(of: panes, current: nil)])
+            return nil
         case "swipe-hint":
             // Shown once on this device; the terminal leans toward the pane
             // a swipe would go to.

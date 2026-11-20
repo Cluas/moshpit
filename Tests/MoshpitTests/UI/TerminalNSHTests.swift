@@ -473,9 +473,9 @@ struct TerminalNSHTests {
     // MARK: On a real surface
 
     /// What the terminal's chrome tells the host without a press
-    /// (`ui/src/terminal/mod.rs`'s `Intent::Anchor`, `Neighbours` and the
-    /// one-time `SwipeHint`).
-    static let reports: Set<String> = ["anchor", "neighbours", "swipe-hint"]
+    /// (`ui/src/terminal/mod.rs`'s `Intent::Anchor`, `Neighbours`, the
+    /// one-time `SwipeHint` and `SwipePictures`, the neighbours' screens).
+    static let reports: Set<String> = ["anchor", "neighbours", "swipe-hint", "swipe-pictures"]
 
     @Test("on a real surface: the chrome draws, its slot is the stage's, and a press reaches the host")
     func realSurface() async throws {

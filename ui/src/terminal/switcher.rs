@@ -17,6 +17,10 @@
 //!   its state ("2 / 7 · trainer · claude · Needs you · 3m"). It never
 //!   moves: the terminal moving away reveals it, so nothing crosses the
 //!   bridge per frame.
+//!   Over the words, the end of that pane's screen as tiny text, as the
+//!   overview draws it ([`ask_pictures`]): the host reads it from the
+//!   terminals it keeps, so a tmux attach shows every neighbour's and a
+//!   mosh or herdr session, which keeps only the shown pane's, stays words.
 //! - The dots ([`dots`]): under the top bar, one group per window, the
 //!   current pane a wider pill, a pane that needs you amber. They show on
 //!   entry, when the pane changes and while a swipe lasts, then go after
@@ -29,14 +33,15 @@
 //! A session with one pane shows none of it, and the host gets no
 //! neighbour: no swipe, no rubber band hinting at more.
 
-use std::{rc::Rc, time::Duration as Timer};
+use std::{collections::HashMap, rc::Rc, time::Duration as Timer};
 
-use nsh_core::prelude::*;
+use nsh_core::{EllipsizeMode, LineHeight, prelude::*};
 
 use super::{
     Ctx, Intent,
     cover::chrome_text,
     model::{Content, CoverKind},
+    overview::{PICTURE_LINE, PICTURE_TEXT, PICTURE_WIDTH, picture_rows},
 };
 use crate::{
     home::model::{
@@ -339,6 +344,32 @@ pub(crate) fn tell_neighbours(ctx: &Ctx, order: Memo<Order>) {
     });
 }
 
+/// Asks the host for the screens of the panes either side: when they
+/// change, and again as each swipe starts (what they show now). The host
+/// answers for the panes whose terminal it keeps (a tmux attach has one
+/// per pane; a mosh or herdr session only the one it shows), so on those
+/// the strip stays words.
+pub(crate) fn ask_pictures(ctx: &Ctx, order: Memo<Order>) {
+    let swiping = ctx.swiping;
+    let asked = stored(None::<Vec<String>>);
+    let ctx = ctx.clone();
+    effect(move || {
+        let starting = swiping.get();
+        let view = in_view(&ctx);
+        let (previous, next) = order.with(|o| neighbours(o, view));
+        let panes: Vec<String> = previous.into_iter().chain(next).collect();
+        let changed = asked.with(|a| a.as_ref() != Some(&panes));
+        if panes.is_empty() || !(changed || starting) {
+            if panes.is_empty() {
+                asked.replace(Some(panes));
+            }
+            return;
+        }
+        asked.replace(Some(panes.clone()));
+        untracked(|| ctx.ask(Intent::SwipePictures(panes)));
+    });
+}
+
 /// `make()` while `visible()`, fading in and out (instant under reduced
 /// motion), mounted only while it shows or fades out.
 pub(crate) fn appearing(
@@ -402,6 +433,7 @@ pub(crate) fn appearing_ms(
 /// the terminal's own actions (Next pane, Previous pane).
 pub(crate) fn backstage(ctx: Ctx, order: Memo<Order>) -> AnyElement {
     let swiping = ctx.swiping;
+    let pictures = ctx.swipe_pictures;
     view()
         .absolute()
         .inset_0()
@@ -418,20 +450,27 @@ pub(crate) fn backstage(ctx: Ctx, order: Memo<Order>) -> AnyElement {
             let _ = swiping.get();
             let (at, of, stop) =
                 order.with(|o| (o.current.unwrap_or(0), o.stops.len(), o.previous().cloned()));
-            untracked(move || side(stop, at, of, false))
+            untracked(move || side(stop, at, of, false, pictures))
         }))
         .child(dynamic(move || {
             let _ = swiping.get();
             let (at, of, stop) =
                 order.with(|o| (o.current.unwrap_or(0) + 2, o.stops.len(), o.next().cloned()));
-            untracked(move || side(stop, at, of, true))
+            untracked(move || side(stop, at, of, true, pictures))
         }))
         .into_element()
 }
 
-/// One side of the backstage: where the pane it names sits in the order
-/// (1-based), its window, what runs in it, its state.
-fn side(stop: Option<Stop>, at: usize, of: usize, next: bool) -> AnyElement {
+/// One side of the backstage: the end of its screen when the host has it
+/// ([`thumbnail`]), where the pane it names sits in the order (1-based),
+/// its window, what runs in it, its state.
+fn side(
+    stop: Option<Stop>,
+    at: usize,
+    of: usize,
+    next: bool,
+    pictures: Signal<HashMap<String, Vec<String>>>,
+) -> AnyElement {
     let Some(stop) = stop else {
         return view().into_element();
     };
@@ -456,6 +495,7 @@ fn side(stop: Option<Stop>, at: usize, of: usize, next: bool) -> AnyElement {
         }
     };
     column = column
+        .child(thumbnail(stop.pane.clone(), next, pictures))
         .child(
             line(
                 "muted-foreground",
@@ -481,6 +521,73 @@ fn side(stop: Option<Stop>, at: usize, of: usize, next: bool) -> AnyElement {
         );
     }
     column.into_element()
+}
+
+/// A thumbnail's box, as wide as the strip's words, and the room its
+/// screen has inside.
+pub const THUMB_WIDTH: f32 = 140.0;
+pub const THUMB_HEIGHT: f32 = 120.0;
+const THUMB_INSET: f32 = 6.0;
+
+/// How many of a screen's rows a thumbnail shows.
+pub fn thumb_rows() -> usize {
+    ((THUMB_HEIGHT - 2.0 * THUMB_INSET) / PICTURE_LINE).floor() as usize
+}
+
+/// Pane `pane`'s thumbnail over its words: the end of its screen as tiny
+/// text, the overview's picture ([`picture_rows`]), on the card's fill;
+/// nothing (the words alone) until the host has its screen, which a mosh
+/// or herdr session's other panes never do. Decorative.
+fn thumbnail(
+    pane: String,
+    next: bool,
+    pictures: Signal<HashMap<String, Vec<String>>>,
+) -> AnyElement {
+    let rows = computed(move || {
+        pictures.with(|p| {
+            p.get(&pane)
+                .map(|rows| picture_rows(rows, thumb_rows()))
+                .unwrap_or_default()
+        })
+    });
+    let id = if next {
+        "terminal-backstage-next-thumb"
+    } else {
+        "terminal-backstage-previous-thumb"
+    };
+    dynamic(move || {
+        let rows = rows.get();
+        if rows.is_empty() {
+            return view().into_element();
+        }
+        let lines = rows.len() as u32;
+        view()
+            .w(px(THUMB_WIDTH))
+            .h(px(THUMB_HEIGHT))
+            .mb(px(8.0))
+            .p(px(THUMB_INSET))
+            .overflow_hidden()
+            .rounded(px(number("radius")))
+            .border_curve(BorderCurve::Continuous)
+            .bg(move || token("card"))
+            .border(px(1.0))
+            .border_color(move || token("border"))
+            .justify_end()
+            .test_id(id)
+            .child(
+                text(rows.join("\n"))
+                    .w(px(PICTURE_WIDTH))
+                    .font_family("monospace")
+                    .text_size(px(PICTURE_TEXT))
+                    .line_height(LineHeight::Points(px(PICTURE_LINE)))
+                    .allow_font_scaling(false)
+                    .number_of_lines(lines)
+                    .text_overflow(EllipsizeMode::Clip)
+                    .text_color(move || token("muted-foreground")),
+            )
+            .into_element()
+    })
+    .into_element()
 }
 
 /// The dots under the top bar while the pane changed or a swipe lasts.
