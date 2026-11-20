@@ -581,6 +581,15 @@ final class SessionHub {
             return fresh
         }
 
+        /// Run `command` on the host over the session's own connection (the
+        /// side channel the re-check uses): its output, or nil when the
+        /// connection isn't up or the command couldn't run.
+        func runOnHost(_ command: String) async -> String? {
+            guard let rust, let host = try? await rust.side.ready(),
+                  let output = try? await host.executeCommand(command) else { return nil }
+            return String(data: output, encoding: .utf8)
+        }
+
         /// Create the FIRST tmux session on a server that has none, on the
         /// Rust core (B228): made detached on the session's own connection,
         /// and the waiting control client attaches it.

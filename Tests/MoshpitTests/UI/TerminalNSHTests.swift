@@ -64,6 +64,7 @@ struct TerminalNSHTests {
             .returnPath(typed: false, route: "viaJump", ports: "60000–61000"),
             .roam(srtt: 182.5, history: [100, 182.5]), .roam(srtt: nil, history: []),
             .degrade(.tmux), .degrade(.herdr), .degrade(.moshServer),
+            .degrade(.moshServer, installing: true),
         ] {
             var state = chrome()
             state.banner = banner

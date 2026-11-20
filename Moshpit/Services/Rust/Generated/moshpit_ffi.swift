@@ -31735,6 +31735,31 @@ public func hostSetupDemoReply(scenario: String, command: String, relay: String)
 })
 }
 /**
+ * The shell command that prints `busy` while the host runs an install of
+ * the plan's packages, `idle` otherwise (`AssistPlan::installer_probe`):
+ * the app reconnects only once the installer is done. None for herdr.
+ */
+public func installAssistInstallerProbe(packages: [String], tmux: Bool, packageManager: String?) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_install_assist_installer_probe(
+        FfiConverterSequenceString.lower(packages),
+        FfiConverterBool.lower(tmux),
+        FfiConverterOptionString.lower(packageManager),$0
+    )
+})
+}
+/**
+ * Whether [`install_assist_installer_probe`]'s output says an installer
+ * runs.
+ */
+public func installAssistInstallerRunning(output: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_moshpit_ffi_fn_func_install_assist_installer_running(
+        FfiConverterString.lower(output),$0
+    )
+})
+}
+/**
  * `{"op": "install", …}` for the NSH sheet; `result` as
  * [`install_assist_recheck`] names it.
  */
@@ -32529,6 +32554,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_host_setup_demo_reply() != 15291) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_install_assist_installer_probe() != 59921) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_func_install_assist_installer_running() != 21816) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_func_install_assist_message() != 57040) {

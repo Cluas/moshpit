@@ -931,6 +931,7 @@
   "Network changed. mosh is reconnecting.": "網路換了，mosh 正在接上。",
   "%@ isn't installed here, so this is a plain shell.": "這台主機沒裝 %@，現在是一般 shell。",
   "mosh-server isn't installed here, so this is SSH.": "這台主機沒裝 mosh-server，現在走 SSH。",
+  "Installing. Moshpit reconnects on its own when it's done.": "正在安裝，裝好後會自動重新連線。",
   "Install…": "安裝…",
   "This window is sized for %@.": "這個視窗按 %@ 的尺寸顯示。",
   "Use this %@'s size": "改用這台 %@ 的尺寸",

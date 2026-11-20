@@ -931,6 +931,7 @@
   "Network changed. mosh is reconnecting.": "Netzwerk gewechselt. mosh verbindet neu.",
   "%@ isn't installed here, so this is a plain shell.": "%@ ist hier nicht installiert, das ist eine einfache Shell.",
   "mosh-server isn't installed here, so this is SSH.": "mosh-server ist hier nicht installiert, die Verbindung läuft über SSH.",
+  "Installing. Moshpit reconnects on its own when it's done.": "Wird installiert. Moshpit verbindet sich danach von selbst neu.",
   "Install…": "Installieren …",
   "This window is sized for %@.": "Dieses Fenster hat die Größe des %@.",
   "Use this %@'s size": "Größe dieses %@ verwenden",

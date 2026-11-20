@@ -45,6 +45,9 @@ pub(crate) enum Kind {
     ReturnPath,
     Roam,
     Degrade(Missing),
+    /// A degrade whose package is being installed: nothing to ask, the
+    /// host reconnects when it is in.
+    Installing,
 }
 
 impl Kind {
@@ -52,7 +55,10 @@ impl Kind {
         match banner {
             BannerModel::ReturnPath { .. } => Kind::ReturnPath,
             BannerModel::Roam { .. } => Kind::Roam,
-            BannerModel::Degrade { missing } => Kind::Degrade(*missing),
+            BannerModel::Degrade {
+                installing: true, ..
+            } => Kind::Installing,
+            BannerModel::Degrade { missing, .. } => Kind::Degrade(*missing),
         }
     }
 }
@@ -113,6 +119,7 @@ pub(crate) fn banner_words(
         Kind::Degrade(Missing::MoshServer) => {
             t!("mosh-server isn't installed here, so this is SSH.")
         }
+        Kind::Installing => t!("Installing. Moshpit reconnects on its own when it's done."),
     }
 }
 
@@ -231,6 +238,11 @@ fn banner_view(kind: Kind, current: Memo<Option<Kind>>, ctx: Ctx) -> AnyElement 
             .on_close(ctx.asking(Intent::BannerDismiss))
             .close_test_id("host-banner-dismiss")
             .test_id("host-banner"),
+        Kind::Installing => banner(BannerTone::Info, words)
+            .icon("arrow.down.circle")
+            .on_close(ctx.asking(Intent::BannerDismiss))
+            .close_test_id("host-banner-dismiss")
+            .test_id("host-banner-installing"),
         Kind::Roam => banner(BannerTone::Info, words)
             .icon("antenna.radiowaves.left.and.right")
             .test_id("roam-banner"),

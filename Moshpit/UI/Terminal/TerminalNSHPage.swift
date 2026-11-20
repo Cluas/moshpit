@@ -708,7 +708,9 @@ struct TerminalNSHChrome: Equatable {
         /// the UDP range, as Settings says it.
         case returnPath(typed: Bool, route: String? = nil, ports: String = "")
         case roam(srtt: Double?, history: [Double])
-        case degrade(DegradeNotice.Missing)
+        /// `installing`: the host is installing what's missing; the screen
+        /// reconnects on its own once it's in (``TerminalScreen``'s watch).
+        case degrade(DegradeNotice.Missing, installing: Bool = false)
     }
 
     struct Notice: Equatable {
@@ -825,13 +827,13 @@ struct TerminalNSHChrome: Equatable {
             var json: [String: Any] = ["kind": "roam", "history": history]
             if let srtt { json["srtt"] = srtt }
             return json
-        case .degrade(let missing):
+        case .degrade(let missing, let installing):
             let name = switch missing {
             case .tmux: "tmux"
             case .herdr: "herdr"
             case .moshServer: "moshServer"
             }
-            return ["kind": "degrade", "missing": name]
+            return ["kind": "degrade", "missing": name, "installing": installing]
         }
     }
 }
