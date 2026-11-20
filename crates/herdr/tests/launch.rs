@@ -131,9 +131,7 @@ fn the_loop_is_one_line_waits_for_a_target_and_records_the_attach_pid() {
     // stderr goes nowhere (bash's "Killed: 9" lifted the switch veil on the
     // pane being left), and the pane being left is wiped as its attach ends.
     assert!(line.starts_with("mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; "));
-    assert!(line.contains(&format!(
-        "fi; r=0; printf \"\\033[0m\\033[H\\033[2J\"; if [ $s -lt 128 ]"
-    )));
+    assert!(line.contains(&"fi; r=0; printf \"\\033[0m\\033[H\\033[2J\"; if [ $s -lt 128 ]".to_string()));
     // The re-attach pause is small but not zero.
     assert!(line.contains("sleep 0.05"));
     assert!(!line.contains("sleep 0.3"));

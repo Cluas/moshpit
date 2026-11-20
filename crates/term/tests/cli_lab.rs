@@ -404,13 +404,13 @@ fn check_steady(rec: &Rec, p: &Play) -> Result<(), String> {
             ));
         }
         best = best.max(got);
-        if let (Some((col, row)), true) = (s.shown.cursor, got > 0) {
-            if row as usize != r {
-                bad.push(format!(
-                    "frame {i} ({} keys): cursor at row {row} col {col}, input row {r}",
-                    s.keys
-                ));
-            }
+        if let (Some((col, row)), true) = (s.shown.cursor, got > 0)
+            && row as usize != r
+        {
+            bad.push(format!(
+                "frame {i} ({} keys): cursor at row {row} col {col}, input row {r}",
+                s.keys
+            ));
         }
     }
     if bad.is_empty() {
@@ -469,13 +469,13 @@ fn check_predicted(rec: &Rec, plain: &Play, mode: PredictMode) -> Result<(), Str
                 ));
             }
         }
-        if let (Some((col, row)), Some(r0)) = (q.shown.cursor, r0) {
-            if row as usize != r0 {
-                bad.push(format!(
-                    "frame {i} ({} keys): predicted cursor at row {row} col {col}, input row {r0}",
-                    s.keys
-                ));
-            }
+        if let (Some((col, row)), Some(r0)) = (q.shown.cursor, r0)
+            && row as usize != r0
+        {
+            bad.push(format!(
+                "frame {i} ({} keys): predicted cursor at row {row} col {col}, input row {r0}",
+                s.keys
+            ));
         }
     }
     if bad.is_empty() {

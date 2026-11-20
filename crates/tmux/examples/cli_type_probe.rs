@@ -204,12 +204,11 @@ impl Drop for Live {
 
 thread_local! {
     /// The core's answers on their way back, each with when it lands.
-    static PENDING: std::cell::RefCell<Vec<(Instant, Vec<u8>)>> = std::cell::RefCell::new(Vec::new());
+    static PENDING: std::cell::RefCell<Vec<(Instant, Vec<u8>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Run `ms`, feeding the pane's new bytes to the core and sending its
 /// replies back as the app does.
-
 fn run_core(
     live: &mut Live,
     t: &mut Terminal,

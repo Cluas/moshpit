@@ -70,7 +70,7 @@ fn the_read_is_the_screen_after_a_clear() {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     herdr.run(&["pane", "run", &pane, "paint"]);
     std::thread::sleep(std::time::Duration::from_millis(1500));
-    let command = moshpit_herdr::control::pane_read(&format!("{pane}"));
+    let command = moshpit_herdr::control::pane_read(&pane.to_string());
     let args: Vec<&str> = command.split_whitespace().map(|arg| arg.trim_matches('\'')).collect();
     let (text, code) = herdr.run(&args);
     assert_eq!(code, 0, "{text}");
