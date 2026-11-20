@@ -20,7 +20,7 @@ fn attached() -> Rig {
     rig.answered = rig.answered.max(3);
     // The shown window's backfill and repaint, answered.
     rig.respond(Box::new(|command, _| {
-        if command.starts_with("capture-pane -p -e -t ") {
+        if command.starts_with("capture-pane -p -e -N -t ") {
             return None;
         }
         ok(["0 0"])
@@ -37,7 +37,7 @@ fn panes(list: &[&str]) -> Vec<String> {
 fn asked(rig: &Rig) -> Vec<String> {
     rig.commands
         .iter()
-        .filter_map(|c| c.strip_prefix("capture-pane -p -e -t "))
+        .filter_map(|c| c.strip_prefix("capture-pane -p -e -N -t "))
         .map(str::to_owned)
         .collect()
 }
@@ -55,7 +55,7 @@ fn snapshots(rig: &Rig) -> Vec<(String, Vec<String>)> {
 /// Answers every snapshot asked with its pane's screen.
 fn answer_screens(rig: &mut Rig) {
     rig.respond(Box::new(|command, _| {
-        let pane = command.strip_prefix("capture-pane -p -e -t ")?;
+        let pane = command.strip_prefix("capture-pane -p -e -N -t ")?;
         ok([format!("screen of {pane}"), "$ ".to_owned()])
     }));
     rig.settle();
@@ -116,7 +116,7 @@ fn a_snapshot_dropped_because_the_live_screen_came_first() {
     rig.with(|c, now| c.select_window("@1", now));
     rig.drain();
     assert!(
-        rig.has("capture-pane -p -e -t %2"),
+        rig.has("capture-pane -p -e -N -t %2"),
         "the repaint goes out at once: {:?}",
         rig.commands
     );
@@ -160,7 +160,7 @@ fn closing_the_overview_leaves_nothing_asked_or_waited_for() {
     assert!(
         rig.since(before)
             .iter()
-            .all(|c| c.starts_with("capture-pane -p -e -t ")),
+            .all(|c| c.starts_with("capture-pane -p -e -N -t ")),
         "{:?}",
         rig.since(before)
     );
@@ -170,7 +170,7 @@ fn closing_the_overview_leaves_nothing_asked_or_waited_for() {
 fn a_refused_snapshot_says_nothing_and_the_queue_moves_on() {
     let mut rig = attached();
     rig.respond(Box::new(|command, _| {
-        let pane = command.strip_prefix("capture-pane -p -e -t ")?;
+        let pane = command.strip_prefix("capture-pane -p -e -N -t ")?;
         if pane == "%2" {
             return moshpit_tmux::rig::err(["can't find pane: %2"]);
         }

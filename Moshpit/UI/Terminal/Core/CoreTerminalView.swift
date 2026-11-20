@@ -1228,7 +1228,9 @@ final class CoreTerminalView: UIView {
         // No wrap (a row wider than this grid is cut, not pushed on to the
         // next), no cursor; the rows from the top, as the pane shows them.
         // tmux carries the SGR state from one row to the next: no reset.
-        let text = "\u{1B}[?7l\u{1B}[?25l" + screen.prefix(count).joined(separator: "\r\n")
+        // Each row from the default look: a snapshot's row may leave its
+        // colours set at its end.
+        let text = "\u{1B}[?7l\u{1B}[?25l" + screen.prefix(count).map { "\u{1B}[m" + $0 }.joined(separator: "\r\n")
         let bytes = Array(text.utf8)
         bytes.withUnsafeBufferPointer { buffer in
             if let base = buffer.baseAddress { mp_term_feed(scratch, base, buffer.count) }
