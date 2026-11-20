@@ -1017,13 +1017,21 @@ final class TerminalNSHStage {
     /// backstage names it), or toward nothing (`dx` 0).
     private func followPeek(dx: CGFloat, host: Hosted) {
         guard dx != 0, let pane = neighbour(dx), let slot = host.container.superview else { return dropPeek() }
-        let rows = pictures(of: [pane], current: nil)[pane] ?? peekRows?(pane) ?? []
+        // The pane's own terminal, when it has one, draws its picture: its
+        // colours, glyphs and ground, as it looks shown. Plain rows (a pane
+        // only read) take the live terminal's ground and ink.
+        let surface = paneSurface(pane)
+        let rows = surface == nil ? (peekRows?(pane) ?? []) : []
         if peek?.pane != pane {
             dropPeek()
-            guard !rows.isEmpty else { return }
-            let made = TerminalPeekView(pane: pane, from: host.surface,
-                                        ground: Self.color(appearance?.theme.backgroundHex),
-                                        ink: Self.color(appearance?.theme.foregroundHex))
+            let made: TerminalPeekView
+            if let surface {
+                made = TerminalPeekView(pane: pane, picture: surface.picture(size: host.container.bounds.size),
+                                        ground: surface.ground)
+            } else {
+                guard !rows.isEmpty else { return }
+                made = TerminalPeekView(pane: pane, from: host.surface)
+            }
             made.isUserInteractionEnabled = false
             slot.insertSubview(made, belowSubview: host.container)
             peek = made
@@ -1118,6 +1126,13 @@ final class TerminalNSHStage {
     /// anything: each pane's own terminal on a tmux attach; on a mosh or
     /// herdr session only the pane it shows (`current`), from its one
     /// terminal.
+    /// Pane `pane`'s own terminal, if the stage's controller has one
+    /// already (a tmux attach's panes): what a swipe's peek draws.
+    private func paneSurface(_ pane: String) -> CoreTerminalView? {
+        guard let target, !target.frozen, case .pane(let controller, _) = target.source else { return nil }
+        return controller.existingSurface(for: pane)
+    }
+
     func pictures(of panes: [String], current: String?) -> [String: [String]] {
         guard let target, !target.frozen else { return [:] }
         var pictures: [String: [String]] = [:]
@@ -1398,14 +1413,32 @@ final class TerminalPeekView: UIView {
     private let lineHeight: CGFloat
     private let originX: CGFloat
     private let ink: UIColor
+    /// The pane's own terminal's picture: drawn instead of `rows`.
+    private let picture: UIImage?
 
-    init(pane: String, from surface: CoreTerminalView, ground: UIColor?, ink: UIColor?) {
+    /// Plain rows in the live terminal's font, ground and ink: what that
+    /// terminal shows its default text in, so the two match.
+    init(pane: String, from surface: CoreTerminalView) {
         self.pane = pane
         font = surface.font
         lineHeight = max(surface.cellSize.height, 1)
         originX = surface.gridOriginX
-        let ground = ground ?? surface.view.backgroundColor ?? .black
-        self.ink = ink ?? Self.ink(on: ground)
+        ink = UIColor(cgColor: coreCGColor(surface.style.foreground))
+        picture = nil
+        super.init(frame: .zero)
+        backgroundColor = surface.ground
+        contentMode = .redraw
+        accessibilityElementsHidden = true
+    }
+
+    /// The pane's terminal as it draws itself (``CoreTerminalView/picture(size:)``).
+    init(pane: String, picture: UIImage, ground: UIColor) {
+        self.pane = pane
+        font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        lineHeight = 1
+        originX = 0
+        ink = .label
+        self.picture = picture
         super.init(frame: .zero)
         backgroundColor = ground
         contentMode = .redraw
@@ -1415,15 +1448,11 @@ final class TerminalPeekView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// Light text on a dark ground, dark on a light one.
-    private static func ink(on ground: UIColor) -> UIColor {
-        var white: CGFloat = 0
-        var alpha: CGFloat = 0
-        ground.getWhite(&white, alpha: &alpha)
-        return white < 0.5 ? UIColor(white: 0.85, alpha: 1) : UIColor(white: 0.15, alpha: 1)
-    }
-
     override func draw(_ rect: CGRect) {
+        if let picture {
+            picture.draw(at: .zero)
+            return
+        }
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink]
         for (i, row) in rows.enumerated() {
             let y = CGFloat(i) * lineHeight

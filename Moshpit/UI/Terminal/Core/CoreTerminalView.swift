@@ -1194,6 +1194,20 @@ final class CoreTerminalView: UIView {
 
     // MARK: Pictures
 
+    /// The ground the terminal shows around and under its text (its
+    /// default background, or what its edges are painted, B495).
+    var ground: UIColor { UIColor(cgColor: coreCGColor(style.outside)) }
+
+    /// What the terminal holds now, drawn `size` big as it would draw there
+    /// (its colours, glyphs, images and ground; no cursor): a swipe's peek
+    /// of a pane not shown. A pane off screen is still framed (its wakes),
+    /// so its rows are current.
+    func picture(size: CGSize) -> UIImage {
+        let renderer = CoreTermCGRenderer(metrics: metrics, style: style)
+        let x = Self.gridOrigin(width: size.width, cols: rows.cols, cellWidth: metrics.width, scale: metrics.scale)
+        return renderer.image(of: rows, size: size, xOffset: x, yOffset: renderShift, cursorShown: false)
+    }
+
     /// A still picture of the terminal as it shows (the keyboard cover).
     func snapshot() -> UIView {
         let renderer = CoreTermCGRenderer(metrics: metrics, style: style)
