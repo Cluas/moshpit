@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "Todos os painéis do tmux e do herdr numa tela só."
+      "title": "Qualquer janela ou painel, a um toque."
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "Todas as janelas e painéis numa tela só."
+      "title": "Troque de janela sem sair do terminal."
     },
     {
       "shot": "home-terminal",

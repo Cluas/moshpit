@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "tmuxもherdrも、ペインをまとめて見渡せる"
+      "title": "ウィンドウもペインも、タップひとつで切り替え"
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "ウィンドウもペインも、ひと画面で"
+      "title": "ターミナルのまま、ウィンドウを切り替え"
     },
     {
       "shot": "home-terminal",

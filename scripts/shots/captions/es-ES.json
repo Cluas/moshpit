@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "Todos los paneles de tmux y herdr en una pantalla."
+      "title": "Cualquier ventana o panel, a un toque."
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "Todas las ventanas y paneles en una pantalla."
+      "title": "Cambia de ventana sin salir de la terminal."
     },
     {
       "shot": "home-terminal",

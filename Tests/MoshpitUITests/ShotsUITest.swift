@@ -196,17 +196,6 @@ final class ShotsUITest: XCTestCase {
         print("SHOTS debug \(locale.name) \(shot):\n\(app.debugDescription.prefix(8000))")
     }
 
-    /// The first of `ids` to show within `timeout`, if one does.
-    @MainActor
-    private func first(_ app: XCUIApplication, of ids: [String], within timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if ids.contains(where: { app.nsh($0).exists }) { return true }
-            Thread.sleep(forTimeInterval: 0.5)
-        } while Date() < deadline
-        return false
-    }
-
     // MARK: Waiting
 
     /// Waits for `element` to be enabled (a breadcrumb segment is inert
@@ -320,11 +309,10 @@ final class ShotsUITest: XCTestCase {
         }
     }
 
-    /// 05 (and the iPad's panes): the pane overview, every window of the
-    /// session as a card, the split one with its three panes. On iPad it
-    /// opens in the landscape split view's detail column beside Home's
-    /// sidebar rather than in a standalone phone stack. A tap on the window
-    /// segment opens it once the tree is live.
+    /// 05 (and the iPad's panes): the windows' quick list, opened from the
+    /// breadcrumb's window segment once the tree is live: each window with
+    /// its panes, what runs there and its state. On iPad it hangs over the
+    /// landscape split view's detail column beside Home's sidebar.
     @MainActor
     func test05Overview() throws {
         let seed: [String]
@@ -347,37 +335,18 @@ final class ShotsUITest: XCTestCase {
             let ready = Self.phone ? waitLive(app, locale) : openPadSplitTerminal(app, locale)
             guard ready else { app.terminate(); continue }
             let shot = Self.phone ? "05-overview" : "panes"
-            // The page, its bar's Done or its summary: whichever the tree
-            // shows (dry run 4 waited on the page's own id and saw nothing).
-            let page = ["terminal-overview", "terminal-overview-done", "terminal-overview-summary",
-                        "terminal-overview-scroll"]
-            // Each pane visited once, so the overview has a picture of each
-            // (it draws the panes the app has shown; dry run 5's build and
-            // review cards were empty): the sideways swipe walks the
-            // session's ten panes and back to the one that asked.
-            let area = app.nsh("terminal-pane-area")
-            for _ in 0..<9 { area.swipeLeft(); settle(1.2) }
-            for _ in 0..<9 { area.swipeRight(); settle(0.8) }
             if !Self.phone, !app.nsh("home-needs-you").exists {
                 app.nsh("terminal-sidebar").tap()
                 settle(0.6)
             }
+            // The breadcrumb's window segment opens the windows' quick
+            // list (12ed49d8): the shot is that list over the terminal. The
+            // pane grid is ⌘K's and VoiceOver's only, so it isn't shown.
             app.nsh("terminal-crumb-window").tap()
-            // Dry run 5: the overview opens (its debug shot shows it) but
-            // isn't in the accessibility tree yet, so its ids can't be
-            // waited on. Kept after its opening's time either way; the log
-            // says which.
-            let seen = first(app, of: page, within: 4)
-            print("SHOTS overview \(locale.name): \(seen ? "its ids showed" : "kept without its ids (not in the accessibility tree)")")
             settle(1.5)
             if !Self.phone {
                 let sidebar = app.nsh("home-needs-you")
                 XCTAssertTrue(sidebar.exists, "\(locale.name): Home's sidebar left the split view on panes")
-                let sessionPill = app.nsh("terminal-overview-session")
-                if sessionPill.exists {
-                    XCTAssertGreaterThan(sessionPill.frame.minX, sidebar.frame.maxX,
-                                         "\(locale.name): the overview \(sessionPill.frame) is under the sidebar \(sidebar.frame)")
-                }
             }
             keep(locale, shot)
             app.terminate()

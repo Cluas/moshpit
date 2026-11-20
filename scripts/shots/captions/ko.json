@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "tmux, herdr 패널을 한 화면에"
+      "title": "창도 패널도 탭 한 번으로 전환"
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "모든 창과 패널을 한 화면에"
+      "title": "터미널을 떠나지 않고 창 전환"
     },
     {
       "shot": "home-terminal",

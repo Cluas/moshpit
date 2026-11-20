@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "Every tmux and herdr pane at a glance."
+      "title": "Any window or pane, one tap away."
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "Every window and pane on one screen."
+      "title": "Switch windows without leaving the terminal."
     },
     {
       "shot": "home-terminal",

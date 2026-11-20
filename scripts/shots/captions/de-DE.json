@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "Alle tmux- und herdr-Panels auf einem Bildschirm."
+      "title": "Jedes Fenster, jedes Panel: ein Tipp entfernt."
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "Alle Fenster und Panels auf einem Bildschirm."
+      "title": "Fenster wechseln, ohne das Terminal zu verlassen."
     },
     {
       "shot": "home-terminal",

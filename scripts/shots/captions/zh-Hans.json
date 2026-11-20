@@ -19,7 +19,7 @@
     },
     {
       "shot": "05-overview",
-      "title": "tmux、herdr 的窗格，一屏看全"
+      "title": "切窗口、切窗格，点一下就到"
     },
     {
       "shot": "06-preview",
@@ -37,7 +37,7 @@
   "ipad": [
     {
       "shot": "panes",
-      "title": "所有窗口和窗格，一屏看全"
+      "title": "不离开终端，点一下切窗口"
     },
     {
       "shot": "home-terminal",
