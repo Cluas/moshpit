@@ -169,6 +169,51 @@ fn panes_are_their_agents_first() {
 }
 
 #[test]
+fn panes_show_their_screens_under_their_rows() {
+    let (mut app, channel) = open(Params::default());
+    show(
+        &mut app,
+        &channel,
+        &json!({
+            "op": "picker", "kind": "panes", "mux": "tmux", "active": "%1",
+            "rows": [
+                {"id": "%1", "index": 0, "command": "2.1.227", "agent": "claude", "signal": "working"},
+                {"id": "%2", "index": 1, "command": "zsh"}
+            ]
+        }),
+    );
+    app.wait_for("id:mux-picker-row-%2").unwrap();
+    // Words only until the host has a screen.
+    assert!(app.screen().id("id:mux-picker-picture-%1").is_err());
+    show(
+        &mut app,
+        &channel,
+        &json!({"op": "pictures", "panes": {
+            "%1": ["dev@gpu-01:~$ claude", "", "> Allow edit to train.py?", "", ""]
+        }}),
+    );
+    app.wait_for("id:mux-picker-picture-%1").unwrap();
+    assert!(
+        app.screen()
+            .texts()
+            .contains(&"dev@gpu-01:~$ claude\n\n> Allow edit to train.py?"),
+        "the screen's end, trailing blanks cut: {:?}",
+        app.screen().texts()
+    );
+    // A later one comes on its own and keeps the first; the row still picks.
+    show(
+        &mut app,
+        &channel,
+        &json!({"op": "pictures", "panes": {"%2": ["dev@gpu-01:~$ ls", "data  train.py"]}}),
+    );
+    app.wait_for("id:mux-picker-picture-%2").unwrap();
+    assert!(app.screen().id("id:mux-picker-picture-%1").is_ok());
+    let heard = hear(&channel);
+    app.press("id:mux-picker-row-%2").unwrap();
+    assert_eq!(next(&heard), json!({"ev": "select", "id": "%2"}));
+}
+
+#[test]
 fn a_rename_asks_and_a_cleared_or_unchanged_name_renames_nothing() {
     let (mut app, channel) = open(Params::default());
     let heard = hear(&channel);

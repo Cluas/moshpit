@@ -23,6 +23,10 @@
 //!   page asks for the new name (the host's text prompt, [`super::prompt`])
 //!   or confirms the kill (NSH's action sheet) before telling the host.
 //!
+//! A pane list shows each pane's screen under its row: the host posts the
+//! screens it has, and each one it reads later, as `{"op": "pictures",
+//! "panes": {id: [rows]}}` (the overview's pictures, [`super::overview`]).
+//!
 //! The list opens on the active row (centered once, as `ScrollViewReader`
 //! does; a later refresh never moves it).
 //!
@@ -32,15 +36,16 @@
 //! in words in its color (§2.2: never color alone), the active row ticked
 //! and selected; the hint and the multiplexer's keys under it.
 
-use std::{rc::Rc, sync::Arc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
-use nsh_core::prelude::*;
+use nsh_core::{EllipsizeMode, LineHeight, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{
     folder::symbol,
     model::{Mux, Signal as AgentSignal},
+    overview::picture_rows,
     prompt::{Answer, Prompt, Prompts},
 };
 use crate::{
@@ -141,6 +146,14 @@ pub enum Message {
     Act { action: Act, id: String },
     /// `{"op": "prompted", "id", "text"}`: the host's prompt answered.
     Prompted(Answer),
+    /// `{"op": "pictures", "panes": {id: [rows]}}`: panes' screens.
+    Pictures(HashMap<String, Vec<String>>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PicturesFields {
+    panes: HashMap<String, Vec<String>>,
 }
 
 impl Message {
@@ -161,6 +174,9 @@ impl Message {
                 .map_err(error),
             "prompted" => serde_json::from_value(fields)
                 .map(Message::Prompted)
+                .map_err(error),
+            "pictures" => serde_json::from_value::<PicturesFields>(fields)
+                .map(|p| Message::Pictures(p.panes))
                 .map_err(error),
             other => Err(format!("mux-picker: no op {other:?}")),
         }
@@ -571,6 +587,7 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
     let bar = BarMetrics::or_standard(channel.as_ref().and_then(|c| c.params().bar));
     let picker = signal(Picker::default());
     let ready = signal(false);
+    let pictures = signal(HashMap::<String, Vec<String>>::new());
     let tell = tell_host(channel.clone());
     let prompts = Prompts::default();
     {
@@ -588,6 +605,14 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
                 }
                 Message::Act { action, id } => act(action, &id, picker, &tell, &prompts),
                 Message::Prompted(answer) => prompts.answer(answer),
+                Message::Pictures(panes) => {
+                    let changed = pictures.with_untracked(|p| {
+                        panes.iter().any(|(pane, rows)| p.get(pane) != Some(rows))
+                    });
+                    if changed {
+                        pictures.update(|p| p.extend(panes));
+                    }
+                }
             },
         );
     }
@@ -625,7 +650,7 @@ pub fn MuxPickerScreen(props: ScreenProps) -> impl IntoElement {
             let rows = dynamic(move || {
                 let now = picker.get();
                 let (tell, new) = (tell.clone(), new.clone());
-                untracked(move || rows_section(&now, list, revealed, tell, new))
+                untracked(move || rows_section(&now, list, revealed, tell, new, pictures))
             });
             let foot = dynamic(move || {
                 let (kind, mux) = (kind.get(), mux.get());
@@ -752,6 +777,7 @@ fn rows_section(
     revealed: Stored<bool>,
     tell: Tell,
     new: Rc<dyn Fn()>,
+    pictures: Signal<HashMap<String, Vec<String>>>,
 ) -> AnyElement {
     let vocab = Vocab::of(picker.mux);
     let mut card = section().test_id("mux-picker-rows");
@@ -780,6 +806,9 @@ fn rows_section(
                 .value(signal_label(signal))
                 .value_tone(signal_tone(signal))
                 .value_dot(signal_status(signal));
+        }
+        if picker.kind == Kind::Panes && picker.send.is_none() {
+            item = item.below(pane_picture(row.id.clone(), pictures));
         }
         let inset = item.inset();
         let target = element_ref();
@@ -825,6 +854,62 @@ fn rows_section(
         card = card.item(item, inset);
     }
     card.into_element()
+}
+
+/// How many of a pane's rows its picture in the list shows, and their size.
+pub const PANE_PICTURE_ROWS: usize = 10;
+const PANE_PICTURE_TEXT: f32 = 7.0;
+const PANE_PICTURE_LINE: f32 = 8.5;
+const PANE_PICTURE_INSET: f32 = 8.0;
+
+/// Pane `pane`'s screen under its row: the end of it as small text on the
+/// terminal's ground (the overview's picture, [`picture_rows`]); nothing
+/// until the host has it. Decorative (the row says its words).
+fn pane_picture(pane: String, pictures: Signal<HashMap<String, Vec<String>>>) -> AnyElement {
+    let id = format!("mux-picker-picture-{pane}");
+    let rows = computed(move || {
+        pictures.with(|p| {
+            p.get(&pane)
+                .map(|rows| picture_rows(rows, PANE_PICTURE_ROWS))
+                .unwrap_or_default()
+        })
+    });
+    dynamic(move || {
+        let rows = rows.get();
+        if rows.is_empty() {
+            return view().into_element();
+        }
+        let lines = rows.len() as u32;
+        view()
+            .w_full()
+            .h(px(
+                PANE_PICTURE_ROWS as f32 * PANE_PICTURE_LINE + 2.0 * PANE_PICTURE_INSET
+            ))
+            .mt(px(8.0))
+            .p(px(PANE_PICTURE_INSET))
+            .overflow_hidden()
+            .rounded(px(number("radius")))
+            .border_curve(BorderCurve::Continuous)
+            .bg(move || token("background"))
+            .border(px(1.0))
+            .border_color(move || token("border"))
+            .justify_end()
+            .pointer_events(PointerEvents::None)
+            .test_id(&id)
+            .child(
+                text(rows.join("\n"))
+                    .w(px(1200.0))
+                    .font_family("monospace")
+                    .text_size(px(PANE_PICTURE_TEXT))
+                    .line_height(LineHeight::Points(px(PANE_PICTURE_LINE)))
+                    .allow_font_scaling(false)
+                    .number_of_lines(lines)
+                    .text_overflow(EllipsizeMode::Clip)
+                    .text_color(move || token("muted-foreground")),
+            )
+            .into_element()
+    })
+    .into_element()
 }
 
 /// Under the card: the hint, and the multiplexer's keys at the trailing
