@@ -122,6 +122,18 @@ def clis(port, home, work):
                    "model": model, "hasChangedDefaultModel": False, "network": {"useHttp1ForAgent": True}},
                   open(os.path.join(d, "cli-config.json"), "w"))
 
+    def setup_opencode():
+        # A custom OpenAI-compatible provider on fake_model.py: no login, a
+        # real streamed reply. No update check, no sharing, only this provider.
+        d = os.path.join(home, ".config", "opencode")
+        os.makedirs(d, exist_ok=True)
+        json.dump({"$schema": "https://opencode.ai/config.json", "autoupdate": False, "share": "disabled",
+                   "model": "lab/lab-model", "small_model": "lab/lab-model", "enabled_providers": ["lab"],
+                   "provider": {"lab": {"npm": "@ai-sdk/openai-compatible", "name": "lab",
+                                        "options": {"baseURL": base + "/v1", "apiKey": key},
+                                        "models": {"lab-model": {"name": "lab-model"}}}}},
+                  open(os.path.join(d, "opencode.json"), "w"))
+
     return {
         "qoder": ([node, f"{CLISRC}/qoder-ai-qodercli-1.1.92/package/bundle/qodercli.js"],
                   {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": base + "/v1", "OPENAI_MODEL": "lab-model"}, setup_qoder),
@@ -144,6 +156,13 @@ def clis(port, home, work):
         # keychain (see CLI-LAB.md); the endpoint is fake_model.py.
         "cursor": ([f"{CLISRC}/cursor-agent-2025.09.18-lab/cursor-agent", "-e", base],
                    {"CURSOR_API_ENDPOINT": base, "CURSOR_API_KEY": key}, setup_cursor),
+        # The native binary from npm `opencode-ai`, installed under CLISRC.
+        "opencode": ([f"{CLISRC}/opencode/node_modules/opencode-darwin-arm64/bin/opencode"],
+                     {"XDG_DATA_HOME": f"{home}/.local/share", "XDG_CACHE_HOME": f"{home}/.cache",
+                      "XDG_STATE_HOME": f"{home}/.local/state", "OPENCODE_DISABLE_AUTOUPDATE": "1",
+                      "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_LSP_DOWNLOAD": "1",
+                      "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1", "OPENCODE_DISABLE_CLAUDE_CODE": "1",
+                      "OPENCODE_DISABLE_EXTERNAL_SKILLS": "1", "npm_config_registry": "http://127.0.0.1:9/"}, setup_opencode),
         "copilot": ([shutil.which("copilot") or "copilot"], {}, None),
         # A plain shell: the lab's control (readline echo, no redraws).
         "shell": (["/bin/sh"], {"PS1": "$ "}, None),

@@ -422,8 +422,9 @@ fn check_steady(rec: &Rec, p: &Play) -> Result<(), String> {
 
 /// From the first key to the end (the reply streaming in included), a
 /// visible cursor is on an input row: a row that starts with the prompt
-/// (the box may move). A frame with the cursor anywhere else is the cursor
-/// jumping: a state taken while the CLI was redrawing.
+/// (the box may move, and its indent may change). A frame with the cursor
+/// anywhere else is the cursor jumping: a state taken while the CLI was
+/// redrawing.
 fn check_cursor(rec: &Rec, p: &Play) -> Result<(), String> {
     let inp = input_of(rec, p)?;
     let mut bad = vec![];
@@ -432,7 +433,9 @@ fn check_cursor(rec: &Rec, p: &Play) -> Result<(), String> {
             continue;
         };
         let line = s.shown.rows.get(row as usize).map_or("", String::as_str);
-        if !line.starts_with(inp.prompt.trim_end()) {
+        // Indent aside: OpenCode's box is centred (3 columns in) on its
+        // start page, and 2 columns in once the session view takes over.
+        if !line.trim_start().starts_with(inp.prompt.trim()) {
             bad.push(format!(
                 "frame {i} ({} keys): cursor at row {row} col {col}: {line:?}",
                 s.keys
@@ -664,6 +667,24 @@ lab!(cursor_mosh_tmux_final, "cursor-mosh-tmux", Final);
 lab!(cursor_mosh_tmux_typed, "cursor-mosh-tmux", Typed);
 lab!(cursor_mosh_tmux_steady, "cursor-mosh-tmux", Steady);
 lab!(cursor_mosh_tmux_predicted, "cursor-mosh-tmux", Predicted);
+lab!(opencode_tmux_final, "opencode-tmux", Final);
+lab!(opencode_tmux_typed, "opencode-tmux", Typed);
+lab!(opencode_tmux_steady, "opencode-tmux", Steady);
+lab!(opencode_ssh_final, "opencode-ssh", Final);
+lab!(opencode_ssh_typed, "opencode-ssh", Typed);
+lab!(opencode_ssh_steady, "opencode-ssh", Steady);
+lab!(opencode_mosh_final, "opencode-mosh", Final);
+lab!(opencode_mosh_typed, "opencode-mosh", Typed);
+lab!(opencode_mosh_steady, "opencode-mosh", Steady);
+lab!(opencode_mosh_predicted, "opencode-mosh", Predicted);
+lab!(opencode_mosh_tmux_final, "opencode-mosh-tmux", Final);
+lab!(opencode_mosh_tmux_typed, "opencode-mosh-tmux", Typed);
+lab!(opencode_mosh_tmux_steady, "opencode-mosh-tmux", Steady);
+lab!(
+    opencode_mosh_tmux_predicted,
+    "opencode-mosh-tmux",
+    Predicted
+);
 // A visible cursor stays on the input row while the CLI answers.
 lab!(claude_tmux_cursor, "claude-tmux", Cursor);
 lab!(claude_mosh_cursor, "claude-mosh", Cursor);
@@ -678,6 +699,10 @@ lab!(cursor_tmux_cursor, "cursor-tmux", Cursor);
 lab!(cursor_ssh_cursor, "cursor-ssh", Cursor);
 lab!(cursor_mosh_cursor, "cursor-mosh", Cursor);
 lab!(cursor_mosh_tmux_cursor, "cursor-mosh-tmux", Cursor);
+lab!(opencode_tmux_cursor, "opencode-tmux", Cursor);
+lab!(opencode_ssh_cursor, "opencode-ssh", Cursor);
+lab!(opencode_mosh_cursor, "opencode-mosh", Cursor);
+lab!(opencode_mosh_tmux_cursor, "opencode-mosh-tmux", Cursor);
 // Codex inside tmux over Moshpit's own transport (`-rs`, recorded with
 // mosh_harness) and a 500 ms round trip, a long streamed answer.
 lab!(
@@ -725,6 +750,10 @@ const ALL: &[&str] = &[
     "cursor-ssh",
     "cursor-mosh",
     "cursor-mosh-tmux",
+    "opencode-tmux",
+    "opencode-ssh",
+    "opencode-mosh",
+    "opencode-mosh-tmux",
     "codex-mosh-tmux-rtt500-rs",
 ];
 
