@@ -85,6 +85,14 @@ struct TerminalScreen: View {
     }
     /// Packages to offer in the Install Assist sheet; non-nil presents it.
     @State private var installPackages: [String]?
+    /// Install Assist's command was run or copied (counted, so each restarts
+    /// ``watchInstall()``'s longer watch); `installRan`: run from the sheet,
+    /// so the banner says it's installing at once.
+    @State private var installAsked = 0
+    @State private var installRan = false
+    /// The host is installing what the degraded session lacks: the banner
+    /// says so, and the screen reconnects once it's in.
+    @State private var installing = false
     /// Pane claimed from `router.paneRequest` for this connection, captured
     /// (and cleared from the router) the moment it's observed — before tmux
     /// may even be attached yet to act on it. Retrying against this local
@@ -601,6 +609,10 @@ struct TerminalScreen: View {
         }
         // A protocol switch is over once the new session's frame is
         // uncovered: its picture goes, motion comes back.
+        .task(id: InstallWatch(session: activeIdentity, degraded: active?.degrade != nil,
+                               asked: installAsked)) {
+            await watchInstall()
+        }
         .task(id: active?.herdrControl?.retryDeadline) {
             // The banner's countdown (B490): a tick a second until it ends.
             while let deadline = active?.herdrControl?.retryDeadline, deadline > Date() {
@@ -699,7 +711,12 @@ struct TerminalScreen: View {
         }
         .appSheet(item: installTargetBinding) { target in
             if let active {
-                InstallAssistNSHPage(session: active, packages: target.packages, onReconnect: { reconnect() })
+                InstallAssistNSHPage(session: active, packages: target.packages,
+                                     onReconnect: { reconnect() },
+                                     onInstallStarted: { ran in
+                                         installRan = ran || installRan
+                                         installAsked += 1
+                                     })
             }
         }
         .photosPicker(isPresented: $photoPickerPresented,
@@ -865,6 +882,60 @@ struct TerminalScreen: View {
                 leave()
             }
         }
+    }
+
+    /// What ``watchInstall()`` runs for: a new session, a degrade come or
+    /// gone, the command run or copied again starts it over.
+    private struct InstallWatch: Hashable {
+        let session: ObjectIdentifier?
+        let degraded: Bool
+        let asked: Int
+    }
+
+    /// While the session runs without what it asked for (no tmux, no
+    /// mosh-server), watch the host for its install — Install Assist's
+    /// command, run from the sheet or typed by hand — and once the
+    /// installer has exited and the packages are there (twice running, so
+    /// a package manager's last steps are done), reconnect at full feature
+    /// on its own: nobody disconnects and connects again. A host never seen
+    /// installing, with Install Assist's command never run or copied, is
+    /// only watched: no reconnect the person didn't ask for. Runs as long as
+    /// an install may take (30 minutes once asked, 10 otherwise); the
+    /// banner's ✕ (no degrade any more) or leaving the screen ends it.
+    private func watchInstall() async {
+        installing = false
+        guard let session = active, let notice = session.degrade else { return }
+        let plan = InstallAssistPlan(session: session, packages: notice.packages)
+        var asked = installAsked > 0
+        installing = asked && installRan
+        let deadline = Date().addingTimeInterval(asked ? 30 * 60 : 10 * 60)
+        var resolvedOnce = false
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(asked ? 3 : 5))
+            guard !Task.isCancelled, active === session, session.degrade != nil else { return }
+            if await plan.installerRunning() == true {
+                asked = true
+                installing = true
+                resolvedOnce = false
+                continue
+            }
+            guard asked, !Task.isCancelled else { continue }
+            guard await plan.recheck() == .resolved else {
+                resolvedOnce = false
+                continue
+            }
+            if resolvedOnce {
+                guard !Task.isCancelled, active === session else { return }
+                installing = false
+                installAsked = 0
+                installRan = false
+                installPackages = nil
+                reconnect()
+                return
+            }
+            resolvedOnce = true
+        }
+        installing = false
     }
 
     /// Tear down and re-run the start flow at full feature — used after the
@@ -1754,7 +1825,7 @@ extension TerminalScreen {
         } else if metrics?.isRoaming == true {
             chrome.banner = .roam(srtt: metrics?.srttMs, history: metrics?.srttHistory ?? [])
         } else if let notice = active?.degrade {
-            chrome.banner = .degrade(notice.missing)
+            chrome.banner = .degrade(notice.missing, installing: installing)
         }
         let multiplexer = active?.tmuxControl?.notice ?? active?.herdrNotice
         if let text = Self.shownNotice(multiplexer: multiplexer.map(herdrNoticeText), flashed: flashNotice) {

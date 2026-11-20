@@ -787,6 +787,25 @@ fn the_banner_says_what_is_wrong_and_offers_its_remedy() {
     );
     app.press("id:host-banner-install").unwrap();
     assert_eq!(next_intent(&heard), json!({"ev": "banner-action"}));
+    // Being installed: nothing to ask, the host reconnects once it's in.
+    show(
+        &mut app,
+        &channel,
+        &with(
+            chrome(),
+            json!({"banner": {"kind": "degrade", "missing": "tmux", "installing": true}}),
+        ),
+    );
+    app.wait_for("id:host-banner-installing").unwrap();
+    assert!(
+        app.screen()
+            .shows("Installing. Moshpit reconnects on its own when it's done."),
+        "{:?}",
+        app.screen().texts()
+    );
+    assert!(app.screen().id("id:host-banner-install").is_err());
+    app.press("id:host-banner-dismiss").unwrap();
+    assert_eq!(next_intent(&heard), json!({"ev": "banner-dismiss"}));
     show(
         &mut app,
         &channel,

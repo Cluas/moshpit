@@ -38,6 +38,17 @@ struct InstallAssistPlan {
         return Recheck(rawValue: answer) ?? .noChannel
     }
 
+    /// Whether the host is running an install of the plan's packages (the
+    /// core's `ps` probe): reconnecting mid-install would hang the
+    /// installer up with the old shell. Nil when the host couldn't be
+    /// asked, or for herdr, whose `curl … | sh` can't be told apart.
+    func installerRunning() async -> Bool? {
+        guard let probe = installAssistInstallerProbe(packages: packages, tmux: tmux,
+                                                      packageManager: manager),
+              let output = await session.runOnHost(probe) else { return nil }
+        return installAssistInstallerRunning(output: output)
+    }
+
     /// The NSH sheet's message (`{"op": "install", …}`), the core's.
     func message(rechecking: Bool, result: Recheck?, copied: Bool) -> String {
         installAssistMessage(packages: packages, tmux: tmux, packageManager: manager,
@@ -62,6 +73,9 @@ struct InstallAssistNSHPage: View {
     let session: SessionHub.ActiveSession
     let packages: [String]
     let onReconnect: () -> Void
+    /// The command was run (true) or copied (false): the screen watches the
+    /// host and reconnects on its own once the install is done.
+    let onInstallStarted: (_ ran: Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var model = InstallAssistNSHModel()
@@ -96,12 +110,16 @@ struct InstallAssistNSHPage: View {
         case .done:
             dismiss()
         case .run:
-            if let command = plan.command { plan.run(command) }
+            if let command = plan.command {
+                plan.run(command)
+                onInstallStarted(true)
+            }
             dismiss()
         case .copy:
             if let command = plan.command {
                 UIPasteboard.general.string = command
                 copied = true
+                onInstallStarted(false)
             }
         case .recheck:
             guard !rechecking else { return }

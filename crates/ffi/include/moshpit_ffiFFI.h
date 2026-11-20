@@ -2552,6 +2552,16 @@ RustBuffer uniffi_moshpit_ffi_fn_func_host_setup_demo_pairing(RustBuffer relay, 
 RustBuffer uniffi_moshpit_ffi_fn_func_host_setup_demo_reply(RustBuffer scenario, RustBuffer command, RustBuffer relay, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_INSTALLER_PROBE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_INSTALLER_PROBE
+RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_installer_probe(RustBuffer packages, int8_t tmux, RustBuffer package_manager, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_INSTALLER_RUNNING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_INSTALLER_RUNNING
+int8_t uniffi_moshpit_ffi_fn_func_install_assist_installer_running(RustBuffer output, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_FN_FUNC_INSTALL_ASSIST_MESSAGE
 RustBuffer uniffi_moshpit_ffi_fn_func_install_assist_message(RustBuffer packages, int8_t tmux, RustBuffer package_manager, int8_t rechecking, RustBuffer result, int8_t copied, RustCallStatus *_Nonnull out_status
@@ -3414,6 +3424,18 @@ uint16_t uniffi_moshpit_ffi_checksum_func_host_setup_demo_pairing(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_SETUP_DEMO_REPLY
 #define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_HOST_SETUP_DEMO_REPLY
 uint16_t uniffi_moshpit_ffi_checksum_func_host_setup_demo_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_INSTALLER_PROBE
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_INSTALLER_PROBE
+uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_installer_probe(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_INSTALLER_RUNNING
+#define UNIFFI_FFIDEF_UNIFFI_MOSHPIT_FFI_CHECKSUM_FUNC_INSTALL_ASSIST_INSTALLER_RUNNING
+uint16_t uniffi_moshpit_ffi_checksum_func_install_assist_installer_running(void
     
 );
 #endif

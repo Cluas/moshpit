@@ -326,7 +326,14 @@ pub enum Banner {
         history: Vec<f64>,
     },
     /// The session runs at less than asked (`HostBannerView`).
-    Degrade { missing: Missing },
+    /// `installing`: the missing package is being installed (the host saw
+    /// the installer run, or the person ran Install Assist's command); the
+    /// host reconnects on its own once it is in.
+    Degrade {
+        missing: Missing,
+        #[serde(default)]
+        installing: bool,
+    },
 }
 
 /// A transient notice from the multiplexer (a failed command, herdr's
@@ -621,7 +628,8 @@ mod tests {
         assert_eq!(
             chrome.banner,
             Some(Banner::Degrade {
-                missing: Missing::MoshServer
+                missing: Missing::MoshServer,
+                installing: false,
             })
         );
         assert!(serde_json::from_str::<Chrome>(r#"{"colour":1}"#).is_err());

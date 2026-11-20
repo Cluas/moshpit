@@ -605,6 +605,25 @@ pub fn install_assist_recheck(
     recheck_name(plan.recheck(caps.as_ref())).to_owned()
 }
 
+/// The shell command that prints `busy` while the host runs an install of
+/// the plan's packages, `idle` otherwise (`AssistPlan::installer_probe`):
+/// the app reconnects only once the installer is done. None for herdr.
+#[uniffi::export]
+pub fn install_assist_installer_probe(
+    packages: Vec<String>,
+    tmux: bool,
+    package_manager: Option<String>,
+) -> Option<String> {
+    AssistPlan::new(&packages, tmux, manager(package_manager)).installer_probe()
+}
+
+/// Whether [`install_assist_installer_probe`]'s output says an installer
+/// runs.
+#[uniffi::export]
+pub fn install_assist_installer_running(output: String) -> bool {
+    AssistPlan::installer_running(&output)
+}
+
 fn recheck_name(recheck: Recheck) -> &'static str {
     match recheck {
         Recheck::Resolved => "resolved",

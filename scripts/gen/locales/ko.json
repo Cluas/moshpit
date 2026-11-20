@@ -931,6 +931,7 @@
   "Network changed. mosh is reconnecting.": "네트워크가 바뀌었습니다. mosh가 다시 연결하는 중입니다.",
   "%@ isn't installed here, so this is a plain shell.": "이 호스트에 %@이(가) 없어 일반 셸로 열었습니다.",
   "mosh-server isn't installed here, so this is SSH.": "이 호스트에 mosh-server가 없어 SSH로 연결했습니다.",
+  "Installing. Moshpit reconnects on its own when it's done.": "설치 중입니다. 끝나면 Moshpit이 알아서 다시 연결합니다.",
   "Install…": "설치…",
   "This window is sized for %@.": "이 창은 %@ 크기에 맞춰져 있습니다.",
   "Use this %@'s size": "이 %@ 크기로 바꾸기",
