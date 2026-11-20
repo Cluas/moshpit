@@ -48,8 +48,8 @@ use super::{
 use crate::ui::{
     bubble::{Tail, speech_toward},
     button::{Size, Variant, button},
-    motion::Duration as Motion,
     companion::{Figure, companion},
+    motion::Duration as Motion,
     section::{Inset, section},
     tokens::token,
     typography::TextToken,
@@ -367,7 +367,10 @@ pub(crate) fn on(ctx: Ctx, at: Perch, child: AnyElement) -> AnyElement {
         .z_index(move || if here.get() && moving.get() { 2 } else { 0 })
         .on_layout(move |b: &Bounds<Points>| width.set(b.size.width.0))
         .child(child)
-        .child(when(move || here.get(), move || perched(ctx.clone(), width)))
+        .child(when(
+            move || here.get(),
+            move || perched(ctx.clone(), width),
+        ))
         .into_element()
 }
 
@@ -404,18 +407,20 @@ impl Drag {
             return;
         }
         drop(self.lift.spring(HELD_SCALE, settle()));
-        drop(self.sway.keyframes(
-            [
-                Keyframe::new(0.0),
-                Keyframe::new(SWAY),
-                Keyframe::new(0.0),
-                Keyframe::new(-SWAY),
-                Keyframe::new(0.0),
-            ],
-            KeyframeTiming::new(SWAY_MS)
-                .easing(Easing::EaseInOut)
-                .infinite(),
-        ));
+        drop(
+            self.sway.keyframes(
+                [
+                    Keyframe::new(0.0),
+                    Keyframe::new(SWAY),
+                    Keyframe::new(0.0),
+                    Keyframe::new(-SWAY),
+                    Keyframe::new(0.0),
+                ],
+                KeyframeTiming::new(SWAY_MS)
+                    .easing(Easing::EaseInOut)
+                    .infinite(),
+            ),
+        );
     }
 
     /// Let go `x` across and `y` down from its place: it crawls to `to`
@@ -443,16 +448,14 @@ impl Drag {
         drop(self.x.timing(to, ms, Easing::Linear));
         drop(self.crawl.timing(0.0, ms, Easing::Linear));
         let steps = (ms / STEP_MS).round().max(1.0);
-        drop(self.hop.keyframes(
-            [
-                Keyframe::new(0.0),
-                Keyframe::new(-HOP),
-                Keyframe::new(0.0),
-            ],
-            KeyframeTiming::new(ms / steps)
-                .easing(Easing::EaseInOut)
-                .iterations(Some(steps as u32)),
-        ));
+        drop(
+            self.hop.keyframes(
+                [Keyframe::new(0.0), Keyframe::new(-HOP), Keyframe::new(0.0)],
+                KeyframeTiming::new(ms / steps)
+                    .easing(Easing::EaseInOut)
+                    .iterations(Some(steps as u32)),
+            ),
+        );
         ms
     }
 
@@ -491,14 +494,20 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
         let pet = pet.clone();
         computed(move || pet.spot())
     };
-    // It sits where it was put, on this card's width; not while it's held
-    // or crawling (the crawl ends there).
+    // Where it sits, in layout (so its taps and drags land where it is
+    // drawn: hit-testing outside the card follows layout, not the drag's
+    // translation): where it was put, unless it is held or crawling (the
+    // crawl ends there). `drag.x` is the way from there, 0 at rest.
+    let rest = signal(spot.get_untracked());
     effect(move || {
-        let at = x_of(spot.get(), width.get());
+        let at = spot.get();
         if !moving.get_untracked() {
-            drag.x.set(at);
+            rest.set(at);
         }
     });
+    // Off only while it crawls (the crawl moves `x`); held, the pan must
+    // stay on, or turning it off ends the drag it is in.
+    let crawling = signal(false);
     let start = move |_: &PanEvent| {
         moving.set(true);
         drag.pick_up();
@@ -510,13 +519,23 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
             let x = event.value_x.unwrap_or(0.0);
             let y = event.value_y.unwrap_or(0.0);
             let w = width.get_untracked();
-            let was = spot.get_untracked();
-            let to_spot = if event.cancelled { was } else { spot_at(x, w) };
+            let was = rest.get_untracked();
+            let from = x_of(was, w);
+            let to_spot = if event.cancelled {
+                was
+            } else {
+                spot_at(from + x, w)
+            };
             pet.dropped.set(Some(to_spot));
-            let ms = drag.crawl_to(x, y, x_of(to_spot, w));
+            crawling.set(true);
+            let ms = drag.crawl_to(x, y, x_of(to_spot, w) - from);
             let pet = pet.clone();
             let tell = tell.clone();
             let arrived = move || {
+                // It holds on there: its place moves under it.
+                rest.set(to_spot);
+                drag.x.set(0.0);
+                crawling.set(false);
                 moving.set(false);
                 drag.hold_on();
                 if let Some(look) = pet.view.get_untracked().as_ref().and_then(look) {
@@ -549,10 +568,10 @@ fn perched(ctx: Ctx, width: Signal<f32>) -> AnyElement {
     target(ctx, Some(drag))
         .absolute()
         .top(px(-ABOVE))
-        .right(px(FROM_END))
+        .right(move || px(FROM_END - x_of(rest.get(), width.get())))
         .z_index(1)
         .pan_values(Some(&drag.x), Some(&drag.held))
-        .pan_enabled(move || !moving.get())
+        .pan_enabled(move || !crawling.get())
         .on_pan_start(start)
         .on_pan_end(end)
         .bind_translate_x(&drag.x)
@@ -1049,7 +1068,11 @@ mod tests {
     #[test]
     fn it_crawls_back_at_a_pace_not_a_wait() {
         assert_eq!(crawl_ms(0.0), 0.0, "already there");
-        assert_eq!(crawl_ms(10.0), CRAWL_MIN_MS, "a short way is still a few steps");
+        assert_eq!(
+            crawl_ms(10.0),
+            CRAWL_MIN_MS,
+            "a short way is still a few steps"
+        );
         assert!((crawl_ms(130.0) - 500.0).abs() < 1e-3);
         assert_eq!(crawl_ms(5_000.0), CRAWL_MAX_MS);
     }
