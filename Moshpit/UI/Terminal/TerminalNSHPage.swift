@@ -320,18 +320,26 @@ final class TerminalNSHModel {
         show("preview", panel)
     }
 
-    /// The session's tmux or herdr control, for the overview's snapshots of
-    /// panes not shown (B751): each one, while the overview is open, posted
-    /// as that pane's picture.
+    /// The session's tmux or herdr control, for the snapshots of panes not
+    /// shown (B751): each one posted as that pane's picture, to the overview
+    /// while it is open, and to the swipe's strip while that pane is still
+    /// one either side.
     @ObservationIgnored private weak var snapshots: (any PaneSnapshotting)?
+    /// The panes either side the swipe's strip last asked about.
+    @ObservationIgnored private var swipePanes: Set<String> = []
 
     func watch(snapshots control: (any PaneSnapshotting)?) {
         guard control !== snapshots else { return }
         snapshots?.onPaneSnapshot = nil
         snapshots = control
         control?.onPaneSnapshot = { [weak self] pane, rows in
-            guard let self, self.overviewOpen else { return }
-            _ = self.post(["op": "pictures", "panes": [pane: rows]])
+            guard let self else { return }
+            if self.overviewOpen {
+                _ = self.post(["op": "pictures", "panes": [pane: rows]])
+            }
+            if self.swipePanes.contains(pane) {
+                _ = self.post(["op": "swipe-pictures", "panes": [pane: rows]])
+            }
         }
     }
 
@@ -434,11 +442,16 @@ final class TerminalNSHModel {
             return nil
         case "swipe-pictures":
             // The screens of the panes either side, for the strip a swipe
-            // uncovers: only the terminals the stage already keeps (each
-            // pane's on a tmux attach; none but the shown one's on mosh or
-            // herdr, whose neighbours stay words). Never a snapshot.
+            // uncovers: the terminals the stage already keeps (each pane's
+            // on a tmux attach), then a snapshot of each the stage has no
+            // screen for (mosh or herdr, or a pane never shown), the same
+            // the overview asks for. Each answer comes as its own message.
             guard let panes = message["panes"] as? [String] else { return nil }
-            _ = post(["op": "swipe-pictures", "panes": stage.pictures(of: panes, current: nil)])
+            swipePanes = Set(panes)
+            let pictures = stage.pictures(of: panes, current: nil)
+            _ = post(["op": "swipe-pictures", "panes": pictures])
+            let missing = panes.filter { pictures[$0] == nil }
+            if !missing.isEmpty { snapshots?.snapshotPanes(missing) }
             return nil
         case "swipe-hint":
             // Shown once on this device; the terminal leans toward the pane
