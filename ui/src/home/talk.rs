@@ -185,7 +185,7 @@ impl Edges {
             .flat_map(|c| model::agent_rows(c, fallback))
             .map(|a| ((a.connection, a.pane), (a.state, a.since)))
             .collect();
-        let at = perch(connections, fallback);
+        let at = perch(connections, fallback, None);
         let cue = if self.primed {
             self.cue(connections, fallback, &agents, at.as_ref(), now)
         } else {

@@ -6416,6 +6416,13 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     func setCloud(cloud: PetCloudHost?) 
     
     /**
+     * The card the person put it on on Home (`needs-you`, `saved` or
+     * `host:<id>`), which it keeps to while that card is there; none (or
+     * empty) gives it back to the card Home picks. Kept on this device.
+     */
+    func setHome(home: String?) 
+    
+    /**
      * The app icon iOS shows now (B668): its gallery id, and whether the
      * person picked it by hand. Home offers the pet's icon only once the
      * app has said.
@@ -6687,6 +6694,19 @@ open func setCloud(cloud: PetCloudHost?)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_petmachine_set_cloud(
             self.uniffiCloneHandle(),
         FfiConverterOptionTypePetCloudHost.lower(cloud),$0
+    )
+}
+}
+    
+    /**
+     * The card the person put it on on Home (`needs-you`, `saved` or
+     * `host:<id>`), which it keeps to while that card is there; none (or
+     * empty) gives it back to the card Home picks. Kept on this device.
+     */
+open func setHome(home: String?)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_home(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(home),$0
     )
 }
 }
@@ -33098,6 +33118,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_cloud() != 56353) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_home() != 31214) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_icon() != 49597) {

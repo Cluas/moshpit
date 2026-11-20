@@ -473,6 +473,12 @@ final class HomeNSHModel {
                 CompanionPet.shared.setSpot(spot)
             }
             return nil
+        case "pet-home":
+            // The card the person dropped it on (`host:<id>`, `saved`,
+            // `needs-you`), kept on this device; null gives it back to the
+            // card Home picks.
+            CompanionPet.shared.setHome(message["home"] as? String)
+            return nil
         case "icon":
             // The pet's icon card (B668): 「换」 or 「先不换」.
             CompanionPet.shared.answerIcon(switch: message["switch"] as? Bool ?? false)

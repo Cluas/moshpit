@@ -173,6 +173,11 @@ final class CompanionPet {
     /// leading end): this device's.
     func setSpot(_ spot: Double) { machine.setSpot(spot: spot) }
 
+    /// The card on Home it was dropped on (`host:<id>`, `saved`,
+    /// `needs-you`), which it keeps to while Home shows it; nil: the card
+    /// Home picks. This device's.
+    func setHome(_ home: String?) { machine.setHome(home: home) }
+
     /// Settings › Appearance: the style (`minimal`, `pixel`) and the switch.
     func choose(style: String, shown: Bool) { machine.setChoice(style: style, shown: shown) }
 

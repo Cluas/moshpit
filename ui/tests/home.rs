@@ -1872,6 +1872,99 @@ fn a_card_whose_jump_host_was_deleted_says_so_and_opens_its_form() {
     channel.close();
 }
 
+/// Let go over another host's card, it goes there and stays: the host
+/// keeps the card (`pet-home`) and where on its edge (`pet-spot`), and it
+/// sits there drawn on that card; let go over no card, it crawls back.
+#[test]
+fn the_pet_dropped_on_another_hosts_card_moves_there_and_stays() {
+    let pet = json!({
+        "op": "pet", "style": "pixel", "shown": true, "may_hatch": false, "seq": 0,
+        "pet": {
+            "seed": "07070707070707070707070707070707", "stage": 1, "hatch_hour": 14,
+            "flags": 0, "crowned": false, "name": "", "species": "tun",
+            "hatched_at": 1_800_000_000, "tasks": 12,
+            "traits": {"fur": "natural", "shiny": false, "pattern": "plain", "eyes": "dot", "size": "regular"},
+            "history": [], "found": []
+        }
+    });
+    let live = |id: &str| Connection {
+        id: id.into(),
+        name: id.into(),
+        initial: "A".into(),
+        user: "dev".into(),
+        host: "lab.example.com".into(),
+        link: Link::Live,
+        ..Connection::default()
+    };
+    let (mut app, channel, _) = phone(Params::default());
+    let heard = hear(&channel);
+    show(&mut app, &channel, vec![live("alpha"), live("beta")]);
+    post(&mut app, &channel, &pet.to_string());
+    find(&mut app, "id:home-pet");
+    let bounds = |app: &Headless, id: &str| node(&app.screen().layout_nodes(), id).bounds;
+    let card_top = |app: &Headless, id: &str| bounds(app, id).origin.y.0;
+    let pet_at = |app: &Headless| {
+        let b = bounds(app, "home-pet");
+        (b.origin.x.0, b.origin.y.0)
+    };
+    let (alpha, beta) = (
+        card_top(&app, "home-card-alpha"),
+        card_top(&app, "home-card-beta"),
+    );
+    let (x0, y0) = pet_at(&app);
+    assert!(
+        (y0 - (alpha - 39.0)).abs() < 1.0,
+        "on alpha's edge: {y0} {alpha}"
+    );
+    // Down onto beta's card, a little into it, and toward its leading end.
+    app.drag(
+        "id:home-pet",
+        nsh_core::geometry::point(px(-100.0), px(beta - alpha + 60.0)),
+    )
+    .unwrap();
+    app.wait(std::time::Duration::from_millis(1500)).unwrap();
+    let mut told = Vec::new();
+    while let Ok(event) = heard.recv_timeout(std::time::Duration::from_millis(300)) {
+        let event: serde_json::Value = serde_json::from_str(&event).unwrap();
+        if event["ev"] == "pet-home" || event["ev"] == "pet-spot" {
+            told.push(event);
+        }
+    }
+    assert_eq!(
+        told.first(),
+        Some(&json!({"ev": "pet-home", "home": "host:beta"})),
+        "{told:?}"
+    );
+    let spot = told
+        .iter()
+        .find(|e| e["ev"] == "pet-spot")
+        .and_then(|e| e["spot"].as_f64())
+        .unwrap_or_else(|| panic!("no spot: {told:?}"));
+    assert!(spot > 0.0, "toward the leading end: {spot}");
+    let (x1, y1) = pet_at(&app);
+    assert!(
+        (y1 - (beta - 39.0)).abs() < 1.0,
+        "on beta's edge: {y1} {beta}"
+    );
+    assert!(
+        (x0 - x1 - 100.0).abs() < 25.0,
+        "under the drop: {x0} → {x1}"
+    );
+    // The host keeps it there: still on beta.
+    let mut kept = pet.clone();
+    kept["home"] = json!("host:beta");
+    kept["spot"] = json!(spot);
+    post(&mut app, &channel, &kept.to_string());
+    app.wait(std::time::Duration::from_millis(300)).unwrap();
+    assert!((pet_at(&app).1 - (beta - 39.0)).abs() < 1.0, "kept on beta");
+    // Let go over nothing (far below the cards), it crawls back to beta.
+    app.drag("id:home-pet", nsh_core::geometry::point(px(0.0), px(400.0)))
+        .unwrap();
+    app.wait(std::time::Duration::from_millis(1500)).unwrap();
+    assert!((pet_at(&app).1 - (beta - 39.0)).abs() < 1.0, "back on beta");
+    channel.close();
+}
+
 /// Dragged along its card's edge and let go, it crawls there, holds on,
 /// tells the host where, and is where it's drawn: a second drag picks it
 /// up from there (Canary 179: the pan turned itself off as it began, so
