@@ -30,19 +30,36 @@ pub fn hold(line: &str) -> Wait {
     }
 }
 
+/// Which edge of the bubble its tail is on: the side of the companion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tail {
+    /// The companion is past its trailing edge (the bubble on its leading
+    /// side, as it sits at a card's trailing end).
+    #[default]
+    Trailing,
+    /// The companion is past its leading edge (moved toward a card's
+    /// leading end, it speaks into the room on its trailing side).
+    Leading,
+}
+
 /// The bubble for what `saying` holds (`(n, line)`: each line its number),
 /// its trailing edge `gap` points from the companion it points at: placed
 /// by the caller (absolute), its bottom level with the companion's middle.
 /// It clears `saying` once the line has gone.
 pub fn speech(saying: Signal<Option<(u64, String)>>) -> AnyElement {
+    speech_toward(saying, Tail::Trailing)
+}
+
+/// [`speech`] with its tail on `tail`'s edge.
+pub fn speech_toward(saying: Signal<Option<(u64, String)>>, tail: Tail) -> AnyElement {
     dynamic(move || match saying.get() {
-        Some((n, line)) => untracked(move || bubble(saying, n, line)),
+        Some((n, line)) => untracked(move || bubble(saying, n, line, tail)),
         None => untracked(|| view().into_element()),
     })
     .into_element()
 }
 
-fn bubble(saying: Signal<Option<(u64, String)>>, n: u64, line: String) -> AnyElement {
+fn bubble(saying: Signal<Option<(u64, String)>>, n: u64, line: String, tail: Tail) -> AnyElement {
     let shown = animated_value(0.0);
     drop(shown.timing_with(1.0, Duration::Fast.timing(SETTLE)));
     // The line goes after its time, unless a newer one replaced it.
@@ -77,17 +94,24 @@ fn bubble(saying: Signal<Option<(u64, String)>>, n: u64, line: String) -> AnyEle
             inset: false,
         }])
         .pointer_events(PointerEvents::None)
-        .accessibility_elements_hidden(true)
-        .origin_right()
+        .accessibility_elements_hidden(true);
+    // It grows from its tail.
+    bubble = match tail {
+        Tail::Trailing => bubble.origin_right(),
+        Tail::Leading => bubble.origin_left(),
+    };
+    let tip = view().absolute();
+    let tip = match tail {
+        Tail::Trailing => tip.right(px(-4.0)),
+        Tail::Leading => tip.left(px(-4.0)),
+    };
+    bubble = bubble
         .bind_opacity(&shown)
         .test_id("home-pet-says")
         // The tail: a small square turned 45°, half under the bubble's
-        // trailing edge.
+        // edge on the companion's side.
         .child(
-            view()
-                .absolute()
-                .right(px(-4.0))
-                .top(px(0.0))
+            tip.top(px(0.0))
                 .bottom(px(0.0))
                 .justify_center()
                 .child(

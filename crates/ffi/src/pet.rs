@@ -61,6 +61,8 @@ struct State {
     icon: Option<(String, bool)>,
     /// The look whose icon Home last asked about.
     icon_asked: Option<String>,
+    /// Where on a card's edge the person put it (0 to 1).
+    spot: f64,
     /// Whether the preferences could be believed when they were read (B865):
     /// a launch before the first unlock read them as empty, and they are
     /// read again once they can be ([`PetMachine::reload_if_needed`]).
@@ -129,6 +131,7 @@ impl PetMachine {
             pet,
             moment: s.moment,
             talk: s.talk,
+            spot: s.spot as f32,
         }
     }
 
@@ -180,6 +183,7 @@ impl PetMachine {
             thresholds: Thresholds::MEDIUM,
             icon: None,
             icon_asked: stored::read_icon_asked(&defaults),
+            spot: stored::read_spot(&defaults),
             read_trusted,
         };
         Arc::new(Self {
@@ -430,6 +434,24 @@ impl PetMachine {
         self.notify();
     }
 
+    /// Where on its card's top edge the person dragged it on Home: 0 its
+    /// own place at the trailing end, 1 as far toward the leading end as it
+    /// goes (clamped). Kept on this device.
+    pub fn set_spot(&self, spot: f64) {
+        if !spot.is_finite() {
+            return;
+        }
+        let spot = spot.clamp(0.0, 1.0);
+        let mut s = lock(&self.state);
+        if s.spot == spot {
+            return;
+        }
+        s.spot = spot;
+        stored::write_spot(&self.defaults, &Readiness::System, spot);
+        drop(s);
+        self.notify();
+    }
+
     /// How fast it grows: `faster`, `medium` (the default) or `slower`.
     pub fn set_pace(&self, pace: String) {
         let thresholds = match pace.as_str() {
@@ -494,6 +516,7 @@ impl PetMachine {
         s.shown = stored::read_shown(&self.defaults);
         s.talk = stored::read_talk(&self.defaults);
         s.icon_asked = stored::read_icon_asked(&self.defaults);
+        s.spot = stored::read_spot(&self.defaults);
         drop(s);
         if let Some(record) = keep {
             self.keep(&record);
@@ -835,6 +858,26 @@ mod tests {
             ),
             (Some("Pip"), Some(1), Some(false), Some(false))
         );
+    }
+
+    #[test]
+    fn where_it_was_dragged_is_kept_on_this_device() {
+        let prefs = Arc::new(Prefs::default());
+        let m = PetMachine::new(prefs.clone(), "phone".into());
+        let listener = Arc::new(Count::default());
+        m.set_listener(Some(listener.clone()));
+        assert_eq!(message(&m)["spot"], 0.0, "its own place");
+        m.set_spot(0.25);
+        assert_eq!(message(&m)["spot"], 0.25);
+        assert_eq!(*lock(&listener.0), 1);
+        m.set_spot(0.25);
+        m.set_spot(f64::NAN);
+        assert_eq!(*lock(&listener.0), 1, "nothing changed: nothing told");
+        m.set_spot(-2.0);
+        assert_eq!(message(&m)["spot"], 0.0, "clamped to the edge");
+        m.set_spot(0.75);
+        let again = PetMachine::new(prefs, "phone".into());
+        assert_eq!(message(&again)["spot"], 0.75, "kept over a relaunch");
     }
 
     /// Preferences that read as nothing, and keep nothing, while sealed:

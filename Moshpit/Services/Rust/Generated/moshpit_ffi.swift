@@ -6430,6 +6430,13 @@ public protocol PetMachineProtocol: AnyObject, Sendable {
     func setPace(pace: String) 
     
     /**
+     * Where on its card's top edge the person dragged it on Home: 0 its
+     * own place at the trailing end, 1 as far toward the leading end as it
+     * goes (clamped). Kept on this device.
+     */
+    func setSpot(spot: Double) 
+    
+    /**
      * Whether it talks on Home (「让它说话」).
      */
     func setTalk(talk: Bool) 
@@ -6713,6 +6720,19 @@ open func setPace(pace: String)  {try! rustCall() {
     uniffi_moshpit_ffi_fn_method_petmachine_set_pace(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(pace),$0
+    )
+}
+}
+    
+    /**
+     * Where on its card's top edge the person dragged it on Home: 0 its
+     * own place at the trailing end, 1 as far toward the leading end as it
+     * goes (clamped). Kept on this device.
+     */
+open func setSpot(spot: Double)  {try! rustCall() {
+    uniffi_moshpit_ffi_fn_method_petmachine_set_spot(
+            self.uniffiCloneHandle(),
+        FfiConverterDouble.lower(spot),$0
     )
 }
 }
@@ -33087,6 +33107,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_pace() != 29199) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_moshpit_ffi_checksum_method_petmachine_set_spot() != 19398) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_moshpit_ffi_checksum_method_petmachine_set_talk() != 19890) {
