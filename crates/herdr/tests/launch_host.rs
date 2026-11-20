@@ -33,6 +33,14 @@ dir="$FAKE_HERDR_DIR"
 if [ "$1 $2" = "terminal attach" ]; then
     tid="$3"
     echo "$tid $$ ${4:-plain}" >> "$dir/attaches"
+    if [ -s "$dir/reading-$tid" ]; then
+        n=$(cat "$dir/reading-$tid")
+        if [ "$n" -gt 0 ]; then
+            echo $((n-1)) > "$dir/reading-$tid"
+            echo "herdr: server shut down: terminal attach failed: terminal $tid has a read in progress; retry" >&2
+            exit 1
+        fi
+    fi
     if [ -e "$dir/refuse-$tid" ] && [ "$4" != "--takeover" ]; then
         echo "herdr: server shut down: terminal attach failed: terminal $tid already has an attached client; retry with --takeover" >&2
         exit 1
@@ -489,6 +497,25 @@ fn a_switch_bounces_the_attach_without_parking_and_the_watch_steps_aside() {
     assert!(!path_has(&host.home, "stop"), "a kill is no park");
     host.wait("the new attach", || host.attaches().len() == 2);
     assert_eq!(host.attaches(), ["term_a", "term_b"]);
+}
+
+#[test]
+fn an_attach_turned_away_by_a_read_in_progress_goes_round_without_parking() {
+    let mut host = Host::new();
+    host.boot();
+    assert!(launch::retarget_landed(&host.retarget("term_a")));
+    host.wait("the attach", || host.state("pid").is_some());
+    // A picker's picture of term_b is being read as the person picks it:
+    // herdr turns the first two attaches away.
+    fs::write(host.events.join("reading-term_b"), "2").unwrap();
+    assert!(launch::retarget_landed(&host.retarget("term_b")));
+    host.wait("term_b's paint", || host.screen().contains("PAINT term_b"));
+    assert_eq!(host.attaches(), ["term_a", "term_b", "term_b", "term_b"]);
+    assert!(
+        !path_has(&host.home, "stop"),
+        "a read in progress is no park"
+    );
+    assert!(host.loop_running());
 }
 
 #[test]

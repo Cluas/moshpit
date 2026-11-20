@@ -102,9 +102,13 @@ fn the_loop_is_one_line_waits_for_a_target_and_records_the_attach_pid() {
     // leave the login shell to run what was typed next; the loop parks now
     // — its stop record written, the screen blanked — until a retarget's go
     // file wakes it, and goes when its target is removed. The pid file goes
-    // with its attach (B208).
+    // with its attach (B208). A read of the terminal on its way is no park:
+    // the loop goes round, a bounded number of times.
     assert!(line.contains(&format!(
-        "s=$?; rm -f \"$HOME/.moshpit/mosh-{key}.pid\"; printf \"\\033[0m\\033[H\\033[2J\"; \
+        "s=$?; rm -f \"$HOME/.moshpit/mosh-{key}.pid\"; \
+         if [ $s -lt 128 ] && [ $r -lt 25 ] && grep -q \"read in progress\" \"$HOME/.moshpit/mosh-{key}.err\" 2>/dev/null; then \
+         r=$((r+1)); sleep 0.2; continue; fi; r=0; \
+         printf \"\\033[0m\\033[H\\033[2J\"; \
          if [ $s -lt 128 ]; then echo \"$s $tid\" > \"$HOME/.moshpit/mosh-{key}.stop\";"
     )));
     assert!(line.contains(&format!(
@@ -128,7 +132,7 @@ fn the_loop_is_one_line_waits_for_a_target_and_records_the_attach_pid() {
     // pane being left), and the pane being left is wiped as its attach ends.
     assert!(line.starts_with("mkdir -p \"$HOME/.moshpit\"; exec 2>/dev/null; "));
     assert!(line.contains(&format!(
-        "s=$?; rm -f \"$HOME/.moshpit/mosh-{key}.pid\"; printf \"\\033[0m\\033[H\\033[2J\"; if [ $s -lt 128 ]"
+        "fi; r=0; printf \"\\033[0m\\033[H\\033[2J\"; if [ $s -lt 128 ]"
     )));
     // The re-attach pause is small but not zero.
     assert!(line.contains("sleep 0.05"));
