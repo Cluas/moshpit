@@ -417,21 +417,53 @@ final class CoreTerminalView: UIView {
     /// grid's own could differ (a remote's OSC 11, a program painting every
     /// cell): dark strips either side of the grid.
     private func updateGround() {
+        let fallback = framesTaken > 0 ? rows.info.background : style.background
+        let s = Self.grounded(style, by: rows, fallback: fallback)
+        guard s != style else { return }
+        style = s
+        backgroundColor = UIColor(cgColor: coreCGColor(s.outside))
+        // The page's chrome takes it too (B496).
+        surfaceDelegate?.surfaceGroundChanged(self)
+    }
+
+    /// `style` with the ground `rows` show at their edges (``ground(edges:fallback:)``):
+    /// outside the grid, or blended into the theme's background when the
+    /// eye can't tell them apart (``blends(_:into:)``).
+    nonisolated static func grounded(_ style: CoreTermStyle, by rows: CoreTermRows,
+                                     fallback: UInt32) -> CoreTermStyle {
         var edges: [UInt32] = []
         edges.reserveCapacity(rows.gridRows * 2)
         for row in rows.rows.prefix(rows.gridRows) where !row.cells.isEmpty {
             edges.append(row.cells[0].bg)
             edges.append(row.cells[row.cells.count - 1].bg)
         }
-        let fallback = framesTaken > 0 ? rows.info.background : style.background
-        let next = Self.ground(edges: edges, fallback: fallback)
-        guard next != style.outside else { return }
+        let next = ground(edges: edges, fallback: fallback)
         var s = style
-        s.ground = next == s.background ? nil : next
-        style = s
-        backgroundColor = UIColor(cgColor: coreCGColor(next))
-        // The page's chrome takes it too (B496).
-        surfaceDelegate?.surfaceGroundChanged(self)
+        if next != s.background, blends(next, into: s.background) {
+            s.blended = next
+            s.ground = nil
+        } else {
+            s.blended = nil
+            s.ground = next == s.background ? nil : next
+        }
+        return s
+    }
+
+    /// Whether `ground` is `background` to the eye: their contrast under
+    /// 1.35 (WCAG's ratio of relative luminances). The near-black grounds
+    /// desktop themes give (Rosé Pine 1.19, Catppuccin Mocha 1.27, Dark+
+    /// 1.26 over black) blend; a ground a program means (Dracula's 1.47, a
+    /// light theme's) is kept.
+    nonisolated static func blends(_ ground: UInt32, into background: UInt32) -> Bool {
+        func luminance(_ c: UInt32) -> Double {
+            func channel(_ v: UInt32) -> Double {
+                let s = Double(v & 0xFF) / 255
+                return s <= 0.03928 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(c >> 16) + 0.7152 * channel(c >> 8) + 0.0722 * channel(c)
+        }
+        let a = luminance(ground), b = luminance(background)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05) < 1.35
     }
 
     /// The colour most of `edges` have, if more than half do; else
@@ -1240,7 +1272,9 @@ final class CoreTerminalView: UIView {
         guard let frame = mp_term_frame(scratch) else { return nil }
         grid.apply(frame)
         mp_frame_free(frame)
-        var look = style
+        // The peeked pane's own ground blends as the live one's does (its
+        // margins stay the theme's: the stage around it is).
+        var look = Self.grounded(style, by: grid, fallback: style.background)
         look.ground = nil
         let renderer = CoreTermCGRenderer(metrics: metrics, style: look)
         let x = Self.gridOrigin(width: size.width, cols: cols, cellWidth: metrics.width, scale: metrics.scale)

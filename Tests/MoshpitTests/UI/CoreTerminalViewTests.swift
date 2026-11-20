@@ -1001,6 +1001,41 @@ struct GridGroundTests {
         #expect(CoreTerminalView.ground(edges: [], fallback: black) == black)
     }
 
+    /// Two Claude panes of one herdr session, black and slate on the phone
+    /// (2026-11-20): herdr sends a pane's default background as a colour
+    /// once a program in it set OSC 11, and that pane kept the Rosé Pine a
+    /// morning's WezTerm had. A ground the eye can't tell from the theme's
+    /// is drawn as the theme's; one a program means is kept.
+    @Test("A near-black desktop theme's ground blends into the theme; Dracula's and a light one don't")
+    func nearGroundsBlend() {
+        let black: UInt32 = 0x000000
+        #expect(CoreTerminalView.blends(0x191724, into: black), "Rosé Pine")
+        #expect(CoreTerminalView.blends(0x1E1E2E, into: black), "Catppuccin Mocha")
+        #expect(CoreTerminalView.blends(0x1E1E1E, into: black), "Dark+")
+        #expect(!CoreTerminalView.blends(0x282A36, into: black), "Dracula")
+        #expect(!CoreTerminalView.blends(0xEFF1F5, into: black), "Catppuccin Latte")
+        #expect(CoreTerminalView.blends(0xFAFAFA, into: 0xFFFFFF), "near-white on a light theme")
+    }
+
+    @Test("A blended ground is drawn as the theme's background, inside the grid and out")
+    func aBlendedGroundDrawsAsTheTheme() {
+        var style = CoreTermStyle()
+        style.background = 0x000000
+        let slate = CoreTermRows()
+        slate.reset(cols: 8, rows: 3, background: 0x191724)
+        let blended = CoreTerminalView.grounded(style, by: slate, fallback: 0x000000)
+        #expect(blended.blended == 0x191724)
+        #expect(blended.outside == 0x000000)
+        #expect(blended.background(of: slate.rows[1].cells[3]) == 0x000000)
+
+        let dracula = CoreTermRows()
+        dracula.reset(cols: 8, rows: 3, background: 0x282A36)
+        let kept = CoreTerminalView.grounded(style, by: dracula, fallback: 0x000000)
+        #expect(kept.blended == nil)
+        #expect(kept.outside == 0x282A36)
+        #expect(kept.background(of: dracula.rows[1].cells[3]) == 0x282A36)
+    }
+
     private static let font = UIFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     private static func look(_ theme: TerminalTheme) -> TerminalLook {
