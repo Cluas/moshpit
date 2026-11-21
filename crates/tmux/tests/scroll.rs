@@ -1,7 +1,7 @@
 //! Scroll routing, taps and swipes, ported from the scroll cases of
 //! `TmuxSessionControllerTests.swift`: a program with the mouse on gets the
 //! wheel, a shell its local scrollback, an alternate-screen pane without the
-//! mouse the arrow keys (B500); never tmux's copy-mode.
+//! mouse the arrow keys (B500); under mosh, tmux's copy-mode from the sidecar.
 
 use moshpit_tmux::controller::{
     Config, PixelScroll, ScrollRoute, ViewAction, click_bytes, wheel_bytes, wheel_cell,
@@ -477,5 +477,35 @@ fn a_panes_flags_never_route_another_panes_ticks() {
     assert_eq!(
         rig.controller.scroll_route().unwrap(),
         ("%1".to_owned(), ScrollRoute::Local)
+    );
+}
+
+/// mosh with tmux: the sidecar scrolls the pane's copy-mode, which the
+/// client mosh renders draws, by exact rows — in with `-e` going older, so
+/// it ends by itself back at the bottom; newer only while in it. Keys down
+/// mosh paged a screen per step (agy's history jerked).
+#[test]
+fn copy_scroll_moves_the_panes_copy_mode_by_rows() {
+    let mut rig = attached(false);
+    let before = rig.commands.len();
+    rig.with(|c, now| c.copy_scroll(3, now));
+    rig.with(|c, now| c.copy_scroll(-2, now));
+    rig.with(|c, now| c.copy_scroll(0, now));
+    rig.with(|c, now| c.copy_scroll(100_000, now));
+    let sent: Vec<_> = rig
+        .since(before)
+        .iter()
+        .filter(|c| !c.contains("moshpit-fence"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        sent,
+        [
+            "copy-mode -e -t %0",
+            "send-keys -X -N 3 -t %0 scroll-up",
+            "if-shell -F -t %0 '#{pane_in_mode}' 'send-keys -X -N 2 -t %0 scroll-down'",
+            "copy-mode -e -t %0",
+            "send-keys -X -N 200 -t %0 scroll-up",
+        ]
     );
 }

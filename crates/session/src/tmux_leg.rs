@@ -104,6 +104,9 @@ pub enum TmuxAction {
         text: String,
     },
     ScrollLines(i64),
+    /// mosh with tmux: `lines` of tmux's history on the pane on screen, in
+    /// the copy-mode the client mosh renders draws (positive: older).
+    CopyScroll(i64),
     /// The scroll beginning is aimed at this cell (0-based, the input
     /// pane's): a program with the mouse gets its wheel there (B578).
     AimWheel {
@@ -1090,6 +1093,7 @@ impl Task {
                 TmuxAction::TakeSizeOwnership => c.take_size_ownership(now),
                 TmuxAction::Paste { pane, text } => c.send_paste(&text, &pane, now),
                 TmuxAction::ScrollLines(lines) => c.scroll_lines(lines, now),
+                TmuxAction::CopyScroll(lines) => c.copy_scroll(lines, now),
                 TmuxAction::AimWheel { col, row } => c.aim_wheel(col, row),
                 TmuxAction::Click { col, row } => c.click(col, row, now),
                 TmuxAction::ViewRevealed { pane } => c.view_revealed(&pane, now),

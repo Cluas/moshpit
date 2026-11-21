@@ -2077,6 +2077,19 @@ impl Actor {
                 .send(TmuxCommand::Action(TmuxAction::ScrollLines(lines)));
             return;
         }
+        // The primary screen: tmux's copy-mode, row for row, from the
+        // sidecar. Down mosh it could only be a page per step, a page a tick
+        // (tmux takes keys that land together for a paste and binds none of
+        // them), so a swipe jerked by screens. The loop's latch follows what
+        // tmux then reports (B614).
+        if !wants_mouse
+            && let Some(sidecar) = self.control.as_ref().and_then(|c| c.sidecar.as_ref())
+        {
+            let _ = sidecar
+                .commands
+                .send(TmuxCommand::Action(TmuxAction::CopyScroll(lines)));
+            return;
+        }
         let command = if wants_mouse {
             let (cols, rows) = self.grid;
             let (col, row) = moshpit_tmux::controller::wheel_cell(
@@ -4852,6 +4865,7 @@ fn is_momentary(action: &TmuxAction) -> bool {
     matches!(
         action,
         TmuxAction::ScrollLines(_)
+            | TmuxAction::CopyScroll(_)
             | TmuxAction::AimWheel { .. }
             | TmuxAction::Click { .. }
             | TmuxAction::ScrollBegan
@@ -6296,8 +6310,10 @@ mod tests {
 
     /// mosh + tmux, a swipe over an alternate-screen pane without the mouse
     /// (less, man): its ticks go to the sidecar, which presses the arrow
-    /// keys (B500); over the primary screen, tmux's copy-mode down mosh as
-    /// before. It went to copy-mode, which pages nothing there.
+    /// keys (B500); over the primary screen, tmux's copy-mode, row for row,
+    /// from the sidecar too, and down mosh only with no sidecar. A pager's
+    /// swipe went to copy-mode, which pages nothing there; a shell's paged
+    /// a screen per row of travel, a page a tick at most.
     #[tokio::test]
     async fn a_swipe_over_a_pager_under_mosh_tmux_goes_to_the_sidecar() {
         let (mut actor, _events) = live_actor(false);
@@ -6356,20 +6372,28 @@ mod tests {
             Ok(TmuxCommand::Action(TmuxAction::ScrollLines(3)))
         ));
         assert!(sent.try_recv().is_err(), "nothing down mosh");
-        // The primary screen: tmux's copy-mode, down mosh.
+        // The primary screen: tmux's copy-mode, row for row, from the
+        // sidecar — down mosh it was a page per row of travel, a page a
+        // tick at most (agy's history jerked by screens).
         actor.update(|v| v.tmux_view = Some(view(false)));
+        actor.handle(Msg::Tmux(TmuxAction::ScrollLines(3))).await;
+        let to_sidecar: Vec<TmuxCommand> = std::iter::from_fn(|| sidecar.try_recv().ok()).collect();
+        assert!(
+            to_sidecar
+                .iter()
+                .any(|c| matches!(c, TmuxCommand::Action(TmuxAction::CopyScroll(3)))),
+            "the sidecar scrolls copy-mode"
+        );
+        assert!(sent.try_recv().is_err(), "nothing down mosh");
+        // No sidecar (yet): tmux's copy-mode down mosh, as before.
+        if let Some(control) = actor.control.as_mut() {
+            control.sidecar = None;
+        }
         actor.handle(Msg::Tmux(TmuxAction::ScrollLines(3))).await;
         assert!(matches!(
             sent.try_recv(),
             Ok(MoshCommand::CopyScroll { lines: 3, .. })
         ));
-        let to_sidecar: Vec<TmuxCommand> = std::iter::from_fn(|| sidecar.try_recv().ok()).collect();
-        assert!(
-            !to_sidecar
-                .iter()
-                .any(|c| matches!(c, TmuxCommand::Action(TmuxAction::ScrollLines(_)))),
-            "not the sidecar's"
-        );
     }
 
     /// B614: mosh + tmux, the copy-mode tmux reports for the pane on screen

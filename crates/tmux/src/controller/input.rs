@@ -155,6 +155,10 @@ pub fn click_bytes(col: i64, row: i64) -> Vec<u8> {
 /// sends ([`wheel_bytes`]'s six) and twice that, for a coast's larger steps.
 const MAX_ARROWS: u64 = 12;
 
+/// The most rows one copy-mode scroll moves (a fling's step stays well
+/// under it).
+const MAX_COPY_LINES: u64 = 200;
+
 /// How long what follows a paste waits once tmux has run it (B485), and at
 /// most when tmux doesn't answer (the connection may be going).
 const PASTE_SETTLE_MS: u64 = 150;
@@ -476,6 +480,35 @@ impl Controller {
                 ScrollRoute::Arrows => self.send_arrows(lines, &pane),
                 ScrollRoute::Drop => {}
                 ScrollRoute::Local => self.view(&pane, ViewAction::ScrollLocal { lines }),
+            }
+        }
+        self.finish_input();
+    }
+
+    /// mosh with tmux: `lines` of tmux's history on the pane on screen
+    /// (positive = older), for the tty client mosh renders — copy-mode is
+    /// the pane's, so every client showing it draws it. Exact rows, from
+    /// here: keys down mosh only had a page a tick (a row's travel paged a
+    /// screen), and tmux takes keys that arrive together for a paste and
+    /// runs none of their bindings, so a row a key could not be sent. `-e`:
+    /// back at the bottom, copy-mode ends by itself.
+    pub fn copy_scroll(&mut self, lines: i64, now: u64) {
+        self.begin_input(now);
+        if lines != 0
+            && let Some(pane) = self.snapshot.input_pane()
+            && is_valid_id(&pane)
+        {
+            let count = lines.unsigned_abs().min(MAX_COPY_LINES);
+            if lines > 0 {
+                self.send(format!("copy-mode -e -t {pane}"));
+                self.send(format!("send-keys -X -N {count} -t {pane} scroll-up"));
+            } else {
+                // Out of copy-mode there is nothing below the live screen
+                // (and `send-keys -X` would be an error).
+                self.send(format!(
+                    "if-shell -F -t {pane} '#{{pane_in_mode}}' \
+                     'send-keys -X -N {count} -t {pane} scroll-down'"
+                ));
             }
         }
         self.finish_input();
