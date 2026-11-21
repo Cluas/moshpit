@@ -275,7 +275,7 @@ const SHELLS: &[&str] = &[
 /// Commands the output heuristic may promote to a row.
 const AGENT_COMMANDS: &[&str] = &[
     "claude", "codex", "gemini", "qwen", "qoder", "factory", "codebuddy", "aider", "goose",
-    "opencode",
+    "opencode", "agy",
 ];
 
 /// Moshpit's own plumbing stamps a pane for real (a pairing self-test).

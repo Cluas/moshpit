@@ -457,10 +457,10 @@ pub fn run(line: &str) -> Option<String> {
                 out(a.display_name),
                 out(a.config_path),
                 out(&a.config_hint()),
-                if a.format == Format::ClaudeJson {
-                    "json"
-                } else {
+                if a.format == Format::CodexToml {
                     "toml"
+                } else {
+                    "json"
                 }
                 .to_owned(),
                 opt_out(a.trust_step()),

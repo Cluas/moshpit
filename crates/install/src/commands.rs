@@ -152,7 +152,8 @@ pub const PREFLIGHT: &str = concat!(
     // per `HookAgent::ALL`, as `<id> <config dir> <command>…` (a test holds
     // the two together).
     r#"for a in 'claude .claude claude' 'codex .codex codex' 'gemini .gemini gemini' 'qwen .qwen qwen' "#,
-    r#"'qoder .qoder qodercli qoder' 'factory .factory droid factory' 'codebuddy .codebuddy codebuddy cbc'; do "#,
+    r#"'qoder .qoder qodercli qoder' 'factory .factory droid factory' 'codebuddy .codebuddy codebuddy cbc' "#,
+    r#"'agy .gemini/antigravity-cli agy'; do "#,
     r#"set -- $a; i=$1; f=no; [ -d "$HOME/$2" ] && f=yes; shift 2; "#,
     r#"for c in "$@"; do command -v "$c" >/dev/null 2>&1 && f=yes; done; "#,
     r#"printf 'agent.%s=%s\n' "$i" "$f"; done"#
@@ -534,7 +535,7 @@ mod tests {
              \"$(uname -s 2>/dev/null || echo unknown)\"; for t in openssl curl jq tmux python3 base64; do   if \
              command -v \"$t\" >/dev/null 2>&1; then printf '%s=yes\\n' \"$t\";   else printf '%s=no\\n' \"$t\"; \
              fi; done; for a in 'claude .claude claude' 'codex .codex codex' 'gemini .gemini gemini' 'qwen .qwen qwen' \
-             'qoder .qoder qodercli qoder' 'factory .factory droid factory' 'codebuddy .codebuddy codebuddy cbc'; do \
+             'qoder .qoder qodercli qoder' 'factory .factory droid factory' 'codebuddy .codebuddy codebuddy cbc' 'agy .gemini/antigravity-cli agy'; do \
              set -- $a; i=$1; f=no; [ -d \"$HOME/$2\" ] && f=yes; shift 2; for c in \"$@\"; do command -v \"$c\" \
              >/dev/null 2>&1 && f=yes; done; printf 'agent.%s=%s\\n' \"$i\" \"$f\"; done"
         );

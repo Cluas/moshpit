@@ -30,5 +30,5 @@ Rust intentionally diverged from the frozen Swift snapshot (`81c121a1`) on the f
 - `scripts`: **B443, B566, B633, B637, B700, B784** — host scripts evolved from v1 to v4 (manifest locking, per-installation pairing records, muting switches-off pairings).
 - `cmd preflight`: **B374** — adds agent directory/binary probes.
 - `cmd write`: **B351, B379** — writes to a same-directory temp file, replaces atomically, and follows symlink targets up to 40 hops.
-- `merge {claude,codebuddy,factory,gemini,qoder,qwen}`, `remove {claude,codebuddy,factory,gemini,qoder,qwen}`: **B356** (preserves user hooks sharing a hook group) and **B375** (preserves existing JSON formatting and key order).
+- `merge {agy,claude,codebuddy,factory,gemini,qoder,qwen}`, `remove {agy,claude,codebuddy,factory,gemini,qoder,qwen}`: **B356** (preserves user hooks sharing a hook group) and **B375** (preserves existing JSON formatting and key order).
 - `flow {hooks,pairing,push,stamp,status,unhooks,uninstall}`: **B351–B355, B374, B379, B443, B566, B633, B637, B700, B784** — combine the evolved shell commands, JSON layout preservation, manifest locking, and v4 scripts above.

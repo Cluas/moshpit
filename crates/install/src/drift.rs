@@ -205,7 +205,7 @@ fn registered_events(component: &InstallComponent) -> Vec<String> {
         .events()
         .iter()
         .map(|(event, _, _)| match agent.format {
-            hooks::Format::ClaudeJson | hooks::Format::EventMapJson => format!("\"{event}\""),
+            hooks::Format::ClaudeJson | hooks::Format::EventMapJson | hooks::Format::AgyJson => format!("\"{event}\""),
             hooks::Format::CodexToml => format!("[[hooks.{event}]]"),
         })
         .collect()

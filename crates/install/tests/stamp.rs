@@ -89,8 +89,11 @@ fn the_stamp_script_derives_a_title_from_each_hook_event() {
     assert!(script.contains("    PreToolUse|PermissionRequest|BeforeTool)"));
     assert!(script.contains("    Notification)"));
     assert!(script.contains("    UserPromptSubmit|BeforeAgent)"));
-    // Gemini CLI's prompt is remembered for the finish card too.
-    assert!(script.contains("[ \"$EV\" = \"BeforeAgent\" ]"));
+    assert!(script.contains("    PreInvocation)"));
+    // Gemini CLI's and agy's prompts are remembered for the finish card too.
+    assert!(
+        script.contains("UserPromptSubmit|BeforeAgent|PreInvocation) [ -n \"$TITLE\" ] && KEEP=1")
+    );
     // A title is cleared when none is derivable, so a stale one never
     // lingers: in tmux, by unsetting the pane's option.
     assert!(script.contains("  del title\n"));

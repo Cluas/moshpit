@@ -18,6 +18,11 @@ pub enum Format {
     /// Claude Code's hooks with no `hooks` key around them: the file is the
     /// event map (Factory's `~/.factory/hooks.json`, B385).
     EventMapJson,
+    /// agy's `hooks.json`: named hooks, each its own event map, where
+    /// `PreToolUse` takes Claude Code's matcher groups and every other
+    /// event a flat list of handlers. Moshpit's is the one named
+    /// [`AGY_HOOK`].
+    AgyJson,
 }
 
 /// A coding agent Moshpit can register hooks for.
@@ -36,11 +41,15 @@ pub struct HookAgent {
     /// once it exists (B385): droid reads `~/.factory/hooks.json`, and
     /// `settings.json`'s hooks only while that file is absent.
     pub hooks_file: Option<&'static str>,
+    /// The directory under `$HOME` that says the agent is there, when its
+    /// config's says less: agy keeps its config in `~/.gemini`, beside
+    /// Gemini CLI's.
+    pub home_dir: Option<&'static str>,
 }
 
 impl HookAgent {
     /// The roster, Claude Code first.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self {
             id: "claude",
             display_name: "Claude Code",
@@ -48,6 +57,7 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["claude"],
             hooks_file: None,
+            home_dir: None,
         },
         Self {
             id: "codex",
@@ -56,6 +66,7 @@ impl HookAgent {
             format: Format::CodexToml,
             commands: &["codex"],
             hooks_file: None,
+            home_dir: None,
         },
         Self {
             id: "gemini",
@@ -64,6 +75,7 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["gemini"],
             hooks_file: None,
+            home_dir: None,
         },
         Self {
             id: "qwen",
@@ -72,6 +84,7 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["qwen"],
             hooks_file: None,
+            home_dir: None,
         },
         Self {
             id: "qoder",
@@ -80,6 +93,7 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["qodercli", "qoder"],
             hooks_file: None,
+            home_dir: None,
         },
         Self {
             id: "factory",
@@ -88,6 +102,7 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["droid", "factory"],
             hooks_file: Some("$HOME/.factory/hooks.json"),
+            home_dir: None,
         },
         Self {
             id: "codebuddy",
@@ -96,6 +111,16 @@ impl HookAgent {
             format: Format::ClaudeJson,
             commands: &["codebuddy", "cbc"],
             hooks_file: None,
+            home_dir: None,
+        },
+        Self {
+            id: "agy",
+            display_name: "Antigravity CLI",
+            config_path: "$HOME/.gemini/config/hooks.json",
+            format: Format::AgyJson,
+            commands: &["agy"],
+            hooks_file: None,
+            home_dir: Some(".gemini/antigravity-cli"),
         },
     ];
 
@@ -105,6 +130,9 @@ impl HookAgent {
 
     /// The directory under `$HOME` its config lives in (`.claude`).
     pub fn config_dir(&self) -> &'static str {
+        if let Some(dir) = self.home_dir {
+            return dir;
+        }
         let rest = self.config_path.trim_start_matches("$HOME/");
         rest.split('/').next().unwrap_or(rest)
     }
@@ -129,6 +157,7 @@ impl HookAgent {
     pub fn events(&self) -> &'static [(&'static str, &'static str, bool)] {
         match (self.format, self.id) {
             (Format::CodexToml, _) => &CODEX_EVENTS,
+            (Format::AgyJson, _) => &AGY_EVENTS,
             (_, "gemini") => &GEMINI_EVENTS,
             _ => &EVENTS,
         }
@@ -138,7 +167,7 @@ impl HookAgent {
     /// one: Codex will not run a newly added hook until it is trusted.
     pub fn trust_step(&self) -> Option<&'static str> {
         match self.format {
-            Format::ClaudeJson | Format::EventMapJson => None,
+            Format::ClaudeJson | Format::EventMapJson | Format::AgyJson => None,
             Format::CodexToml => Some(
                 "Codex won't run a newly added hook until you trust it. Run /hooks inside Codex on this host and trust \
                  the four Moshpit entries \u{2014} until you do, nothing will be sent.",
@@ -178,6 +207,20 @@ pub const CODEX_EVENTS: [(&str, &str, bool); 4] = [
     ("Stop", "done", false),
     ("PermissionRequest", "attention", false),
 ];
+
+/// agy's three (`hooks.json`, its docs' "Supported Event Types"):
+/// `PreInvocation` runs before every model call, the first of a turn too;
+/// `Stop` when the loop ends. It has no event for a permission prompt, so
+/// nothing stamps attention. Handlers that print nothing leave the tool to
+/// run and the agent to stop (tried on agy, 11-22).
+pub const AGY_EVENTS: [(&str, &str, bool); 3] = [
+    ("PreInvocation", "working", false),
+    ("PreToolUse", "working", true),
+    ("Stop", "done", false),
+];
+
+/// The name Moshpit's hook goes by in agy's `hooks.json`.
+pub const AGY_HOOK: &str = "moshpit";
 
 /// The substring that marks a hook command as Moshpit's.
 pub const MARKER: &str = "moshpit-stamp.sh";
@@ -426,6 +469,94 @@ fn without_moshpit_json_in(existing: &str, wrapped: bool) -> Result<String, Fail
     Ok(written(existing, &out))
 }
 
+// MARK: - agy
+
+/// The top level of an agy `hooks.json`, empty for an empty file.
+fn agy_root(existing: &str) -> Result<Object, Failure> {
+    let trimmed = text::trim_white_space(existing);
+    if trimmed.is_empty() {
+        return Ok(Object::new());
+    }
+    match json::parse(
+        trimmed.as_bytes(),
+        Dialect::Serialization {
+            fragments_allowed: true,
+        },
+    ) {
+        Err(_) => Err(Failure::UnparseableJson(PARSE_ERROR.to_owned())),
+        Ok(Value::Object(object)) => Ok(object),
+        Ok(_) => Err(Failure::NotAnObject),
+    }
+}
+
+/// Moshpit's named hook put in an agy `hooks.json` (replacing the one an
+/// earlier install put there); every other hook of the person's stays.
+pub fn merged_agy(existing: &str, agent: &str) -> Result<String, Failure> {
+    let mut root = agy_root(existing)?;
+    let mut ours = Object::new();
+    for (event, state, matched) in AGY_EVENTS {
+        let mut entry = Object::new();
+        entry.insert("type", Value::String("command".to_owned()));
+        entry.insert("command", Value::String(command(state, agent)));
+        let handlers = if matched {
+            let mut group = Object::new();
+            group.insert("matcher", Value::String("*".to_owned()));
+            group.insert("hooks", Value::Array(vec![Value::Object(entry)]));
+            Value::Object(group)
+        } else {
+            Value::Object(entry)
+        };
+        ours.insert(event, Value::Array(vec![handlers]));
+    }
+    root.insert(AGY_HOOK, Value::Object(ours));
+    Ok(written(existing, &root))
+}
+
+/// An agy `hooks.json` without Moshpit's named hook; an empty file as it
+/// came.
+pub fn without_moshpit_agy(existing: &str) -> Result<String, Failure> {
+    if text::trim_white_space(existing).is_empty() {
+        return Ok(existing.to_owned());
+    }
+    let mut root = agy_root(existing)?;
+    if root.get(AGY_HOOK).is_none() {
+        return Ok(existing.to_owned());
+    }
+    root.remove(AGY_HOOK);
+    Ok(written(existing, &root))
+}
+
+/// Moshpit's handlers in an agy `hooks.json`: each event's flat handlers
+/// and those inside its matcher groups.
+fn registered_agy(existing: &str) -> Result<Vec<(String, String)>, Failure> {
+    let root = agy_root(existing)?;
+    let mut found = Vec::new();
+    for (_, hook) in root.iter() {
+        let Some(hook) = hook.as_object() else {
+            continue;
+        };
+        for (event, handlers) in hook.iter() {
+            for handler in handlers.as_array().unwrap_or_default() {
+                let grouped = handler
+                    .as_object()
+                    .and_then(|h| h.get("hooks"))
+                    .and_then(Value::as_array);
+                let entries = grouped.map_or_else(|| vec![handler.clone()], <[Value]>::to_vec);
+                for entry in entries.iter().filter(|e| is_our_entry(e)) {
+                    if let Some(command) = entry
+                        .as_object()
+                        .and_then(|e| e.get("command"))
+                        .and_then(Value::as_str)
+                    {
+                        found.push((event.to_owned(), command.to_owned()));
+                    }
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
 // MARK: - Codex TOML
 
 pub const TOML_BEGIN: &str = "# >>> moshpit vibe island >>>";
@@ -513,6 +644,7 @@ pub fn registered_at(
     match agent.format_at(path) {
         Format::ClaudeJson => registered_json(existing, true),
         Format::EventMapJson => registered_json(existing, false),
+        Format::AgyJson => registered_agy(existing),
         Format::CodexToml => Ok(registered_toml(existing)),
     }
 }
@@ -608,6 +740,7 @@ pub fn merged_at(existing: &str, agent: &HookAgent, path: &str) -> Result<String
     match agent.format_at(path) {
         Format::ClaudeJson => merged_json(existing, agent.id),
         Format::EventMapJson => merged_json_in(existing, agent.id, false),
+        Format::AgyJson => merged_agy(existing, agent.id),
         Format::CodexToml => Ok(merged_toml(existing, agent.id)),
     }
 }
@@ -622,6 +755,7 @@ pub fn removed_at(existing: &str, agent: &HookAgent, path: &str) -> Result<Strin
     match agent.format_at(path) {
         Format::ClaudeJson => without_moshpit_json(existing),
         Format::EventMapJson => without_moshpit_json_in(existing, false),
+        Format::AgyJson => without_moshpit_agy(existing),
         Format::CodexToml => Ok(without_moshpit_toml(existing)),
     }
 }
@@ -1186,5 +1320,47 @@ mod tests {
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0], Value::String("note".into()));
         assert_eq!(commands(&removed, "Stop"), ["mine.sh"]);
+    }
+
+    /// agy: Moshpit's is one named hook in `hooks.json` — `PreToolUse` in a
+    /// matcher group, the other two flat, as agy reads them — and the
+    /// person's own hooks stay, through merge, re-merge and removal.
+    #[test]
+    fn agy_gets_one_named_hook_beside_the_persons() {
+        let agy = HookAgent::named("agy").unwrap();
+        assert_eq!(agy.config_dir(), ".gemini/antigravity-cli");
+        let mine = "{\n  \"lint\": {\"PostToolUse\": [{\"matcher\": \"run_command\", \"hooks\": [{\"command\": \"./lint.sh\"}]}]}\n}\n";
+        let once = merged(mine, &agy).unwrap();
+        let root = object(&once);
+        assert!(root.get("lint").is_some(), "{once}");
+        let ours = root.get(AGY_HOOK).and_then(Value::as_object).unwrap();
+        let flat = ours.get("Stop").and_then(Value::as_array).unwrap();
+        assert_eq!(
+            flat[0].as_object().and_then(|e| e.get("command")).and_then(Value::as_str),
+            Some("sh ~/.moshpit/moshpit-stamp.sh done agy")
+        );
+        let group = ours.get("PreToolUse").and_then(Value::as_array).unwrap()[0]
+            .as_object()
+            .unwrap()
+            .clone();
+        assert_eq!(group.get("matcher").and_then(Value::as_str), Some("*"));
+        assert_eq!(
+            registered(&once, &agy).unwrap(),
+            [
+                ("PreInvocation".to_owned(), command("working", "agy")),
+                ("PreToolUse".to_owned(), command("working", "agy")),
+                ("Stop".to_owned(), command("done", "agy")),
+            ]
+        );
+        assert_eq!(merged(&once, &agy).unwrap(), once, "idempotent");
+        let gone = removed(&once, &agy).unwrap();
+        assert!(object(&gone).get(AGY_HOOK).is_none());
+        assert!(object(&gone).get("lint").is_some());
+        assert!(registered(&gone, &agy).unwrap().is_empty());
+        // Nothing there: a file of ours alone; nothing of ours: as it came.
+        assert!(object(&merged("", &agy).unwrap()).get(AGY_HOOK).is_some());
+        assert_eq!(removed(mine, &agy).unwrap(), mine);
+        assert_eq!(removed("", &agy).unwrap(), "");
+        assert_eq!(merged("[1]", &agy), Err(Failure::NotAnObject));
     }
 }

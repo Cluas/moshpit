@@ -1013,7 +1013,7 @@ fn the_host_setup_message_says_push_is_not_on_this_build() {
         message["pushProof"]["message"],
         moshpit_hostcare::note::PUSH_UNAVAILABLE
     );
-    assert_eq!(message["agents"].as_array().unwrap().len(), 7);
+    assert_eq!(message["agents"].as_array().unwrap().len(), 8);
     moshpit_ui::host_setup::Message::parse(&message.to_string()).expect("the screen reads it");
 }
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 4
+# moshpit-scripts: 5
 # moshpit-push.sh — seal one agent status and hand it to the Moshpit push relay.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-push.sh, next to the stamp

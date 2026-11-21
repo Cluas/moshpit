@@ -13,7 +13,7 @@ fn host() -> Host {
     let mut host = Host::hooked();
     host.rules[0].1 = format!(
         "{ALL_TOOLS}\nagent.claude=yes\nagent.codex=yes\nagent.gemini=no\nagent.qwen=no\n\
-         agent.qoder=no\nagent.factory=no\nagent.codebuddy=no"
+         agent.qoder=no\nagent.factory=no\nagent.codebuddy=no\nagent.agy=no"
     );
     host
 }
@@ -25,7 +25,7 @@ fn the_menu_says_each_agents_hooks_and_whether_the_host_has_it() {
     rig.set_host(c.id, host());
     let page = rig.open(&c, None);
     let view = rig.view(page);
-    assert_eq!(view.agents.len(), 7);
+    assert_eq!(view.agents.len(), 8);
     let listed = |id: &str| {
         view.agents
             .iter()
@@ -36,6 +36,7 @@ fn the_menu_says_each_agents_hooks_and_whether_the_host_has_it() {
     assert_eq!(listed("claude"), (ComponentStatus::Current, Some(true)));
     assert_eq!(listed("codex"), (ComponentStatus::Absent, Some(true)));
     assert_eq!(listed("gemini"), (ComponentStatus::Absent, Some(false)));
+    assert_eq!(listed("agy"), (ComponentStatus::Absent, Some(false)));
 }
 
 #[test]

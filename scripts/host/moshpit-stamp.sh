@@ -1,5 +1,5 @@
 #!/bin/sh
-# moshpit-scripts: 4
+# moshpit-scripts: 5
 # moshpit-stamp.sh — what a coding agent's lifecycle hook calls.
 #
 # Installed on the DEV HOST at ~/.moshpit/moshpit-stamp.sh. Each agent's config
@@ -58,17 +58,21 @@ fi
 [ -z "${MOSHPIT_SELFTEST:-}" ] || AG=moshpit-selftest
 if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   IN=$(cat)
-  EV=$(printf "%s" "$IN" | jq -r ".hook_event_name // empty" 2>/dev/null)
-  SID=$(printf "%s" "$IN" | jq -r ".session_id // empty" 2>/dev/null)
+  # agy names its fields in camelCase (hookEventName, conversationId,
+  # toolCall, lastUserInput).
+  EV=$(printf "%s" "$IN" | jq -r ".hook_event_name // .hookEventName // empty" 2>/dev/null)
+  SID=$(printf "%s" "$IN" | jq -r ".session_id // .conversationId // empty" 2>/dev/null)
   case "$EV" in
     PreToolUse|PermissionRequest|BeforeTool)
-      TN=$(printf "%s" "$IN" | jq -r ".tool_name // empty" 2>/dev/null)
-      AR=$(printf "%s" "$IN" | jq -r ".tool_input.command // .tool_input.file_path // .tool_input.path // .tool_input.dir_path // .tool_input.pattern // .tool_input.url // empty" 2>/dev/null)
+      TN=$(printf "%s" "$IN" | jq -r ".tool_name // .toolCall.name // empty" 2>/dev/null)
+      AR=$(printf "%s" "$IN" | jq -r ".tool_input.command // .tool_input.file_path // .tool_input.path // .tool_input.dir_path // .tool_input.pattern // .tool_input.url // .toolCall.args.CommandLine // .toolCall.args.AbsolutePath // .toolCall.args.TargetFile // empty" 2>/dev/null)
       if [ -n "$AR" ]; then TITLE="$TN: $AR"; else TITLE="$TN"; fi ;;
     Notification)
       TITLE=$(printf "%s" "$IN" | jq -r ".message // empty" 2>/dev/null) ;;
     UserPromptSubmit|BeforeAgent)
       TITLE=$(printf "%s" "$IN" | jq -r ".prompt // empty" 2>/dev/null) ;;
+    PreInvocation)
+      TITLE=$(printf "%s" "$IN" | jq -r ".lastUserInput // empty" 2>/dev/null) ;;
   esac
   TITLE=$(printf "%s" "$TITLE" | tr "\n" " " | cut -c1-80)
   command -v iconv >/dev/null 2>&1 && TITLE=$(printf "%s" "$TITLE" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)
@@ -91,10 +95,11 @@ if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
   # text of its own. Already cut to 80 bytes above — a prompt can be a
   # paragraph, and a lock screen shows two lines (the phone cuts again, by
   # character, before showing it).
-  # (Gemini CLI calls the same moment BeforeAgent.)
-  if { [ "$EV" = "UserPromptSubmit" ] || [ "$EV" = "BeforeAgent" ]; } && [ -n "$TITLE" ]; then
-    KEEP=1
-  fi
+  # (Gemini CLI calls the same moment BeforeAgent; agy's PreInvocation runs
+  # before every model call, each bringing the turn's prompt.)
+  case "$EV" in
+    UserPromptSubmit|BeforeAgent|PreInvocation) [ -n "$TITLE" ] && KEEP=1 ;;
+  esac
 fi
 # Where the stamps live: the tmux pane's options, or — outside tmux — files
 # of the agent session (by its session id when jq could read one, else by its
