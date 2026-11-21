@@ -36,6 +36,7 @@
 
 mod group;
 mod input;
+mod open_sequence;
 mod repair;
 mod sidecar;
 mod size;
@@ -629,6 +630,9 @@ pub struct Controller {
     /// When each pane's output was last noted as activity (B739).
     activity_noted: BTreeMap<String, u64>,
     bell_detectors: BTreeMap<String, BellDetector>,
+    /// Per pane, the escape sequence its live output left unfinished, so
+    /// the controller's own bytes never cut it in two (the 02-pane garble).
+    open_sequences: BTreeMap<String, open_sequence::OpenSequence>,
 
     has_painted_since_attach: bool,
     attached_at: Option<u64>,
@@ -721,6 +725,7 @@ impl Controller {
             last_pane_output_at: BTreeMap::new(),
             activity_noted: BTreeMap::new(),
             bell_detectors: BTreeMap::new(),
+            open_sequences: BTreeMap::new(),
             has_painted_since_attach: false,
             attached_at: None,
             agent_hooks: BTreeMap::new(),
@@ -899,7 +904,34 @@ impl Controller {
         }
     }
 
+    /// The controller's own bytes for a pane's terminal (a backfill dump,
+    /// a repair frame, the cursor after it): never into the middle of a
+    /// sequence the pane's output left open.
     fn feed(&mut self, pane: &str, bytes: Vec<u8>) {
+        if !self.streams.contains_key(pane) {
+            return;
+        }
+        let bytes = match self.open_sequences.get_mut(pane) {
+            Some(open) => open.inject(bytes),
+            None => bytes,
+        };
+        self.push_pane_bytes(pane, bytes);
+    }
+
+    /// The pane's own output, in its terminal.
+    fn feed_live(&mut self, pane: &str, bytes: Vec<u8>) {
+        if !self.streams.contains_key(pane) {
+            return;
+        }
+        let bytes = self
+            .open_sequences
+            .entry(pane.to_owned())
+            .or_default()
+            .live(bytes);
+        self.push_pane_bytes(pane, bytes);
+    }
+
+    fn push_pane_bytes(&mut self, pane: &str, bytes: Vec<u8>) {
         if let Some(&stream) = self.streams.get(pane) {
             self.outputs.push_back(Output::PaneOutput {
                 pane: pane.to_owned(),
@@ -2333,6 +2365,12 @@ impl Controller {
                     pane: pane.to_owned(),
                 });
             }
+            if self.streams.contains_key(pane) {
+                self.open_sequences
+                    .entry(pane.to_owned())
+                    .or_default()
+                    .dropped(&data);
+            }
             return;
         }
         // While a convergence capture is due, every byte for the visible
@@ -2349,7 +2387,7 @@ impl Controller {
             self.schedule_convergence_resync();
         }
         if self.streams.contains_key(pane) {
-            self.feed(pane, data);
+            self.feed_live(pane, data);
             return;
         }
         // Output before discovery placed the pane: a terminal on demand, so
@@ -2360,7 +2398,7 @@ impl Controller {
                 .insert(pane.to_owned(), PaneInfo::placeholder(pane, ""));
         }
         self.mint_terminal(pane);
-        self.feed(pane, data);
+        self.feed_live(pane, data);
     }
 
     fn handle_window_add(&mut self, window_id: &str) {
@@ -2499,6 +2537,7 @@ impl Controller {
     fn close_stream(&mut self, pane: &str) {
         self.pane_grids.remove(pane);
         self.held_grids.remove(pane);
+        self.open_sequences.remove(pane);
         if let Some(stream) = self.streams.remove(pane) {
             self.outputs.push_back(Output::StreamClosed {
                 pane: pane.to_owned(),
@@ -2532,6 +2571,7 @@ impl Controller {
         let stream = self.next_stream;
         self.next_stream += 1;
         self.streams.insert(pane.to_owned(), stream);
+        self.open_sequences.remove(pane);
         // Born at the client's grid, so a feed before the first layout lands
         // in the shape tmux drew it for.
         self.pane_grids

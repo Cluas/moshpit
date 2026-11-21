@@ -227,3 +227,93 @@ fn a_pane_printing_through_the_attach_loses_no_line() {
     let missing: Vec<i64> = (1..=153).filter(|n| !rows.contains(n)).collect();
     assert_eq!(rows, (1..=153).collect::<Vec<i64>>(), "missing {missing:?}");
 }
+
+/// tmux's screen while a TUI redraws row by row (`ESC[<row>;1H` + text,
+/// as Claude Code and the screenshot stage draw): row 5 is full to the
+/// last column (pending wrap) and the next row's cursor move is cut in
+/// two — tmux's pty reads split it, `ESC[2` closing one `%output` and
+/// `0;1H…` opening the next. A repaint (capture + cursor) answered in
+/// between: tmux holds the half sequence in its own parser, so its frame
+/// and cursor know nothing of it.
+fn split_sequence_screen() -> Vec<String> {
+    let mut rows: Vec<String> = (1..ROWS).map(|n| format!("row {n}")).collect();
+    rows[4] = "x".repeat(COLS as usize);
+    rows.push(String::new());
+    rows
+}
+
+fn split_sequence_rig() -> Rig {
+    let mut rig = attached();
+    rig.respond(Box::new(|command, _| {
+        if command.starts_with("capture-pane -p -e -S") {
+            return ok(history());
+        }
+        if command.starts_with("capture-pane") {
+            return ok(split_sequence_screen());
+        }
+        if command.starts_with("display-message -p -t %0 '#{cursor_x} #{cursor_y}") {
+            // Right after the full row: tmux's cursor on its last column.
+            return ok([format!("{} 4 0 0", COLS - 1)]);
+        }
+        ok(["0 0"])
+    }));
+    rig
+}
+
+fn draw_full_row_then_split(rig: &mut Rig) {
+    let full = "x".repeat(COLS as usize);
+    rig.push(&format!("%output %0 \\033[5;1H{full}\\033[2\n"));
+}
+
+fn finish_split_row(rig: &mut Rig) {
+    rig.push("%output %0 0;1Hthe next row\n");
+}
+
+/// The 02-pane screenshot's garble, en-US iPhone: a repaint landing
+/// between the two halves of a split escape sequence ate the first half,
+/// so `0;1H` was printed as text after the full row (wrapping onto the
+/// next) and the row it should have moved to was drawn in the wrong
+/// place. The terminal must read the sequence whole, as tmux did.
+#[test]
+fn a_repaint_between_the_halves_of_a_split_sequence_keeps_it_whole() {
+    let mut rig = split_sequence_rig();
+    draw_full_row_then_split(&mut rig);
+    rig.with(|c, now| c.resync_active_pane_now(false, now));
+    rig.settle();
+    finish_split_row(&mut rig);
+    let term = terminal(&rig);
+    let screen = local_screen(&term);
+    assert_eq!(screen[4], "x".repeat(COLS as usize), "{screen:#?}");
+    assert_eq!(screen[5], "row 6", "{screen:#?}");
+    assert_eq!(screen[19], "the next row", "{screen:#?}");
+    assert!(!screen.iter().any(|row| row.contains(";1H")), "{screen:#?}");
+}
+
+/// The same split with the repaint's frame and its cursor answered on
+/// either side of the second half: the cursor's move is the repaint's
+/// last word, and the sequence still reads whole after it.
+#[test]
+fn a_split_sequence_survives_a_repaint_answered_around_it() {
+    let mut rig = split_sequence_rig();
+    draw_full_row_then_split(&mut rig);
+    rig.with(|c, now| c.resync_active_pane_now(false, now));
+    // The frame's reply only.
+    let frame = rig.index_of("capture-pane -p -e -t").expect("frame asked");
+    while rig.answered <= frame {
+        let command = rig.commands[rig.answered].clone();
+        rig.answered += 1;
+        let lines = if command.starts_with("capture-pane -p -e -t") {
+            split_sequence_screen()
+        } else {
+            vec!["0 0".to_owned()]
+        };
+        rig.push(&block(700 + rig.answered as i64, &lines, false));
+    }
+    rig.settle();
+    finish_split_row(&mut rig);
+    let term = terminal(&rig);
+    let screen = local_screen(&term);
+    assert_eq!(screen[4], "x".repeat(COLS as usize), "{screen:#?}");
+    assert_eq!(screen[19], "the next row", "{screen:#?}");
+    assert!(!screen.iter().any(|row| row.contains(";1H")), "{screen:#?}");
+}
