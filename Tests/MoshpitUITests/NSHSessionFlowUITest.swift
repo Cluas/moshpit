@@ -48,15 +48,9 @@ final class NSHSessionFlowUITest: XCTestCase {
         let window = app.waitNSH("terminal-crumb-window", timeout: 30, "no window segment on the breadcrumb")
         XCTAssertTrue(window.isEnabled, "the window segment is inert on a live session")
 
-        // A tap: the overview of every window and pane; Done closes it.
+        // A tap: the windows' quick list, on the window the terminal shows.
         window.tap()
-        app.waitNSH("terminal-overview", "a tap on the window segment didn't open the overview")
-        app.tapNSH("terminal-overview-done")
-        XCTAssertTrue(app.nsh("terminal-overview").waitForNonExistence(timeout: 5), "Done left the overview up")
-
-        // A long press: the picker, on the window the terminal shows.
-        window.press(forDuration: 0.8)
-        app.waitNSH("mux-picker", "a long press on the window segment didn't open the picker")
+        app.waitNSH("mux-picker", "a tap on the window segment didn't open the windows' quick list")
         let current = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH 'mux-picker-row-' AND selected == true"))
             .firstMatch

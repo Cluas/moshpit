@@ -209,8 +209,11 @@ struct SwitchStillTests {
         #expect(terminal.cols == Int(terminal.bounds.width / terminal.metrics.width)
                 && terminal.gridRows == Int(terminal.bounds.height / terminal.metrics.height),
                 "the grid is the slot's: \(terminal.cols)×\(terminal.gridRows) in \(terminal.bounds.size)")
-        terminal.feed(Data("\u{1b}[48;2;58;58;58m\u{1b}[2J".utf8))
-        #expect(terminal.settle { _ in said.last == .some(0x3A3A3A) }, "said: \(said)")
+        // A ground the eye tells from the theme's: a ground under 1.35
+        // contrast is drawn as the theme's (9b8e358d), and #3A3A3A over
+        // Dracula's #282A36 is 1.25. This red is 2.5 over it.
+        terminal.feed(Data("\u{1b}[48;2;192;48;48m\u{1b}[2J".utf8))
+        #expect(terminal.settle { _ in said.last == .some(0xC03030) }, "said: \(said)")
         stage.show(.init(source: .pane(controller, "%2"), inset: 0))
         #expect(said.last == .some(nil), "the next pane's own")
     }
