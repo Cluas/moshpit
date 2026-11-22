@@ -600,7 +600,10 @@ async fn over_mosh_the_status_line_of_the_users_own_session_is_off() {
     hang_up(&mut bench, id, &reaper).await;
     drop(desktop);
     eprintln!("{report}");
-    assert!(off && still, "tmux's status line is on for the phone\n{report}");
+    assert!(
+        off && still,
+        "tmux's status line is on for the phone\n{report}"
+    );
 }
 
 // MARK: 3. Only over a layout of ours (B270's trade-off)
@@ -711,4 +714,223 @@ async fn over_mosh_a_desktops_rearrangement_is_left_alone() {
 async fn over_mosh_with_a_desktop_the_layout_still_comes_back() {
     need!();
     desktop_rearranges(Protocol::Mosh, false).await;
+}
+
+// MARK: The phone's window switch reaches what mosh draws
+
+/// The window mosh's tmux client (the renderer) shows: the child of
+/// `server` (that mosh-server's), else the one plain client that isn't the
+/// desktop.
+fn renderer_window(tmux: &Tmux, server: Option<i64>, desktop: Option<&Desktop>) -> Option<String> {
+    let child: Option<i64> = server.and_then(|server| {
+        let out = Command::new("pgrep")
+            .args(["-P", &server.to_string()])
+            .output()
+            .ok()?;
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
+    });
+    let rows = tmux.run(&[
+        "list-clients",
+        "-F",
+        "#{client_control_mode} #{client_pid} #{client_name}",
+    ]);
+    let name = rows.lines().find_map(|row| {
+        let mut words = row.splitn(3, ' ');
+        let control = words.next()?;
+        let pid: i64 = words.next()?.parse().ok()?;
+        let name = words.next()?;
+        let ours = match child {
+            Some(child) => pid == child,
+            None => server.is_none() && desktop.and_then(|d| d.pid) != Some(pid),
+        };
+        (control == "0" && ours).then(|| name.to_owned())
+    })?;
+    Some(tmux.run(&["display-message", "-p", "-c", &name, "#{window_id}"]))
+}
+
+/// mosh + tmux: the phone picks the session's other window. The breadcrumb
+/// follows the snapshot at once; the screen is what mosh's tmux client
+/// draws, so that client must be on the window too — with the phone alone,
+/// and with a desktop on the same session (the phone in its own group of
+/// it, B773).
+///
+/// `stale`: earlier connects of the phone whose app went away without
+/// hanging up (killed, or the phone lost the network for good): their
+/// mosh-servers stay, each renderer still on its own group of the session,
+/// as on a real host after a few days.
+async fn mosh_window_switch(with_desktop: bool, stale: usize) {
+    let sshd = Sshd::start().await;
+    let tmux = Tmux::named("moshpit-r34w");
+    desktop_session(&tmux, "a");
+    let desktop = with_desktop.then(|| Desktop::attach(&tmux, "a", 200, 60));
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mut left = Vec::new();
+    for _ in 0..stale {
+        let mut gone = Bench::with(sshd.addr(), quick());
+        let (gone_id, gone_reaper) = connect_phone(&mut gone, &sshd, &tmux).await;
+        assert!(
+            eventually(15, || renderer_window(&tmux, gone_reaper.0, None).is_some()).await,
+            "the stale phone's renderer never attached"
+        );
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let _ = gone_id;
+        // The app gone: its runtime and connections, not its mosh-server.
+        drop(gone);
+        left.push(gone_reaper);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let (id, reaper) = connect_phone(&mut bench, &sshd, &tmux).await;
+    let server = if stale > 0 { reaper.0 } else { None };
+    let first = tmux.run(&["display-message", "-p", "-t", "a:0", "#{window_id}"]);
+    let second = tmux.run(&["display-message", "-p", "-t", "a:1", "#{window_id}"]);
+    assert!(
+        eventually(15, || renderer_window(&tmux, server, desktop.as_ref())
+            .as_deref()
+            == Some(first.as_str()))
+        .await,
+        "the renderer isn't on {first}: {:?}",
+        renderer_window(&tmux, server, desktop.as_ref())
+    );
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    for (to, back) in [(&second, &first), (&first, &second), (&second, &first)] {
+        bench
+            .sessions
+            .tmux(id, TmuxAction::SelectWindow(to.clone()))
+            .unwrap();
+        let shown = eventually(10, || {
+            renderer_window(&tmux, server, desktop.as_ref()).as_deref() == Some(to.as_str())
+        })
+        .await;
+        assert!(
+            shown,
+            "with_desktop={with_desktop} stale={stale}: picked {to} (from {back}), mosh draws {:?}; snapshot {:?}\n{}",
+            renderer_window(&tmux, server, desktop.as_ref()),
+            bench
+                .sessions
+                .tmux_snapshot(id)
+                .map(|s| s.active_window_id.clone()),
+            tmux.run(&[
+                "list-clients",
+                "-F",
+                "#{client_control_mode} #{client_pid} #{client_name} #{client_session} #{window_id}"
+            ])
+        );
+        tokio::time::sleep(Duration::from_millis(800)).await;
+    }
+    hang_up(&mut bench, id, &reaper).await;
+    drop(left);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server, tmux and python3; see the module docs"]
+async fn over_mosh_a_window_switch_moves_what_mosh_draws_with_the_phone_alone() {
+    need!();
+    mosh_window_switch(false, 0).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server, tmux and python3; see the module docs"]
+async fn over_mosh_a_window_switch_moves_what_mosh_draws_after_stale_connects() {
+    need!();
+    mosh_window_switch(true, 2).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs sshd, mosh-server, tmux and python3; see the module docs"]
+async fn over_mosh_a_window_switch_moves_what_mosh_draws_with_a_desktop() {
+    need!();
+    mosh_window_switch(true, 0).await;
+}
+
+/// The person's switch from mosh to SSH, as the app makes it: the mosh
+/// session hung up and a new SSH session dialled at once, a desktop
+/// attached, a full-screen program with the mouse on (agy's modes) in the
+/// active pane. The first swipe on the new session is its wheel, and so is
+/// the next.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, tmux and mosh-server"]
+async fn mosh_then_ssh_a_mouse_app_gets_the_first_swipe() {
+    need!();
+    let sshd = Sshd::start().await;
+    let dir = Scratch::new("r34-switch");
+    let app = dir.join("app.sh");
+    std::fs::write(
+        &app,
+        "printf '\\033[?1049h\\033[?1003h\\033[?1006h\\033[?2004h'\n\
+         printf 'FULL-SCREEN\\r\\n'\n\
+         stty raw -echo\n\
+         cat > \"$1\"\n",
+    )
+    .unwrap();
+    let out = dir.join("wheel.in");
+    let tmux = Tmux::named("moshpit-r34s");
+    desktop_session(&tmux, "a");
+    tmux.run(&[
+        "respawn-pane",
+        "-k",
+        "-t",
+        "a:0.0",
+        &format!("sh {} {}", app.display(), out.display()),
+    ]);
+    tmux.run(&["select-pane", "-t", "a:0.0"]);
+    let _desktop = Desktop::attach(&tmux, "a", 200, 60);
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    let mut bench = Bench::with(sshd.addr(), quick());
+    let (mosh, reaper) = connect_phone(&mut bench, &sshd, &tmux).await;
+    assert!(
+        eventually(15, || renderer_window(&tmux, reaper.0, None).is_some()).await,
+        "the mosh renderer never attached"
+    );
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    let _ = bench.sessions.disconnect(mosh).await;
+    let (id, _) = connect_over(&mut bench, &sshd, &tmux, Protocol::Ssh).await;
+    let (attach, panes) = bench.panes(id, 20).await;
+    let framed = |kind: &moshpit_session::EventKind| matches!(kind, moshpit_session::EventKind::FirstFrame { attach: a } if *a == attach);
+    if !bench
+        .seen
+        .iter()
+        .any(|e| e.session == id && framed(&e.kind))
+    {
+        bench.until(id, 20, |kind| framed(kind).then_some(())).await;
+    }
+    let pane = panes.iter().find(|p| p.active).unwrap_or(&panes[0]).clone();
+    let _term = Term::attach(pane.stream);
+    let mark = std::fs::read(&out).unwrap_or_default().len();
+    let wheel = |out: &std::path::Path| std::fs::read(out).unwrap_or_default()[mark..].to_vec();
+    bench.sessions.tmux(id, TmuxAction::ScrollBegan).unwrap();
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(3)).unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    bench.drain();
+    let first = wheel(&out);
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(3)).unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    bench.drain();
+    let both = wheel(&out);
+    eprintln!(
+        "pane {} active={}; first {:?}; both {:?}; mode {}",
+        pane.pane,
+        pane.active,
+        String::from_utf8_lossy(&first),
+        String::from_utf8_lossy(&both),
+        tmux.run(&[
+            "display-message",
+            "-p",
+            "-t",
+            "a:0.0",
+            "#{pane_in_mode} #{mouse_any_flag} #{alternate_on}"
+        ])
+    );
+    assert!(
+        first.starts_with(b"\x1b[<64;"),
+        "the first swipe is the program's wheel: {:?}",
+        String::from_utf8_lossy(&first)
+    );
+    assert!(both.len() > first.len(), "and the next one");
+    let _ = bench.sessions.disconnect(id).await;
 }

@@ -482,3 +482,69 @@ async fn mosh_tmux_the_persons_own_q_leaves_copy_mode_and_nothing_more() {
     );
     let _ = bench.sessions.disconnect(id).await;
 }
+
+/// Right after a switch from mosh to SSH, a full-screen mouse app gets its
+/// wheel: the first ticks on the new SSH attach are not dropped while the
+/// pane's flags are still unknown, nor held for the leg the switch tore
+/// down.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs sshd, tmux and mosh-server"]
+async fn mosh_to_ssh_a_mouse_app_gets_its_wheel_right_after_the_switch() {
+    let sshd = Sshd::start().await;
+    let dir = Scratch::new("wheel-switch");
+    let app = fake_app(&dir);
+    let tmux = Tmux::named("scroll-msw");
+    tmux.new_session("msw");
+    let out = dir.join("wheel.in");
+    tmux.run(&[
+        "respawn-pane",
+        "-k",
+        "-t",
+        "msw",
+        &format!("sh {} 1 1 0 {}", app.display(), out.display()),
+    ]);
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let mut bench = Bench::with(sshd.addr(), moshpit_session::Timing::default());
+    let (id, _term, _reaper) = mosh_tmux(&mut bench, sshd.port, &tmux).await;
+
+    let before = bench.sessions.view(id).unwrap().attach;
+    bench.sessions.switch_to_ssh(id);
+    bench
+        .state(id, 10, |s| *s == moshpit_session::SessionState::Connecting)
+        .await;
+    bench.connected(id).await;
+    let (attach, panes) = bench.panes_after(id, before, 20).await;
+    let framed =
+        |kind: &EventKind| matches!(kind, EventKind::FirstFrame { attach: a } if *a == attach);
+    if !bench
+        .seen
+        .iter()
+        .any(|e| e.session == id && framed(&e.kind))
+    {
+        bench.until(id, 20, |kind| framed(kind).then_some(())).await;
+    }
+    let pane = panes.iter().find(|p| p.active).unwrap_or(&panes[0]).clone();
+    let term = Term::attach(pane.stream);
+    term.resize(100, 30);
+    let mark = std::fs::read(&out).unwrap_or_default().len();
+    // The swipe the person makes as the screen comes back.
+    bench.sessions.tmux(id, TmuxAction::ScrollBegan).unwrap();
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(3)).unwrap();
+    settle(&mut bench, 1500).await;
+    let first = std::fs::read(&out).unwrap_or_default()[mark..].to_vec();
+    bench.sessions.tmux(id, TmuxAction::ScrollLines(3)).unwrap();
+    settle(&mut bench, 1500).await;
+    let both = std::fs::read(&out).unwrap_or_default()[mark..].to_vec();
+    eprintln!(
+        "first swipe {:?}, then {:?}",
+        String::from_utf8_lossy(&first),
+        String::from_utf8_lossy(&both)
+    );
+    assert!(
+        first.starts_with(b"\x1b[<64;"),
+        "the first swipe after the switch is the program's wheel: {:?}",
+        String::from_utf8_lossy(&first)
+    );
+    assert!(both.len() > first.len(), "and the next one too");
+    let _ = bench.sessions.disconnect(id).await;
+}
