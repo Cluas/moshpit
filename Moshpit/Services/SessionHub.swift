@@ -784,6 +784,21 @@ final class SessionHub {
         m.isRoaming = false
         metrics.metrics[connectionId] = m
     }
+
+    /// A manual reconnect (a protocol switch, Install Assist): the
+    /// connection's session torn down and a fresh one prepared in its place.
+    /// The fresh one is on screen when the old one was: set before it
+    /// starts, so its tmux leg attaches pinned. Unset, the switched-in
+    /// session attached as if on Home: its pins handed back and its window's
+    /// output never painted — after mosh gave way to SSH the pane froze,
+    /// a swipe scrolling the host and nothing on the phone.
+    func replace(_ connection: ServerConnection) async -> ActiveSession {
+        let onScreen = visibleSession != nil && visibleSession === sessions[connection.id]
+        await disconnect(connection.id)
+        let session = prepare(connection)
+        if onScreen { visibleSession = session }
+        return session
+    }
 }
 
 // MARK: - Sessions on the Rust core (W14a)

@@ -964,8 +964,7 @@ struct TerminalScreen: View {
                 sshOnce = false
                 connection.jumpMoshRoute = JumpMoshRoute.ssh.rawValue
             }
-            await hub.disconnect(connection.id)
-            let session = hub.prepare(connection)
+            let session = await hub.replace(connection)
             self.active = session
             await hub.start(session, theme: theme, fontSize: settings.fontSize, fontName: settings.fontName,
                         cursorShape: settings.cursorShape, cursorColorId: effectiveCursorColorId,
