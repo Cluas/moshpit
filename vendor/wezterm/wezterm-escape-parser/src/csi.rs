@@ -2103,6 +2103,26 @@ impl<'a> CSIParser<'a> {
                 top: OneBased::new(1),
                 bottom: OneBased::new(u32::MAX),
             })),
+            // Moshpit: both left empty, `CSI ; r`, is the full screen too, as
+            // in xterm and tmux. agy resets its margins so; dropped, the
+            // margins it set stayed and every newline below them scrolled a
+            // band of the screen, repeating lines on the phone.
+            [CsiParam::P(b';')] => Ok(self.advance_by(
+                1,
+                params,
+                CSI::Cursor(Cursor::SetTopAndBottomMargins {
+                    top: OneBased::new(1),
+                    bottom: OneBased::new(u32::MAX),
+                }),
+            )),
+            [a, CsiParam::P(b';')] => Ok(self.advance_by(
+                2,
+                params,
+                CSI::Cursor(Cursor::SetTopAndBottomMargins {
+                    top: OneBased::from_esc_param(a)?,
+                    bottom: OneBased::new(u32::MAX),
+                }),
+            )),
             [p] => Ok(self.advance_by(
                 1,
                 params,
