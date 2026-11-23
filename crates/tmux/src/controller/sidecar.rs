@@ -39,7 +39,8 @@ pub(super) struct SidecarState {
     pub owned_session_ids: BTreeSet<String>,
     /// The one session whose status line this controller turned off.
     pub status_hidden_session_id: Option<String>,
-    /// The client names listed just before the owned sessions are read.
+    /// The clients listed just before the owned sessions are read, as a
+    /// stamp names one (`name pid`, [`hide_stamp_command`]).
     pub owned_listed_clients: Option<BTreeSet<String>>,
     /// B773: the renderer goes into our group once the group has landed
     /// where its session is.
@@ -563,7 +564,7 @@ impl Controller {
     /// desktop's with it.
     pub(super) fn read_owned_sessions(&mut self) {
         self.send_command(
-            "list-clients -F '#{client_name}'".to_owned(),
+            "list-clients -F '#{client_name} #{client_pid}'".to_owned(),
             Reply::OwnedClients,
         );
         self.send_command(
@@ -612,7 +613,7 @@ impl Controller {
             let Some(clients) = &clients else {
                 continue;
             };
-            if stamp.is_empty() || clients.contains(stamp) {
+            if stamp.is_empty() || stamp_is_live(stamp, clients) {
                 continue;
             }
             if current.as_deref() == Some(id) {
@@ -767,7 +768,31 @@ impl Controller {
 }
 
 /// Stamps `session`'s hidden status line with this control client's own
-/// name (`-F`: tmux expands it for the client that runs the command).
+/// name and pid (`-F`: tmux expands them for the client that runs the
+/// command). The name alone was a terminal's (`/dev/pts/3`), which the next
+/// launch's sidecar is often given again: a killed launch's stamp read as
+/// that sidecar's own, alive, and the status line it left off stayed off
+/// for good (live_r34 on CI, once in four runs).
 fn hide_stamp_command(session: &str) -> String {
-    format!("set-option -t '{session}' -F {STATUS_HIDDEN_OPTION} '#{{client_name}}'")
+    format!(
+        "set-option -t '{session}' -F {STATUS_HIDDEN_OPTION} '#{{client_name}} #{{client_pid}}'"
+    )
+}
+
+/// Whether `stamp` is a client still attached: `name pid` exactly, as
+/// stamped now; a stamp of an older build (the name alone) by its name.
+fn stamp_is_live(stamp: &str, clients: &BTreeSet<String>) -> bool {
+    if clients.contains(stamp) {
+        return true;
+    }
+    let legacy = stamp
+        .rsplit_once(' ')
+        .is_none_or(|(_, pid)| pid.parse::<u64>().is_err());
+    legacy
+        && clients.iter().any(|client| {
+            client
+                .rsplit_once(' ')
+                .map_or(client.as_str(), |(name, _)| name)
+                == stamp
+        })
 }

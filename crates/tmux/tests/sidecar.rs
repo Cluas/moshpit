@@ -1523,7 +1523,7 @@ fn a_session_moshpit_makes_is_marked_on_it_and_its_hidden_status_stamped() {
         [
             "set-option -t '$5' @moshpit_owned 1",
             "set-option -t '$1' -u @moshpit_status_hidden",
-            "set-option -t '$5' -F @moshpit_status_hidden '#{client_name}'",
+            "set-option -t '$5' -F @moshpit_status_hidden '#{client_name} #{client_pid}'",
         ]
     );
     s.switch_session("$1");
@@ -1579,6 +1579,46 @@ fn a_sidecar_after_a_killed_app_on_that_session_keeps_it_off() {
         Some("set-option -t '$1' status off")
     );
     assert!(s.status_commands().contains(&"set-option -t '$5' -u status".to_owned()));
+}
+
+/// B86: the next launch's sidecar given the very terminal the killed one
+/// had (`/dev/pts/3` again, as Linux hands ptys out): the stamp names a
+/// client by its name and pid, so the dead one's is not taken for this
+/// sidecar's own, alive (live_r34 on CI, once in four runs).
+#[test]
+fn a_killed_apps_stamp_on_a_terminal_name_given_again_is_still_dead() {
+    let s = make_marked(
+        &["$1 owned= hidden=", "$5 owned=1 hidden=client-45613 11111"],
+        ("$1", "work"),
+    );
+    assert!(
+        s.status_commands()
+            .contains(&"set-option -t '$5' -u status".to_owned()),
+        "{:?}",
+        s.status_commands()
+    );
+}
+
+/// A stamp of an older build (the name alone) of a client still attached:
+/// another phone's, left alone; this sidecar's own stamp, name and pid,
+/// is alive.
+#[test]
+fn a_stamp_of_an_older_build_and_our_own_are_alive() {
+    let s = make_marked(
+        &[
+            "$1 owned= hidden=",
+            "$5 owned=1 hidden=client-45613",
+            "$6 owned=1 hidden=client-45613 45613",
+        ],
+        ("$1", "work"),
+    );
+    assert!(
+        s.status_commands()
+            .iter()
+            .all(|c| !c.contains("'$5'") && !c.contains("'$6'")),
+        "{:?}",
+        s.status_commands()
+    );
 }
 
 /// A stamp of a client still attached is another phone's, on that session
