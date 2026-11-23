@@ -70,6 +70,8 @@ pub enum Screen {
     /// A folder of the host, from a path link or the Files key
     /// ([`terminal::folder`]).
     RemoteFolder,
+    /// A Markdown file of the host, laid out ([`terminal::markdown`]).
+    MarkdownPreview,
     /// Home › a host's sessions ([`sessions`]).
     Sessions,
     /// A server's host key, before a connection trusts it ([`host_key`]).
@@ -84,7 +86,7 @@ pub enum Screen {
 
 impl Screen {
     /// Every screen.
-    pub const ALL: [Screen; 28] = [
+    pub const ALL: [Screen; 29] = [
         Screen::RecentLog,
         Screen::AppIcon,
         Screen::Accent,
@@ -108,6 +110,7 @@ impl Screen {
         Screen::MuxPicker,
         Screen::InstallAssist,
         Screen::RemoteFolder,
+        Screen::MarkdownPreview,
         Screen::Sessions,
         Screen::HostKey,
         Screen::AgentTask,
@@ -136,6 +139,7 @@ impl Screen {
                 | Screen::AccentEditor
                 | Screen::AppIcon
                 | Screen::RemoteFolder
+                | Screen::MarkdownPreview
                 | Screen::MuxPicker
                 | Screen::SshKeys
                 | Screen::AddKey
@@ -184,6 +188,7 @@ impl Screen {
                 | Screen::AccentEditor
                 | Screen::AppIcon
                 | Screen::RemoteFolder
+                | Screen::MarkdownPreview
                 | Screen::MuxPicker
                 | Screen::SshKeys
                 | Screen::AddKey
@@ -280,6 +285,7 @@ impl Screen {
             Screen::MuxPicker => "mux-picker",
             Screen::InstallAssist => "install-assist",
             Screen::RemoteFolder => "remote-folder",
+            Screen::MarkdownPreview => "markdown-preview",
             Screen::Sessions => "sessions",
             Screen::HostKey => "host-key",
             Screen::AgentTask => "agent-task",
@@ -314,6 +320,7 @@ impl Screen {
             Screen::MuxPicker => terminal::picker::Message::parse(message).map(drop),
             Screen::InstallAssist => terminal::install::Message::parse(message).map(drop),
             Screen::RemoteFolder => terminal::folder::Message::parse(message).map(drop),
+            Screen::MarkdownPreview => terminal::markdown::Message::parse(message).map(drop),
             Screen::Sessions => sessions::Message::parse(message).map(drop),
             Screen::HostKey => host_key::Message::parse(message).map(drop),
             Screen::AgentTask => agent_task::Message::parse(message).map(drop),
@@ -441,6 +448,13 @@ impl Screen {
                     surface: surface.into(),
                 }
             }),
+            Screen::MarkdownPreview => {
+                Root::new::<terminal::markdown::MarkdownPreviewScreen>(move || {
+                    terminal::markdown::ScreenProps {
+                        surface: surface.into(),
+                    }
+                })
+            }
             Screen::Sessions => {
                 Root::new::<sessions::SessionsScreen>(move || sessions::ScreenProps {
                     surface: surface.into(),
@@ -642,6 +656,10 @@ mod tests {
         assert_eq!(Screen::named("mux-picker"), Some(Screen::MuxPicker));
         assert_eq!(Screen::named("install-assist"), Some(Screen::InstallAssist));
         assert_eq!(Screen::named("remote-folder"), Some(Screen::RemoteFolder));
+        assert_eq!(
+            Screen::named("markdown-preview"),
+            Some(Screen::MarkdownPreview)
+        );
         assert_eq!(Screen::named("host-key"), Some(Screen::HostKey));
         assert_eq!(Screen::named("agent-task"), Some(Screen::AgentTask));
         assert_eq!(Screen::named("theme-import"), Some(Screen::ThemeImport));

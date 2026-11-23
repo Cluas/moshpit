@@ -1527,32 +1527,33 @@ fn expanding(
 /// host.
 fn jump_host(draft: &Draft) -> AnyElement {
     let state = draft.state;
-    let shown = computed(move || {
-        state.with(|s| s.as_ref().is_some_and(|s| !s.nested))
-    });
+    let shown = computed(move || state.with(|s| s.as_ref().is_some_and(|s| !s.nested)));
     let draft = draft.clone();
     view()
         .w_full()
-        .child(when(move || shown.get(), move || {
-            // The choices change under the form (a jump host just made):
-            // the section is made again from them.
-            let state = draft.state;
-            let key = move || {
-                state.with(|s| {
-                    use std::hash::{Hash, Hasher};
-                    let mut h = std::collections::hash_map::DefaultHasher::new();
-                    if let Some(s) = s {
-                        (&s.via, &s.via_users).hash(&mut h);
-                        for c in &s.via_choices {
-                            (&c.id, &c.name, &c.detail).hash(&mut h);
+        .child(when(
+            move || shown.get(),
+            move || {
+                // The choices change under the form (a jump host just made):
+                // the section is made again from them.
+                let state = draft.state;
+                let key = move || {
+                    state.with(|s| {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        if let Some(s) = s {
+                            (&s.via, &s.via_users).hash(&mut h);
+                            for c in &s.via_choices {
+                                (&c.id, &c.name, &c.detail).hash(&mut h);
+                            }
                         }
-                    }
-                    h.finish()
-                })
-            };
-            let draft = draft.clone();
-            remount(key, move || jump_host_section(&draft))
-        }))
+                        h.finish()
+                    })
+                };
+                let draft = draft.clone();
+                remount(key, move || jump_host_section(&draft))
+            },
+        ))
         .into_element()
 }
 
@@ -1603,25 +1604,22 @@ fn jump_host_section(draft: &Draft) -> AnyElement {
             .on_press(move || tell(json!({"ev": "edit-jump", "id": id})))
             .test_id("connection-form-edit-jump")
     });
-    let section = section
-        .item(
-            select(
-                t!("Connect via"),
-                options,
-                move || {
-                    state.with(|s| s.as_ref().map(|s| s.via.clone()).unwrap_or_default().into())
-                },
-                move |id| {
-                    if id.as_ref() == NEW_VIA {
-                        tell(json!({"ev": "new-jump"}));
-                    } else {
-                        pick(id.to_string());
-                    }
-                },
-            )
-            .test_id("connection-form-via"),
-            Inset::Content,
-        );
+    let section = section.item(
+        select(
+            t!("Connect via"),
+            options,
+            move || state.with(|s| s.as_ref().map(|s| s.via.clone()).unwrap_or_default().into()),
+            move |id| {
+                if id.as_ref() == NEW_VIA {
+                    tell(json!({"ev": "new-jump"}));
+                } else {
+                    pick(id.to_string());
+                }
+            },
+        )
+        .test_id("connection-form-via"),
+        Inset::Content,
+    );
     let section = match edit {
         Some(edit) => section.row(edit),
         None => section,
@@ -1642,20 +1640,23 @@ fn jump_only(draft: &Draft) -> AnyElement {
     let set = Rc::new(draft.setter(Field::JumpOnly));
     view()
         .w_full()
-        .child(when(move || shown.get(), move || {
-            let set = set.clone();
-            section()
-                .row(
-                    row(t!("Jump host only")).trailing(
-                        switch(move || on.get(), move |v| set(v))
-                            .label(t!("Jump host only"))
-                            .test_id("toggle-jump-only"),
-                    ),
-                )
-                .footer(t!("Not listed on Home; pick it under Connect via."))
-                .test_id("connection-form-jump-only")
-                .into_element()
-        }))
+        .child(when(
+            move || shown.get(),
+            move || {
+                let set = set.clone();
+                section()
+                    .row(
+                        row(t!("Jump host only")).trailing(
+                            switch(move || on.get(), move |v| set(v))
+                                .label(t!("Jump host only"))
+                                .test_id("toggle-jump-only"),
+                        ),
+                    )
+                    .footer(t!("Not listed on Home; pick it under Connect via."))
+                    .test_id("connection-form-jump-only")
+                    .into_element()
+            },
+        ))
         .into_element()
 }
 

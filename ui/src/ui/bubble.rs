@@ -111,16 +111,13 @@ fn bubble(saying: Signal<Option<(u64, String)>>, n: u64, line: String, tail: Tai
         // The tail: a small square turned 45°, half under the bubble's
         // edge on the companion's side.
         .child(
-            tip.top(px(0.0))
-                .bottom(px(0.0))
-                .justify_center()
-                .child(
-                    view()
-                        .w(px(8.0))
-                        .h(px(8.0))
-                        .rotate(Radians(std::f32::consts::FRAC_PI_4))
-                        .bg(move || token("popover")),
-                ),
+            tip.top(px(0.0)).bottom(px(0.0)).justify_center().child(
+                view()
+                    .w(px(8.0))
+                    .h(px(8.0))
+                    .rotate(Radians(std::f32::consts::FRAC_PI_4))
+                    .bg(move || token("popover")),
+            ),
         )
         .child(
             TextToken::Footnote

@@ -534,8 +534,7 @@ pub fn HomeScreen(props: ScreenProps) -> impl IntoElement {
     let offset = animated_value(0.0);
     let pull = animated_value(0.0);
     let ready = computed(move || state.with(Option::is_some));
-    let empty =
-        computed(move || {
+    let empty = computed(move || {
         state.with(|s| {
             s.as_ref()
                 .is_some_and(|s| s.connections.is_empty() && s.jump_hosts == 0)
@@ -700,7 +699,12 @@ fn list(
         }))
         .child(when(move || offers_icon.get(), {
             let ctx = ctx.clone();
-            move || view().w_full().mt(px(FIRST_GAP)).child(pet::icon_offer(ctx.clone()))
+            move || {
+                view()
+                    .w_full()
+                    .mt(px(FIRST_GAP))
+                    .child(pet::icon_offer(ctx.clone()))
+            }
         }))
         .child(when(move || top.get(), {
             let ctx = ctx.clone();

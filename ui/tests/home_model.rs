@@ -183,10 +183,34 @@ fn a_pane_is_called_by_its_project() {
     for (command, window, workspace, path, place) in [
         ("2.1.322", "2.1.322", None, Some("/Users/me"), None),
         ("claude", "1", None, None, None),
-        ("claude", "moshpit", None, Some("/srv/other"), Some("moshpit")),
-        ("claude", "claude", None, Some("/home/dev/src/x/"), Some("x")),
-        ("claude", "Tab 1", Some("builder"), Some("/srv/other"), Some("builder")),
-        ("claude", "Tab 1", Some("~"), Some("/srv/proj-4"), Some("proj-4")),
+        (
+            "claude",
+            "moshpit",
+            None,
+            Some("/srv/other"),
+            Some("moshpit"),
+        ),
+        (
+            "claude",
+            "claude",
+            None,
+            Some("/home/dev/src/x/"),
+            Some("x"),
+        ),
+        (
+            "claude",
+            "Tab 1",
+            Some("builder"),
+            Some("/srv/other"),
+            Some("builder"),
+        ),
+        (
+            "claude",
+            "Tab 1",
+            Some("~"),
+            Some("/srv/proj-4"),
+            Some("proj-4"),
+        ),
     ] {
         assert_eq!(
             pane_place(command, window, workspace, path).as_deref(),

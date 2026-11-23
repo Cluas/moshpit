@@ -501,7 +501,8 @@ fn a_waiting_select_has_no_menu_and_dims() {
     let menus = natives.0.lock().unwrap();
     let waiting = menus.values().any(|(name, props)| {
         name == "moshpit/menu"
-            && props.get("identifier").and_then(|v| v.as_str()) == Some("ui-gallery-select-disabled")
+            && props.get("identifier").and_then(|v| v.as_str())
+                == Some("ui-gallery-select-disabled")
     });
     assert!(!waiting, "a menu over the waiting select");
     drop(menus);

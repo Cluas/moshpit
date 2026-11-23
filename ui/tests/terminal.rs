@@ -200,10 +200,16 @@ fn behind_a_jump_host_the_pill_asks_how_mosh_udp_gets_there() {
     let texts: Vec<_> = dialog.buttons.iter().map(|b| b.text.clone()).collect();
     assert_eq!(
         texts,
-        ["UDP straight to the host", "UDP forwarded by the jump host", "Cancel"]
+        [
+            "UDP straight to the host",
+            "UDP forwarded by the jump host",
+            "Cancel"
+        ]
     );
-    app.answer_dialog(nsh_testing::DialogAnswer::Press("UDP straight to the host".into()))
-        .unwrap();
+    app.answer_dialog(nsh_testing::DialogAnswer::Press(
+        "UDP straight to the host".into(),
+    ))
+    .unwrap();
     let intent = next_intent(&heard);
     assert_eq!(intent["ev"], "jump-route");
     assert_eq!(intent["route"], "direct");
@@ -223,7 +229,11 @@ fn the_jump_host_notice_offers_udp_in_place() {
     let (mut app, channel, _) = open(Params::default());
     app.answer_dialogs_myself();
     let heard = hear(&channel);
-    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"jump": true, "jumpSsh": true})),
+    );
     app.wait_for("id:terminal-jump-notice-udp").unwrap();
     app.press("id:terminal-jump-notice-udp").unwrap();
     assert_eq!(next_intent(&heard)["ev"], "dialog-anchor");
@@ -1121,7 +1131,11 @@ fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
     show(&mut app, &channel, &chrome());
     app.wait_for("id:terminal-breadcrumb").unwrap();
     assert!(!app.screen().shows(words), "no jump host, no notice");
-    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"jump": true, "jumpSsh": true})),
+    );
     app.wait_for("id:terminal-jump-notice")
         .unwrap_or_else(|e| panic!("{e}: {:?}", app.screen().texts()));
     assert!(app.screen().shows(words));
@@ -1139,7 +1153,10 @@ fn behind_a_jump_host_a_notice_says_ssh_once_and_goes_by_itself_or_on_tap() {
     show(
         &mut app,
         &channel,
-        &with(chrome(), json!({"jump": true, "jumpSsh": true, "name": "again"})),
+        &with(
+            chrome(),
+            json!({"jump": true, "jumpSsh": true, "name": "again"}),
+        ),
     );
     app.run_for(Duration::from_millis(500)).unwrap();
     assert!(!app.screen().shows(words), "once per session");
@@ -1154,12 +1171,16 @@ fn a_roam_over_in_a_moment_shows_no_banner() {
     show(
         &mut app,
         &channel,
-        &with(chrome(), json!({"banner": {"kind": "roam", "srtt": 40.0, "history": []}})),
+        &with(
+            chrome(),
+            json!({"banner": {"kind": "roam", "srtt": 40.0, "history": []}}),
+        ),
     );
     for _ in 0..5 {
         app.run_for(Duration::from_millis(100)).unwrap();
         assert!(
-            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            !app.screen()
+                .shows("Network changed. mosh is reconnecting. · 40 ms"),
             "no banner within the grace"
         );
     }
@@ -1167,7 +1188,8 @@ fn a_roam_over_in_a_moment_shows_no_banner() {
     for _ in 0..25 {
         app.run_for(Duration::from_millis(100)).unwrap();
         assert!(
-            !app.screen().shows("Network changed. mosh is reconnecting. · 40 ms"),
+            !app.screen()
+                .shows("Network changed. mosh is reconnecting. · 40 ms"),
             "a roam that ended never shows"
         );
     }
@@ -1178,7 +1200,11 @@ fn a_roam_over_in_a_moment_shows_no_banner() {
 fn the_jump_host_notice_goes_by_itself() {
     let words = "This connection goes through a jump host over SSH. mosh can use UDP instead.";
     let (mut app, channel, _) = open(Params::default());
-    show(&mut app, &channel, &with(chrome(), json!({"jump": true, "jumpSsh": true})));
+    show(
+        &mut app,
+        &channel,
+        &with(chrome(), json!({"jump": true, "jumpSsh": true})),
+    );
     app.wait_for("id:terminal-jump-notice").unwrap();
     for _ in 0..100 {
         if !app.screen().shows(words) {

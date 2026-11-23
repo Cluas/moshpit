@@ -219,7 +219,9 @@ fn installed_out_of_date_and_the_warnings() {
             user_action: Some("Codex won't run a newly added hook until you trust it.".into()),
             hooks_proof: proof(
                 ProofState::Unavailable,
-                Some("Update the hooks for Claude Code first: the test runs what this version of Moshpit installs."),
+                Some(
+                    "Update the hooks for Claude Code first: the test runs what this version of Moshpit installs.",
+                ),
             ),
             push_proof: proof(ProofState::Failed, Some("The host reported: curl: (6)")),
             ..installed()
@@ -316,7 +318,11 @@ fn every_row_and_the_agent_menu_reach_the_host() {
     shows_all(&app, &["Reinstall", "Re-pair"]);
     let menu = natives.find("moshpit/menu", "hostsetup-agent").unwrap();
     let items = natives.prop(menu, "items").unwrap();
-    assert_eq!(items[0]["checked"], json!(true), "the agent in use is checked");
+    assert_eq!(
+        items[0]["checked"],
+        json!(true),
+        "the agent in use is checked"
+    );
     assert_eq!(items[1].get("checked"), None);
     emit(&mut app, menu, "select", json!("codex"));
     assert_eq!(next(&told), json!({"ev": "agent", "id": "codex"}));
@@ -360,7 +366,10 @@ fn the_agent_menu_says_each_agents_status_or_that_the_host_doesnt_have_it() {
         .iter()
         .map(|item| item["detail"].as_str().unwrap_or("-"))
         .collect();
-    assert_eq!(details, ["Installed", "Not found on this host", "Out of date"]);
+    assert_eq!(
+        details,
+        ["Installed", "Not found on this host", "Out of date"]
+    );
     channel.close();
 }
 
@@ -431,7 +440,11 @@ fn a_running_test_holds_the_steps_and_keeps_done() {
     app.wait_for("id:hostsetup-host").unwrap();
     assert!(app.screen().shows("Waiting for it to arrive…"));
     assert!(!done_is_busy(&app), "Done stays");
-    for id in ["hostsetup-install", "hostsetup-pair", "hostsetup-hooks-proof"] {
+    for id in [
+        "hostsetup-install",
+        "hostsetup-pair",
+        "hostsetup-hooks-proof",
+    ] {
         let _ = app.press(&format!("id:{id}"));
     }
     quiet(&told);
@@ -466,7 +479,10 @@ fn the_hooks_test_says_what_it_did_not_what_the_push_test_does() {
         },
     );
     app.wait_for("id:hostsetup-host").unwrap();
-    shows_all(&app, &["Works — the pane shows the status it set.", "Passed"]);
+    shows_all(
+        &app,
+        &["Works — the pane shows the status it set.", "Passed"],
+    );
     assert!(!app.screen().shows("Proven — it arrived on this phone."));
     channel.close();
 }
@@ -488,7 +504,10 @@ fn a_host_that_couldnt_be_read_offers_only_retry() {
         },
     );
     app.wait_for("id:hostsetup-unread").unwrap();
-    shows_all(&app, &["Couldn't read this host", "connection refused", "Retry"]);
+    shows_all(
+        &app,
+        &["Couldn't read this host", "connection refused", "Retry"],
+    );
     shows_none(
         &app,
         &[
@@ -530,7 +549,10 @@ fn installing_for_an_agent_the_host_doesnt_have_asks_first_in_the_alert() {
     assert!(wait_dialog(&mut app), "it didn't ask");
     let dialog = app.pending_dialog().cloned().unwrap();
     assert!(!dialog.sheet);
-    assert_eq!(dialog.title.as_deref(), Some("Gemini CLI isn't on this host"));
+    assert_eq!(
+        dialog.title.as_deref(),
+        Some("Gemini CLI isn't on this host")
+    );
     assert_eq!(dialog.message.as_deref(), Some(why));
     app.answer_dialog(DialogAnswer::Press("Install Anyway".into()))
         .unwrap();
@@ -549,7 +571,8 @@ fn installing_for_an_agent_the_host_doesnt_have_asks_first_in_the_alert() {
     );
     post_setup(&mut app, &channel, asking);
     assert!(wait_dialog(&mut app), "it didn't ask again");
-    app.answer_dialog(DialogAnswer::Press("Cancel".into())).unwrap();
+    app.answer_dialog(DialogAnswer::Press("Cancel".into()))
+        .unwrap();
     assert_eq!(next(&told), json!({"ev": "dismiss"}));
     quiet(&told);
     channel.close();
@@ -568,7 +591,10 @@ fn removing_moshpit_from_the_host_asks_first_and_says_what_goes() {
     assert!(wait_dialog(&mut app), "it didn't ask");
     let dialog = app.pending_dialog().cloned().unwrap();
     assert!(!dialog.sheet, "the system's alert, not a sheet");
-    assert_eq!(dialog.title.as_deref(), Some("Remove Moshpit from this host?"));
+    assert_eq!(
+        dialog.title.as_deref(),
+        Some("Remove Moshpit from this host?")
+    );
     assert_eq!(
         dialog.message.as_deref(),
         Some(
@@ -588,12 +614,14 @@ fn removing_moshpit_from_the_host_asks_first_and_says_what_goes() {
             ("Remove".to_owned(), "Destructive".to_owned())
         ]
     );
-    app.answer_dialog(DialogAnswer::Press("Cancel".into())).unwrap();
+    app.answer_dialog(DialogAnswer::Press("Cancel".into()))
+        .unwrap();
     quiet(&told);
     // Yes: the host is told.
     app.press("id:hostsetup-remove-everything").unwrap();
     assert!(wait_dialog(&mut app), "it didn't ask again");
-    app.answer_dialog(DialogAnswer::Press("Remove".into())).unwrap();
+    app.answer_dialog(DialogAnswer::Press("Remove".into()))
+        .unwrap();
     assert_eq!(next(&told), json!({"ev": "remove-everything"}));
     // While a step runs it waits, and asks nothing.
     post_setup(
@@ -628,7 +656,15 @@ fn the_host_setup_speaks_the_apps_language() {
     app.wait_for("id:hostsetup-host").unwrap();
     shows_all(
         &app,
-        &["配置主机", "智能体状态", "状态脚本", "安装", "未安装", "推送", "未配对"],
+        &[
+            "配置主机",
+            "智能体状态",
+            "状态脚本",
+            "安装",
+            "未安装",
+            "推送",
+            "未配对",
+        ],
     );
     channel.close();
 }

@@ -38,6 +38,7 @@ mod diagnostics;
 pub mod folder;
 pub mod install;
 mod keys;
+pub mod markdown;
 pub mod model;
 pub mod overview;
 mod panels;

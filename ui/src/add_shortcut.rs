@@ -225,7 +225,10 @@ pub fn describe_in(english: &str, locale: &str) -> String {
 
 /// What the Shortcuts page calls `shortcut`: a built-in's name in
 /// `locale`, the user's own words as they wrote them.
-pub fn shortcut_name(shortcut: &moshpit_store::shortcuts::TerminalShortcut, locale: &str) -> String {
+pub fn shortcut_name(
+    shortcut: &moshpit_store::shortcuts::TerminalShortcut,
+    locale: &str,
+) -> String {
     if shortcut.is_builtin {
         describe_in(&shortcut.summary, locale)
     } else {
@@ -1117,7 +1120,10 @@ mod tests {
                 _ => &[],
             }
         };
-        let english: Vec<String> = ShortcutStore::builtins().into_iter().map(|s| s.summary).collect();
+        let english: Vec<String> = ShortcutStore::builtins()
+            .into_iter()
+            .map(|s| s.summary)
+            .collect();
         assert!(english.len() >= 30, "{english:?}");
         for language in ["zh-Hans", "zh-Hant", "ja", "ko", "de", "es", "fr", "pt-BR"] {
             for text in &english {
@@ -1137,9 +1143,19 @@ mod tests {
 
     #[test]
     fn chinese_reads_as_chinese() {
-        assert_eq!(describe_in("Interrupt (SIGINT)", "zh-Hans"), "中断（SIGINT）");
-        assert_eq!(describe_in("Tab", "zh-Hans"), "Tab 键", "the key, not the multiplexer's tab");
-        assert_eq!(describe_in("Clear line before cursor", "zh-Hans"), "删掉光标前的内容");
+        assert_eq!(
+            describe_in("Interrupt (SIGINT)", "zh-Hans"),
+            "中断（SIGINT）"
+        );
+        assert_eq!(
+            describe_in("Tab", "zh-Hans"),
+            "Tab 键",
+            "the key, not the multiplexer's tab"
+        );
+        assert_eq!(
+            describe_in("Clear line before cursor", "zh-Hans"),
+            "删掉光标前的内容"
+        );
     }
 
     /// A built-in is shown translated and stored as it was; the user's own

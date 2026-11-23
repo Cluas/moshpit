@@ -51,6 +51,7 @@ fn draws_with(screen: Screen) -> &'static [&'static str] {
         Screen::AccentEditor => &["accent_editor.rs"],
         Screen::AppIcon => &["app_icon.rs"],
         Screen::RemoteFolder => &["terminal/folder.rs", "terminal/prompt.rs"],
+        Screen::MarkdownPreview => &["terminal/markdown.rs"],
         // The picker opens the folder's sheet and asks the host's prompt.
         Screen::MuxPicker => &[
             "terminal/picker.rs",

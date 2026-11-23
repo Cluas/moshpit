@@ -740,7 +740,7 @@ struct TerminalScreen: View {
             photoSelection = []
             beginImageAttachment(items)
         }
-        .quickLookPreview($quickLookURL)
+        .remotePreview($quickLookURL)
         .onChange(of: quickLookURL) { _, url in
             if url == nil { dismissRemotePreview() }
         }

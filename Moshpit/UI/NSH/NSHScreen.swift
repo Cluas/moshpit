@@ -60,6 +60,9 @@ enum NSHScreen: String, CaseIterable, Sendable {
     /// A folder of the host, from a path link or the Files key
     /// (`RemoteFolderNSHSheet`). Drawn by NSH whenever the terminal is.
     case remoteFolder = "remote-folder"
+    /// A Markdown file of the host, laid out (`MarkdownPreviewNSHPage`),
+    /// from a path link or the folder sheet.
+    case markdownPreview = "markdown-preview"
     /// Home › a host's sessions (`ui/src/sessions`): pushed from the NSH
     /// Home, which has no SwiftUI page of its own to fall back to.
     case sessions

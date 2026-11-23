@@ -39,10 +39,11 @@
 //!   debug screen (`ui-gallery`).
 
 pub mod alert;
-pub mod button;
 pub mod bubble;
+pub mod button;
 pub mod companion;
 pub mod control;
+pub mod document;
 pub mod empty;
 pub mod feedback;
 pub mod field;

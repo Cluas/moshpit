@@ -82,7 +82,11 @@ pub(crate) fn banner_words(
             } else {
                 t!("No UDP reply from mosh-server.")
             };
-            let ports = if ports.is_empty() { "60000–61000" } else { ports };
+            let ports = if ports.is_empty() {
+                "60000–61000"
+            } else {
+                ports
+            };
             // Through a jump host the UDP can be stopped at either end.
             let check = match route {
                 Some(JumpRoute::Direct) => t!(
@@ -203,14 +207,17 @@ fn banner_slot(ctx: Ctx) -> AnyElement {
 fn banner_view(kind: Kind, current: Memo<Option<Kind>>, ctx: Ctx) -> AnyElement {
     let chrome = ctx.chrome;
     let words = move || -> SharedString {
-        chrome.with(|c| match &c.banner {
-            Some(BannerModel::Roam { srtt, .. }) => banner_words(kind, *srtt, false, None, ""),
-            Some(BannerModel::ReturnPath { typed, route, ports }) => {
-                banner_words(kind, None, *typed, *route, ports)
-            }
-            _ => banner_words(kind, None, false, None, ""),
-        })
-        .into()
+        chrome
+            .with(|c| match &c.banner {
+                Some(BannerModel::Roam { srtt, .. }) => banner_words(kind, *srtt, false, None, ""),
+                Some(BannerModel::ReturnPath {
+                    typed,
+                    route,
+                    ports,
+                }) => banner_words(kind, None, *typed, *route, ports),
+                _ => banner_words(kind, None, false, None, ""),
+            })
+            .into()
     };
     let shown = move || current.get() == Some(kind);
     match kind {
@@ -316,10 +323,7 @@ fn jump_notice(ctx: Ctx) -> AnyElement {
         }
     });
     banner(BannerTone::Info, || {
-        t!(
-            "This connection goes through a jump host over SSH. mosh can use UDP instead."
-        )
-        .into()
+        t!("This connection goes through a jump host over SSH. mosh can use UDP instead.").into()
     })
     .action(t!("Use UDP…"), {
         let ctx = ctx.clone();

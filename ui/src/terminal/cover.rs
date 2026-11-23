@@ -426,7 +426,11 @@ fn pane_follow_view(ctx: Ctx) -> AnyElement {
                         .flex_row()
                         .items_center()
                         .gap(px(8.0))
-                        .child(icon("rectangle.split.2x1").size(IconSize::Md).tone(Tone::Muted))
+                        .child(
+                            icon("rectangle.split.2x1")
+                                .size(IconSize::Md)
+                                .tone(Tone::Muted),
+                        )
                         .child(
                             chrome_text(
                                 TextToken::Subhead,

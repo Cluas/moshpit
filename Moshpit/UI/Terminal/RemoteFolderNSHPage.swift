@@ -110,7 +110,7 @@ struct RemoteFolderNSHPage: View {
                 guard case .success(let urls) = result, !urls.isEmpty else { return }
                 Task { await model.upload(files: urls) }
             }
-            .quickLookPreview($model.previewURL, in: model.previewItems)
+            .remotePreview($model.previewURL, in: model.previewItems)
     }
 
     private func show(_ facts: RemoteFolderFacts) {

@@ -11,8 +11,8 @@
 
 use moshpit_hostcare::note::TRUST_CODEX;
 use moshpit_hostcare::{AgentView, AssistPlan, Note, Phase, Proof, RelayFailure, SetupView};
-use moshpit_install::installer::{ComponentStatus, StepFailure};
 use moshpit_install::hooks;
+use moshpit_install::installer::{ComponentStatus, StepFailure};
 use serde_json::json;
 
 use crate::host_setup::{self, Agent, Facts, HostSetup, ProofState, Status, Tool};
@@ -54,7 +54,11 @@ pub fn say(note: &Note, locale: &str) -> String {
         Note::TrustCodexHooks => trust_codex(locale),
         Note::OpenTmuxPane => tl!("Open a tmux pane on this host to test the hooks.", locale),
         Note::HooksNotInstalled { agent } => {
-            tl!("Install the hooks for %@ to test them.", locale, arg1 = agent)
+            tl!(
+                "Install the hooks for %@ to test them.",
+                locale,
+                arg1 = agent
+            )
         }
         Note::HooksOutOfDate { agent } => tl!(
             "Update the hooks for %@ first: the test runs what this version of Moshpit installs.",
@@ -222,7 +226,11 @@ pub fn host_setup(view: &SetupView, locale: &str) -> HostSetup {
                     found: None,
                 }),
         ),
-        agents: view.agents.iter().map(|listed| agent(view, listed)).collect(),
+        agents: view
+            .agents
+            .iter()
+            .map(|listed| agent(view, listed))
+            .collect(),
         confirm: view.confirm.as_ref().map(|note| say(note, locale)),
         hooks: if view.known {
             status(&view.hooks)
@@ -402,7 +410,12 @@ mod tests {
         assert!(install.mosh_only);
         assert_eq!(install.command.as_deref(), Some("brew install mosh"));
         assert_eq!(install.result, Some(Recheck::Resolved));
-        let none = install_message(&AssistPlan::new(&["mosh".to_owned()], false, None), false, None, false);
+        let none = install_message(
+            &AssistPlan::new(&["mosh".to_owned()], false, None),
+            false,
+            None,
+            false,
+        );
         assert!(
             !none.contains("command") && !none.contains("result"),
             "absent fields are left out, as the app's message left them: {none}"

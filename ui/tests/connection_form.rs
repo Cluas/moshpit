@@ -1761,7 +1761,11 @@ fn the_jump_route_in_chinese() {
         "另外还需要",
         "两台主机的安全组都要放行这段 UDP 端口，跳板机要开启 net.ipv4.ip_forward。",
     ] {
-        assert!(app.screen().shows(text), "{text}: {:?}", app.screen().texts());
+        assert!(
+            app.screen().shows(text),
+            "{text}: {:?}",
+            app.screen().texts()
+        );
     }
     let menu = natives
         .find("moshpit/menu", "connection-form-jump-route")
@@ -1782,7 +1786,10 @@ fn the_jump_route_in_chinese() {
 fn the_forwarding_rule_names_the_target_and_the_range() {
     use moshpit_ui::connection_form::forward_rule;
     let rule = forward_rule("192.0.2.20", [60100, 60200]);
-    assert!(rule.contains("pre udp dport 60100-60200 dnat to 192.0.2.20"), "{rule}");
+    assert!(
+        rule.contains("pre udp dport 60100-60200 dnat to 192.0.2.20"),
+        "{rule}"
+    );
     assert!(
         rule.contains("post ip daddr 192.0.2.20 udp dport 60100-60200 masquerade"),
         "{rule}"
@@ -1876,9 +1883,17 @@ fn the_nested_form_has_no_jump_host_section() {
     state.via_choices = vec![bastion()];
     show(&mut app, &channel, state.clone());
     find(&mut app, "text:Jump host only");
-    assert!(!app.screen().shows("JUMP HOST"), "{:?}", app.screen().texts());
+    assert!(
+        !app.screen().shows("JUMP HOST"),
+        "{:?}",
+        app.screen().texts()
+    );
     assert!(!app.screen().shows("Connect via"));
-    assert!(natives.find("moshpit/menu", "connection-form-via").is_none());
+    assert!(
+        natives
+            .find("moshpit/menu", "connection-form-via")
+            .is_none()
+    );
     let on = natives.find("moshpit/switch", "toggle-jump-only").unwrap();
     assert_eq!(natives.prop(on, "on"), Some(json!(true)));
     // Editing one: still no Delete here.
@@ -1897,7 +1912,10 @@ fn jump_host_only_is_off_by_default_and_tells_the_host() {
     let heard = hear(&channel);
     show(&mut app, &channel, draft());
     find(&mut app, "text:Jump host only");
-    assert!(app.screen().shows("Not listed on Home; pick it under Connect via."));
+    assert!(
+        app.screen()
+            .shows("Not listed on Home; pick it under Connect via.")
+    );
     let toggle = natives.find("moshpit/switch", "toggle-jump-only").unwrap();
     assert_eq!(natives.prop(toggle, "on"), Some(json!(false)));
     emit(&mut app, toggle, "change", json!(true));
@@ -1980,10 +1998,6 @@ fn f1_the_jump_host_in_chinese() {
     }
     let menu = natives.find("moshpit/menu", "connection-form-via").unwrap();
     emit(&mut app, menu, "select", json!("B1"));
-    find(
-        &mut app,
-        "text:经跳板机时",
-    );
+    find(&mut app, "text:经跳板机时");
     channel.close();
 }
-
