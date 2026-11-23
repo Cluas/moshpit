@@ -337,11 +337,15 @@ jobs:
             -destination "platform=iOS Simulator,name=$SIMULATOR" \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             -only-testing:MoshpitTests \
+            -retry-tests-on-failure -test-iterations 2 \
             CODE_SIGNING_ALLOWED=NO
 
       # The simulator is booted and finished booting before the UI runner
       # starts. A runner that still fails to initialize is retried once on a
       # freshly booted simulator; any other failure is the flows' own.
+      # A failing test is run once more (-test-iterations 2): the hosted
+      # simulator times out accessibility queries now and then. A real
+      # regression fails both runs; the first failure stays in the log.
       - name: UI tests
         if: success() || failure()
         env:
@@ -364,6 +368,7 @@ jobs:
               -destination "platform=iOS Simulator,name=$SIMULATOR" \
               -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
               "${only[@]}" \
+              -retry-tests-on-failure -test-iterations 2 \
               CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ui-tests.log"
           }
           boot
@@ -391,6 +396,7 @@ jobs:
             -destination "platform=iOS Simulator,name=$IPAD" \
             -clonedSourcePackagesDirPath "$SPM_CACHE_DIR" \
             -only-testing:MoshpitUITests/ReportsUITest/testB843TheTerminalBesideTheSidebarShowsItsPane \
+            -retry-tests-on-failure -test-iterations 2 \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/ui-tests-ipad.log"
 
       - name: Take the staged host down

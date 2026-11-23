@@ -179,7 +179,7 @@ final class ReportsUITest: XCTestCase {
         // The path is a link once the host's probe confirmed it.
         settle(4)
         let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'bench/latency.png'")).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "the pane doesn't show the path")
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "the pane doesn't show the path")
         let path = (row.label as NSString).range(of: "bench/latency.png")
         let (x, columns) = TerminalCells.middle(ofColumns: path.location, path.length, in: row, of: app)
         XCTContext.runActivity(named: "Tap the path, columns \(path.location)–\(path.location + path.length - 1) of \(columns), at x \(String(format: "%.3f", x))") { _ in

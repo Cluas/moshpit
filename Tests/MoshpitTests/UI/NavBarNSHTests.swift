@@ -176,13 +176,18 @@ struct NavBarNSHTests {
         let window = try #require(surface.window)
         // Measured once the bar has settled: run 13 measured ＋ at
         // (52, 0) — the leading side, mid-layout — and every point inside
-        // it reached the view laid over it then.
+        // it reached the view laid over it then. CI runs 45047223201 et al.
+        // saw (52, 0) twice 100 ms apart on a loaded simulator: "unchanged"
+        // alone is not "settled". Wait for it to reach the trailing side
+        // and then hold still, up to 5 s.
         var frame = add.convert(add.bounds, to: window)
-        for _ in 0..<20 {
+        var still = 0
+        for _ in 0..<50 {
             try? await Task.sleep(for: .milliseconds(100))
             let now = add.convert(add.bounds, to: window)
-            if now == frame { break }
+            still = (now == frame && now.midX > surface.frame.midX) ? still + 1 : 0
             frame = now
+            if still >= 2 { break }
         }
         #expect(frame.width >= 43.5 && frame.height >= 43.5, "＋: \(frame)")
         #expect(frame.midX > surface.frame.midX, "＋ is on the bar's leading side: \(frame) in \(surface.frame)")

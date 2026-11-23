@@ -777,10 +777,15 @@ struct KeysShortcutsSetupNSHTests {
         let (surface, heard, done) = try Self.surface(running: .hostSetup)
         defer { done() }
         let (care, page) = await Self.demoPage(.installed)
-        #expect(surface.post(json: try #require(care.setupMessage(page))))
+        let message = try #require(care.setupMessage(page))
+        #expect(surface.post(json: message))
         let agent = try #require(await SettingsNSHTests.view(identified: "hostsetup-agent", in: surface) as? UIButton)
         let agents = try #require(agent.menu?.children)
-        #expect(agents.count == 7, "the seven agents the core knows")
+        // Every agent the core sends is an option; the count follows the
+        // core's list (it grew from seven when agy got hooks).
+        let sent = try #require(Self.object(message)["agents"] as? [Any])
+        #expect(sent.count >= 8, "claude plus the core's hook agents")
+        #expect(agents.count == sent.count, "one option per agent the core sends")
         // R16: the agent menu is the `ui` layer's select, which checks the
         // option in use (UIKit's own checkmark) and says each agent's status.
         let first = try #require(agents.first as? UIAction)
