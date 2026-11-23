@@ -1522,17 +1522,25 @@ mod tests {
             password: false,
             key: false,
         };
+        // No password: saved all the same, nothing written, asked (or
+        // `none`) when it connects.
+        let bare = connection_draft_save_plan(
+            d.clone(),
+            None,
+            fresh.clone(),
+            vec![],
+            none,
+            1,
+            2,
+            "r".into(),
+        )
+        .unwrap();
+        assert_eq!(bare.write, None);
+        assert_eq!(bare.connection.keychain_ref, None);
+        let mut keyed = d.clone();
+        keyed.auth = AuthMethod::Key;
         assert_eq!(
-            connection_draft_save_plan(
-                d.clone(),
-                None,
-                fresh.clone(),
-                vec![],
-                none,
-                1,
-                2,
-                "r".into()
-            ),
+            connection_draft_save_plan(keyed, None, fresh.clone(), vec![], none, 1, 2, "r".into()),
             Err(ConnectionSaveRefusal::Incomplete)
         );
         let plan = connection_draft_save_plan(
