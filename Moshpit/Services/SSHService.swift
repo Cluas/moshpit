@@ -326,6 +326,10 @@ actor SSHService {
             return try await inFlight.value
         }
         guard let ref = connection.keychainRef else {
+            // A password connection saved with none: an empty password,
+            // which the core takes as "none saved" — `none` first (a host
+            // such as Tailscale SSH asks nothing), then the person.
+            if connection.authMethod == .password { return "" }
             throw SSHError.missingKeychainRef
         }
         let keychain = self.keychain

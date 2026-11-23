@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use russh::client::{self, AuthResult, DisconnectReason, KeyboardInteractiveAuthResponse};
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect, MethodKind};
+use zeroize::Zeroizing;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
@@ -790,8 +791,28 @@ async fn sign_in(
         questions,
         waiting,
     };
+    // `none` first, as OpenSSH's client does (and OpenSSH doesn't count
+    // it against MaxAuthTries): a host that lets the account in on who it
+    // is, not on a secret — Tailscale SSH, which takes the tailnet's word
+    // for it; an account with no password — signs in here. It used to be
+    // refused for a password or a key it never asked for.
+    if let AuthResult::Success = handle
+        .authenticate_none(user.clone())
+        .await
+        .map_err(closed)?
+    {
+        return Ok(());
+    }
     let (method, result) = match auth {
-        Auth::Password(password) => {
+        Auth::Password(saved) => {
+            // No password saved (the form leaves it optional, for a host
+            // like the above): the person's, asked now that `none` wasn't
+            // enough.
+            let password = if saved.is_empty() {
+                Zeroizing::new(ask_password(&asked, target).await?)
+            } else {
+                saved
+            };
             let result = handle
                 .authenticate_password(user.clone(), password.as_str())
                 .await
@@ -903,26 +924,7 @@ async fn sign_in(
             remaining_methods,
             partial_success: true,
         } if remaining_methods.contains(&MethodKind::Password) => {
-            let Some(questions) = asked.questions else {
-                return Err(SshError::InteractivePrompts {
-                    host: target.host.clone(),
-                });
-            };
-            let question = SignInQuestion {
-                name: String::new(),
-                instructions: String::new(),
-                prompt: "Password: ".to_owned(),
-                echo: false,
-            };
-            let Some(password) = asked
-                .waiting
-                .on_person(questions.ask(asked.host, &question))
-                .await
-            else {
-                return Err(SshError::SignInDeclined {
-                    host: target.host.clone(),
-                });
-            };
+            let password = ask_password(&asked, target).await?;
             let result = handle
                 .authenticate_password(user.clone(), password.as_str())
                 .await
@@ -953,6 +955,30 @@ async fn sign_in(
             }
         }
     }
+}
+
+/// A password asked of the person (`Password: `, hidden): there is none
+/// saved, or the saved one was a first factor's. Declined, it is the
+/// person's cancel, not a failure to dial again.
+async fn ask_password(asked: &Asking<'_>, target: &Target) -> Result<String, SshError> {
+    let Some(questions) = asked.questions else {
+        return Err(SshError::InteractivePrompts {
+            host: target.host.clone(),
+        });
+    };
+    let question = SignInQuestion {
+        name: String::new(),
+        instructions: String::new(),
+        prompt: "Password: ".to_owned(),
+        echo: false,
+    };
+    asked
+        .waiting
+        .on_person(questions.ask(asked.host, &question))
+        .await
+        .ok_or_else(|| SshError::SignInDeclined {
+            host: target.host.clone(),
+        })
 }
 
 /// Who answers a keyboard-interactive round's prompts besides the saved
