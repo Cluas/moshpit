@@ -622,8 +622,8 @@ fn a_connection_saves_only_with_something_to_sign_in_with() {
     assert!(switched.can_save(&[]), "the password it keeps");
     let mut fresh = named(Draft::new(false));
     assert!(
-        !fresh.can_save(&[]),
-        "saved with no password, which nothing asks for later"
+        fresh.can_save(&[]),
+        "saved with no password: none asked for, or asked when it connects"
     );
     fresh.set_given(PASSWORD);
     assert!(fresh.can_save(&[]), "a password may be white space");

@@ -849,14 +849,25 @@ pub fn emoji(text: &str) -> Result<Option<String>, NotOneEmoji> {
 
 /// Saving leaves the connection something to sign in with. A key: one
 /// picked (the host names it only while it is in SSH Keys), one pasted,
-/// or the one the connection edited keeps. A password: one typed, or the
-/// one the connection edited keeps. A key connection with none used to
-/// save and could never sign in, and so did a password one: the app asks
-/// for no password when it connects, it fails on the missing keychain
-/// item (B294).
+/// or the one the connection edited keeps. A key connection with none used
+/// to save and could never sign in (B294). A password connection may have
+/// none: a host that lets the account in on who it is (Tailscale SSH) asks
+/// for nothing, and one that does want a password has it asked when it
+/// connects. Not one whose saved password this device lacks (B782): that
+/// waits for the password again.
 pub fn has_credential(state: &FormState) -> bool {
     match state.auth {
-        Auth::Password => state.secrets.password || state.secrets.stored_password,
+        // Not one whose own item holds a key: switched to a password, it
+        // needs the password that replaces the key (`NewSecretNeeded`).
+        Auth::Password => {
+            state.secrets.password
+                || state.secrets.stored_password
+                || (!state.secrets.stored_key
+                    && state
+                        .missing
+                        .as_ref()
+                        .is_none_or(|missing| missing.secret != Auth::Password))
+        }
         Auth::Key => state.key.is_some() || state.secrets.pem || state.secrets.stored_key,
     }
 }
@@ -2126,11 +2137,12 @@ mod tests {
         state.secrets.stored_key = false;
         state.secrets.stored_password = true;
         assert!(!can_save(&state), "a password kept is no key");
-        // A password connection: a password typed or kept.
+        // A password connection: a password typed, kept, or none (asked
+        // when it connects, if the host wants one).
         state.auth = Auth::Password;
         assert!(can_save(&state), "the password it keeps");
         state.secrets = Secrets::default();
-        assert!(!can_save(&state), "a password connection with no password");
+        assert!(can_save(&state), "a password connection with no password");
         state.secrets.password = true;
         assert!(can_save(&state));
     }

@@ -804,26 +804,27 @@ fn key_auth_saves_only_with_a_key() {
     channel.close();
 }
 
-/// B294: a password connection with no password used to save, and could
-/// never sign in (the app asks for none when it connects). Save waits for
-/// one — typed into the host's field, or the one the connection edited
-/// keeps.
+/// A password connection saves with no password (a host that lets the
+/// account in on who it is, Tailscale SSH, asks for none; one that wants
+/// one has it asked when it connects), with one typed, or with the one it
+/// keeps. B294's rule stays for a key connection, and for one whose own
+/// item holds a key: switched to a password, it needs one.
 #[test]
-fn password_auth_saves_only_with_a_password() {
+fn password_auth_saves_with_or_without_a_password() {
     let (mut app, channel, natives) = start_tall(Params::default());
     let heard = hear(&channel);
     let mut state = savable();
     state.secrets.password = false;
     show(&mut app, &channel, state.clone());
     find(&mut app, "id:connection-form-name");
-    assert!(!saves(&mut app, &heard), "saved with no password");
+    assert!(saves(&mut app, &heard), "saved with no password");
     let password = natives
         .find("moshpit/connection-password", "connection-form-password")
         .unwrap();
     emit(&mut app, password, "filled", json!(true));
     assert!(saves(&mut app, &heard));
     emit(&mut app, password, "filled", json!(false));
-    assert!(!saves(&mut app, &heard));
+    assert!(saves(&mut app, &heard));
 
     let mut kept = state.clone();
     kept.editing = true;

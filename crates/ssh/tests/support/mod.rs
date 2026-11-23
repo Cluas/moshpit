@@ -117,6 +117,8 @@ pub struct Seen {
     /// The answers to each keyboard-interactive round, in order.
     pub kbd_answers: Vec<Vec<String>>,
     pub password_attempts: usize,
+    /// `none` sign-ins asked, taken or not.
+    pub none_attempts: usize,
     pub env: Vec<(String, String)>,
     /// `(term, cols, rows)`.
     pub ptys: Vec<(String, u32, u32)>,
@@ -190,6 +192,9 @@ pub struct Bench {
     /// the host knows stands for a host only it can reach. Any other is
     /// refused as sshd refuses one it can't connect to.
     pub tunnels: Vec<(&'static str, u16, SocketAddr)>,
+    /// The account signs in on `none`, nothing asked (Tailscale SSH: the
+    /// tailnet vouched for it).
+    pub none: bool,
 }
 
 impl Default for Bench {
@@ -212,6 +217,7 @@ impl Default for Bench {
             max_sessions: None,
             open_delay: None,
             tunnels: Vec::new(),
+            none: false,
         }
     }
 }
@@ -231,6 +237,7 @@ struct Shared {
     max_sessions: Option<usize>,
     open_delay: Option<Duration>,
     tunnels: Vec<(&'static str, u16, SocketAddr)>,
+    none: bool,
     home: PathBuf,
     seen: Arc<Mutex<Seen>>,
 }
@@ -285,6 +292,7 @@ impl Host {
                 max_sessions: bench.max_sessions,
                 open_delay: bench.open_delay,
                 tunnels: bench.tunnels.clone(),
+                none: bench.none,
                 home: home.path().to_owned(),
                 seen: seen.clone(),
             }),
@@ -385,6 +393,15 @@ fn finish(session: &mut Session, channel: ChannelId, status: u32) -> Result<(), 
 
 impl server::Handler for Connection {
     type Error = russh::Error;
+
+    async fn auth_none(&mut self, user: &str) -> Result<ServerAuth, Self::Error> {
+        self.shared.seen.lock().unwrap().none_attempts += 1;
+        if self.shared.none && user == USER {
+            Ok(ServerAuth::Accept)
+        } else {
+            Ok(self.reject())
+        }
+    }
 
     async fn auth_publickey(
         &mut self,

@@ -586,6 +586,103 @@ async fn a_password_after_a_key_is_asked_of_the_person() {
     }
 }
 
+/// A host that lets the account in on `none` (Tailscale SSH, which takes
+/// the tailnet's word for who it is): in, whatever the connection keeps —
+/// a key the host doesn't know, a password it would refuse, no password —
+/// with nothing sent or asked. It used to fail on the secret it never
+/// wanted.
+#[tokio::test]
+async fn a_host_that_asks_nothing_signs_in_on_none() {
+    let credentials = [
+        Auth::key(fixture_key("rsa2048")),
+        Auth::password("not the password"),
+        Auth::password(""),
+    ];
+    for auth in credentials {
+        let shown = format!("{auth:?}");
+        let host = Host::start(Bench {
+            none: true,
+            ..Default::default()
+        })
+        .await;
+        let person = Arc::new(Person::default());
+        let ssh = Ssh::connect_asking(
+            &host.target(),
+            auth,
+            Arc::new(AcceptAny),
+            Some(person.clone()),
+            &options(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{shown}: {e}"));
+        assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+        let seen = host.seen();
+        assert_eq!(seen.none_attempts, 1, "{shown}");
+        assert_eq!(seen.password_attempts, 0, "{shown}");
+        assert!(seen.key_attempts.is_empty(), "{shown}");
+        assert!(person.asked.lock().unwrap().is_empty(), "{shown}");
+    }
+}
+
+/// A host that wants a secret after `none`: the saved one goes as before,
+/// `none` costing one request.
+#[tokio::test]
+async fn none_refused_the_saved_credential_follows() {
+    let host = Host::start(Bench::default()).await;
+    let ssh = sign_in_by_password(&host, PASSWORD).await.unwrap();
+    assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+    assert_eq!(host.seen().none_attempts, 1);
+    assert_eq!(host.seen().password_attempts, 1);
+}
+
+/// A password connection with no password saved (the form takes one
+/// without, for the host above): when `none` isn't enough the password is
+/// the person's, asked once; declined, it is their cancel, nothing sent.
+/// Nobody to ask: said as a question only the person can answer.
+#[tokio::test]
+async fn no_password_saved_is_asked_of_the_person() {
+    for declines in [false, true] {
+        let host = Host::start(Bench::default()).await;
+        let person = Arc::new(Person {
+            declines,
+            ..Default::default()
+        });
+        let connected = Ssh::connect_asking(
+            &host.target(),
+            Auth::password(""),
+            Arc::new(AcceptAny),
+            Some(person.clone()),
+            &options(),
+        )
+        .await;
+        let asked = person.asked.lock().unwrap().clone();
+        assert_eq!(asked.len(), 1, "asked once");
+        assert_eq!(asked[0].1.prompt, "Password: ");
+        assert!(!asked[0].1.echo);
+        if declines {
+            let err = connected.err().expect("declined");
+            assert!(matches!(err, SshError::SignInDeclined { .. }), "{err:?}");
+            assert_eq!(host.seen().password_attempts, 0);
+        } else {
+            let ssh = connected.unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(ssh.run("echo in").await.unwrap().stdout(), b"in\n");
+            assert_eq!(host.seen().password_attempts, 1);
+        }
+    }
+    let host = Host::start(Bench::default()).await;
+    let err = Ssh::connect(
+        &host.target(),
+        Auth::password(""),
+        Arc::new(AcceptAny),
+        &options(),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(matches!(err, SshError::InteractivePrompts { .. }), "{err:?}");
+    assert_eq!(host.seen().password_attempts, 0);
+}
+
 /// With nobody to ask, the second factor is said as what it is — a
 /// question only the person can answer — not a wrong key.
 #[tokio::test]
