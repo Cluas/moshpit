@@ -3,8 +3,7 @@
 # (github.com/Cluas/moshpit; other remotes pass), installed
 # by scripts/setup-hooks.sh (every team member's checkout has it):
 #
-# - only main goes out (and tags): branches stay local, integrated work
-#   reaches main and main is pushed;
+# - branches (for pull requests), main and tags go out; nothing is deleted;
 # - only as a fast-forward: no force push, ever;
 # - only once scripts/oss-scan.py passes on every commit it would publish,
 #   with the private lists of the ops checkout (`git config moshpit.opsDir`,
@@ -55,9 +54,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         continue
     fi
     case "$remote_ref" in
-        refs/heads/main | refs/tags/*) ;;
+        refs/heads/* | refs/tags/*) ;;
         *)
-            echo "pre-push: only main goes to $remote, not $remote_ref: branches stay local" >&2
+            echo "pre-push: only branches and tags go to $remote, not $remote_ref" >&2
             status=1
             continue
             ;;
@@ -71,7 +70,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         fi
         base="$remote_sha"
     else
-        # A new ref (a tag): what it adds to the public main. In a team
+        # A new ref (a branch, a tag): what it adds to the public main. In a team
         # checkout `origin` is the private repository, so ask the public one.
         public_main="$(git ls-remote "$url" refs/heads/main 2>/dev/null | cut -f1)"
         if [ -n "$public_main" ] && git cat-file -e "$public_main^{commit}" 2>/dev/null; then
