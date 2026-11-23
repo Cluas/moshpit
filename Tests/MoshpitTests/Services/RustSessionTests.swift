@@ -1063,9 +1063,12 @@ struct RustSessionTests {
 
     @Test("a credential the keychain won't give while the device is locked is 'locked' (B201)")
     func lockedCredentials() async {
-        // No keychain item behind this connection: unreadable either way —
-        // but only a locked device makes that worth retrying on the unlock.
-        let connection = ServerConnection(host: "h", username: "u")
+        // No keychain item behind this key connection: unreadable either
+        // way — but only a locked device makes that worth retrying on the
+        // unlock. (A password connection with no item signs in on `none`
+        // or asks the person, so it is a key here.)
+        var connection = ServerConnection(host: "h", username: "u")
+        connection.authMethod = .key
         for (available, locked) in [(false, true), (true, false)] {
             let host = RustCredentialHost(protectedData: { available })
             host.register(connection) { _ in nil }
